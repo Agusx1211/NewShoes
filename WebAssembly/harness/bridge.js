@@ -1,9 +1,12 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
 import {
   BINK_VIDEO_MANIFEST_URL,
+  binkVideoPolicy,
+  buildPreparedBinkManifest,
   createBinkVideoRuntime,
   loadBinkVideoManifest,
 } from "./bink_runtime.mjs";
+import { createBinkTranscoder } from "./bink_transcoder.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
@@ -947,6 +950,7 @@ function createThreadedEngineController() {
   let lastLoopError = null;
   let mssHandlers = null;
   let binkRuntime = null;
+  let binkTranscoder = null;
 
   function threadedLog(message, data) {
     recordLog(`threaded ${message}`, data);
@@ -1003,12 +1007,38 @@ function createThreadedEngineController() {
     if (!binkRuntime) {
       binkRuntime = createBinkVideoRuntime({
         log: (message, data) => threadedLog(message, data),
+        resolveMedia: (payload, options) => binkTranscodeRuntime().mediaFor(payload, options),
+        onPreparation: (detail) => publishBinkPreparation(detail),
         sendFrame: ({ handle, frameNum, width, height, bytes }) => {
           sendPortCommand({ cmd: "binkFrame", handle, frameNum, width, height, bytes }, [bytes.buffer]);
         },
       });
     }
     return binkRuntime;
+  }
+
+  function publishBinkPreparation(detail) {
+    try {
+      window.dispatchEvent(new CustomEvent("cncport:binkprepare", { detail }));
+    } catch { /* DOM event support is optional in focused harnesses */ }
+  }
+
+  function binkTranscodeRuntime() {
+    if (!binkTranscoder) {
+      binkTranscoder = createBinkTranscoder({
+        log: (message, data) => threadedLog(message, data),
+        onProgress: (detail) => publishBinkPreparation(detail),
+      });
+    }
+    return binkTranscoder;
+  }
+
+  function registerBinkSources(sources) {
+    binkTranscodeRuntime().registerSources(sources);
+  }
+
+  function cancelBinkPreparation() {
+    return binkTranscoder?.cancelActive() === true;
   }
 
   function handleBinkMessage(msg) {
@@ -1487,6 +1517,8 @@ function createThreadedEngineController() {
     cncPortMssCacheDropNotifier = null;
     binkRuntime?.shutdown();
     binkRuntime = null;
+    binkTranscoder?.shutdown();
+    binkTranscoder = null;
     inputOutbox.length = 0;
     for (const [, entry] of pending) {
       if (entry.timer) clearTimeout(entry.timer);
@@ -1613,6 +1645,8 @@ function createThreadedEngineController() {
     forwardInput,
     sendCommand,
     postCommand,
+    registerBinkSources,
+    cancelBinkPreparation,
     get lastStatus() { return lastStatus; },
     get lastLoopError() { return lastLoopError; },
     get engineThreadStarted() { return engineThreadStarted; },
@@ -10709,8 +10743,11 @@ async function registerOpfsInterceptPrefix(prefix) {
   return { ok: true };
 }
 
-async function binkRuntimeFiles() {
-  const manifest = await loadBinkVideoManifest();
+async function binkRuntimeFiles(preparedVideos = []) {
+  const policy = binkVideoPolicy();
+  const manifest = policy === "transcode"
+    ? buildPreparedBinkManifest(preparedVideos)
+    : await loadBinkVideoManifest({ policy });
   const files = manifest.payloads.map((payload) => {
     const sourceFile = String(payload?.sourceFile ?? "");
     if (!/^[A-Za-z0-9_.-]+\.bik$/i.test(sourceFile)) {
@@ -10719,7 +10756,8 @@ async function binkRuntimeFiles() {
     return {
       name: sourceFile,
       sourceFile,
-      url: new URL(`../artifacts/real-assets/${encodeURIComponent(sourceFile)}`, import.meta.url).href,
+      url: policy === "transcode" ? null
+        : new URL(`../artifacts/real-assets/${encodeURIComponent(sourceFile)}`, import.meta.url).href,
       // The original BinkVideoPlayer always appends the lowercase VIDEO_EXT
       // ("bik"). Win32 was case-insensitive even when the cabinet entry was
       // named EA_LOGO.BIK; the OPFS path map must preserve that behavior.
@@ -10735,10 +10773,11 @@ async function binkRuntimeFiles() {
   }
   files.push({
     name: "bink-browser-video-manifest.json",
-    url: BINK_VIDEO_MANIFEST_URL,
+    url: policy === "transcode" ? null : BINK_VIDEO_MANIFEST_URL,
+    content: policy === "transcode" ? `${JSON.stringify(manifest, null, 2)}\n` : null,
     enginePath: "artifacts/browser-video/bink/bink-browser-video-manifest.json",
   });
-  return { files, manifest };
+  return { files, manifest, policy };
 }
 
 async function stageBinkRuntimeFiles(
@@ -10746,7 +10785,7 @@ async function stageBinkRuntimeFiles(
 ) {
   let runtime;
   try {
-    runtime = await binkRuntimeFiles();
+    runtime = await binkRuntimeFiles(preparedVideos);
   } catch (error) {
     const reason = error?.message ?? String(error);
     harnessState.binkVideoAssets = {
@@ -10804,7 +10843,19 @@ async function stageBinkRuntimeFiles(
         });
         continue;
       }
-      const { bytesWritten } = await fetchArchiveToOpfsOffThread(file.url, opfsPath);
+      if (file.sourceFile && !file.url) {
+        throw new Error(`Selected movie source is unavailable: ${file.sourceFile}`);
+      }
+      let sourceUrl = file.url;
+      if (file.content != null) {
+        sourceUrl = URL.createObjectURL(new Blob([file.content], { type: "application/json" }));
+      }
+      let bytesWritten;
+      try {
+        ({ bytesWritten } = await fetchArchiveToOpfsOffThread(sourceUrl, opfsPath));
+      } finally {
+        if (file.content != null) URL.revokeObjectURL(sourceUrl);
+      }
       ensureMemfsDirectory(wasmModule.fs, parentDirectory(enginePath));
       wasmModule.fs.writeFile(enginePath, new Uint8Array(0));
       stageMap[enginePath] = opfsPath;
@@ -10825,9 +10876,13 @@ async function stageBinkRuntimeFiles(
   }
   harnessState.binkVideoAssets = {
     ready: files.every((file) => file.ok),
+    mode: runtime.policy,
     payloadCount: runtime.manifest.payloads.length,
     files,
   };
+  if (runtime.policy === "transcode" && harnessState.binkVideoAssets.ready) {
+    threadedEngine?.registerBinkSources(preparedVideos);
+  }
   recordLog("Bink runtime files staged", {
     ready: harnessState.binkVideoAssets.ready,
     files: files.map((file) => ({ name: file.name, ok: file.ok, bytes: file.bytes })),
@@ -11135,7 +11190,19 @@ async function mountPreparedArchives(payload = {}) {
     if (!Number.isSafeInteger(bytes) || bytes <= 48) {
       return { ok: false, command: "mountPreparedArchives", error: `Invalid prepared video size: ${name}` };
     }
-    preparedVideos.push({ name, opfsPath, bytes });
+    preparedVideos.push({
+      name,
+      opfsPath,
+      bytes,
+      signature: String(input?.signature ?? ""),
+      headerHex: String(input?.headerHex ?? ""),
+      frames: Number(input?.frames),
+      width: Number(input?.width),
+      height: Number(input?.height),
+      fpsNum: Number(input?.fpsNum),
+      fpsDen: Number(input?.fpsDen),
+      audioTracks: Number(input?.audioTracks ?? 0),
+    });
   }
 
   if (payload.includeVideos === true) {
@@ -23258,6 +23325,7 @@ window.CnCPort = {
   persistScheduledSaves: persistScheduledSaveFilesystem,
   persistFinalSaves: persistFinalSaveFilesystem,
   stopSavePersistenceScheduling,
+  cancelBinkPreparation: () => threadedEngine?.cancelBinkPreparation() === true,
   listSaves: listSaveFiles,
   listReplays: () => replayFileStore.list(),
   readReplay: (name) => replayFileStore.read(name),

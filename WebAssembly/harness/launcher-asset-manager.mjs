@@ -6,6 +6,7 @@ import {
   retailPresentationSource,
 } from "./launcher-retail-presentation.mjs";
 import { DEVICE_TRANSFER_VERSION } from "./device-transfer-protocol.mjs";
+import { parseBrowserBinkHeader } from "./bink_transcoder.mjs";
 
 const INSTALLED_KEY = "zeroh-installed-library.v5";
 const OLD_INSTALLED_KEYS = ["zeroh-installed-library.v4", "zeroh-installed-library.v3", "zeroh-installed-library.v2", "zeroh-installed-library.v1"];
@@ -579,9 +580,17 @@ class AssetLibrary {
       }
       if (installed.videos.length) {
         const movies = await directory.getDirectoryHandle("movies", { create: false });
+        let metadataChanged = false;
         for (const video of installed.videos) {
           const file = await (await movies.getFileHandle(video.name, { create: false })).getFile();
           if (file.size !== video.bytes) throw new Error(`${video.name} size changed`);
+          const metadata = parseBrowserBinkHeader(
+            new Uint8Array(await file.slice(0, 44).arrayBuffer()), file.size);
+          metadataChanged ||= video.headerHex !== metadata.headerHex;
+          Object.assign(video, metadata);
+        }
+        if (metadataChanged) {
+          storageSet(INSTALLED_KEY, JSON.stringify(installed));
         }
       }
       await this.collectInstalledRoots(installed.root);
@@ -713,6 +722,10 @@ class AssetLibrary {
             current.writer = null;
             const stored = await current.handle.getFile();
             if (stored.size !== current.bytes) throw new Error(`${current.name} was not stored completely`);
+            if (current.kind === "video") {
+              Object.assign(files[index], parseBrowserBinkHeader(
+                new Uint8Array(await stored.slice(0, 44).arrayBuffer()), stored.size));
+            }
             current = null;
             index += 1;
           },
@@ -731,6 +744,14 @@ class AssetLibrary {
                 name: file.name,
                 bytes: file.bytes,
                 opfsPath: `${installRoot}/movies/${file.name}`,
+                signature: file.signature,
+                headerHex: file.headerHex,
+                frames: file.frames,
+                width: file.width,
+                height: file.height,
+                fpsNum: file.fpsNum,
+                fpsDen: file.fpsDen,
+                audioTracks: file.audioTracks,
               }));
               const installed = {
                 version: LIBRARY_VERSION,
@@ -834,7 +855,7 @@ class AssetLibrary {
 
   async archivesForLaunch(onProgress = null) {
     if (this.preparedArchives?.length) return this.preparedArchives;
-    const installed = this.installedLibrary();
+    const installed = await this.verifyInstalledLibrary();
     if (installed) {
       onProgress?.({ detail: "Installed Zero Hour library", completed: 1, total: 1 });
       this.preparedArchives = installed.archives.map((archive) => ({ ...archive }));

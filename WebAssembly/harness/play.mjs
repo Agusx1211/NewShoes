@@ -58,6 +58,12 @@ const networkIceUsernameNode = document.querySelector("#networkIceUsername");
 const networkIceCredentialNode = document.querySelector("#networkIceCredential");
 const networkStatusNode = document.querySelector("#networkStatus");
 const networkDiagnosticsToggleNode = document.querySelector("#networkDiagnosticsToggle");
+const binkPreparationOverlay = document.querySelector("#binkPreparationOverlay");
+const binkPreparationName = document.querySelector("#binkPreparationName");
+const binkPreparationProgress = document.querySelector("#binkPreparationProgress");
+const binkPreparationFill = document.querySelector("#binkPreparationFill");
+const binkPreparationDetail = document.querySelector("#binkPreparationDetail");
+const binkPreparationCancel = document.querySelector("#binkPreparationCancel");
 const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
 let networkStorage = null;
 try {
@@ -65,6 +71,55 @@ try {
 } catch {
   // Privacy settings can make the localStorage property itself throw.
 }
+
+function binkPreparationPercent(detail) {
+  const progress = Number.isFinite(Number(detail?.progress))
+    ? Math.max(0, Math.min(1, Number(detail.progress))) : 0;
+  if (detail?.phase === "runtime") return 5 + progress * 20;
+  if (detail?.phase === "video") return 25 + progress * 60;
+  if (detail?.phase === "audio") return 85 + progress * 14;
+  if (detail?.phase === "ready") return 100;
+  return 2;
+}
+
+function updateBinkPreparation(event) {
+  if (!binkPreparationOverlay) return;
+  const detail = event.detail ?? {};
+  const terminal = detail.phase === "ready" || detail.phase === "cancelled";
+  if (terminal) {
+    binkPreparationOverlay.hidden = true;
+    return;
+  }
+  binkPreparationOverlay.hidden = false;
+  const sourceName = String(detail.sourcePath ?? "").replaceAll("\\", "/").split("/").pop();
+  if (sourceName && binkPreparationName) binkPreparationName.textContent = sourceName;
+  const percent = Math.round(binkPreparationPercent(detail));
+  if (binkPreparationFill) binkPreparationFill.style.width = `${percent}%`;
+  binkPreparationProgress?.setAttribute("aria-valuenow", String(percent));
+  if (binkPreparationDetail) {
+    binkPreparationDetail.textContent = detail.phase === "error"
+      ? `Could not prepare this movie: ${detail.error || "unknown error"}`
+      : detail.detail || "Preparing this movie locally. Nothing is uploaded.";
+  }
+  if (binkPreparationCancel) {
+    binkPreparationCancel.disabled = false;
+    binkPreparationCancel.textContent = detail.phase === "error" ? "Dismiss" : "Skip movie";
+    binkPreparationCancel.dataset.action = detail.phase === "error" ? "dismiss" : "cancel";
+  }
+}
+
+window.addEventListener("cncport:binkprepare", updateBinkPreparation);
+binkPreparationCancel?.addEventListener("click", () => {
+  if (binkPreparationCancel.dataset.action === "dismiss") {
+    binkPreparationOverlay.hidden = true;
+    return;
+  }
+  const cancelled = window.CnCPort?.cancelBinkPreparation?.() === true;
+  if (cancelled) {
+    binkPreparationCancel.disabled = true;
+    binkPreparationCancel.textContent = "Skipping…";
+  }
+});
 
 function loadNetworkDiagnosticsEnabled() {
   const queryValue = queryParams.get("networkDiagnostics");
