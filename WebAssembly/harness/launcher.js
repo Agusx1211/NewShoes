@@ -58,6 +58,7 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     freecell: { title: "FreeCell: Forward Cells", icon: "#i-freecell" },
     hearts: { title: "Hearts & Minds", icon: "#i-hearts" },
     minesweeper: { title: "Minesweeper: Demining Detail", icon: "#i-minesweeper" },
+    pinball: { title: "3D Pinball: Shock & Awe", icon: "#i-pinball" },
     backgammon: { title: "Internet Backgammon: Supply Lines", icon: "#i-backgammon" },
     checkers: { title: "Internet Checkers: Checkpoint", icon: "#i-checkers" },
     internethearts: { title: "Internet Hearts: Coalition", icon: "#i-internet-hearts" },

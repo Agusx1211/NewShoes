@@ -1,4 +1,5 @@
 import { loadOrCreateNetworkSettings, normalizeCommanderName, saveNetworkSettings } from "./multiplayer_identity.mjs";
+import { createWarPinball } from "./launcher-pinball.mjs";
 import { createWebRtcUdpEndpoint, webRtcUdpWireContract } from "./webrtc-udp-endpoint.mjs";
 
 const GAME_PROTOCOL_VERSION = 1;
@@ -168,6 +169,7 @@ const GAME_SPECS = Object.freeze([
   { id: "freecell", title: "FreeCell: Forward Cells", folderTitle: "FreeCell", subtitle: "Four forward cells, zero logistical excuses.", icon: "#i-freecell", kind: "freecell" },
   { id: "hearts", title: "Hearts & Minds", folderTitle: "Hearts", subtitle: "Win the operation by collecting no hearts or minds.", icon: "#i-hearts", kind: "hearts" },
   { id: "minesweeper", title: "Minesweeper: Demining Detail", folderTitle: "Minesweeper", subtitle: "The one game command insists is training.", icon: "#i-minesweeper", kind: "minesweeper" },
+  { id: "pinball", title: "3D Pinball: Shock & Awe", folderTitle: "3D Pinball", subtitle: "Win the war one deeply impractical ricochet at a time.", icon: "#i-pinball", kind: "pinball", difficulty: false },
   { id: "backgammon", title: "Internet Backgammon: Supply Lines", folderTitle: "Internet Backgammon", subtitle: "Move every convoy home over the real P2P network.", icon: "#i-backgammon", kind: "backgammon", internet: true, maxPlayers: 2 },
   { id: "checkers", title: "Internet Checkers: Checkpoint", folderTitle: "Internet Checkers", subtitle: "Mandatory captures. Optional diplomacy.", icon: "#i-checkers", kind: "checkers", internet: true, maxPlayers: 2 },
   { id: "internethearts", title: "Internet Hearts: Coalition", folderTitle: "Internet Hearts", subtitle: "A four-seat coalition with completely aligned incentives.", icon: "#i-internet-hearts", kind: "hearts", internet: true, maxPlayers: 4 },
@@ -218,12 +220,13 @@ function gameWindow(spec, index) {
       <div class="internet-actions"><button type="button" data-network-host>Host operation</button><button type="button" data-network-join>Join operation</button><button type="button" data-network-leave disabled>Disconnect</button></div>
       <p data-network-status>Offline. Host or join a room to deploy.</p>
     </section>` : "";
-  const width = [780, 880, 850, 800, 610, 830, 760, 800, 760, 800][index];
-  const height = [590, 650, 620, 610, 575, 650, 650, 610, 650, 610][index];
+  const width = [780, 880, 850, 800, 610, 820, 830, 760, 800, 760, 800][index];
+  const height = [590, 650, 620, 610, 575, 700, 650, 650, 610, 650, 610][index];
+  const difficulty = spec.difficulty === false ? "" : `<label class="game-difficulty"><span>Difficulty</span><select data-game-difficulty>${difficultyOptions(spec)}</select></label>`;
   return `<article id="${spec.id}Window" class="window xp-game-window" data-app="${spec.id}" style="--x: ${51 + (index % 4)}%; --y: ${43 + (index % 3)}%; --w: ${width}px; --h: ${height}px;" aria-label="${spec.title}">
     <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="${spec.icon}"/></svg></span><span>${spec.title}</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
     <div class="xp-game-shell" data-game-root="${spec.id}">
-      <nav class="xp-game-menu"><button type="button" data-game-new><u>G</u>ame</button><button type="button" data-game-help><u>H</u>elp</button><label class="game-difficulty"><span>Difficulty</span><select data-game-difficulty>${difficultyOptions(spec)}</select></label><button type="button" class="game-sound-toggle" data-game-sound></button><span>${spec.subtitle}</span></nav>
+      <nav class="xp-game-menu"><button type="button" data-game-new><u>G</u>ame</button><button type="button" data-game-help><u>H</u>elp</button>${difficulty}<button type="button" class="game-sound-toggle" data-game-sound></button><span>${spec.subtitle}</span></nav>
       ${network}
       <div class="xp-game-board" data-game-board aria-label="${spec.folderTitle} game board"></div>
       <footer class="xp-game-status"><span data-game-status>Ready for orders.</span><span>${spec.internet ? "Trystero/Nostr + direct WebRTC" : "Local browser game"}</span></footer>
@@ -237,7 +240,7 @@ function injectGameWindows() {
     <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-games"/></svg></span><span>Games</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
     <div class="games-folder-toolbar"><button type="button" disabled>‹ Back</button><button type="button" disabled>›</button><button type="button" disabled>↑</button><span>Address</span><input value="C:\\Documents and Settings\\Commander\\Start Menu\\Programs\\Games" readonly></div>
     <div class="games-folder-body"><aside><svg><use href="#i-games"/></svg><h1>Games</h1><p>Classic Windows downtime, requisitioned for the war effort.</p><hr><strong>Game tasks</strong><span>Double-clicking is optional. The bureaucracy is not.</span></aside><section class="games-folder-grid">${folderItems}</section></div>
-    <footer class="games-folder-status">10 objects · 5 local classics · 5 real P2P Internet games · absolutely no pinball</footer>
+    <footer class="games-folder-status">11 objects · 6 local classics · 5 real P2P Internet games · pinball requisition approved</footer>
   </article>`;
   document.querySelector("#windowLayer").insertAdjacentHTML("beforeend", `${folder}${GAME_SPECS.map(gameWindow).join("")}`);
 }
@@ -2079,6 +2082,7 @@ function installInternetGame(spec, factory) {
 }
 
 installLocalGame(GAME_SPECS.find((spec) => spec.id === "minesweeper"), createMinesweeper);
+installLocalGame(GAME_SPECS.find((spec) => spec.id === "pinball"), createWarPinball);
 installLocalGame(GAME_SPECS.find((spec) => spec.id === "solitaire"), createSolitaire);
 installLocalGame(GAME_SPECS.find((spec) => spec.id === "spider"), createSpider);
 installLocalGame(GAME_SPECS.find((spec) => spec.id === "freecell"), createFreeCell);

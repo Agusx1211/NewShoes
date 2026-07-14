@@ -38,6 +38,7 @@ const scripts = [
   "harness/launcher-device-transfer.mjs",
   "harness/launcher-entry.mjs",
   "harness/launcher-games.mjs",
+  "harness/launcher-pinball.mjs",
   "harness/launcher_games_browser_smoke.mjs",
   "harness/launcher-hardware-info.js",
   "harness/launcher-os-shutdown.mjs",

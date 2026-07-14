@@ -11,9 +11,10 @@ runtime BIG archive inventory.
 | `zeroh-command-desert.webp` | project-owned launcher artwork; ownership confirmed by the project owner on 2026-07-11 (generation details are not recorded) |
 | `zeroh-{bliss-at-war,autumn-offensive,azul-armada,red-moon-front}-*` | project-owned desktop wallpapers and swatches created for the launcher |
 | `games/card-back-war.webp` | original AI-generated project artwork created with OpenAI image generation on 2026-07-13; no reference image, third-party asset, or retail game material was used, and it is distributable with Project New Shoes |
+| `games/pinball-*-war*.png` | eight original AI-generated project sprites, including paired off/on lamp states, created one by one with OpenAI image generation on 2026-07-14; each used a flat `#FF00FF` background that was removed locally with a soft matte and despill, no third-party asset, Microsoft Pinball data, or retail Generals material was used, and the final alpha PNGs are distributable with Project New Shoes |
 
-The directory contains 17 binary UI files: six brand/icon variants, one runtime
-logo, `zeroh-command-desert.webp`, one game card back, and four full-size wallpaper/swatch pairs.
+The directory contains 25 binary UI files: six brand/icon variants, one runtime
+logo, `zeroh-command-desert.webp`, one game card back, eight pinball sprites, and four full-size wallpaper/swatch pairs.
 Twenty unused launcher-concept logo candidates were removed before publication.
 The corresponding commits and `archive/DONE.md` describe the retained files as
 project-owned UI art.

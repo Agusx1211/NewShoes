@@ -16,7 +16,7 @@ async function pageWithErrors(context, label, errors) {
   const page = await context.newPage();
   page.on("pageerror", (error) => errors.push(`${label}: ${error.message}`));
   await page.goto(new URL("harness/play.html", server.url).href, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => window.ZeroHGames?.specs?.length === 10);
+  await page.waitForFunction(() => window.ZeroHGames?.specs?.length === 11);
   return page;
 }
 
@@ -36,11 +36,11 @@ try {
 
   await page.evaluate(() => window.ZeroHDesktop.openApp("games"));
   await page.waitForSelector("#gamesWindow.is-open");
-  assert.equal(await page.locator(".games-folder-item").count(), 10);
+  assert.equal(await page.locator(".games-folder-item").count(), 11);
   assert.equal(await page.locator('.window[data-app="arcade"], [data-open="arcade"], #i-arcade').count(), 0);
-  assert.equal(await page.locator(".xp-game-window").count(), 10);
+  assert.equal(await page.locator(".xp-game-window").count(), 11);
   assert.deepEqual(await page.locator(".games-folder-item strong").allTextContents(), [
-    "Solitaire", "Spider Solitaire", "FreeCell", "Hearts", "Minesweeper",
+    "Solitaire", "Spider Solitaire", "FreeCell", "Hearts", "Minesweeper", "3D Pinball",
     "Internet Backgammon", "Internet Checkers", "Internet Hearts", "Internet Reversi", "Internet Spades",
   ]);
   await page.screenshot({ path: resolve(shotDir, "games-folder.png") });
@@ -65,6 +65,20 @@ try {
   const cardBackResponse = await page.request.get(new URL("harness/assets/games/card-back-war.webp", server.url).href);
   assert.equal(cardBackResponse.status(), 200);
   assert.match(cardBackResponse.headers()["content-type"] || "", /^image\/webp/);
+  for (const asset of [
+    "pinball-playfield-war.png",
+    "pinball-bumper-war-off.png",
+    "pinball-bumper-war.png",
+    "pinball-flipper-war.png",
+    "pinball-command-center-war-off.png",
+    "pinball-command-center-war.png",
+    "pinball-insert-war-off.png",
+    "pinball-insert-war-on.png",
+  ]) {
+    const response = await page.request.get(new URL(`harness/assets/games/${asset}`, server.url).href);
+    assert.equal(response.status(), 200, `${asset} must ship with the launcher`);
+    assert.match(response.headers()["content-type"] || "", /^image\/png/);
+  }
 
   await page.evaluate(() => window.ZeroHDesktop.openApp("solitaire"));
   const stockBefore = await page.evaluate(() => window.ZeroHGames.snapshot("solitaire").stock.length);
@@ -128,6 +142,49 @@ try {
   assert.equal(mineState.cells[0].mine, false, "the first inspected sector must be safe");
   assert.ok(mineState.cells.some((cell) => cell.revealed));
   await page.screenshot({ path: resolve(shotDir, "minesweeper-demining-detail.png") });
+
+  await page.evaluate(() => window.ZeroHDesktop.openApp("pinball"));
+  const pinballCanvas = page.locator("#pinballWindow [data-pinball-canvas]");
+  await pinballCanvas.focus();
+  const pinballReady = await page.evaluate(() => window.ZeroHGames.snapshot("pinball"));
+  assert.equal(pinballReady.phase, "ready");
+  assert.equal(pinballReady.fixedStep, 1 / 240);
+  assert.equal(pinballReady.ballsTotal, 3);
+  await page.keyboard.down("Space");
+  await page.waitForTimeout(720);
+  assert.ok(await page.evaluate(() => window.ZeroHGames.snapshot("pinball").plunger) > .45, "holding Space must charge the plunger");
+  await page.keyboard.up("Space");
+  await page.waitForTimeout(180);
+  const launchedBall = await page.evaluate(() => window.ZeroHGames.snapshot("pinball"));
+  assert.equal(launchedBall.phase, "playing");
+  assert.ok(launchedBall.ball.y < 814, "the charged plunger must launch the ball up-table");
+  const leftRestAngle = launchedBall.flippers[0].angle;
+  await page.keyboard.down("z");
+  await page.waitForTimeout(55);
+  assert.ok(await page.evaluate(() => window.ZeroHGames.snapshot("pinball").flippers[0].angle) < leftRestAngle - .2,
+    "Z must drive the left flipper through the fixed-step physics path");
+  await page.keyboard.up("z");
+  await page.waitForFunction(() => window.ZeroHGames.snapshot("pinball").score >= 6000, null, { timeout: 3000 });
+  const scoredPinball = await page.evaluate(() => window.ZeroHGames.snapshot("pinball"));
+  assert.ok(scoredPinball.mission.progress >= 1,
+    "the natural launch path must reach a scoring radar bumper");
+  assert.ok(scoredPinball.lights.bumpers.length >= 1,
+    "a radar strike must illuminate its paired on-state sprite");
+  const renderedColors = await pinballCanvas.evaluate((canvas) => {
+    const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    const colors = new Set();
+    for (let offset = 0; offset < data.length; offset += 1600) colors.add(`${data[offset]},${data[offset + 1]},${data[offset + 2]}`);
+    return colors.size;
+  });
+  assert.ok(renderedColors > 24, "the fake-3D playfield must render meaningful pixel variation");
+  await page.screenshot({ path: resolve(shotDir, "pinball-shock-and-awe.png") });
+  for (let nudge = 0; nudge < 3; ++nudge) {
+    await page.keyboard.press("ArrowUp");
+    await page.waitForTimeout(35);
+  }
+  assert.equal(await page.evaluate(() => window.ZeroHGames.snapshot("pinball").tilted), true, "repeated nudges must cause tilt lockout");
+  await page.locator("#pinballWindow [data-game-new]").click();
+  assert.equal(await page.evaluate(() => window.ZeroHGames.snapshot("pinball").phase), "ready");
 
   for (const [id, selector, count] of [
     ["backgammon", ".bg-point", 24],
@@ -216,7 +273,7 @@ try {
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({
     ok: true,
-    games: 10,
+    games: 11,
     internetGames: 5,
     signaling: networkState.discoveryStrategy,
     dataChannel: `${networkState.peers[0].channelLabel}/${networkState.peers[0].channelProtocol}`,
