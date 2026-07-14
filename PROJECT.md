@@ -47,6 +47,30 @@ The main realm owns the browser desktop, launcher, input forwarding, Web Audio
 nodes, media installation, settings, issue capture, and Trystero/WebRTC peer
 discovery and transport.
 
+### Remote agent control
+
+Remote play is an explicitly enabled data-layer path. The engine worker owns
+semantic observations and mutations; the browser main realm only forwards a
+versioned raw WebSocket protocol, and the optional Go process in
+`AgentBridge/` maps authenticated REST calls to connected game sessions. When
+the launcher has no agent configuration, it does not import the adapter or
+create a socket, reconnect timer, or per-frame work.
+
+The `cnc-agent/1` surface exposes the original `GameWindowManager` tree, real
+gadget action paths, fog/stealth-filtered battlefield state, camera-bounded
+visibility, compact tactical object records, and compact terrain grids. The
+engine owns the filtering and uses opaque observation IDs so transport layers
+cannot infer hidden object counts. Reusable template and command-set definitions
+are separated from per-object availability, weapon, cooldown, containment, and
+queue state so a control loop need not repeatedly ingest discovery metadata. It
+also routes selection, tactical orders, production, construction, upgrades,
+special powers, and camera movement through the original deterministic engine
+messages. The independent REST-only full-match acceptance reached an
+authoritative Easy-AI victory at frame 27,791 and is tracked under GitHub issue
+75. See
+[`AgentBridge/README.md`](AgentBridge/README.md) for the wire boundary and local
+usage.
+
 ### Rendering
 
 The browser exposes a D3D8-shaped device to WW3D. It maps buffers, textures,
