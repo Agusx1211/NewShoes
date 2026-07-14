@@ -166,6 +166,8 @@ under [`archive/`](archive/).
 - Develop on a branch from `dev` in an isolated
   `~/worktrees/<project>/<feature>` worktree, avoid collisions with other agents,
   and remove the worktree when the task is finished.
+- Deliver completed agent work through a signed pull request targeting `dev`;
+  a local commit or pushed branch alone is not a completed handoff.
 - Keep the archived port checklists frozen; they are historical evidence, not
   the current workflow.
 - Check [LICENSE.md](LICENSE.md) before redistributing modified builds.
