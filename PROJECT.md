@@ -163,9 +163,11 @@ under [`archive/`](archive/).
   behavior without explicit approval.
 - Verify rendering with browser state or pixels.
 - Track durable work and coordination in `Agusx1211/NewShoes` GitHub Issues.
-- Develop on a branch from `main` in an isolated
+- Develop on a branch from `dev` in an isolated
   `~/worktrees/<project>/<feature>` worktree, avoid collisions with other agents,
   and remove the worktree when the task is finished.
+- Deliver completed agent work through a signed pull request targeting `dev`;
+  a local commit or pushed branch alone is not a completed handoff.
 - Keep the archived port checklists frozen; they are historical evidence, not
   the current workflow.
 - Check [LICENSE.md](LICENSE.md) before redistributing modified builds.
