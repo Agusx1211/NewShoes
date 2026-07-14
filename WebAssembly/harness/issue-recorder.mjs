@@ -12,6 +12,9 @@ const SUMMARY_INTERVAL_FRAMES = 60;
 const STORAGE_DB = "cnc_issue_dumps";
 const STORAGE_VERSION = 1;
 const STORAGE_STORE = "dumps";
+const SESSION_MARKER_KEY = "cnc_issue_recorder_session.v1";
+const DRAFT_PERSIST_INTERVAL_MS = 15_000;
+const CRASH_RPC_TIMEOUT_MS = 2_500;
 
 const POINTER_MESSAGES = new Map([
   [0, { down: 0x0201, up: 0x0202, doubleClick: 0x0203 }],
@@ -27,6 +30,53 @@ function stableNowMs() {
   return typeof performance !== "undefined" && typeof performance.now === "function"
     ? performance.now()
     : Date.now();
+}
+
+function serializeError(error) {
+  if (error == null) {
+    return null;
+  }
+  if (error instanceof Error || typeof error === "object") {
+    return {
+      name: truncateString(error.name ?? "Error", 120),
+      message: truncateString(error.message ?? String(error), 2_000),
+      stack: truncateString(error.stack ?? "", 12_000),
+      cause: error.cause == null ? null : truncateString(String(error.cause), 2_000),
+    };
+  }
+  return {
+    name: typeof error,
+    message: truncateString(String(error), 2_000),
+    stack: "",
+    cause: null,
+  };
+}
+
+export function normalizeCrashFailure(failure = {}) {
+  const error = serializeError(failure.error);
+  return {
+    kind: truncateString(String(failure.kind ?? "runtime-failure"), 120),
+    stage: failure.stage == null ? null : truncateString(String(failure.stage), 120),
+    message: truncateString(String(failure.message ?? error?.message ?? "Unknown failure"), 2_000),
+    detail: redactLarge(failure.detail ?? null),
+    error,
+    at: nowIso(),
+    t: Math.round(stableNowMs()),
+  };
+}
+
+function promiseWithTimeout(promise, timeoutMs, label) {
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve({
+        ok: false,
+        timeout: true,
+        error: `${label} did not respond within ${timeoutMs}ms`,
+      }), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 function pushBounded(list, value, limit) {
@@ -403,6 +453,42 @@ async function putStoredDump(record) {
   });
 }
 
+async function getStoredDump(id) {
+  if (!id) {
+    return null;
+  }
+  const db = await openStore();
+  if (!db) {
+    return null;
+  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORAGE_STORE, "readonly");
+    const request = tx.objectStore(STORAGE_STORE).get(id);
+    request.onsuccess = () => resolve(request.result ?? null);
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB get failed"));
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => db.close();
+  });
+}
+
+function readSessionMarker() {
+  try {
+    const value = window.localStorage?.getItem(SESSION_MARKER_KEY);
+    return value ? JSON.parse(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionMarker(marker) {
+  try {
+    window.localStorage?.setItem(SESSION_MARKER_KEY, JSON.stringify(marker));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function queryAssetMetadata(url) {
   try {
     const head = await fetch(url, { method: "HEAD", cache: "no-store" });
@@ -625,6 +711,7 @@ class IssueRecorder {
     statusNode = null,
     getConfiguredDiagLevel = null,
     setConfiguredDiagLevel = null,
+    onFatal = null,
   } = {}) {
     this.canvas = canvas;
     this.controls = controls ?? {};
@@ -633,6 +720,7 @@ class IssueRecorder {
     this.statusNode = statusNode;
     this.getConfiguredDiagLevel = getConfiguredDiagLevel;
     this.setConfiguredDiagLevel = setConfiguredDiagLevel;
+    this.onFatal = onFatal;
     this.id = makeDumpId();
     this.startedAt = nowIso();
     this.recording = false;
@@ -643,6 +731,13 @@ class IssueRecorder {
     this.session = {};
     this.build = null;
     this.lastPersist = null;
+    this.persistPromise = null;
+    this.pendingPersistReason = null;
+    this.draftPersistTimer = null;
+    this.draftPersistScheduled = false;
+    this.recoveredCrash = null;
+    this.crash = null;
+    this.sessionClosed = false;
     this.sequence = 0;
     this.frameCounter = 0;
     this.lastFrameMarker = null;
@@ -670,6 +765,22 @@ class IssueRecorder {
   }
 
   async init() {
+    const previousMarker = readSessionMarker();
+    if (previousMarker?.id && previousMarker.id !== this.id
+        && (previousMarker.state === "active" || previousMarker.state === "crashed")) {
+      let record = null;
+      try {
+        record = await getStoredDump(previousMarker.id);
+      } catch {
+        // The marker still explains the unexpected exit if IndexedDB was unavailable.
+      }
+      this.recoveredCrash = {
+        marker: previousMarker,
+        record,
+        available: Boolean(record?.bundle),
+      };
+    }
+    this.updateSessionMarker("active");
     this.build = await collectBuildAssets();
     this.record("session.init", {
       browser: collectBrowserMetadata(this.canvas),
@@ -679,8 +790,62 @@ class IssueRecorder {
     this.bindControls();
     this.bindInputCapture();
     this.bindErrorCapture();
+    this.bindLifecycleCapture();
     await this.persistDraft("init");
     return this;
+  }
+
+  updateSessionMarker(state, extra = {}) {
+    const marker = {
+      schema: "cnc.issue-recorder-session.v1",
+      id: this.id,
+      state,
+      startedAt: this.startedAt,
+      updatedAt: nowIso(),
+      phase: this.session.phase ?? null,
+      ...extra,
+    };
+    writeSessionMarker(marker);
+    return marker;
+  }
+
+  bindLifecycleCapture() {
+    window.addEventListener("pagehide", () => {
+      if (!this.crash) {
+        this.markSessionClosed("pagehide");
+      }
+    });
+    this.draftPersistTimer = setInterval(() => {
+      if (!this.sessionClosed && !this.crash) {
+        this.scheduleDraftPersist("periodic");
+      }
+    }, DRAFT_PERSIST_INTERVAL_MS);
+  }
+
+  markSessionClosed(reason = "clean-close") {
+    this.sessionClosed = true;
+    if (this.draftPersistTimer) {
+      clearInterval(this.draftPersistTimer);
+      this.draftPersistTimer = null;
+    }
+    return this.updateSessionMarker("closed", { closeReason: reason });
+  }
+
+  scheduleDraftPersist(reason = "scheduled") {
+    if (this.draftPersistScheduled) {
+      this.pendingPersistReason = reason;
+      return;
+    }
+    this.draftPersistScheduled = true;
+    const run = () => {
+      this.draftPersistScheduled = false;
+      void this.persistDraft(this.pendingPersistReason ?? reason);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(run, { timeout: 5_000 });
+    } else {
+      setTimeout(run, 0);
+    }
   }
 
   setRpc(rpc) {
@@ -720,14 +885,60 @@ class IssueRecorder {
       ...patch,
       updatedAt: nowIso(),
     };
+    this.updateSessionMarker(this.crash ? "crashed" : "active");
     this.record("session.context", patch, { force: true });
-    void this.persistDraft("session-context");
+    this.scheduleDraftPersist("session-context");
   }
 
-  noteFailure(message, detail) {
-    this.record("session.failure", { message, detail: redactLarge(detail) }, { force: true });
+  noteFailure(message, detail, context = {}) {
+    return this.captureCrash({ message, detail, ...context });
+  }
+
+  captureCrash(failure = {}) {
+    const event = normalizeCrashFailure(failure);
+    const isPrimary = !this.crash;
+    if (isPrimary) {
+      const screenshotDataUrl = canvasToDataUrl(this.canvas);
+      this.crash = {
+        schema: "cnc.crash.v1",
+        id: `${this.id}-crash`,
+        capturedAt: event.at,
+        markerFrame: this.currentEngineFrame(),
+        primary: event,
+        related: [],
+        pageScreenshot: screenshotDataUrl
+          ? {
+              dataUrl: screenshotDataUrl,
+              width: this.canvas?.width ?? null,
+              height: this.canvas?.height ?? null,
+            }
+          : null,
+      };
+    } else {
+      pushBounded(this.crash.related, event, 20);
+    }
+    this.record("session.failure", {
+      crashId: this.crash.id,
+      ...event,
+    }, { force: true });
+    this.updateSessionMarker("crashed", {
+      crashKind: this.crash.primary.kind,
+      crashMessage: this.crash.primary.message,
+    });
+    if (this.draftPersistTimer) {
+      clearInterval(this.draftPersistTimer);
+      this.draftPersistTimer = null;
+    }
     this.setStatus("failure captured");
     void this.persistDraft("failure");
+    if (isPrimary) {
+      try {
+        this.onFatal?.(this.crash);
+      } catch {
+        // Reporting UI failure must not replace the original crash evidence.
+      }
+    }
+    return this.crash;
   }
 
   shouldUseSummaryFrame() {
@@ -905,18 +1116,36 @@ class IssueRecorder {
 
   bindErrorCapture() {
     window.addEventListener("error", (event) => {
-      this.record("window.error", {
+      const detail = {
         message: event.message,
         filename: event.filename,
         lineno: event.lineno,
         colno: event.colno,
         error: event.error?.stack ?? event.error?.message ?? null,
-      }, { force: true });
+      };
+      this.record("window.error", detail, { force: true });
+      if (event instanceof ErrorEvent || event.message || event.error) {
+        this.captureCrash({
+          kind: "window-error",
+          stage: this.session.phase,
+          message: event.message || "Unhandled browser error",
+          detail,
+          error: event.error,
+        });
+      }
     });
     window.addEventListener("unhandledrejection", (event) => {
-      this.record("window.unhandledrejection", {
+      const detail = {
         reason: event.reason?.stack ?? event.reason?.message ?? String(event.reason),
-      }, { force: true });
+      };
+      this.record("window.unhandledrejection", detail, { force: true });
+      this.captureCrash({
+        kind: "unhandled-rejection",
+        stage: this.session.phase,
+        message: event.reason?.message ?? "Unhandled promise rejection",
+        detail,
+        error: event.reason,
+      });
     });
   }
 
@@ -1346,6 +1575,14 @@ class IssueRecorder {
     }
   }
 
+  safeRpcWithTimeout(command, payload = {}, timeoutMs = CRASH_RPC_TIMEOUT_MS) {
+    return promiseWithTimeout(
+      this.safeRpc(command, payload),
+      timeoutMs,
+      command,
+    );
+  }
+
   timelineWindow(frame, radius = 600) {
     if (!Number.isFinite(Number(frame))) {
       return this.events.slice(-1_000);
@@ -1386,10 +1623,103 @@ class IssueRecorder {
     return dataUrlFromBlob(blob);
   }
 
-  async buildBundle(reason = "manual") {
+  async captureCrashDiagnostics() {
+    const commands = [
+      ["screenshot", {}],
+      ["state", {}],
+      ["queryDrawables", {}],
+      ["querySelection", {}],
+      ["d3d8TextureInventory", { sampleLimit: 8 }],
+      ["realEngineAnimReport", { maxEntries: 80 }],
+    ];
+    const results = await Promise.all(commands.map(async ([command, payload]) => [
+      command,
+      await this.safeRpcWithTimeout(command, payload),
+    ]));
+    let storage = null;
+    try {
+      if (typeof navigator.storage?.estimate === "function") {
+        storage = await promiseWithTimeout(
+          navigator.storage.estimate(),
+          CRASH_RPC_TIMEOUT_MS,
+          "storage estimate",
+        );
+      }
+    } catch (error) {
+      storage = { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    let wasmMemory = null;
+    try {
+      const module = window.CnCPort?.engineModule?.();
+      const buffer = module?.wasmMemory?.buffer ?? module?.HEAPU8?.buffer;
+      wasmMemory = buffer ? {
+        bytes: buffer.byteLength,
+        shared: typeof SharedArrayBuffer !== "undefined" && buffer instanceof SharedArrayBuffer,
+      } : null;
+    } catch (error) {
+      wasmMemory = { error: error instanceof Error ? error.message : String(error) };
+    }
+    const performanceMemory = typeof performance !== "undefined" && performance.memory ? {
+      jsHeapSizeLimit: performance.memory.jsHeapSizeLimit ?? null,
+      totalJSHeapSize: performance.memory.totalJSHeapSize ?? null,
+      usedJSHeapSize: performance.memory.usedJSHeapSize ?? null,
+    } : null;
+    return {
+      capturedAt: nowIso(),
+      timeoutMs: CRASH_RPC_TIMEOUT_MS,
+      rpc: Object.fromEntries(results),
+      mainRealmState: redactLarge(window.CnCPort?.state ?? null),
+      storage,
+      memory: {
+        wasm: wasmMemory,
+        javascript: performanceMemory,
+      },
+    };
+  }
+
+  crashIssue(crash, diagnostics, logs) {
+    if (!crash) {
+      return null;
+    }
+    const rawScreenshot = diagnostics?.rpc?.screenshot?.screenshot;
+    const screenshotDataUrl = typeof rawScreenshot === "string"
+      ? rawScreenshot
+      : rawScreenshot?.dataUrl ?? crash.pageScreenshot?.dataUrl ?? null;
+    return {
+      id: "issue-crash",
+      createdAt: crash.capturedAt,
+      title: `Automatic crash report: ${crash.primary.message}`,
+      comment: `Fatal ${crash.primary.kind} during ${crash.primary.stage ?? "an unknown stage"}.`,
+      markerFrame: crash.markerFrame,
+      screenshot: {
+        dataUrl: screenshotDataUrl,
+        width: rawScreenshot?.width ?? crash.pageScreenshot?.width ?? this.canvas?.width ?? null,
+        height: rawScreenshot?.height ?? crash.pageScreenshot?.height ?? this.canvas?.height ?? null,
+        centerPixel: rawScreenshot?.centerPixel ?? null,
+        topLeftPixel: rawScreenshot?.topLeftPixel ?? null,
+      },
+      annotation: {
+        strokes: [],
+        strokeCount: 0,
+        annotatedDataUrl: null,
+        annotatedMime: null,
+      },
+      shallowState: diagnostics?.rpc?.state ?? null,
+      deepSnapshot: diagnostics ?? null,
+      timelineWindow: this.events.slice(-2_000),
+      logsTail: logs,
+      automatic: true,
+    };
+  }
+
+  async buildBundle(reason = "manual", {
+    includeDumpDiagnostics = true,
+    includeMedia = true,
+    crashDiagnostics = null,
+  } = {}) {
     const generatedAt = nowIso();
     const logs = this.collectLogsTail();
-    const videoDataUrl = await this.videoDataUrl();
+    const videoDataUrl = includeMedia ? await this.videoDataUrl() : null;
     const build = this.build ?? await collectBuildAssets();
     const networkDiagnostics = typeof window.__cncNetworkDiagnosticsSnapshot === "function"
       ? window.__cncNetworkDiagnosticsSnapshot()
@@ -1398,24 +1728,28 @@ class IssueRecorder {
     // truth (recoil state + the flash subobject's actual Is_Hidden flag)
     // three times ~400ms apart, so a dump shows whether flashes TOGGLE.
     let animReports = null;
-    try {
-      const rpc = window.CnCPort?.rpc;
-      if (typeof rpc === "function") {
-        animReports = [];
-        for (let i = 0; i < 3; i += 1) {
-          const res = await Promise.race([
-            rpc("realEngineAnimReport", { maxEntries: 40 }),
-            new Promise((resolve) => setTimeout(() => resolve(null), 3_000)),
-          ]);
-          animReports.push({ t: Date.now(), report: res?.report ?? res ?? null });
-          if (i < 2) {
-            await new Promise((resolve) => setTimeout(resolve, 400));
+    if (includeDumpDiagnostics && !crashDiagnostics) {
+      try {
+        const rpc = window.CnCPort?.rpc;
+        if (typeof rpc === "function") {
+          animReports = [];
+          for (let i = 0; i < 3; i += 1) {
+            const res = await Promise.race([
+              rpc("realEngineAnimReport", { maxEntries: 40 }),
+              new Promise((resolve) => setTimeout(() => resolve(null), 3_000)),
+            ]);
+            animReports.push({ t: Date.now(), report: res?.report ?? res ?? null });
+            if (i < 2) {
+              await new Promise((resolve) => setTimeout(resolve, 400));
+            }
           }
         }
+      } catch (error) {
+        animReports = { error: error instanceof Error ? error.message : String(error) };
       }
-    } catch (error) {
-      animReports = { error: error instanceof Error ? error.message : String(error) };
     }
+    const automaticCrashIssue = this.crashIssue(this.crash, crashDiagnostics, logs);
+    const issues = automaticCrashIssue ? [...this.issues, automaticCrashIssue] : this.issues;
     const bundle = {
       schema: "cnc.issue-dump.v1",
       id: this.id,
@@ -1445,7 +1779,7 @@ class IssueRecorder {
         counts: {
           events: this.events.length,
           frameSamples: this.frameSamples.length,
-          issues: this.issues.length,
+          issues: issues.length,
           logs: logs.length,
           videoBytes: this.videoBytes,
           networkPackets: networkDiagnostics?.retained?.packets ?? 0,
@@ -1462,7 +1796,7 @@ class IssueRecorder {
         diagLevel: this.session.diagLevel,
         archiveSpecs: this.archiveSpecs,
         startFrame: this.frameSamples[0]?.frame?.framesCompleted ?? 0,
-        issueFrames: this.issues.map((issue) => ({
+        issueFrames: issues.map((issue) => ({
           id: issue.id,
           frame: issue.markerFrame,
           title: issue.title,
@@ -1473,7 +1807,11 @@ class IssueRecorder {
       frameSamples: this.frameSamples,
       animReports,
       animReportSamples: this.animReportSamples,
-      issues: this.issues,
+      crash: this.crash ? {
+        ...this.crash,
+        diagnostics: crashDiagnostics,
+      } : null,
+      issues,
       logs,
       networkDiagnostics,
       media: {
@@ -1490,30 +1828,141 @@ class IssueRecorder {
   }
 
   async persistDraft(reason = "draft") {
-    try {
-      const bundle = await this.buildBundle(reason);
-      const record = {
-        id: this.id,
-        updatedAt: nowIso(),
-        reason,
-        issueCount: this.issues.length,
-        eventCount: this.events.length,
-        bundle,
-      };
-      const result = await putStoredDump(record);
-      this.lastPersist = result.ok ? record.updatedAt : null;
-      if (result.ok) {
-        this.record("storage.persisted", {
-          reason,
-          issueCount: this.issues.length,
-        });
-      }
-    } catch (error) {
-      this.record("storage.error", {
-        reason,
-        error: error instanceof Error ? error.message : String(error),
-      }, { force: true });
+    this.pendingPersistReason = reason;
+    if (this.persistPromise) {
+      return this.persistPromise;
     }
+    const drain = async () => {
+      while (this.pendingPersistReason) {
+        const currentReason = this.pendingPersistReason;
+        this.pendingPersistReason = null;
+        try {
+          // Drafts are the renderer-crash safety net. Keep them deliberately
+          // cheap: no video encoding, animation RPCs, screenshots, or deep
+          // queries run until the user asks for the full report.
+          const bundle = await this.buildBundle(currentReason, {
+            includeDumpDiagnostics: false,
+            includeMedia: false,
+          });
+          const record = {
+            id: this.id,
+            updatedAt: nowIso(),
+            reason: currentReason,
+            issueCount: this.issues.length,
+            eventCount: this.events.length,
+            bundle,
+          };
+          const result = await putStoredDump(record);
+          this.lastPersist = result.ok ? record.updatedAt : null;
+          if (result.ok) {
+            this.record("storage.persisted", {
+              reason: currentReason,
+              issueCount: this.issues.length,
+            });
+          }
+        } catch (error) {
+          this.record("storage.error", {
+            reason: currentReason,
+            error: error instanceof Error ? error.message : String(error),
+          }, { force: true });
+        }
+      }
+    };
+    this.persistPromise = drain().finally(() => {
+      this.persistPromise = null;
+    });
+    return this.persistPromise;
+  }
+
+  async downloadCrashReport(reason = "crash-report") {
+    if (this.dumpBusy) return null;
+    this.dumpBusy = true;
+    this.setStatus("building crash report");
+    try {
+      const crashDiagnostics = await this.captureCrashDiagnostics();
+      const bundle = await this.buildBundle(reason, { crashDiagnostics });
+      const text = JSON.stringify(bundle, null, 2);
+      const filename = `${sanitizeDumpFileName(`${this.id}-${reason}`)}.cncdump.json`;
+      downloadBlob(new Blob([text], { type: "application/json" }), filename);
+      this.record("crash-report.download", {
+        reason,
+        filename,
+        bytes: text.length,
+      }, { force: true });
+      this.setStatus(`downloaded ${filename}`);
+      return { bundle, filename, bytes: text.length };
+    } finally {
+      this.dumpBusy = false;
+      this.refreshCaptureOverlay();
+    }
+  }
+
+  async downloadRecoveredCrashReport(reason = "recovered-crash-report") {
+    const stored = this.recoveredCrash?.record?.bundle;
+    if (!stored) {
+      return null;
+    }
+    const generatedAt = nowIso();
+    const marker = this.recoveredCrash.marker;
+    const recoveredCrash = stored.crash ?? {
+      schema: "cnc.crash.v1",
+      id: `${marker.id}-unexpected-termination`,
+      capturedAt: marker.updatedAt ?? marker.startedAt ?? null,
+      markerFrame: null,
+      primary: {
+        kind: "unexpected-termination",
+        stage: marker.phase ?? null,
+        message: "The previous browser runtime ended without a clean page shutdown.",
+        detail: { recoveredFromPersistedDraft: true },
+        error: null,
+        at: marker.updatedAt ?? marker.startedAt ?? null,
+        t: null,
+      },
+      related: [],
+      pageScreenshot: null,
+      diagnostics: null,
+    };
+    const storedIssues = Array.isArray(stored.issues) ? stored.issues : [];
+    const issues = storedIssues.some((issue) => issue.id === "issue-crash")
+      ? storedIssues
+      : [...storedIssues, {
+          id: "issue-crash",
+          createdAt: recoveredCrash.capturedAt,
+          title: "Automatic crash report: unexpected browser termination",
+          comment: `The previous runtime ended during ${recoveredCrash.primary.stage ?? "an unknown stage"}.`,
+          markerFrame: null,
+          screenshot: { dataUrl: null, width: null, height: null },
+          annotation: { strokes: [], strokeCount: 0, annotatedDataUrl: null, annotatedMime: null },
+          shallowState: null,
+          deepSnapshot: null,
+          timelineWindow: Array.isArray(stored.timeline) ? stored.timeline.slice(-2_000) : [],
+          logsTail: Array.isArray(stored.logs) ? stored.logs : [],
+          automatic: true,
+          recovered: true,
+        }];
+    const bundle = {
+      ...stored,
+      reason,
+      generatedAt,
+      crash: recoveredCrash,
+      issues,
+      manifest: {
+        ...stored.manifest,
+        counts: {
+          ...stored.manifest?.counts,
+          issues: issues.length,
+        },
+      },
+      recovery: {
+        recoveredAt: generatedAt,
+        marker,
+        draftUpdatedAt: this.recoveredCrash.record.updatedAt ?? null,
+      },
+    };
+    const text = JSON.stringify(bundle, null, 2);
+    const filename = `${sanitizeDumpFileName(`${marker.id}-${reason}`)}.cncdump.json`;
+    downloadBlob(new Blob([text], { type: "application/json" }), filename);
+    return { bundle, filename, bytes: text.length };
   }
 
   async downloadDump(reason = "manual") {

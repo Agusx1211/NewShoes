@@ -113,6 +113,56 @@ try {
   await page.waitForFunction(() => window.CnCIssueRecorder?.recording === false);
   await page.locator("#captureOverlayDismiss").click();
   await page.locator("#captureOverlay").waitFor({ state: "hidden" });
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent("cncport:runtimefatal", {
+      detail: {
+        kind: "wasm-abort",
+        message: "Synthetic UI-smoke Wasm abort",
+        abortReason: "unreachable",
+      },
+    }));
+  });
+  await page.locator("#crashModal").waitFor({ state: "visible" });
+  assert.match(await page.locator("#crashDialogTitle").textContent(), /encountered a problem/i);
+  assert.match(await page.locator("#crashTechnicalDetail").textContent(), /wasm-abort/);
+  assert.match(await page.locator("#crashCreateIssue").getAttribute("href"), /NewShoes\/issues\/new$/);
+  await page.screenshot({ path: resolve(screenshotRoot, "crash-diagnostics-dialog-ui-smoke.png") });
+
+  const crashDownloadPromise = page.waitForEvent("download");
+  await page.locator("#crashDownload").click();
+  const crashDownload = await crashDownloadPromise;
+  assert.match(crashDownload.suggestedFilename(), /crash-report\.cncdump\.json$/);
+  const crashDownloadPath = await crashDownload.path();
+  assert.ok(crashDownloadPath, "crash dialog did not produce a downloadable diagnostics report");
+  const crashDump = JSON.parse(await readFile(crashDownloadPath, "utf8"));
+  assert.equal(crashDump.schema, "cnc.issue-dump.v1");
+  assert.equal(crashDump.crash.schema, "cnc.crash.v1");
+  assert.equal(crashDump.crash.primary.kind, "wasm-abort");
+  assert.match(crashDump.crash.primary.message, /Synthetic UI-smoke/);
+  assert.ok(crashDump.crash.diagnostics.rpc.state, "full crash diagnostics omitted runtime state");
+  assert.ok(crashDump.issues.some((entry) => entry.id === "issue-crash" && entry.automatic === true));
+  assert.ok(crashDump.timeline.some((entry) => entry.type === "session.failure"));
+  assert.ok(crashDump.manifest.build);
+  assert.ok(crashDump.manifest.browser.userAgent);
+
+  await page.evaluate(() => window.CnCIssueRecorder.persistDraft("recovery-smoke"));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean(window.CnCIssueRecorder?.recoveredCrash));
+  await page.locator("#crashModal").waitFor({ state: "visible" });
+  assert.match(await page.locator("#crashDialogTitle").textContent(), /previous Zero Hour session/i);
+  assert.equal(await page.locator("#crashDownload").isEnabled(), true);
+
+  const recoveredDownloadPromise = page.waitForEvent("download");
+  await page.locator("#crashDownload").click();
+  const recoveredDownload = await recoveredDownloadPromise;
+  assert.match(recoveredDownload.suggestedFilename(), /recovered-crash-report\.cncdump\.json$/);
+  const recoveredPath = await recoveredDownload.path();
+  assert.ok(recoveredPath, "recovered crash draft was not downloadable after reload");
+  const recoveredDump = JSON.parse(await readFile(recoveredPath, "utf8"));
+  assert.equal(recoveredDump.recovery.marker.state, "crashed");
+  assert.equal(recoveredDump.crash.primary.kind, "wasm-abort");
+  assert.ok(recoveredDump.issues.some((entry) => entry.id === "issue-crash"));
   console.log("issue recorder UI smoke passed");
 } finally {
   await browser.close();

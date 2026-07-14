@@ -1124,6 +1124,10 @@ function createThreadedEngineController() {
         return;
       case "tickError":
         threadedLog("engine tick error", { error: msg.error });
+        dispatchRuntimeFatal("engine-thread-tick", {
+          message: msg.error ?? "Engine thread tick failed",
+          workerMessage: msg,
+        });
         return;
       case "moduleCommandError":
         threadedLog("realm command error", { sourceCmd: msg.sourceCmd, error: msg.error });
@@ -1183,6 +1187,21 @@ function createThreadedEngineController() {
       if (data && typeof data === "object" && data.__cncRealm) {
         dispatchRealmMessage(data.__cncRealm);
       }
+    });
+    engineWorker.addEventListener("error", (event) => {
+      const detail = {
+        message: event?.message ?? "Engine worker crashed",
+        filename: event?.filename ?? null,
+        lineno: event?.lineno ?? null,
+        colno: event?.colno ?? null,
+      };
+      threadedLog("engine worker error", detail);
+      dispatchRuntimeFatal("engine-worker", detail);
+    });
+    engineWorker.addEventListener("messageerror", () => {
+      const detail = { message: "Engine worker message could not be decoded" };
+      threadedLog("engine worker message error", detail);
+      dispatchRuntimeFatal("engine-worker-message", detail);
     });
 
     const pong = waitForRealmMessage((m) => m.cmd === "pong", 10000, "pong");
@@ -5057,6 +5076,20 @@ function recordLog(message, data = null) {
   return entry;
 }
 
+function dispatchRuntimeFatal(kind, detail = {}) {
+  try {
+    window.dispatchEvent(new CustomEvent("cncport:runtimefatal", {
+      detail: {
+        kind,
+        message: detail?.message ?? `${kind} failure`,
+        ...detail,
+      },
+    }));
+  } catch (_error) {
+    // The log/error path must remain usable even on pages without DOM events.
+  }
+}
+
 async function boot(payload = {}) {
   const wasmModule = await wasmModulePromise;
   if (wasmModule) {
@@ -5364,6 +5397,11 @@ async function loadWasmModule() {
         : path,
       print: (text) => recordLog("wasm stdout", { text: String(text) }),
       printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
+      onAbort: (reason) => {
+        const detail = { message: String(reason ?? "WebAssembly runtime aborted") };
+        recordLog("wasm abort", detail);
+        dispatchRuntimeFatal("wasm-abort", detail);
+      },
       // The cncPortD3D8* hooks (see d3d8_executor.mjs).
       ...d3d8Hooks,
       cncPortMssSampleStart,

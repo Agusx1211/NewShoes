@@ -58,6 +58,17 @@ const networkIceUsernameNode = document.querySelector("#networkIceUsername");
 const networkIceCredentialNode = document.querySelector("#networkIceCredential");
 const networkStatusNode = document.querySelector("#networkStatus");
 const networkDiagnosticsToggleNode = document.querySelector("#networkDiagnosticsToggle");
+const crashModalNode = document.querySelector("#crashModal");
+const crashTitleNode = document.querySelector("#crashDialogTitle");
+const crashMessageNode = document.querySelector("#crashDialogMessage");
+const crashTechnicalDetailNode = document.querySelector("#crashTechnicalDetail");
+const crashDownloadNode = document.querySelector("#crashDownload");
+const crashIssueNode = document.querySelector("#crashCreateIssue");
+const crashReloadNodes = [
+  document.querySelector("#crashClose"),
+  document.querySelector("#crashReload"),
+].filter(Boolean);
+let crashDialogSource = null;
 const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
 let networkStorage = null;
 try {
@@ -314,6 +325,7 @@ const issueRecorder = createIssueRecorder({
   statusNode: document.querySelector("#dumpStatus"),
   getConfiguredDiagLevel: () => configuredDiagLevel,
   setConfiguredDiagLevel,
+  onFatal: (crash) => showCrashDialog(crash),
   controls: {
     recordToggle: document.querySelector("#recordToggle"),
     issueButton: document.querySelector("#issueButton"),
@@ -343,6 +355,99 @@ const issueRecorder = createIssueRecorder({
 });
 const recorderReady = issueRecorder.init();
 window.CnCIssueRecorder = issueRecorder;
+
+function crashTechnicalText(crash) {
+  const primary = crash?.primary ?? {};
+  const lines = [
+    `Failure: ${primary.kind ?? "unknown"}`,
+    `Stage: ${primary.stage ?? issueRecorder.session?.phase ?? "unknown"}`,
+    `Time: ${primary.at ?? crash?.capturedAt ?? new Date().toISOString()}`,
+  ];
+  if (primary.error?.name) lines.push(`Error: ${primary.error.name}`);
+  if (primary.message) lines.push(`Message: ${primary.message}`);
+  return lines.join("\n");
+}
+
+function showCrashDialog(crash, { recovered = false } = {}) {
+  if (!crashModalNode) return;
+  crashDialogSource = recovered ? "recovered" : "current";
+  gameRunning = false;
+  renderPerformanceOverlay();
+  crashTitleNode.textContent = recovered
+    ? "The previous Zero Hour session ended unexpectedly"
+    : "Zero Hour has encountered a problem";
+  crashMessageNode.textContent = recovered
+    ? "Project New Shoes recovered the last diagnostics draft from before the browser runtime stopped."
+    : "The game runtime stopped unexpectedly. A diagnostics report can tell us what happened.";
+  crashTechnicalDetailNode.textContent = crashTechnicalText(crash);
+  if (crashDownloadNode) {
+    const available = !recovered || issueRecorder.recoveredCrash?.available === true;
+    crashDownloadNode.disabled = !available;
+    crashDownloadNode.textContent = available
+      ? "Download full diagnostics report"
+      : "No recovered report is available";
+  }
+  crashModalNode.hidden = false;
+  setTimeout(() => crashDownloadNode?.focus(), 0);
+}
+
+for (const button of crashReloadNodes) {
+  button.addEventListener("click", () => window.location.reload());
+}
+
+crashDownloadNode?.addEventListener("click", async () => {
+  if (crashDownloadNode.disabled) return;
+  const original = crashDownloadNode.textContent;
+  crashDownloadNode.disabled = true;
+  crashDownloadNode.textContent = "Building report…";
+  try {
+    const result = crashDialogSource === "recovered"
+      ? await issueRecorder.downloadRecoveredCrashReport()
+      : await issueRecorder.downloadCrashReport();
+    crashDownloadNode.textContent = result ? "Report downloaded" : "Report unavailable";
+  } catch (error) {
+    crashDownloadNode.textContent = "Download failed — try again";
+    crashDownloadNode.title = error?.message ?? String(error);
+  } finally {
+    if (crashDownloadNode.textContent !== "Report downloaded") {
+      setTimeout(() => {
+        crashDownloadNode.disabled = false;
+        crashDownloadNode.textContent = original;
+      }, 2_000);
+    }
+  }
+});
+
+crashIssueNode?.addEventListener("click", () => {
+  issueRecorder.record("crash-report.issue-link", {
+    crashId: issueRecorder.crash?.id ?? issueRecorder.recoveredCrash?.marker?.id ?? null,
+  }, { force: true });
+});
+
+void recorderReady.then(() => {
+  const recovered = issueRecorder.recoveredCrash;
+  if (!recovered) return;
+  const marker = recovered.marker;
+  showCrashDialog({
+    capturedAt: marker.updatedAt ?? marker.startedAt,
+    primary: {
+      kind: "unexpected-termination",
+      stage: marker.phase,
+      message: "The previous browser runtime ended without a clean shutdown.",
+      at: marker.updatedAt ?? marker.startedAt,
+    },
+  }, { recovered: true });
+});
+
+window.addEventListener("cncport:runtimefatal", (event) => {
+  const detail = event.detail ?? {};
+  issueRecorder.captureCrash({
+    kind: detail.kind ?? "runtime-fatal",
+    stage: issueRecorder.session?.phase,
+    message: detail.message ?? "The game runtime stopped unexpectedly",
+    detail,
+  });
+});
 
 function report(message) {
   progressNode.textContent = message;
@@ -562,9 +667,13 @@ if (threadedUnavailable) {
   }
 }
 
-function fail(message, detail) {
+function fail(message, detail, {
+  kind = runtimeStarted ? "runtime-failure" : "launch-failure",
+  stage = issueRecorder.session?.phase ?? null,
+  error = null,
+} = {}) {
   console.error("[play]", message, detail ?? "");
-  issueRecorder.noteFailure(message, detail);
+  issueRecorder.noteFailure(message, detail, { kind, stage, error });
   let detailText = "";
   try {
     detailText = typeof detail === "string" ? detail
@@ -761,8 +870,16 @@ async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
   }
   console.log("[play] threaded frame loop started", start.pacing ?? start);
   let previous = null;
+  let contextLossReported = false;
   window.addEventListener("cncport:threadedstatus", (event) => {
     const status = event.detail;
+    if (status?.contextLost === true && !contextLossReported) {
+      contextLossReported = true;
+      fail("graphics context was lost", status, {
+        kind: "webgl-context-lost",
+        stage: issueRecorder.session?.phase ?? "running",
+      });
+    }
     const loop = status?.loop;
     if (!loop) {
       return;
@@ -786,7 +903,10 @@ async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
     previous = { now: status.now, clientFrames: loop.clientFrames, logicFrames: loop.logicFrames };
   });
   window.addEventListener("cncport:threadedlooperror", (event) => {
-    fail("engine thread frame loop failed", event.detail?.error ?? event.detail);
+    fail("engine thread frame loop failed", event.detail?.error ?? event.detail, {
+      kind: "engine-loop",
+      stage: issueRecorder.session?.phase ?? "running",
+    });
   });
 }
 
@@ -1060,7 +1180,11 @@ async function start() {
       stage: analyticsStage,
       duration: analytics?.bucketDuration(Date.now() - Number(window.__newShoesLaunchStartedAt || Date.now()), "launch") || "unknown",
     });
-    fail(error?.message ?? String(error), error?.launchDetail ?? error);
+    fail(error?.message ?? String(error), error?.launchDetail ?? error, {
+      kind: "launch-failure",
+      stage: analyticsStage,
+      error,
+    });
     throw error;
   }
 }
