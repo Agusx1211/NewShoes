@@ -6,7 +6,8 @@ import {
   createBinkVideoRuntime,
   loadBinkVideoManifest,
 } from "./bink_runtime.mjs";
-import { createBinkTranscoder } from "./bink_transcoder.mjs";
+import { createBinkDecoderSourceRegistry } from "./bink_decoder.mjs";
+import { createBinkDirectVideoRuntime } from "./bink_direct_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
@@ -950,7 +951,7 @@ function createThreadedEngineController() {
   let lastLoopError = null;
   let mssHandlers = null;
   let binkRuntime = null;
-  let binkTranscoder = null;
+  let binkSources = null;
 
   function threadedLog(message, data) {
     recordLog(`threaded ${message}`, data);
@@ -1005,14 +1006,20 @@ function createThreadedEngineController() {
 
   function binkVideoRuntime() {
     if (!binkRuntime) {
-      binkRuntime = createBinkVideoRuntime({
+      const common = {
         log: (message, data) => threadedLog(message, data),
-        resolveMedia: (payload, options) => binkTranscodeRuntime().mediaFor(payload, options),
         onPreparation: (detail) => publishBinkPreparation(detail),
         sendFrame: ({ handle, frameNum, width, height, bytes }) => {
           sendPortCommand({ cmd: "binkFrame", handle, frameNum, width, height, bytes }, [bytes.buffer]);
         },
-      });
+      };
+      binkRuntime = binkVideoPolicy() === "direct"
+        ? createBinkDirectVideoRuntime({
+          ...common,
+          resolveSource: (payload, options) => binkSourceRegistry().sourceFor(payload, options),
+          audioContext: () => ensureBrowserAudioRuntimeContext("bink-direct-playback"),
+        })
+        : createBinkVideoRuntime(common);
     }
     return binkRuntime;
   }
@@ -1023,22 +1030,21 @@ function createThreadedEngineController() {
     } catch { /* DOM event support is optional in focused harnesses */ }
   }
 
-  function binkTranscodeRuntime() {
-    if (!binkTranscoder) {
-      binkTranscoder = createBinkTranscoder({
+  function binkSourceRegistry() {
+    if (!binkSources) {
+      binkSources = createBinkDecoderSourceRegistry({
         log: (message, data) => threadedLog(message, data),
-        onProgress: (detail) => publishBinkPreparation(detail),
       });
     }
-    return binkTranscoder;
+    return binkSources;
   }
 
   function registerBinkSources(sources) {
-    binkTranscodeRuntime().registerSources(sources);
+    binkSourceRegistry().registerSources(sources);
   }
 
   function cancelBinkPreparation() {
-    return binkTranscoder?.cancelActive() === true;
+    return binkRuntime?.cancelActive?.() === true;
   }
 
   function handleBinkMessage(msg) {
@@ -1517,8 +1523,7 @@ function createThreadedEngineController() {
     cncPortMssCacheDropNotifier = null;
     binkRuntime?.shutdown();
     binkRuntime = null;
-    binkTranscoder?.shutdown();
-    binkTranscoder = null;
+    binkSources = null;
     inputOutbox.length = 0;
     for (const [, entry] of pending) {
       if (entry.timer) clearTimeout(entry.timer);
@@ -10745,7 +10750,7 @@ async function registerOpfsInterceptPrefix(prefix) {
 
 async function binkRuntimeFiles(preparedVideos = []) {
   const policy = binkVideoPolicy();
-  const manifest = policy === "transcode"
+  const manifest = policy === "direct"
     ? buildPreparedBinkManifest(preparedVideos)
     : await loadBinkVideoManifest({ policy });
   const files = manifest.payloads.map((payload) => {
@@ -10756,7 +10761,7 @@ async function binkRuntimeFiles(preparedVideos = []) {
     return {
       name: sourceFile,
       sourceFile,
-      url: policy === "transcode" ? null
+      url: policy === "direct" ? null
         : new URL(`../artifacts/real-assets/${encodeURIComponent(sourceFile)}`, import.meta.url).href,
       // The original BinkVideoPlayer always appends the lowercase VIDEO_EXT
       // ("bik"). Win32 was case-insensitive even when the cabinet entry was
@@ -10773,8 +10778,8 @@ async function binkRuntimeFiles(preparedVideos = []) {
   }
   files.push({
     name: "bink-browser-video-manifest.json",
-    url: policy === "transcode" ? null : BINK_VIDEO_MANIFEST_URL,
-    content: policy === "transcode" ? `${JSON.stringify(manifest, null, 2)}\n` : null,
+    url: policy === "direct" ? null : BINK_VIDEO_MANIFEST_URL,
+    content: policy === "direct" ? `${JSON.stringify(manifest, null, 2)}\n` : null,
     enginePath: "artifacts/browser-video/bink/bink-browser-video-manifest.json",
   });
   return { files, manifest, policy };
@@ -10880,7 +10885,7 @@ async function stageBinkRuntimeFiles(
     payloadCount: runtime.manifest.payloads.length,
     files,
   };
-  if (runtime.policy === "transcode" && harnessState.binkVideoAssets.ready) {
+  if (runtime.policy === "direct" && harnessState.binkVideoAssets.ready) {
     threadedEngine?.registerBinkSources(preparedVideos);
   }
   recordLog("Bink runtime files staged", {

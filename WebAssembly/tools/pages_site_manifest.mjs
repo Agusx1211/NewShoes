@@ -22,9 +22,10 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "assets/zeroh-command-desert.webp",
   "assets/zeroh-red-moon-front-1440p.webp",
   "assets/zeroh-red-moon-front-swatch.webp",
+  "bink_decode_worker.mjs",
+  "bink_decoder.mjs",
+  "bink_direct_runtime.mjs",
   "bink_runtime.mjs",
-  "bink_transcode_worker.mjs",
-  "bink_transcoder.mjs",
   "bridge.js",
   "camera-zoom-config.mjs",
   "d3d8_executor.mjs",
@@ -75,13 +76,9 @@ export const PAGES_RUNTIME_FILES = Object.freeze([
 ]);
 
 export const PAGES_VIDEO_RUNTIME_FILES = Object.freeze([
-  "video-runtime/ffmpeg-core.js",
-  "video-runtime/ffmpeg-core-manifest.json",
-  "video-runtime/ffmpeg-core-SOURCE.txt",
-  "video-runtime/ffmpeg-core.wasm.part0",
-  "video-runtime/ffmpeg-core.wasm.part1",
-  "video-runtime/ffmpeg-core.wasm.part2",
-  "video-runtime/ffmpeg-core.wasm.part3",
+  "video-runtime/bink-decoder.wasm",
+  "video-runtime/bink-decoder-manifest.json",
+  "video-runtime/bink-decoder-SOURCE.txt",
 ]);
 
 export const PAGES_ROOT_LAUNCHER_FILES = Object.freeze([

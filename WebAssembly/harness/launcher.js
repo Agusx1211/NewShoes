@@ -264,12 +264,12 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
       if (description) description.textContent = "Checking video playback support…";
       if (tooltip) tooltip.textContent = "Checking whether this build has the browser-compatible video runtime.";
     } else if (available) {
-      if (description) description.textContent = state.videoSupport.mode === "transcode"
-        ? "Prepare and play original movies locally when first viewed."
+      if (description) description.textContent = state.videoSupport.mode === "direct"
+        ? "Play original movies directly on this device."
         : "Install and play the EA intro and in-game cinematics.";
       if (tooltip) {
-        tooltip.textContent = state.videoSupport.mode === "transcode"
-          ? "The original Bink files stay on this device. Each movie is converted the first time the game requests it, then its browser-compatible video and audio are cached for later playback. Nothing is uploaded."
+        tooltip.textContent = state.videoSupport.mode === "direct"
+          ? "The original Bink files stay on this device and are decoded as they play. Nothing is converted, cached, or uploaded; the tiny decoder downloads only when a movie is opened."
           : "The English retail movie set uses about 0.9 GB extra: roughly 0.59 GB of original Bink files plus 0.29 GB of browser-compatible copies. Preparation also takes longer. Leave this off for the smallest, fastest installation; you can reinstall later to add them.";
       }
     } else {
@@ -293,9 +293,9 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
   function updateInstallSizeEstimate() {
     const scan = state.source?.scan;
     if (!scan) return;
-    // Hosted builds install the original Bink sources first. Browser media is
-    // prepared and cached lazily when a movie is actually requested.
-    const sidecarsIncludedAtInstall = state.videoSupport.mode !== "transcode";
+    // Hosted builds decode the original Bink sources directly, with no
+    // browser-media copies added to the installed library.
+    const sidecarsIncludedAtInstall = state.videoSupport.mode !== "direct";
     const videoMultiplier = sidecarsIncludedAtInstall ? 1.5 : 1;
     const videoInstallBytes = Math.ceil(Number(scan.videoBytes ?? 0) * videoMultiplier);
     const bytes = scan.totalBytes + (state.includeVideos ? videoInstallBytes : 0);

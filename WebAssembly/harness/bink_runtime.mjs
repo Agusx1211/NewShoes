@@ -1,12 +1,12 @@
-import { browserBinkTranscodeSupport } from "./bink_transcoder.mjs";
+import { browserBinkDecoderSupport } from "./bink_decoder.mjs";
 
 export const BINK_VIDEO_MANIFEST_URL = new URL(
   "../artifacts/browser-video/bink/bink-browser-video-manifest.json",
   import.meta.url,
 ).href;
 
-export const BINK_TRANSCODE_RUNTIME_MANIFEST_URL = new URL(
-  "../video-runtime/ffmpeg-core-manifest.json",
+export const BINK_DECODER_RUNTIME_MANIFEST_URL = new URL(
+  "../video-runtime/bink-decoder-manifest.json",
   import.meta.url,
 ).href;
 
@@ -24,8 +24,9 @@ function validateBinkVideoManifest(manifest) {
   for (const payload of manifest.payloads) {
     const sourceFile = String(payload?.sourceFile ?? "");
     const outputFile = String(payload?.outputFile ?? "");
+    const direct = payload?.outputVideoCodec === "bink-v1-wasm";
     if (!/^[A-Za-z0-9_.-]+\.bik$/i.test(sourceFile)
-        || !/^[A-Za-z0-9_.-]+\.webm$/i.test(outputFile)
+        || !(direct ? outputFile === sourceFile : /^[A-Za-z0-9_.-]+\.webm$/i.test(outputFile))
         || !(Number(payload?.frames) > 0)
         || !(Number(payload?.width) > 0)
         || !(Number(payload?.height) > 0)
@@ -44,7 +45,7 @@ export async function loadBinkVideoManifest({
   if (policy === "unavailable") {
     throw new Error(HOSTED_VIDEO_UNAVAILABLE_REASON);
   }
-  if (policy === "transcode") {
+  if (policy === "direct") {
     throw new Error("The hosted Bink manifest is generated from the selected user-owned movies");
   }
   if (policy !== "auto") {
@@ -74,36 +75,33 @@ export async function loadBinkVideoManifest({
 
 export async function probeBinkVideoSupport(options = {}) {
   const policy = options.policy ?? binkVideoPolicy();
-  if (policy === "transcode") {
-    const support = browserBinkTranscodeSupport(options.scope ?? globalThis);
-    if (!support.available) return { ...support, payloadCount: 0, mode: "transcode" };
+  if (policy === "direct") {
+    const support = browserBinkDecoderSupport(options.scope ?? globalThis);
+    if (!support.available) return { ...support, payloadCount: 0, mode: "direct" };
     try {
       const fetchImpl = options.fetchImpl ?? globalThis.fetch?.bind(globalThis);
       if (typeof fetchImpl !== "function") throw new Error("fetch is unavailable");
       const response = await fetchImpl(
-        options.runtimeUrl ?? BINK_TRANSCODE_RUNTIME_MANIFEST_URL,
+        options.runtimeUrl ?? BINK_DECODER_RUNTIME_MANIFEST_URL,
         { cache: "no-store" },
       );
       if (!response?.ok) throw new Error(`decoder manifest failed (${response?.status ?? "unknown"})`);
       const runtime = JSON.parse(await response.text());
-      if (runtime?.schema !== "cnc-zh-browser-video-runtime/v1"
-          || runtime?.coreVersion !== "0.12.10"
-          || runtime?.coreScript !== "ffmpeg-core.js"
-          || !Array.isArray(runtime?.wasmParts)
-          || runtime.wasmParts.length < 2
-          || runtime.wasmParts.some((part, index) =>
-            part?.name !== `ffmpeg-core.wasm.part${index}`
-            || !(Number(part?.bytes) > 0)
-            || !/^[a-f0-9]{64}$/.test(String(part?.sha256)))) {
+      if (runtime?.schema !== "cnc-zh-bink-decoder-runtime/v1"
+          || runtime?.abiVersion !== 1
+          || runtime?.wasmFile !== "bink-decoder.wasm"
+          || !(Number(runtime?.wasmBytes) > 0)
+          || Number(runtime.wasmBytes) > 128 * 1024
+          || !/^[a-f0-9]{64}$/.test(String(runtime?.wasmSha256))) {
         throw new Error("decoder manifest is invalid");
       }
-      return { available: true, payloadCount: 0, reason: null, mode: "transcode" };
+      return { available: true, payloadCount: 0, reason: null, mode: "direct" };
     } catch (error) {
       return {
         available: false,
         payloadCount: 0,
-        reason: `On-device video preparation is unavailable: ${error?.message ?? String(error)}`,
-        mode: "transcode",
+        reason: `On-device Bink decoding is unavailable: ${error?.message ?? String(error)}`,
+        mode: "direct",
       };
     }
   }
@@ -155,18 +153,18 @@ export function buildPreparedBinkManifest(videos = []) {
       fpsNum,
       fpsDen,
       sourceAudioStreams: Number(video.audioTracks ?? 0),
-      outputFile: sourceFile.replace(/\.bik$/i, ".webm"),
+      outputFile: sourceFile,
       outputFrameCount: frames,
       outputDurationSeconds: duration,
-      outputVideoCodec: "vp8",
+      outputVideoCodec: "bink-v1-wasm",
       outputAudioCodecs: Number(video.audioTracks ?? 0) > 0 ? ["pcm_s16le"] : [],
-      preparation: "on-device",
+      preparation: "streaming-direct",
     };
   });
   return validateBinkVideoManifest({
     ok: payloads.length > 0,
     schema: "cnc-zh-bink-browser-video-manifest/v1",
-    generatedBy: "browser-on-device",
+    generatedBy: "browser-direct-bink-decoder",
     payloads,
   });
 }
