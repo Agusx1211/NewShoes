@@ -20,6 +20,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Import practical BIG, folder, ZIP, 7z, RAR, NSIS, nested, and Clickteam mod distributions without executing native payloads ([PR #73](https://github.com/Agusx1211/NewShoes/pull/73)).
 - Isolate saves, replays, device transfers, and multiplayer by exact mod composition and transfer installed mod libraries ([PR #73](https://github.com/Agusx1211/NewShoes/pull/73)).
 - Base feature work on `dev` and require completed agent changes to be handed off through signed pull requests ([PR #72](https://github.com/Agusx1211/NewShoes/pull/72)).
+- Finalize version `0.2.0` and its complete release inventory ([PR #77](https://github.com/Agusx1211/NewShoes/pull/77)).
 
 ## [0.1.0] - 2026-07-13
 
