@@ -4,7 +4,11 @@ export const PAGES_TEMPLATE_FILES = Object.freeze([
   "coi-serviceworker.js",
   "index.html",
   "legal.html",
+]);
+
+export const PAGES_GENERATED_PROJECT_FILES = Object.freeze([
   "llms.txt",
+  "project-info.json",
   "project.md",
   "robots.txt",
   "sitemap.xml",
@@ -119,6 +123,7 @@ export const PAGES_OUTPUT_FILES = Object.freeze([
   ".nojekyll",
   "LICENSE.md",
   ...PAGES_TEMPLATE_FILES,
+  ...PAGES_GENERATED_PROJECT_FILES,
   ...PAGES_ROOT_LAUNCHER_FILES,
   ...PAGES_HARNESS_FILES.map((name) => `harness/${name}`),
   ...PAGES_DEPENDENCY_FILES,

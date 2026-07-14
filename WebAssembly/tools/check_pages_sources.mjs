@@ -98,6 +98,8 @@ const scripts = [
   "tools/cloudflare_site_manifest.mjs",
   "tools/pages_artifact_guard_smoke.mjs",
   "tools/pages_site_manifest.mjs",
+  "tools/public_project_content.mjs",
+  "tools/public_project_content_unit.mjs",
   "tools/release_metadata.mjs",
   "tools/release_metadata_unit.mjs",
   "tools/verify_crash_diagnostics_zero_overhead.mjs",
@@ -119,6 +121,7 @@ const workflowPaths = [
   ".github/workflows/cloudflare-pages.yml",
   ".github/workflows/pages.yml",
   ".github/workflows/pr-preview.yml",
+  ".github/workflows/public-project-content.yml",
   ".github/workflows/wasm-smoke.yml",
 ];
 
@@ -138,6 +141,16 @@ for (const contract of [
   "github.event.pull_request.head.repo.full_name == github.repository",
 ]) {
   if (!buildWorkflow.includes(contract)) throw new Error(`Trusted Cloudflare artifact handoff missing: ${contract}`);
+}
+
+const freshnessWorkflow = await readFile(resolve(repoRoot, ".github/workflows/public-project-content.yml"), "utf8");
+for (const contract of [
+  "schedule:",
+  "workflow_dispatch:",
+  "npm run test:public-project-content",
+  "permissions:\n  contents: read",
+]) {
+  if (!freshnessWorkflow.includes(contract)) throw new Error(`Public project freshness workflow missing: ${contract}`);
 }
 
 const previewWorkflow = await readFile(resolve(repoRoot, ".github/workflows/pr-preview.yml"), "utf8");

@@ -4,6 +4,7 @@ import { lstat, readFile, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, extname, relative, resolve } from "node:path";
 import { PAGES_OUTPUT_FILES } from "./pages_site_manifest.mjs";
+import { loadPublicProjectContent, renderGeneratedProjectFiles } from "./public_project_content.mjs";
 import { validateBuildInfo } from "./release_metadata.mjs";
 
 const root = resolve(process.argv[2] || "pages-dist");
@@ -135,7 +136,7 @@ if (totalBytes > 250 * 1024 * 1024) findings.push(`artifact is unexpectedly larg
 
 const [
   license, index, legal, launcher, play, manifestText, bootstrap, serviceWorker, buildInfoText,
-  llms, projectGuide, robots, sitemap,
+  llms, projectGuide, projectInfoText, robots, sitemap,
 ] = await Promise.all([
   readFile(resolve(root, "LICENSE.md"), "utf8").catch(() => ""),
   readFile(resolve(root, "index.html"), "utf8").catch(() => ""),
@@ -148,6 +149,7 @@ const [
   readFile(resolve(root, "harness/build-info.json"), "utf8").catch(() => ""),
   readFile(resolve(root, "llms.txt"), "utf8").catch(() => ""),
   readFile(resolve(root, "project.md"), "utf8").catch(() => ""),
+  readFile(resolve(root, "project-info.json"), "utf8").catch(() => ""),
   readFile(resolve(root, "robots.txt"), "utf8").catch(() => ""),
   readFile(resolve(root, "sitemap.xml"), "utf8").catch(() => ""),
 ]);
@@ -170,6 +172,7 @@ if (!index.includes("No warranty") || !index.includes("./legal.html")
     || !index.includes('rel="canonical" href="./"') || !index.includes('data-coi-target="./"')
     || !index.includes('rel="help" type="text/plain" href="./llms.txt"')
     || !index.includes('rel="alternate" type="text/markdown" href="./project.md"')
+    || !index.includes('rel="alternate" type="application/json" href="./project-info.json"')
     || !index.includes('type="application/ld+json"')) {
   findings.push("index.html: root canonical, launcher target, or visible legal notice is missing");
 }
@@ -188,6 +191,7 @@ if (!launcher.includes('<base href="./harness/">')
     || !launcher.includes('id="aboutChangelog"')
     || !launcher.includes('rel="help" type="text/plain" href="../llms.txt"')
     || !launcher.includes('rel="alternate" type="text/markdown" href="../project.md"')
+    || !launcher.includes('rel="alternate" type="application/json" href="../project-info.json"')
     || !launcher.includes("data-agent-guide")
     || !launcher.includes('type="application/ld+json"')
     || !launcher.includes('id="publicLegalNotice"')) {
@@ -197,6 +201,7 @@ if (!play.includes('rel="canonical" href="../"')
     || !play.includes('data-bink-video-sidecars="direct"')
     || !play.includes('rel="help" type="text/plain" href="../llms.txt"')
     || !play.includes('rel="alternate" type="text/markdown" href="../project.md"')
+    || !play.includes('rel="alternate" type="application/json" href="../project-info.json"')
     || !play.includes("data-agent-guide")
     || !play.includes('id="publicLegalNotice"') || !play.includes("Corresponding source")) {
   findings.push("harness/play.html: launcher About legal notice is missing");
@@ -230,6 +235,36 @@ if (projectGuide.length < 10 * 1024
     || !projectGuide.includes("https://newshoes.gg/harness/build-info.json")) {
   findings.push("project.md: complete project, asset, agent-boundary, or deployed-build guidance is missing");
 }
+try {
+  const projectInfo = JSON.parse(projectInfoText);
+  if (projectInfo.schema !== "project-new-shoes/public-project/v1"
+      || projectInfo.site?.canonicalUrl !== "https://newshoes.gg/"
+      || !Array.isArray(projectInfo.capabilities)
+      || projectInfo.capabilities.some(({ status, reviewedAt, evidence }) => !status
+        || !reviewedAt
+        || !Array.isArray(evidence)
+        || evidence.length === 0)
+      || projectInfo.publication?.deployedBuild !== "https://newshoes.gg/harness/build-info.json") {
+    throw new Error("required canonical project fields are missing");
+  }
+} catch (error) {
+  findings.push(`project-info.json: machine-readable project facts are invalid (${error?.message ?? String(error)})`);
+}
+try {
+  const expectedGenerated = renderGeneratedProjectFiles(await loadPublicProjectContent());
+  const actualGenerated = {
+    "llms.txt": llms,
+    "project-info.json": projectInfoText,
+    "project.md": projectGuide,
+    "robots.txt": robots,
+    "sitemap.xml": sitemap,
+  };
+  for (const [name, expected] of Object.entries(expectedGenerated)) {
+    if (actualGenerated[name] !== expected) findings.push(`${name}: does not match the canonical generated project content`);
+  }
+} catch (error) {
+  findings.push(`public project source: validation failed (${error?.message ?? String(error)})`);
+}
 if (!/^User-agent: \*\nAllow: \/\n/m.test(robots)
     || !robots.includes("Sitemap: https://newshoes.gg/sitemap.xml")
     || robots.includes("Disallow:")) {
@@ -238,6 +273,7 @@ if (!/^User-agent: \*\nAllow: \/\n/m.test(robots)
 for (const url of [
   "https://newshoes.gg/",
   "https://newshoes.gg/project.md",
+  "https://newshoes.gg/project-info.json",
   "https://newshoes.gg/llms.txt",
   "https://newshoes.gg/legal.html",
 ]) {
@@ -250,7 +286,8 @@ for (const [name, document] of [["launcher.html", launcher], ["harness/play.html
     if (metadata?.name !== "Project New Shoes"
         || metadata?.url !== "https://newshoes.gg/"
         || !metadata?.["@type"]?.includes("VideoGame")
-        || metadata?.softwareHelp !== "https://newshoes.gg/project.md") {
+        || metadata?.softwareHelp !== "https://newshoes.gg/project.md"
+        || !metadata?.dateModified) {
       throw new Error("required SoftwareApplication fields are missing");
     }
   } catch (error) {

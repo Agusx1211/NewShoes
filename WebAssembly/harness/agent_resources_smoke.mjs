@@ -4,6 +4,7 @@ export async function verifyAgentResources(page) {
     const specifications = [
       ["llms.txt", "text/plain", "# Project New Shoes"],
       ["project.md", "text/markdown", "## Guidance for web agents"],
+      ["project-info.json", "application/json", "project-new-shoes/public-project/v1"],
       ["robots.txt", "text/plain", "Sitemap: https://newshoes.gg/sitemap.xml"],
       ["sitemap.xml", "application/xml", "<loc>https://newshoes.gg/project.md</loc>"],
     ];
@@ -24,6 +25,7 @@ export async function verifyAgentResources(page) {
     return {
       help: document.querySelector('link[rel="help"]')?.href || "",
       alternate: document.querySelector('link[rel="alternate"][type="text/markdown"]')?.href || "",
+      facts: document.querySelector('link[rel="alternate"][type="application/json"]')?.href || "",
       guide: document.querySelector("[data-agent-guide]")?.href || "",
       structured: JSON.parse(structuredText),
       resources,
@@ -33,6 +35,7 @@ export async function verifyAgentResources(page) {
   const discoveryTargets = [
     [report.help, "llms.txt"],
     [report.alternate, "project.md"],
+    [report.facts, "project-info.json"],
     [report.guide, "project.md"],
   ];
   const discoveryInvalid = discoveryTargets.some(([url, name]) => {
