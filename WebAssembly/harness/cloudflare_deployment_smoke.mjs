@@ -121,13 +121,38 @@ try {
     disabled: document.querySelector("#includeVideosToggle")?.disabled,
     description: document.querySelector("#includeVideosDescription")?.textContent || "",
   }));
-  if (videoSupport.policy !== "unavailable"
-      || videoSupport.support?.available !== false
-      || videoSupport.disabled !== true
-      || !/unavailable in this build/i.test(videoSupport.description)) {
-    throw new Error(`Hosted optional-video gate failed: ${JSON.stringify(videoSupport)}`);
+  if (videoSupport.policy !== "transcode"
+      || videoSupport.support?.available !== true
+      || videoSupport.support?.mode !== "transcode"
+      || videoSupport.disabled !== false
+      || !/prepare and play original movies locally/i.test(videoSupport.description)) {
+    throw new Error(`Hosted optional-video support failed: ${JSON.stringify(videoSupport)}`);
   }
-  const videoScreenshot = process.env.CLOUDFLARE_VIDEO_UNAVAILABLE_SCREENSHOT;
+  const videoRuntime = await page.evaluate(async () => {
+    const base = new URL("../video-runtime/", document.baseURI);
+    const manifestResponse = await fetch(new URL("ffmpeg-core-manifest.json", base));
+    const manifest = await manifestResponse.json();
+    const scriptResponse = await fetch(new URL(manifest.coreScript, base));
+    const parts = [];
+    let total = 0;
+    for (const part of manifest.wasmParts) {
+      const response = await fetch(new URL(part.name, base));
+      const bytes = await response.arrayBuffer();
+      const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+        .map((value) => value.toString(16).padStart(2, "0")).join("");
+      total += bytes.byteLength;
+      parts.push({ ok: response.ok, bytes: bytes.byteLength, digest, expected: part });
+    }
+    return { manifestOk: manifestResponse.ok, scriptOk: scriptResponse.ok, manifest, total, parts };
+  });
+  if (!videoRuntime.manifestOk || !videoRuntime.scriptOk
+      || videoRuntime.total !== videoRuntime.manifest.wasmBytes
+      || videoRuntime.parts.some((part) => !part.ok
+        || part.bytes !== part.expected.bytes || part.digest !== part.expected.sha256)) {
+    throw new Error(`Hosted video runtime delivery failed: ${JSON.stringify(videoRuntime)}`);
+  }
+  const videoScreenshot = process.env.CLOUDFLARE_VIDEO_SUPPORT_SCREENSHOT
+    || process.env.CLOUDFLARE_VIDEO_UNAVAILABLE_SCREENSHOT;
   if (videoScreenshot) {
     await page.evaluate(() => {
       document.querySelectorAll("[data-wizard-page]").forEach((wizardPage) => {
@@ -159,7 +184,7 @@ try {
   if (videoFallbackMount.ok !== true
       || videoFallbackMount.archiveSet?.archiveCount !== 1
       || videoFallbackMount.state?.binkVideoAssets?.unavailable !== true) {
-    throw new Error(`Unavailable optional videos blocked archive mounting: ${JSON.stringify(videoFallbackMount)}`);
+    throw new Error(`Missing optional-video sources blocked archive mounting: ${JSON.stringify(videoFallbackMount)}`);
   }
   await page.waitForFunction(() => window.CnCPort?.state?.threadedMode === true, null, { timeout: 30000 });
   const runtime = await page.evaluate(() => ({
@@ -235,6 +260,7 @@ try {
     initial,
     wasm,
     videoSupport,
+    videoRuntime: { total: videoRuntime.total, parts: videoRuntime.parts.length },
     videoFallbackMount: {
       ok: videoFallbackMount.ok,
       archiveCount: videoFallbackMount.archiveSet?.archiveCount,

@@ -608,6 +608,12 @@
             <div id="captureOverlayStatus" class="captureOverlayStatus">ready</div>
             <div class="captureOverlayActions"><button id="captureOverlayToggle" type="button">Pause</button><button id="captureOverlayIssue" type="button">Report issue</button><button id="captureOverlayDownload" type="button" class="captureOverlayPrimary">Save dump</button></div>
           </aside>
+          <aside id="binkPreparationOverlay" class="binkPreparationOverlay" aria-labelledby="binkPreparationTitle" aria-live="polite" hidden>
+            <div><strong id="binkPreparationTitle">Preparing original movie</strong><span id="binkPreparationName"></span></div>
+            <div id="binkPreparationProgress" class="binkPreparationProgress" role="progressbar" aria-label="Movie preparation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="binkPreparationFill"></span></div>
+            <p id="binkPreparationDetail">Loading the local video runtime…</p>
+            <button id="binkPreparationCancel" type="button">Skip movie</button>
+          </aside>
         </main>
       </section>
 
