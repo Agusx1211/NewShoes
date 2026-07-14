@@ -2171,6 +2171,62 @@ async function threadedRpc(command, payload = {}) {
       });
       return { ok: true, command, forwarded: true, threaded: true, state: snapshotState() };
     }
+    case "agentUiSnapshot": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_snapshot", "string", ["number"],
+          [payload.includeHidden === true ? 1 : 0]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiActivate": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_activate", "string", ["number", "string"],
+          [Number(payload.windowId), String(payload.name ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiSetText": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_set_text", "string", ["number", "string", "string"],
+          [Number(payload.windowId), String(payload.name ?? ""), String(payload.text ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiSelectIndex": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_select_index", "string", ["number", "string", "number"],
+          [Number(payload.windowId), String(payload.name ?? ""), Number(payload.index)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiListItems": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_list_items", "string",
+          ["number", "string", "number", "number"],
+          [
+            Number(payload.windowId),
+            String(payload.name ?? ""),
+            Number(payload.offset ?? 0),
+            Number(payload.limit ?? 64),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "realEngineDumpWindows": {
       try {
         const windows = await threadedEngine.engineCall(
@@ -5869,6 +5925,31 @@ async function loadWasmModule() {
         "cnc_port_query_window_by_name",
         "string",
         ["string"],
+      ),
+      agentUiSnapshot: module.cwrap(
+        "cnc_port_agent_ui_snapshot",
+        "string",
+        ["number"],
+      ),
+      agentUiActivate: module.cwrap(
+        "cnc_port_agent_ui_activate",
+        "string",
+        ["number", "string"],
+      ),
+      agentUiSetText: module.cwrap(
+        "cnc_port_agent_ui_set_text",
+        "string",
+        ["number", "string", "string"],
+      ),
+      agentUiSelectIndex: module.cwrap(
+        "cnc_port_agent_ui_select_index",
+        "string",
+        ["number", "string", "number"],
+      ),
+      agentUiListItems: module.cwrap(
+        "cnc_port_agent_ui_list_items",
+        "string",
+        ["number", "string", "number", "number"],
       ),
       realEngineLastUpdateTarget: module.cwrap(
         "cnc_port_real_engine_last_update_target",
@@ -12811,6 +12892,41 @@ async function rpc(command, payload = {}) {
           result,
           state: snapshotState(),
         };
+      }
+    case "agentUiSnapshot":
+    case "agentUiActivate":
+    case "agentUiSetText":
+    case "agentUiSelectIndex":
+    case "agentUiListItems":
+      {
+        const moduleResult = await getWasmModuleForArchives(command);
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        let result = null;
+        try {
+          const module = moduleResult.wasmModule;
+          let raw = null;
+          if (command === "agentUiSnapshot") {
+            raw = module.agentUiSnapshot(payload.includeHidden === true ? 1 : 0);
+          } else if (command === "agentUiActivate") {
+            raw = module.agentUiActivate(Number(payload.windowId), String(payload.name ?? ""));
+          } else if (command === "agentUiSetText") {
+            raw = module.agentUiSetText(
+              Number(payload.windowId), String(payload.name ?? ""), String(payload.text ?? ""));
+          } else if (command === "agentUiSelectIndex") {
+            raw = module.agentUiSelectIndex(
+              Number(payload.windowId), String(payload.name ?? ""), Number(payload.index));
+          } else {
+            raw = module.agentUiListItems(
+              Number(payload.windowId), String(payload.name ?? ""),
+              Number(payload.offset ?? 0), Number(payload.limit ?? 64));
+          }
+          result = JSON.parse(raw);
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+        return { ok: result?.ok === true, command, result, state: snapshotState() };
       }
     case "startMainLoop":
       {
@@ -23576,9 +23692,54 @@ setInterval(() => {
   }
 }, 5000);
 
+// The agent transport is absent from normal launches.  Its module, socket,
+// timers, and status listener are created only after an explicit pre-launch
+// configuration calls this function.
+let agentBridgeController = null;
+let agentBridgePagehideBound = false;
+async function connectAgentBridge(config) {
+  if (agentBridgeController) return agentBridgeController.snapshot();
+  if (harnessState.realEngineInit?.frontier?.initReturned !== true) {
+    throw new Error("agent bridge connection requires a successfully initialized engine");
+  }
+  const { createAgentBridgeConnection } = await import("./agent_bridge.mjs");
+  agentBridgeController = createAgentBridgeConnection({
+    config,
+    rpc,
+    onStatus: (status) => {
+      harnessState.agentBridge = status;
+      try {
+        window.dispatchEvent(new CustomEvent("cncport:agentbridge", { detail: status }));
+      } catch (_error) {
+        // State remains available in DOM-limited harnesses.
+      }
+    },
+  });
+  if (!agentBridgePagehideBound) {
+    agentBridgePagehideBound = true;
+    window.addEventListener("pagehide", () => agentBridgeController?.stop(), { once: true });
+  }
+  return agentBridgeController.snapshot();
+}
+
+function disconnectAgentBridge() {
+  if (!agentBridgeController) return { configured: false, phase: "stopped" };
+  agentBridgeController.stop();
+  const finalState = agentBridgeController.snapshot();
+  agentBridgeController = null;
+  return finalState;
+}
+
 window.CnCPort = {
   rpc,
   state: harnessState,
+  connectAgentBridge,
+  disconnectAgentBridge,
+  getAgentBridgeState: () => agentBridgeController?.snapshot() ?? {
+    configured: false,
+    phase: "disabled",
+    connected: false,
+  },
   d3d8BridgeCallbacks,
   persistSaves: persistSaveFilesystem,
   persistScheduledSaves: persistScheduledSaveFilesystem,

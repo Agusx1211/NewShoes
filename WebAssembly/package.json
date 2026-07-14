@@ -95,6 +95,8 @@
     "test:issue-recorder": "node tools/verify_crash_diagnostics_zero_overhead.mjs && node harness/issue_recorder_unit.mjs && node harness/network_diagnostics_unit.mjs && node harness/issue_dump_network_decode_smoke.mjs && node harness/issue_dump_upload_smoke.mjs && node harness/issue_recorder_ui_smoke.mjs",
     "test:multiplayer-identity": "node harness/multiplayer_identity_unit.mjs",
     "test:multiplayer-launch-policy": "node harness/multiplayer_launch_policy_unit.mjs",
+    "test:agent-bridge": "node --test harness/agent_bridge_unit.mjs",
+    "test:agent-bridge-browser": "node harness/agent_bridge_browser_smoke.mjs",
     "test:mod-context": "node harness/mod-context_unit.mjs",
     "test:mod-package-format": "node harness/mod-package-format_unit.mjs",
     "test:clickteam-installer": "node harness/clickteam-installer_unit.mjs",
