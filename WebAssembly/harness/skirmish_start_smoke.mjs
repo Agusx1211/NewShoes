@@ -59,6 +59,8 @@ const loadingScreenshotPath = resolve(
 const textEntryScreenshotPath = resolve(
   process.env.SKIRMISH_TEXT_ENTRY_SCREENSHOT ??
     resolve(screenshotsRoot, "skirmish-text-entry-smoke.png"));
+const requestedMenuScreenshot = String(process.env.SKIRMISH_MENU_SCREENSHOT ?? "").trim();
+const menuScreenshotPath = requestedMenuScreenshot ? resolve(requestedMenuScreenshot) : null;
 const outputPath = resolve(
   process.env.SKIRMISH_START_OUTPUT ??
     resolve(artifactsRoot, "skirmish-start-smoke.json"));
@@ -97,8 +99,16 @@ const replayPlaybackScreenshotPath = resolve(
 const browserProfileDir = String(process.env.SKIRMISH_START_PROFILE_DIR ?? "").trim();
 const requestedModPackage = String(process.env.SKIRMISH_START_MOD_PACKAGE ?? "").trim();
 const requestedModName = String(process.env.SKIRMISH_START_MOD_NAME ?? "").trim();
+const requestedModLocalPath = String(process.env.SKIRMISH_START_MOD_LOCAL_PATH ?? "").trim();
+const requestedModLocalDir = String(process.env.SKIRMISH_START_MOD_LOCAL_DIR ?? "").trim();
 if (requestedModPackage && !/^[A-Za-z0-9_.-]+\.(?:zip|7z|rar|exe|big)$/i.test(requestedModPackage)) {
   throw new Error(`Invalid SKIRMISH_START_MOD_PACKAGE: ${requestedModPackage}`);
+}
+if ((requestedModLocalPath || requestedModLocalDir) && !requestedModPackage) {
+  throw new Error("Local mod input requires SKIRMISH_START_MOD_PACKAGE");
+}
+if (requestedModLocalPath && requestedModLocalDir) {
+  throw new Error("Choose either SKIRMISH_START_MOD_LOCAL_PATH or SKIRMISH_START_MOD_LOCAL_DIR");
 }
 
 function parsePositiveInt(name, fallback) {
@@ -1593,6 +1603,9 @@ async function driveTreeDiffuseProbe(page) {
 async function main() {
   await mkdir(dirname(screenshotPath), { recursive: true });
   await mkdir(dirname(outputPath), { recursive: true });
+  if (menuScreenshotPath) {
+    await mkdir(dirname(menuScreenshotPath), { recursive: true });
+  }
   if (browserProfileDir) {
     await rm(browserProfileDir, { recursive: true, force: true });
     await mkdir(browserProfileDir, { recursive: true });
@@ -1631,28 +1644,53 @@ async function main() {
     let activeMod = null;
     if (requestedModPackage) {
       console.error(`[skirmish-start] import mod ${requestedModPackage}`);
-      const importUrl = new URL(
-        `artifacts/mod-packages/${encodeURIComponent(requestedModPackage)}`, server.url).href;
       await page.goto(new URL("harness/play.html", server.url).href, { waitUntil: "domcontentloaded" });
       await page.waitForFunction(() => Boolean(window.ZeroHModManager?.store));
-      activeMod = await page.evaluate(async ({ url, fileName, displayName }) => {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Mod package fetch failed (${response.status})`);
-        const file = new File([await response.blob()], fileName);
-        const imported = await window.ZeroHModManager.store.importFiles([file], { name: displayName });
-        const context = await window.ZeroHModManager.store.apply([imported.mod.id]);
+      const displayName = requestedModName || requestedModPackage.replace(/\.[^.]+$/, "");
+      if (requestedModLocalPath || requestedModLocalDir) {
+        const before = await page.evaluate(() => window.ZeroHModManager.store.list().length);
+        await page.locator('.desktop-icon[data-open="mods"]').click();
+        await page.waitForSelector("#modsWindow.is-open");
+        await page.locator("#modImportName").fill(displayName);
+        const inputSelector = requestedModLocalDir
+          ? "#modImportFolderInput"
+          : "#modImportPackageInput";
+        const localInput = resolve(requestedModLocalDir || requestedModLocalPath);
+        await page.locator(inputSelector).setInputFiles(localInput);
+        await page.waitForFunction((count) => {
+          const progress = document.querySelector("#modImportProgress")?.textContent || "";
+          return window.ZeroHModManager.store.list().length === count + 1
+            || progress.startsWith("Import failed:");
+        }, before, { timeout: 30 * 60_000 });
+        const progress = await page.locator("#modImportProgress").textContent();
+        if (progress.startsWith("Import failed:")) {
+          throw new Error(`${requestedModPackage}: ${progress}`);
+        }
+      } else {
+        const importUrl = new URL(
+          `artifacts/mod-packages/${encodeURIComponent(requestedModPackage)}`, server.url).href;
+        await page.evaluate(async ({ url, fileName, name }) => {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Mod package fetch failed (${response.status})`);
+          const file = new File([await response.blob()], fileName);
+          await window.ZeroHModManager.store.importFiles([file], { name });
+        }, {
+          url: importUrl,
+          fileName: requestedModPackage,
+          name: displayName,
+        });
+      }
+      activeMod = await page.evaluate(async () => {
+        const imported = window.ZeroHModManager.store.list().at(-1);
+        const context = await window.ZeroHModManager.store.apply([imported.id]);
         return {
-          id: imported.mod.id,
-          name: imported.mod.name,
-          archiveCount: imported.mod.archives.filter((archive) => archive.enabled).length,
-          totalBytes: imported.mod.totalBytes,
-          contentHash: imported.mod.contentHash,
+          id: imported.id,
+          name: imported.name,
+          archiveCount: imported.archives.filter((archive) => archive.enabled).length,
+          totalBytes: imported.totalBytes,
+          contentHash: imported.contentHash,
           contextId: context.id,
         };
-      }, {
-        url: importUrl,
-        fileName: requestedModPackage,
-        displayName: requestedModName || requestedModPackage.replace(/\.[^.]+$/, ""),
       });
       console.error(`[skirmish-start] imported ${activeMod.name}: ${activeMod.archiveCount} enabled archives`);
     }
@@ -1744,14 +1782,16 @@ async function main() {
         "main menu available",
         (clientState) => clientState.shell?.topIsMainMenu === true &&
           clientState.shell?.topHidden === false,
-        120);
+        activeMod ? 1200 : 120);
     }
     expect(frame.frame?.clientState?.mainMenu?.buttonSinglePlayer?.found === true,
       "main menu Single Player button geometry is unavailable",
       frame.frame?.clientState?.mainMenu?.buttonSinglePlayer);
-
     console.error("[skirmish-start] reveal main menu");
     const revealed = await revealMainMenu(page);
+    if (menuScreenshotPath) {
+      await page.locator("#viewport").screenshot({ path: menuScreenshotPath });
+    }
     const menuMusic = expectMenuMusicStop
       ? await waitForActiveMusic(page, "main menu music")
       : null;
