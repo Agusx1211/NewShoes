@@ -7,6 +7,10 @@ const MAX_TEXT_LENGTH = 16 * 1024;
 const CAPABILITIES = Object.freeze([
   "protocol.describe",
   "input.pointerMove",
+  "camera.lookAt",
+  "game.select",
+  "game.order",
+  "game.command",
   "world.snapshot",
   "terrain.query",
   "ui.snapshot",
@@ -65,6 +69,19 @@ function observationMode(args) {
   return mode;
 }
 
+function worldObservation(args) {
+  const mode = observationMode(args);
+  const detail = args?.detail ?? "full";
+  if (detail !== "full" && detail !== "tactical") {
+    throw new ProtocolFault("invalid_arguments", "detail must be full or tactical");
+  }
+  const includeCapabilities = args?.includeCapabilities ?? false;
+  if (typeof includeCapabilities !== "boolean") {
+    throw new ProtocolFault("invalid_arguments", "includeCapabilities must be true or false");
+  }
+  return { mode, detail, includeCapabilities };
+}
+
 function terrainQuery(args) {
   const mode = observationMode(args);
   const minX = Number(args?.minX);
@@ -89,6 +106,70 @@ function terrainQuery(args) {
     );
   }
   return { mode, minX, minY, maxX, maxY, columns, rows };
+}
+
+function objectId(value, field, { optional = false } = {}) {
+  if (optional && (value === undefined || value === null || value === 0)) return 0;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 0x7fffffff) {
+    throw new ProtocolFault("invalid_arguments", `${field} must be a positive 32-bit integer`);
+  }
+  return parsed;
+}
+
+function objectIdList(args) {
+  if (!Array.isArray(args?.objectIds) || args.objectIds.length < 1 || args.objectIds.length > 128) {
+    throw new ProtocolFault("invalid_arguments", "objectIds must contain 1 through 128 object IDs");
+  }
+  const values = args.objectIds.map((value, index) => objectId(value, `objectIds[${index}]`));
+  if (new Set(values).size !== values.length) {
+    throw new ProtocolFault("invalid_arguments", "objectIds must not contain duplicates");
+  }
+  return values.join(",");
+}
+
+function worldPosition(value, field = "position") {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProtocolFault("invalid_arguments", `${field} must contain finite x and y coordinates`);
+  }
+  const x = Number(value.x);
+  const y = Number(value.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new ProtocolFault("invalid_arguments", `${field}.x and ${field}.y must be finite numbers`);
+  }
+  return { x, y };
+}
+
+function gameOrder(args) {
+  const action = boundedString(args?.action, "action", 64);
+  const allowed = new Set([
+    "move", "attackMove", "attack", "guardPosition", "guardObject", "stop", "scatter",
+  ]);
+  if (!allowed.has(action)) {
+    throw new ProtocolFault(
+      "invalid_arguments",
+      "action must be move, attackMove, attack, guardPosition, guardObject, stop, or scatter",
+    );
+  }
+  const objectIds = objectIdList(args);
+  const needsPosition = action === "move" || action === "attackMove" || action === "guardPosition";
+  const needsTarget = action === "attack" || action === "guardObject";
+  const position = needsPosition ? worldPosition(args?.position) : { x: 0, y: 0 };
+  const targetId = needsTarget ? objectId(args?.targetId, "targetId") : 0;
+  return { action, objectIds, targetId, ...position };
+}
+
+function gameCommand(args) {
+  const sourceId = objectId(args?.sourceId, "sourceId");
+  const command = boundedString(args?.command, "command", 256);
+  const targetId = objectId(args?.targetId, "targetId", { optional: true });
+  const hasPosition = args?.position !== undefined && args.position !== null;
+  const position = hasPosition ? worldPosition(args.position) : { x: 0, y: 0 };
+  const angle = args?.angle === undefined ? 0 : Number(args.angle);
+  if (!Number.isFinite(angle)) {
+    throw new ProtocolFault("invalid_arguments", "angle must be a finite number");
+  }
+  return { sourceId, command, targetId, ...position, angle, hasPosition };
 }
 
 function normalizeConfig(config, cryptoImpl) {
@@ -194,8 +275,16 @@ export function createAgentBridgeConnection({
         }
         return { ok: true, ...point };
       }
+      case "camera.lookAt":
+        return engineRequest("agentCameraLookAt", worldPosition(args));
+      case "game.select":
+        return engineRequest("agentGameSelect", { objectIds: objectIdList(args) });
+      case "game.order":
+        return engineRequest("agentGameOrder", gameOrder(args));
+      case "game.command":
+        return engineRequest("agentGameCommand", gameCommand(args));
       case "world.snapshot":
-        return engineRequest("agentWorldSnapshot", { mode: observationMode(args) });
+        return engineRequest("agentWorldSnapshot", worldObservation(args));
       case "terrain.query":
         return engineRequest("agentTerrainQuery", terrainQuery(args));
       case "ui.snapshot":

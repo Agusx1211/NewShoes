@@ -2184,8 +2184,12 @@ async function threadedRpc(command, payload = {}) {
     case "agentWorldSnapshot": {
       try {
         const result = await threadedEngine.engineCall(
-          "cnc_port_agent_world_snapshot", "string", ["number"],
-          [payload.mode === "camera" ? 1 : 0]);
+          "cnc_port_agent_world_snapshot", "string", ["number", "number", "number"],
+          [
+            payload.mode === "camera" ? 1 : 0,
+            payload.detail === "tactical" ? 1 : 0,
+            payload.includeCapabilities === true ? 1 : 0,
+          ]);
         return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
@@ -2205,6 +2209,55 @@ async function threadedRpc(command, payload = {}) {
             Number(payload.columns),
             Number(payload.rows),
           ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameSelect": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_select", "string", ["string"],
+          [String(payload.objectIds ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameOrder": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_order", "string",
+          ["string", "string", "number", "number", "number"],
+          [
+            String(payload.action ?? ""), String(payload.objectIds ?? ""),
+            Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameCommand": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_command", "string",
+          ["number", "string", "number", "number", "number", "number", "number"],
+          [
+            Number(payload.sourceId), String(payload.command ?? ""),
+            Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+            Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentCameraLookAt": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_camera_look_at", "string", ["number", "number"],
+          [Number(payload.x), Number(payload.y)]);
         return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
@@ -5963,12 +6016,32 @@ async function loadWasmModule() {
       agentWorldSnapshot: module.cwrap(
         "cnc_port_agent_world_snapshot",
         "string",
-        ["number"],
+        ["number", "number", "number"],
       ),
       agentTerrainQuery: module.cwrap(
         "cnc_port_agent_terrain_query",
         "string",
         ["number", "number", "number", "number", "number", "number", "number"],
+      ),
+      agentGameSelect: module.cwrap(
+        "cnc_port_agent_game_select",
+        "string",
+        ["string"],
+      ),
+      agentGameOrder: module.cwrap(
+        "cnc_port_agent_game_order",
+        "string",
+        ["string", "string", "number", "number", "number"],
+      ),
+      agentGameCommand: module.cwrap(
+        "cnc_port_agent_game_command",
+        "string",
+        ["number", "string", "number", "number", "number", "number", "number"],
+      ),
+      agentCameraLookAt: module.cwrap(
+        "cnc_port_agent_camera_look_at",
+        "string",
+        ["number", "number"],
       ),
       agentUiActivate: module.cwrap(
         "cnc_port_agent_ui_activate",
@@ -12935,6 +13008,10 @@ async function rpc(command, payload = {}) {
     case "agentUiSnapshot":
     case "agentWorldSnapshot":
     case "agentTerrainQuery":
+    case "agentGameSelect":
+    case "agentGameOrder":
+    case "agentGameCommand":
+    case "agentCameraLookAt":
     case "agentUiActivate":
     case "agentUiSetText":
     case "agentUiSelectIndex":
@@ -12951,13 +13028,30 @@ async function rpc(command, payload = {}) {
           if (command === "agentUiSnapshot") {
             raw = module.agentUiSnapshot(payload.includeHidden === true ? 1 : 0);
           } else if (command === "agentWorldSnapshot") {
-            raw = module.agentWorldSnapshot(payload.mode === "camera" ? 1 : 0);
+            raw = module.agentWorldSnapshot(
+              payload.mode === "camera" ? 1 : 0,
+              payload.detail === "tactical" ? 1 : 0,
+              payload.includeCapabilities === true ? 1 : 0,
+            );
           } else if (command === "agentTerrainQuery") {
             raw = module.agentTerrainQuery(
               payload.mode === "camera" ? 1 : 0,
               Number(payload.minX), Number(payload.minY),
               Number(payload.maxX), Number(payload.maxY),
               Number(payload.columns), Number(payload.rows));
+          } else if (command === "agentGameSelect") {
+            raw = module.agentGameSelect(String(payload.objectIds ?? ""));
+          } else if (command === "agentGameOrder") {
+            raw = module.agentGameOrder(
+              String(payload.action ?? ""), String(payload.objectIds ?? ""),
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0));
+          } else if (command === "agentGameCommand") {
+            raw = module.agentGameCommand(
+              Number(payload.sourceId), String(payload.command ?? ""),
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+              Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0);
+          } else if (command === "agentCameraLookAt") {
+            raw = module.agentCameraLookAt(Number(payload.x), Number(payload.y));
           } else if (command === "agentUiActivate") {
             raw = module.agentUiActivate(Number(payload.windowId), String(payload.name ?? ""));
           } else if (command === "agentUiSetText") {

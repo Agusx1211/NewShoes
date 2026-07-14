@@ -6,9 +6,11 @@ opens the connection outward, so the engine does not listen on a port and does
 not need screenshots, OCR, DOM selectors, or synthetic browser clicks.
 
 The current `cnc-agent/1` surface covers semantic shell UI observation, the
-real engine action paths for pointer motion and shell gadgets, and read-only
-battlefield/player/camera/terrain observation. Selection, orders, production,
-placement, and the full agent-play proof remain tracked in
+real engine action paths for pointer motion and shell gadgets, filtered
+battlefield/player/camera/terrain observation, and semantic match actions. Live
+object command sets drive selection, movement, combat, construction, production,
+upgrades, supported special powers, and camera movement through the original
+deterministic message stream. The independent full-match proof is tracked in
 [issue #75](https://github.com/Agusx1211/NewShoes/issues/75).
 
 ## Run locally
@@ -107,15 +109,32 @@ curl -H 'Authorization: Bearer TOKEN' \
 
 curl -H 'Authorization: Bearer TOKEN' \
   'http://127.0.0.1:18888/v1/sessions/game-1/world?mode=camera'
+
+# Compact records for a fast tactical loop. Fetch reusable definitions and
+# per-object capabilities when needed, then omit them from frequent reads.
+curl -H 'Authorization: Bearer TOKEN' \
+  'http://127.0.0.1:18888/v1/sessions/game-1/world?mode=unrestricted&detail=tactical&includeCapabilities=true'
+curl -H 'Authorization: Bearer TOKEN' \
+  'http://127.0.0.1:18888/v1/sessions/game-1/world?mode=unrestricted&detail=tactical'
 ```
 
 The snapshot reports game/end state, the tactical camera, map extent, public
 player roster, local-player economy, and observable objects. Object IDs are
 stable opaque identifiers allocated only after an object is observable; they
 do not expose gaps in the engine's private object sequence. Enemy economy and
-locally controlled capabilities/motion are `null`. Objects hidden by shroud,
-stealth, or client-side drawable policy are omitted. Camera mode additionally
-omits observable objects outside the rendered tactical view.
+non-locally controlled motion are `null` in full snapshots. Objects hidden by
+shroud, stealth, or client-side drawable policy are omitted. Camera mode
+additionally omits observable objects outside the rendered tactical view.
+
+`detail=tactical` replaces the large per-object discovery records with compact
+combat records. Their `position` is `[x,y,z]` and `health` is `[current,max]`.
+With `includeCapabilities=true`, reusable template and command definitions are
+reported once in the top-level `templates` and `commandSets` dictionaries;
+live state is keyed by opaque object ID in `objectCapabilities`. That state
+explicitly distinguishes `selectable` from `orderable`, reports containment and
+passengers, current weapons/range/damage/target classes, production queues,
+command availability, and real special-power source/cooldown state. Omit the
+capability dictionaries from high-frequency tactical reads after discovery.
 
 Terrain is a bounded, caller-sized cell-center grid. Bounds must stay inside
 the extent returned by `/world`; each axis is limited to 128 samples and the
@@ -132,6 +151,62 @@ cliff, water, visible path type, and in-camera flags. Shrouded cells remain
 unknown; explored fog exposes static height/cliff data but not water/path data;
 camera mode masks every sample outside the current view.
 
+Move the tactical camera without synthesizing mouse input:
+
+```sh
+curl -X POST -H 'Authorization: Bearer TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{"x":1000,"y":800}' \
+  http://127.0.0.1:18888/v1/sessions/game-1/camera
+```
+
+Full `/world` objects include current command sets, production queues, movement
+goals, and capability flags. The compact form separates command definitions
+from each object's live `commandState`. Command entries identify their semantic
+type and, when applicable, the product, cost, build time, availability, upgrade,
+or special power. Clients must send the exact advertised command name back with
+the object ID from the observation:
+
+```sh
+curl -X POST -H 'Authorization: Bearer TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{"sourceId":4,"command":"Command_ConstructChinaPowerPlant",\
+       "position":{"x":1250.5,"y":390.5},"angle":0}' \
+  http://127.0.0.1:18888/v1/sessions/game-1/game/commands
+
+curl -X POST -H 'Authorization: Bearer TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{"sourceId":8,"command":"Command_ConstructChinaTankBattlemaster"}' \
+  http://127.0.0.1:18888/v1/sessions/game-1/game/commands
+```
+
+The command endpoint validates that the source still owns that live command,
+checks current prerequisites/funds and construction legality in the engine, and
+returns `accepted` after posting the real game message. Observe `/world` to
+confirm its asynchronous simulation effects. Unsupported command types fail
+explicitly; they never report canned success.
+
+Selection and tactical group orders use the same opaque IDs:
+
+```sh
+curl -X POST -H 'Authorization: Bearer TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{"objectIds":[10,11,12]}' \
+  http://127.0.0.1:18888/v1/sessions/game-1/game/selection
+
+curl -X POST -H 'Authorization: Bearer TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"attackMove","objectIds":[10,11,12],\
+       "position":{"x":2200,"y":1800}}' \
+  http://127.0.0.1:18888/v1/sessions/game-1/game/orders
+```
+
+Orders support `move`, `attackMove`, `attack`, `guardPosition`, `guardObject`,
+`stop`, and `scatter`. Object-targeted orders require a currently observable
+target, and `attack` additionally requires an enemy relationship. A world
+snapshot reports the authoritative terminal result as `game.outcome` once the
+original victory conditions end the match.
+
 `POST /v1/sessions/{session}/requests` exposes the versioned raw operation
 envelope for forward-compatible clients. `POST` bodies are limited to 1 MiB,
 browser messages to 4 MiB, list pages to 128 rows, and bridge calls to 30
@@ -141,9 +216,10 @@ seconds by default.
 
 The browser uses WebSocket subprotocol `cnc-agent.v1` and authenticates in its
 first JSON `hello` frame. The protocol advertises capabilities explicitly.
-`protocol.describe`, `input.pointerMove`, `world.snapshot`, `terrain.query`,
-`ui.snapshot`, `ui.activate`, `ui.setText`, `ui.selectIndex`, and
-`ui.listItems` are the currently advertised operations.
+`protocol.describe`, `input.pointerMove`, `camera.lookAt`, `game.select`,
+`game.order`, `game.command`, `world.snapshot`, `terrain.query`, `ui.snapshot`,
+`ui.activate`, `ui.setText`, `ui.selectIndex`, and `ui.listItems` are the
+currently advertised operations.
 
 The C++ implementation owns observation and mutations. It traverses the real
 `GameWindowManager` on demand and drives the original gadget input/system
@@ -157,4 +233,18 @@ go test ./...
 go vet ./...
 cd ../WebAssembly
 npm run test:agent-bridge
+npm run test:agent-bridge-browser
 ```
+
+For a long-lived manual or independent-agent match, `npm run
+host:agent-bridge-match` starts the authenticated bridge, real browser runtime,
+and an otherwise untouched shell session. It prints the ephemeral REST endpoint,
+token, and session ID once connected and remains alive until interrupted. Use a
+hardware-GPU browser and treat the printed credentials as secrets.
+
+The end-to-end acceptance run used that host on an RTX 4080. A separate player
+with only the REST endpoint left the default skirmish settings untouched, played
+one USA Superweapon human against one GLA Stealth `Easy Army`, and reached the
+authoritative terminal result `game.outcome="victory"` at frame 27,791. It did
+not use DOM access, screenshots, browser automation, source inspection, or a
+non-REST control path.

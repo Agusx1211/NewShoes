@@ -206,14 +206,16 @@ async function main() {
       throw new Error(`pointer move failed: ${JSON.stringify(pointer)}`);
     }
     let nextPointerWake = 0;
+    let pointerWakeX = 161;
     const mainMenu = await waitFor("semantic main-menu snapshot",
       async () => {
         if (Date.now() >= nextPointerWake) {
           nextPointerWake = Date.now() + 1000;
           await rest(pointerPath, {
             method: "POST",
-            body: JSON.stringify({ x: 160, y: 160 }),
+            body: JSON.stringify({ x: pointerWakeX, y: 160 }),
           });
+          pointerWakeX = pointerWakeX === 160 ? 161 : 160;
         }
         return rest(snapshotsPath);
       },
@@ -338,6 +340,42 @@ async function main() {
         remoteEconomy: world.players.filter((player) => !player.local).map((player) => player.economy),
       })}`);
     }
+    const tacticalCapabilitiesReply = await rest(
+      `${worldPath}?mode=unrestricted&detail=tactical&includeCapabilities=true`,
+    );
+    const tacticalCapabilities = tacticalCapabilitiesReply.body.result;
+    const localTacticalCapability = Object.values(
+      tacticalCapabilities?.objectCapabilities ?? {},
+    ).find((capability) => capability?.orderable === true);
+    if (tacticalCapabilitiesReply.status !== 200
+        || tacticalCapabilities?.observationDetail !== "tactical"
+        || !tacticalCapabilities.objects?.every((object) =>
+          Array.isArray(object.position) && object.position.length === 3
+          && !("capabilities" in object))
+        || typeof tacticalCapabilities.templates !== "object"
+        || typeof tacticalCapabilities.commandSets !== "object"
+        || !localTacticalCapability
+        || typeof localTacticalCapability.commandState !== "object") {
+      throw new Error(`tactical capability catalog violated compact contract: ${JSON.stringify(
+        tacticalCapabilitiesReply,
+      )}`);
+    }
+    const tacticalReply = await rest(`${worldPath}?mode=unrestricted&detail=tactical`);
+    const tactical = tacticalReply.body.result;
+    const fullBytes = Buffer.byteLength(JSON.stringify(world));
+    const tacticalBytes = Buffer.byteLength(JSON.stringify(tactical));
+    if (tacticalReply.status !== 200
+        || "templates" in tactical
+        || "commandSets" in tactical
+        || "objectCapabilities" in tactical
+        || tacticalBytes >= fullBytes) {
+      throw new Error(`tactical snapshot was not compact: ${JSON.stringify({
+        status: tacticalReply.status,
+        fullBytes,
+        tacticalBytes,
+        keys: Object.keys(tactical ?? {}),
+      })}`);
+    }
     const cameraWorldReply = await rest(`${worldPath}?mode=camera`);
     const cameraWorld = cameraWorldReply.body.result;
     if (cameraWorldReply.status !== 200
@@ -411,6 +449,112 @@ async function main() {
         after: repeatedWorld?.objects?.map(({ id, template }) => ({ id, template })),
       })}`);
     }
+
+    const builder = repeatedWorld.objects.find((object) =>
+      object.capabilities !== null && object.categories.includes("builder"));
+    const construction = builder?.capabilities?.commands
+      ?.filter((command) => command.type === "construct"
+        && command.product?.availability === "available")
+      .sort((left, right) => {
+        const priority = (command) => command.product.categories.includes("power") ? 0 : 1;
+        return priority(left) - priority(right) || left.product.cost - right.product.cost;
+      })[0];
+    if (!builder || !construction) {
+      throw new Error(`live match exposed no available construction command: ${JSON.stringify({
+        builders: repeatedWorld.objects
+          .filter((object) => object.categories.includes("builder"))
+          .map(({ id, template, capabilities }) => ({
+            id,
+            template,
+            commands: capabilities?.commands,
+          })),
+      })}`);
+    }
+
+    const selectionReply = await rest(`${sessionPath}/game/selection`, {
+      method: "POST",
+      body: JSON.stringify({ objectIds: [builder.id] }),
+    });
+    if (selectionReply.status !== 200 || selectionReply.body.result?.accepted !== true) {
+      throw new Error(`semantic selection failed: ${JSON.stringify(selectionReply)}`);
+    }
+
+    const lookAtReply = await rest(`${sessionPath}/camera`, {
+      method: "POST",
+      body: JSON.stringify({ x: builder.position.x, y: builder.position.y }),
+    });
+    if (lookAtReply.status !== 200 || lookAtReply.body.result?.ok !== true) {
+      throw new Error(`semantic camera control failed: ${JSON.stringify(lookAtReply)}`);
+    }
+
+    const constructionOffsets = [
+      [120, 0], [0, 120], [-120, 0], [0, -120],
+      [160, 80], [-160, 80], [160, -80], [-160, -80],
+      [220, 0], [0, 220], [-220, 0], [0, -220],
+      [220, 140], [-220, 140], [220, -140], [-220, -140],
+      [300, 0], [0, 300], [-300, 0], [0, -300],
+    ];
+    let constructionReply;
+    let constructionPosition;
+    const rejectedPositions = [];
+    for (const [offsetX, offsetY] of constructionOffsets) {
+      const position = {
+        x: builder.position.x + offsetX,
+        y: builder.position.y + offsetY,
+      };
+      if (position.x < terrainExtent.lo.x || position.x > terrainExtent.hi.x
+          || position.y < terrainExtent.lo.y || position.y > terrainExtent.hi.y) {
+        continue;
+      }
+      const reply = await rest(`${sessionPath}/game/commands`, {
+        method: "POST",
+        body: JSON.stringify({
+          sourceId: builder.id,
+          command: construction.name,
+          position,
+          angle: 0,
+        }),
+      });
+      if (reply.status === 200 && reply.body.result?.accepted === true) {
+        constructionReply = reply;
+        constructionPosition = position;
+        break;
+      }
+      rejectedPositions.push({ position, status: reply.status, error: reply.body.error });
+    }
+    if (!constructionReply) {
+      throw new Error(`no legal construction position was accepted: ${JSON.stringify({
+        builder: { id: builder.id, template: builder.template, position: builder.position },
+        construction,
+        rejectedPositions,
+      })}`);
+    }
+
+    const previousIds = new Set(repeatedWorld.objects.map((object) => object.id));
+    const worldAfterConstructionReply = await waitFor("semantic construction state change",
+      () => rest(`${worldPath}?mode=unrestricted`),
+      (reply) => reply.status === 200
+        && reply.body.result?.objects?.some((object) =>
+          !previousIds.has(object.id)
+          && object.template === construction.product.template
+          && object.capabilities !== null),
+      60000);
+    const worldAfterConstruction = worldAfterConstructionReply.body.result;
+    const constructedObject = worldAfterConstruction.objects.find((object) =>
+      !previousIds.has(object.id)
+      && object.template === construction.product.template
+      && object.capabilities !== null);
+    const moneyBeforeConstruction = repeatedWorld.players.find((player) => player.local)?.economy?.money;
+    const moneyAfterConstruction = worldAfterConstruction.players
+      .find((player) => player.local)?.economy?.money;
+    if (!constructedObject || !(moneyAfterConstruction < moneyBeforeConstruction)) {
+      throw new Error(`accepted construction lacked authoritative effects: ${JSON.stringify({
+        constructionReply,
+        constructedObject,
+        moneyBeforeConstruction,
+        moneyAfterConstruction,
+      })}`);
+    }
     const matchScreenshot = resolve(screenshotDir, "agent-bridge-live-skirmish.png");
     const matchPixels = await page.screenshot({ path: matchScreenshot });
 
@@ -456,10 +600,21 @@ async function main() {
       skirmishActivation: skirmishButton.name,
       startActivation: startButton.name,
       world: {
-        frame: repeatedWorld.frame,
-        objectCount: repeatedWorld.objectCount,
+        frame: worldAfterConstruction.frame,
+        objectCount: worldAfterConstruction.objectCount,
         cameraObjectCount: cameraWorld.objectCount,
-        localMoney: world.players.find((player) => player.local)?.economy?.money,
+        localMoney: moneyAfterConstruction,
+        fullBytes,
+        tacticalBytes,
+      },
+      gameplay: {
+        selectedObjectId: builder.id,
+        command: construction.name,
+        product: construction.product.template,
+        position: constructionPosition,
+        constructedObjectId: constructedObject.id,
+        construction: constructedObject.construction,
+        moneySpent: moneyBeforeConstruction - moneyAfterConstruction,
       },
       terrain: {
         knownCount: terrain.knownCount,

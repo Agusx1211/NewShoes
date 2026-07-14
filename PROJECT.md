@@ -58,10 +58,16 @@ create a socket, reconnect timer, or per-frame work.
 
 The `cnc-agent/1` surface exposes the original `GameWindowManager` tree, real
 gadget action paths, fog/stealth-filtered battlefield state, camera-bounded
-visibility, and compact terrain grids. The engine owns the filtering and uses
-opaque observation IDs so transport layers cannot infer hidden object counts.
-Selections, orders, production, placement, and a complete independently driven
-match remain follow-up capabilities under GitHub issue 75. See
+visibility, compact tactical object records, and compact terrain grids. The
+engine owns the filtering and uses opaque observation IDs so transport layers
+cannot infer hidden object counts. Reusable template and command-set definitions
+are separated from per-object availability, weapon, cooldown, containment, and
+queue state so a control loop need not repeatedly ingest discovery metadata. It
+also routes selection, tactical orders, production, construction, upgrades,
+special powers, and camera movement through the original deterministic engine
+messages. The independent REST-only full-match acceptance reached an
+authoritative Easy-AI victory at frame 27,791 and is tracked under GitHub issue
+75. See
 [`AgentBridge/README.md`](AgentBridge/README.md) for the wire boundary and local
 usage.
 

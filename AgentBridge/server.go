@@ -51,6 +51,10 @@ func NewServer(config Config) (*Server, error) {
 	mux.HandleFunc("GET /engine", server.engine)
 	mux.Handle("GET /v1/sessions", server.requireAPIAuth(http.HandlerFunc(server.listSessions)))
 	mux.Handle("POST /v1/sessions/{session}/input/pointer", server.requireAPIAuth(http.HandlerFunc(server.pointerMove)))
+	mux.Handle("POST /v1/sessions/{session}/camera", server.requireAPIAuth(http.HandlerFunc(server.cameraLookAt)))
+	mux.Handle("POST /v1/sessions/{session}/game/selection", server.requireAPIAuth(http.HandlerFunc(server.gameSelection)))
+	mux.Handle("POST /v1/sessions/{session}/game/orders", server.requireAPIAuth(http.HandlerFunc(server.gameOrder)))
+	mux.Handle("POST /v1/sessions/{session}/game/commands", server.requireAPIAuth(http.HandlerFunc(server.gameCommand)))
 	mux.Handle("GET /v1/sessions/{session}/world", server.requireAPIAuth(http.HandlerFunc(server.worldSnapshot)))
 	mux.Handle("GET /v1/sessions/{session}/terrain", server.requireAPIAuth(http.HandlerFunc(server.terrainQuery)))
 	mux.Handle("GET /v1/sessions/{session}/ui", server.requireAPIAuth(http.HandlerFunc(server.uiSnapshot)))
@@ -168,6 +172,45 @@ type pointerPosition struct {
 	Y int64 `json:"y"`
 }
 
+type worldPosition struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+func (p worldPosition) validate(field string) error {
+	if math.IsNaN(p.X) || math.IsInf(p.X, 0) || math.IsNaN(p.Y) || math.IsInf(p.Y, 0) {
+		return fmt.Errorf("%s.x and %s.y must be finite numbers", field, field)
+	}
+	return nil
+}
+
+func validateObjectID(value int64, field string, optional bool) error {
+	if optional && value == 0 {
+		return nil
+	}
+	if value < 1 || value > 0x7fffffff {
+		return fmt.Errorf("%s must be a positive 32-bit integer", field)
+	}
+	return nil
+}
+
+func validateObjectIDs(values []int64) error {
+	if len(values) < 1 || len(values) > 128 {
+		return errors.New("objectIds must contain 1 through 128 object IDs")
+	}
+	seen := make(map[int64]struct{}, len(values))
+	for index, value := range values {
+		if err := validateObjectID(value, fmt.Sprintf("objectIds[%d]", index), false); err != nil {
+			return err
+		}
+		if _, exists := seen[value]; exists {
+			return errors.New("objectIds must not contain duplicates")
+		}
+		seen[value] = struct{}{}
+	}
+	return nil
+}
+
 func (p pointerPosition) validate() error {
 	if p.X < 0 || p.X > 0x7fff || p.Y < 0 || p.Y > 0x7fff {
 		return errors.New("x and y must be integers from 0 through 32767")
@@ -181,6 +224,105 @@ func (s *Server) pointerMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.call(w, r, "input.pointerMove", request)
+}
+
+func (s *Server) cameraLookAt(w http.ResponseWriter, r *http.Request) {
+	var request worldPosition
+	if !decodeBody(w, r, &request) || !validateBody(w, request.validate("position")) {
+		return
+	}
+	s.call(w, r, "camera.lookAt", request)
+}
+
+func (s *Server) gameSelection(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ObjectIDs []int64 `json:"objectIds"`
+	}
+	if !decodeBody(w, r, &request) || !validateBody(w, validateObjectIDs(request.ObjectIDs)) {
+		return
+	}
+	s.call(w, r, "game.select", request)
+}
+
+func (s *Server) gameOrder(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Action    string         `json:"action"`
+		ObjectIDs []int64        `json:"objectIds"`
+		TargetID  int64          `json:"targetId,omitempty"`
+		Position  *worldPosition `json:"position,omitempty"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	if err := validateObjectIDs(request.ObjectIDs); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	needsPosition := request.Action == "move" || request.Action == "attackMove" || request.Action == "guardPosition"
+	needsTarget := request.Action == "attack" || request.Action == "guardObject"
+	if !needsPosition && !needsTarget && request.Action != "stop" && request.Action != "scatter" {
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"action must be move, attackMove, attack, guardPosition, guardObject, stop, or scatter")
+		return
+	}
+	if needsPosition {
+		if request.Position == nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "position is required for this order")
+			return
+		}
+		if !validateBody(w, request.Position.validate("position")) {
+			return
+		}
+	} else if request.Position != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "position is not used by this order")
+		return
+	}
+	if err := validateObjectID(request.TargetID, "targetId", !needsTarget); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if needsTarget && request.TargetID == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "targetId is required for this order")
+		return
+	}
+	if !needsTarget && request.TargetID != 0 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "targetId is not used by this order")
+		return
+	}
+	s.call(w, r, "game.order", request)
+}
+
+func (s *Server) gameCommand(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		SourceID int64          `json:"sourceId"`
+		Command  string         `json:"command"`
+		TargetID int64          `json:"targetId,omitempty"`
+		Position *worldPosition `json:"position,omitempty"`
+		Angle    float64        `json:"angle,omitempty"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	if err := validateObjectID(request.SourceID, "sourceId", false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if request.Command == "" || len(request.Command) > 256 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "command is required and must not exceed 256 characters")
+		return
+	}
+	if err := validateObjectID(request.TargetID, "targetId", true); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if request.Position != nil && !validateBody(w, request.Position.validate("position")) {
+		return
+	}
+	if math.IsNaN(request.Angle) || math.IsInf(request.Angle, 0) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "angle must be a finite number")
+		return
+	}
+	s.call(w, r, "game.command", request)
 }
 
 func observationMode(r *http.Request) (string, error) {
@@ -200,7 +342,25 @@ func (s *Server) worldSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	s.call(w, r, "world.snapshot", map[string]any{"mode": mode})
+	detail := r.URL.Query().Get("detail")
+	if detail == "" {
+		detail = "full"
+	}
+	if detail != "full" && detail != "tactical" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "detail must be full or tactical")
+		return
+	}
+	includeCapabilities := false
+	if raw := r.URL.Query().Get("includeCapabilities"); raw != "" {
+		includeCapabilities, err = strconv.ParseBool(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "includeCapabilities must be true or false")
+			return
+		}
+	}
+	s.call(w, r, "world.snapshot", map[string]any{
+		"mode": mode, "detail": detail, "includeCapabilities": includeCapabilities,
+	})
 }
 
 func (s *Server) terrainQuery(w http.ResponseWriter, r *http.Request) {

@@ -97,6 +97,7 @@
     "test:multiplayer-launch-policy": "node harness/multiplayer_launch_policy_unit.mjs",
     "test:agent-bridge": "node --test harness/agent_bridge_unit.mjs",
     "test:agent-bridge-browser": "node harness/agent_bridge_browser_smoke.mjs",
+    "host:agent-bridge-match": "node harness/agent_bridge_match_host.mjs",
     "test:mod-context": "node harness/mod-context_unit.mjs",
     "test:mod-package-format": "node harness/mod-package-format_unit.mjs",
     "test:clickteam-installer": "node harness/clickteam-installer_unit.mjs",
