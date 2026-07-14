@@ -6,6 +6,7 @@ import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
 import { chromium } from "playwright";
+import { verifyAgentResources } from "./agent_resources_smoke.mjs";
 
 const root = resolve(process.argv[2] || "pages-dist");
 const expectedBuildInfo = JSON.parse(await readFile(resolve(root, "harness/build-info.json"), "utf8"));
@@ -28,11 +29,14 @@ const mime = new Map([
   [".ico", "image/x-icon"],
   [".js", "text/javascript; charset=utf-8"],
   [".json", "application/json; charset=utf-8"],
+  [".md", "text/markdown; charset=utf-8"],
   [".mjs", "text/javascript; charset=utf-8"],
   [".png", "image/png"],
+  [".txt", "text/plain; charset=utf-8"],
   [".wasm", "application/wasm"],
   [".webmanifest", "application/manifest+json; charset=utf-8"],
   [".webp", "image/webp"],
+  [".xml", "application/xml; charset=utf-8"],
 ]);
 
 function inside(parent, child) {
@@ -131,6 +135,7 @@ try {
   if (!Object.values(isolation).every(Boolean)) {
     throw new Error(`Pages isolation/launcher checks failed: ${JSON.stringify(isolation)}`);
   }
+  const agentResources = await verifyAgentResources(page);
   if (!navigationHeaders.some((headers) => !headers["cross-origin-opener-policy"])
       || !navigationHeaders.some((headers) => headers["cross-origin-opener-policy"] === "same-origin"
         && headers["cross-origin-embedder-policy"] === "require-corp")) {
@@ -502,6 +507,7 @@ try {
     ok: true,
     baseUrl,
     isolation,
+    agentResources,
     wasm,
     videoSupport,
     videoRuntime: { bytes: videoRuntime.bytes, abiVersion: videoRuntime.manifest.abiVersion },
