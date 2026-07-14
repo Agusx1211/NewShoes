@@ -29,6 +29,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "bink_runtime.mjs",
   "bridge.js",
   "camera-zoom-config.mjs",
+  "crash-diagnostics.mjs",
   "cursor-style-config.mjs",
   "d3d8_executor.mjs",
   "device-transfer-protocol.mjs",

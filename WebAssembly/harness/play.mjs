@@ -401,6 +401,14 @@ const issueRecorder = createIssueRecorder({
 const recorderReady = issueRecorder.init();
 window.CnCIssueRecorder = issueRecorder;
 
+function showRuntimeCrash(failure) {
+  gameRunning = false;
+  renderPerformanceOverlay();
+  void import("./crash-diagnostics.mjs")
+    .then(({ showCrashDiagnostics }) => showCrashDiagnostics(issueRecorder, failure))
+    .catch((error) => console.error("[play] crash diagnostics unavailable", error));
+}
+
 function report(message) {
   progressNode.textContent = message;
   if (progressSentinel) progressSentinel.textContent = message;
@@ -619,9 +627,14 @@ if (threadedUnavailable) {
   }
 }
 
-function fail(message, detail) {
+function fail(message, detail, {
+  kind = runtimeStarted ? "runtime-failure" : "launch-failure",
+  stage = issueRecorder.session?.phase ?? null,
+  error = null,
+} = {}) {
   console.error("[play]", message, detail ?? "");
   issueRecorder.noteFailure(message, detail);
+  showRuntimeCrash({ kind, stage, message, detail, error });
   let detailText = "";
   try {
     detailText = typeof detail === "string" ? detail
@@ -843,7 +856,10 @@ async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
     previous = { now: status.now, clientFrames: loop.clientFrames, logicFrames: loop.logicFrames };
   });
   window.addEventListener("cncport:threadedlooperror", (event) => {
-    fail("engine thread frame loop failed", event.detail?.error ?? event.detail);
+    fail("engine thread frame loop failed", event.detail?.error ?? event.detail, {
+      kind: "engine-loop",
+      stage: issueRecorder.session?.phase ?? "running",
+    });
   });
 }
 
@@ -1117,7 +1133,11 @@ async function start() {
       stage: analyticsStage,
       duration: analytics?.bucketDuration(Date.now() - Number(window.__newShoesLaunchStartedAt || Date.now()), "launch") || "unknown",
     });
-    fail(error?.message ?? String(error), error?.launchDetail ?? error);
+    fail(error?.message ?? String(error), error?.launchDetail ?? error, {
+      kind: "launch-failure",
+      stage: analyticsStage,
+      error,
+    });
     throw error;
   }
 }

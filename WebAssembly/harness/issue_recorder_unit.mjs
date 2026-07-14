@@ -6,6 +6,7 @@ import {
   redactLarge,
   sanitizeDumpFileName,
 } from "./issue-recorder.mjs";
+import { normalizeCrashFailure } from "./crash-diagnostics.mjs";
 
 assert.match(makeDumpId(new Date("2026-07-05T12:34:56.789Z")), /^cnc-2026-07-05T12-34-56-789Z$/);
 assert.equal(sanitizeDumpFileName("bad / name ?.json"), "bad-name-.json");
@@ -50,5 +51,19 @@ assert.equal(compact.ok, true);
 assert.equal(compact.frame.framesCompleted, 42);
 assert.equal(compact.frame.gameplay.logicFrame, 11);
 assert.equal(compact.state.graphics.d3d8DrawHistoryCount, 3);
+
+const crash = normalizeCrashFailure({
+  kind: "wasm-abort",
+  stage: "engine",
+  message: "GameEngine::init aborted",
+  detail: { subsystem: "W3DDisplay" },
+  error: new WebAssembly.RuntimeError("unreachable"),
+});
+assert.equal(crash.kind, "wasm-abort");
+assert.equal(crash.stage, "engine");
+assert.equal(crash.detail.subsystem, "W3DDisplay");
+assert.equal(crash.error.name, "RuntimeError");
+assert.match(crash.error.message, /unreachable/);
+assert.match(crash.at, /^\d{4}-\d{2}-\d{2}T/);
 
 console.log("issue recorder unit checks passed");

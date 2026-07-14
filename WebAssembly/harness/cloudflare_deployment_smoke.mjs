@@ -157,8 +157,14 @@ try {
     await page.waitForTimeout(300);
     await page.screenshot({ path: videoScreenshot, fullPage: true });
   }
-  const prep = await page.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
-  if (prep.ok !== false || !/Missing archive list/.test(prep.error || "")) throw new Error(`Unexpected empty mount: ${JSON.stringify(prep)}`);
+  const emptyMount = await page.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
+  if (emptyMount.ok !== false || !/Missing archive list/.test(emptyMount.error || "")) {
+    throw new Error(`Unexpected empty mount: ${JSON.stringify(emptyMount)}`);
+  }
+  const prep = await page.evaluate(() => window.CnCPort.rpc("threadedStatus", {}));
+  if (prep.ok !== true || prep.threaded !== true) {
+    throw new Error(`Threaded realm preparation failed: ${JSON.stringify(prep)}`);
+  }
   const videoFallbackMount = await page.evaluate(async () => {
     const bytes = new Uint8Array(64);
     bytes.set(new TextEncoder().encode("BIGF"));

@@ -19,6 +19,20 @@ try {
     manifest: { counts: {} },
     timeline: [],
     frameSamples: [],
+    crash: {
+      schema: "cnc.crash.v1",
+      id: "network-test-crash",
+      capturedAt: "2026-07-12T00:00:00.000Z",
+      markerFrame: 42,
+      primary: {
+        kind: "engine-worker",
+        stage: "running",
+        message: "worker stopped",
+        error: { name: "Error", message: "worker stopped" },
+      },
+      related: [],
+      diagnostics: { rpc: {}, memory: {} },
+    },
     issues: [],
     logs: [],
     networkDiagnostics: {
@@ -37,12 +51,17 @@ try {
   const { stdout } = await execFileAsync("python3", [decoder, dumpPath, "--out", output]);
   const summary = JSON.parse(stdout);
   assert.equal(summary.networkDiagnostics.complete, true);
+  assert.equal(summary.crash.kind, "engine-worker");
+  assert.equal(summary.crash.stage, "running");
+  assert.deepEqual(summary.crash.diagnosticKeys, ["memory", "rpc"]);
   assert.equal(summary.networkDiagnostics.directions.send, 1);
   assert.equal(summary.networkDiagnostics.outcomes.sent, 1);
   const packets = await readFile(resolve(output, "network/packets.ndjson"), "utf8");
   assert.match(packets, /"payloadHex":"0102ff"/);
   const engine = await readFile(resolve(output, "network/engine-lockstep.ndjson"), "utf8");
   assert.match(engine, /"frameDataReady":false/);
+  const crash = await readFile(resolve(output, "crash.redacted.json"), "utf8");
+  assert.match(crash, /"engine-worker"/);
   console.log("issue dump network extraction smoke passed");
 } finally {
   await rm(root, { recursive: true, force: true });
