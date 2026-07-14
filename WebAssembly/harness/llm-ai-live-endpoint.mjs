@@ -1,0 +1,27 @@
+import { createLlmAiProfile } from "./llm-ai-profile.mjs";
+import { probeLlmAiEndpoint } from "./llm-ai-openai-client.mjs";
+
+const endpoint = process.env.LLM_AI_ENDPOINT || "http://192.168.100.203:1234";
+const model = process.env.LLM_AI_MODEL || "qwen3.6-35b-a3b-mtp@q8_k_xl";
+const profile = createLlmAiProfile({
+  name: "Endpoint verification",
+  endpoint,
+  model,
+  apiKey: process.env.LLM_AI_API_KEY || "",
+  thinkingEffort: process.env.LLM_AI_THINKING_EFFORT || "low",
+  contextSize: Number(process.env.LLM_AI_CONTEXT_SIZE || 262_144),
+  responseTokens: 512,
+  toolProtocol: "auto",
+  mandate: "Verify the tool protocol.",
+});
+
+const result = await probeLlmAiEndpoint(profile);
+if (!result.ok) throw new Error("Endpoint probe did not succeed");
+console.log("LLM AI live endpoint: PASS", {
+  endpoint,
+  model,
+  protocol: result.protocol,
+  compatibilityReason: result.compatibility?.reason || null,
+  reportedModels: result.reportedModels,
+  latencyMs: result.latencyMs,
+});

@@ -741,15 +741,32 @@ void InitLanGameGadgets( void )
 
 		if(localSlotNum == i)
 		{
-			GadgetComboBoxAddEntry(comboBoxPlayer[i],TheLAN->GetMyName(),white);
+			Int entry = GadgetComboBoxAddEntry(comboBoxPlayer[i],TheLAN->GetMyName(),white);
+			GadgetComboBoxSetItemData(comboBoxPlayer[i], entry, (void *)SLOT_PLAYER);
 		}
 		else
 		{
-			GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:Open"),white);
-			GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:Closed"),white);
-			GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:EasyAI"),white);
-			GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:MediumAI"),white);
-			GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:HardAI"),white);
+			Int entry = GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:Open"),white);
+			GadgetComboBoxSetItemData(comboBoxPlayer[i], entry, (void *)SLOT_OPEN);
+			entry = GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:Closed"),white);
+			GadgetComboBoxSetItemData(comboBoxPlayer[i], entry, (void *)SLOT_CLOSED);
+			entry = GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:EasyAI"),white);
+			GadgetComboBoxSetItemData(comboBoxPlayer[i], entry, (void *)SLOT_EASY_AI);
+			entry = GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:MediumAI"),white);
+			GadgetComboBoxSetItemData(comboBoxPlayer[i], entry, (void *)SLOT_MED_AI);
+			entry = GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:HardAI"),white);
+			GadgetComboBoxSetItemData(comboBoxPlayer[i], entry, (void *)SLOT_BRUTAL_AI);
+			for (Int profileIndex = 0; profileIndex < GetLlmAiProfileCount(); ++profileIndex)
+			{
+				const LlmAiProfileInfo *profile = GetLlmAiProfile(profileIndex);
+				if (profile == NULL)
+					continue;
+				UnicodeString label;
+				label.format(L"LLM: %ls", profile->m_name.str());
+				entry = GadgetComboBoxAddEntry(comboBoxPlayer[i], label, white);
+				GadgetComboBoxSetItemData(comboBoxPlayer[i], entry,
+					(void *)LlmAiComboDataFromProfileIndex(profileIndex));
+			}
 			GadgetComboBoxSetSelectedPos(comboBoxPlayer[i],0);
 		}
 		/*
@@ -1170,19 +1187,34 @@ WindowMsgHandledType LanGameOptionsMenuSystem( GameWindow *window, UnsignedInt m
 						  // Get
 						  Int pos = -1;
 						  GadgetComboBoxGetSelectedPos(comboBoxPlayer[i], &pos);
-						  if( pos != SLOT_PLAYER && pos >= 0)
+						  Int playerData = pos >= 0
+							  ? (Int)GadgetComboBoxGetItemData(comboBoxPlayer[i], pos) : -1;
+						  if( playerData != SLOT_PLAYER && playerData >= 0)
 						  {
+							  const LlmAiProfileInfo *llmProfile = IsLlmAiComboData(playerData)
+								  ? GetLlmAiProfile(LlmAiProfileIndexFromComboData(playerData)) : NULL;
+							  SlotState desiredState = llmProfile != NULL
+								  ? SLOT_MED_AI : SlotState(playerData);
 							  if( myGame->getLANSlot(i)->getState() == SLOT_PLAYER )
 							  {
 								  UnicodeString name = myGame->getPlayerName(i);
-								  myGame->getLANSlot(i)->setState(SlotState(pos));
+								  if (llmProfile != NULL)
+									  myGame->getLANSlot(i)->setLlmAi(llmProfile->m_id, llmProfile->m_name);
+								  else
+									  myGame->getLANSlot(i)->setState(SlotState(playerData));
 								  myGame->resetAccepted();
 								  TheLAN->OnPlayerLeave(name);
 							  }
-							  else if( myGame->getLANSlot(i)->getState() != pos )
+							  else if( myGame->getLANSlot(i)->getState() != desiredState
+								  || myGame->getLANSlot(i)->isLlmAi() != (llmProfile != NULL)
+								  || (llmProfile != NULL
+									  && myGame->getLANSlot(i)->getLlmAiProfileId() != llmProfile->m_id) )
 							  {
 								  Bool wasAI = (myGame->getLANSlot(i)->isAI());
-								  myGame->getLANSlot(i)->setState(SlotState(pos));
+								  if (llmProfile != NULL)
+									  myGame->getLANSlot(i)->setLlmAi(llmProfile->m_id, llmProfile->m_name);
+								  else
+									  myGame->getLANSlot(i)->setState(SlotState(playerData));
 								  Bool isAI = (myGame->getLANSlot(i)->isAI());
 								  if (wasAI || isAI)
 									  myGame->resetAccepted();

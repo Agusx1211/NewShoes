@@ -54,6 +54,68 @@
 
 GameInfo *TheGameInfo = NULL;
 
+static LlmAiProfileInfo s_llmAiProfiles[MAX_LLM_AI_PROFILES];
+static Int s_llmAiProfileCount = 0;
+
+void ClearLlmAiProfileCatalog( void )
+{
+	for (Int i = 0; i < s_llmAiProfileCount; ++i)
+	{
+		s_llmAiProfiles[i].m_id.clear();
+		s_llmAiProfiles[i].m_name.clear();
+	}
+	s_llmAiProfileCount = 0;
+}
+
+Bool AddLlmAiProfileToCatalog( AsciiString id, UnicodeString name )
+{
+	if (id.isEmpty() || name.isEmpty() || s_llmAiProfileCount >= MAX_LLM_AI_PROFILES)
+		return FALSE;
+	if (FindLlmAiProfile(id) >= 0)
+		return FALSE;
+	s_llmAiProfiles[s_llmAiProfileCount].m_id = id;
+	s_llmAiProfiles[s_llmAiProfileCount].m_name = name;
+	++s_llmAiProfileCount;
+	return TRUE;
+}
+
+Int GetLlmAiProfileCount( void )
+{
+	return s_llmAiProfileCount;
+}
+
+const LlmAiProfileInfo *GetLlmAiProfile( Int index )
+{
+	return index >= 0 && index < s_llmAiProfileCount ? &s_llmAiProfiles[index] : NULL;
+}
+
+Int FindLlmAiProfile( AsciiString id )
+{
+	for (Int i = 0; i < s_llmAiProfileCount; ++i)
+	{
+		if (s_llmAiProfiles[i].m_id == id)
+			return i;
+	}
+	return -1;
+}
+
+Bool IsLlmAiComboData( Int data )
+{
+	return data >= LLM_AI_COMBO_DATA_BASE
+		&& data < LLM_AI_COMBO_DATA_BASE + MAX_LLM_AI_PROFILES;
+}
+
+Int LlmAiProfileIndexFromComboData( Int data )
+{
+	return IsLlmAiComboData(data) ? data - LLM_AI_COMBO_DATA_BASE : -1;
+}
+
+Int LlmAiComboDataFromProfileIndex( Int index )
+{
+	return index >= 0 && index < MAX_LLM_AI_PROFILES
+		? LLM_AI_COMBO_DATA_BASE + index : -1;
+}
+
 // GameSlot ----------------------------------------
 
 GameSlot::GameSlot()
@@ -78,6 +140,7 @@ void GameSlot::reset()
 	m_origPlayerTemplate = -1;
 	m_origStartPos = -1;
 	m_origColor = -1;
+	m_llmAiProfileId.clear();
 }
 
 void GameSlot::saveOffOriginalInfo( void )
@@ -199,6 +262,7 @@ void GameSlot::setMapAvailability( Bool hasMap )
 
 void GameSlot::setState( SlotState state, UnicodeString name, UnsignedInt IP )
 {
+	m_llmAiProfileId.clear();
 	if (!(isAI() &&  (state == SLOT_EASY_AI || state == SLOT_MED_AI || state == SLOT_BRUTAL_AI)))
 	{
 		m_color = -1;
@@ -246,6 +310,18 @@ void GameSlot::setState( SlotState state, UnicodeString name, UnsignedInt IP )
 	m_IP = IP;
 }
 
+void GameSlot::setLlmAi( AsciiString profileId, UnicodeString name, SlotState fallbackState )
+{
+	if (fallbackState != SLOT_EASY_AI && fallbackState != SLOT_MED_AI && fallbackState != SLOT_BRUTAL_AI)
+		fallbackState = SLOT_MED_AI;
+	setState(fallbackState);
+	if (!profileId.isEmpty() && !name.isEmpty())
+	{
+		m_llmAiProfileId = profileId;
+		m_name = name;
+	}
+}
+
 // Various tests
 Bool GameSlot::isHuman( void ) const
 {
@@ -260,6 +336,11 @@ Bool GameSlot::isOccupied( void ) const
 Bool GameSlot::isAI( void ) const
 {
 	return m_state == SLOT_EASY_AI || m_state == SLOT_MED_AI || m_state == SLOT_BRUTAL_AI;
+}
+
+Bool GameSlot::isLlmAi( void ) const
+{
+	return isAI() && !m_llmAiProfileId.isEmpty();
 }
 
 Bool GameSlot::isPlayer( AsciiString userName ) const
@@ -1011,6 +1092,20 @@ Bool ParseAsciiStringToGameInfo(GameInfo *game, AsciiString options)
 	char *bufPtr = buf;
 	char *strPos, *keyValPair;
 	GameSlot newSlot[MAX_SLOTS];
+	AsciiString existingLlmAiProfileId[MAX_SLOTS];
+	UnicodeString existingLlmAiName[MAX_SLOTS];
+	if (game != NULL)
+	{
+		for (Int i = 0; i < MAX_SLOTS; ++i)
+		{
+			const GameSlot *existingSlot = game->getConstSlot(i);
+			if (existingSlot != NULL && existingSlot->isLlmAi())
+			{
+				existingLlmAiProfileId[i] = existingSlot->getLlmAiProfileId();
+				existingLlmAiName[i] = existingSlot->getName();
+			}
+		}
+	}
 	Bool optionsOk = true;
 	AsciiString mapName;
 	Int mapContentsMask;
@@ -1474,7 +1569,14 @@ Bool ParseAsciiStringToGameInfo(GameInfo *game, AsciiString options)
 		//DEBUG_LOG(("ParseAsciiStringToGameInfo - game options all good, setting info\n"));
 
 		for(Int i = 0; i<MAX_SLOTS; i++)
+		{
+			// LAN hosts parse their own broadcast options. The legacy wire format
+			// deliberately exposes this as a classic computer slot, so preserve
+			// the local controller identity when that slot is still an AI.
+			if (newSlot[i].isAI() && !existingLlmAiProfileId[i].isEmpty())
+				newSlot[i].setLlmAi(existingLlmAiProfileId[i], existingLlmAiName[i], newSlot[i].getState());
 			game->setSlot(i,newSlot[i]);
+		}
 
 		game->setMap(mapName);
 		game->setMapCRC(mapCRC);
@@ -1512,7 +1614,7 @@ void SkirmishGameInfo::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 void SkirmishGameInfo::xfer( Xfer *xfer )
 {
-	const XferVersion currentVersion = 4;	
+	const XferVersion currentVersion = 5;
 	XferVersion version = currentVersion; 
 	xfer->xferVersion( &version, currentVersion );
 
@@ -1537,6 +1639,12 @@ void SkirmishGameInfo::xfer( Xfer *xfer )
 		if (version >= 2)
 		{
 			xfer->xferUnicodeString(&name);
+		}
+
+		AsciiString llmAiProfileId = m_slot[slot]->getLlmAiProfileId();
+		if (version >= 5)
+		{
+			xfer->xferAsciiString(&llmAiProfileId);
 		}
 
 		Bool isAccepted=m_slot[slot]->isAccepted();
@@ -1568,7 +1676,10 @@ void SkirmishGameInfo::xfer( Xfer *xfer )
 		xfer->xferInt(&origPlayerTemplate);
 
 		if( xfer->getXferMode() == XFER_LOAD ) {
-			m_slot[slot]->setState((SlotState)state, name);
+			if (!llmAiProfileId.isEmpty())
+				m_slot[slot]->setLlmAi(llmAiProfileId, name, (SlotState)state);
+			else
+				m_slot[slot]->setState((SlotState)state, name);
 			if (isAccepted) m_slot[slot]->setAccept();
 
 			m_slot[slot]->setPlayerTemplate(origPlayerTemplate);
@@ -1618,4 +1729,3 @@ void SkirmishGameInfo::xfer( Xfer *xfer )
 void SkirmishGameInfo::loadPostProcess( void )
 {
 }  // end loadPostProcess
-

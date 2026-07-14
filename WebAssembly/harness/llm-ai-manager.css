@@ -1,0 +1,65 @@
+.llm-ai-window .titlebar-app-icon svg { width: 19px; height: 19px; }
+.llm-ai-manager-body { flex: 1; min-height: 0; display: flex; flex-direction: column; color: #3c5360; background: #f4f7f8; }
+.llm-ai-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 22px 13px; border-bottom: 1px solid #cbd6dc; background: linear-gradient(#fff, #edf3f6); }
+.llm-ai-heading h1 { margin: 2px 0 4px; color: #284958; font-size: 21px; }
+.llm-ai-heading p { margin: 0; color: #71838c; font-size: 9px; }
+.llm-ai-heading .eyebrow { color: #317ca8; font-size: 8px; font-weight: bold; letter-spacing: 1.5px; }
+.llm-ai-tabs { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid #bfcdd4; background: #e1e9ed; }
+.llm-ai-tabs button { min-width: 105px; height: 33px; margin-bottom: -1px; color: #607681; border: 1px solid transparent; background: transparent; font-size: 9px; }
+.llm-ai-tabs button.is-selected { color: #1c6693; border-color: #bfcdd4 #bfcdd4 #f4f7f8; background: #f4f7f8; font-weight: bold; }
+.llm-ai-view { flex: 1; min-height: 0; display: grid; grid-template-columns: 230px minmax(0, 1fr); }
+.llm-ai-view[hidden] { display: none; }
+.llm-ai-view > aside { min-height: 0; overflow: auto; padding: 12px; border-right: 1px solid #ccd7dc; background: #e7eef2; }
+.llm-ai-profile-list, .llm-ai-session-list { display: grid; gap: 7px; }
+.llm-ai-profile-card, .llm-ai-session-card { width: 100%; display: grid; gap: 4px; padding: 10px; color: #536b78; text-align: left; border: 1px solid #bdcbd2; border-radius: 3px; background: linear-gradient(#fff, #edf2f4); box-shadow: 0 1px 2px rgba(31, 60, 75, .08); }
+.llm-ai-profile-card strong, .llm-ai-session-card strong { color: #334f5e; font-size: 10px; }
+.llm-ai-profile-card small, .llm-ai-session-card small { overflow: hidden; color: #748892; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.llm-ai-profile-card.is-selected, .llm-ai-session-card.is-selected { border-color: #4c94bd; background: linear-gradient(#e9f5fb, #d9eaf3); box-shadow: inset 0 0 0 1px #fff; }
+.llm-ai-profile-card .llm-ai-profile-state { display: flex; align-items: center; gap: 5px; color: #4b8563; }
+.llm-ai-profile-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #58a56c; }
+.llm-ai-empty { min-height: 180px; display: grid; place-items: center; align-content: center; gap: 6px; color: #85969e; text-align: center; }
+.llm-ai-empty[hidden] { display: none; }
+.llm-ai-empty svg { width: 42px; height: 42px; opacity: .55; }
+.llm-ai-empty strong { color: #617782; font-size: 10px; }
+.llm-ai-empty span { max-width: 170px; font-size: 8px; line-height: 1.45; }
+.llm-ai-form { min-height: 0; overflow: auto; display: grid; align-content: start; gap: 11px; padding: 16px 20px 20px; }
+.llm-ai-form-heading { display: flex; align-items: center; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid #d8e0e4; }
+.llm-ai-form-heading h2 { margin: 0 0 3px; color: #314f5e; font-size: 16px; }
+.llm-ai-form-heading p { margin: 0; color: #84939a; font-size: 8px; }
+#llmAiSavedBadge { padding: 4px 8px; color: #2f7650; border: 1px solid #9bc5aa; border-radius: 10px; background: #e6f4eb; font-size: 8px; }
+.llm-ai-form > label, .llm-ai-fields > label { display: grid; gap: 4px; color: #4d6571; font-size: 9px; font-weight: bold; }
+.llm-ai-form input:not([type="checkbox"]), .llm-ai-form select, .llm-ai-form textarea { min-width: 0; padding: 7px 8px; color: #324e5b; border: 1px solid #b7c6cd; border-radius: 2px; background: #fff; font: 9px Arial, sans-serif; box-shadow: inset 0 1px 2px rgba(31, 62, 77, .07); }
+.llm-ai-form input:not([type="checkbox"]), .llm-ai-form select { height: 30px; }
+.llm-ai-form textarea { resize: vertical; line-height: 1.45; }
+.llm-ai-optional { color: #8a9aa2; font-size: 8px; font-weight: normal; }
+.llm-ai-fields { display: grid; gap: 10px; }
+.llm-ai-fields.two-column { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); }
+.llm-ai-fields.three-column { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.llm-ai-runtime-policy { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; color: #607782; border: 1px solid #d2dde1; background: #edf3f5; font-size: 8px; }
+.llm-ai-runtime-policy label { display: flex; align-items: center; gap: 6px; }
+.llm-ai-runtime-policy input[type="number"] { width: 78px; }
+.llm-ai-status { min-height: 29px; display: flex; align-items: center; padding: 7px 9px; color: #58707c; border-left: 3px solid #73a7c5; background: #e8f2f7; font-size: 8px; }
+.llm-ai-status.is-error { color: #804439; border-color: #bc6555; background: #f7e9e6; }
+.llm-ai-status.is-success { color: #367152; border-color: #62a37c; background: #e8f4ec; }
+.llm-ai-form-actions { display: grid; grid-template-columns: auto auto 1fr auto auto; gap: 8px; }
+.llm-ai-session-detail { min-height: 0; overflow: auto; padding: 16px 20px; }
+.llm-ai-session-detail > header { display: flex; justify-content: space-between; gap: 15px; padding-bottom: 12px; border-bottom: 1px solid #d4dee2; }
+.llm-ai-session-detail h2 { margin: 0 0 4px; color: #324f5d; font-size: 16px; }
+.llm-ai-session-detail header p { margin: 0; color: #7b8e97; font-size: 8px; }
+.llm-ai-session-detail header > div:last-child { display: flex; gap: 6px; }
+.llm-ai-session-metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
+.llm-ai-session-metrics div { display: grid; gap: 3px; padding: 8px; border: 1px solid #d1dce1; background: #fff; }
+.llm-ai-session-metrics strong { color: #31566a; font-size: 12px; }
+.llm-ai-session-metrics span { color: #82949c; font-size: 7px; text-transform: uppercase; }
+.llm-ai-session-events { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.llm-ai-session-events li { display: grid; grid-template-columns: 110px 1fr; gap: 10px; padding: 8px 10px; border-left: 3px solid #9bb2bf; background: #fff; box-shadow: 0 1px 2px rgba(36, 60, 72, .08); }
+.llm-ai-session-events strong { color: #405e6d; font-size: 8px; }
+.llm-ai-session-events pre { max-height: 130px; overflow: auto; margin: 0; color: #667982; font: 7px/1.4 Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+
+@media (max-width: 760px) {
+  .llm-ai-view { grid-template-columns: 1fr; }
+  .llm-ai-view > aside { max-height: 145px; border-right: 0; border-bottom: 1px solid #ccd7dc; }
+  .llm-ai-fields.two-column, .llm-ai-fields.three-column { grid-template-columns: 1fr; }
+  .llm-ai-runtime-policy { align-items: flex-start; flex-direction: column; }
+  .llm-ai-session-metrics { grid-template-columns: repeat(2, 1fr); }
+}

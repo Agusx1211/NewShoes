@@ -401,6 +401,27 @@ async function cncPortRuntimeCacheToken(distDir) {
 let cncPortEmscriptenModule = null;
 // Why loadWasmModule returned null (surfaced in mount errors).
 let cncPortModuleLoadError = null;
+let llmAiProfileCatalog = [];
+
+function normalizeLlmAiProfileCatalog(value) {
+  if (!Array.isArray(value)) throw new TypeError("profiles must be an array");
+  if (value.length > 64) throw new TypeError("at most 64 LLM AI profiles are supported");
+  const ids = new Set();
+  return value.map((entry) => {
+    const id = String(entry?.id ?? "").trim();
+    const name = String(entry?.name ?? "").trim();
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(id)) throw new TypeError("invalid LLM AI profile ID");
+    if (!name || [...name].length > 64) throw new TypeError("invalid LLM AI profile name");
+    if (ids.has(id)) throw new TypeError("duplicate LLM AI profile ID");
+    ids.add(id);
+    return Object.freeze({ id, name });
+  });
+}
+
+function packLlmAiProfileCatalog(profiles = llmAiProfileCatalog) {
+  return profiles.map(({ id, name }) =>
+    `${encodeURIComponent(id)}=${encodeURIComponent(name)}`).join("&");
+}
 
 const D3DCLEAR_TARGET = 0x00000001;
 
@@ -1433,6 +1454,12 @@ function createThreadedEngineController() {
 
   async function engineInit(payload = {}) {
     await startEngineThread();
+    const llmAiProfiles = await engineCall(
+      "cnc_port_real_engine_set_llm_ai_profiles", "string", ["string"],
+      [packLlmAiProfileCatalog()]);
+    if (llmAiProfiles?.ok !== true) {
+      throw new Error(`LLM AI profile catalog rejected: ${llmAiProfiles?.error ?? "unknown"}`);
+    }
     const traceStart = harnessState.logs.length;
     const onProgress = (step) => {
       harnessState.realEngineInitProgress = step;
@@ -1772,6 +1799,7 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   // allocation is pure browser storage work; mounting registers the prepared
   // paths while the main runtime still owns wasm, just like mountArchives.
   "allocateArchiveNamespace",
+  "realEngineSetLlmAiProfiles",
 ]);
 
 async function threadedRpc(command, payload = {}) {
@@ -5699,6 +5727,11 @@ async function loadWasmModule() {
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
       realEngineSetCommanderName: module.cwrap(
         "cnc_port_real_engine_set_commander_name",
+        "string",
+        ["string"],
+      ),
+      realEngineSetLlmAiProfiles: module.cwrap(
+        "cnc_port_real_engine_set_llm_ai_profiles",
         "string",
         ["string"],
       ),
@@ -10489,6 +10522,13 @@ async function realEngineInit(payload = {}) {
   let frontier = null;
   let aborted = false;
   let abortMessage = null;
+  if (typeof wasmModule.realEngineSetLlmAiProfiles !== "function") {
+    return { ok: false, command: "realEngineInit", error: "LLM AI profile catalog export unavailable" };
+  }
+  const llmAiProfiles = JSON.parse(wasmModule.realEngineSetLlmAiProfiles(packLlmAiProfileCatalog()));
+  if (llmAiProfiles?.ok !== true) {
+    return { ok: false, command: "realEngineInit", error: "LLM AI profile catalog rejected" };
+  }
   // Boot render resolution: hand the page's target (dynamic canvas-fit or the
   // persisted fixed setting) to the engine BEFORE init so GameEngine's
   // INIT_STEP_GLOBAL_DATA applies it and the device is created directly at the
@@ -11678,6 +11718,27 @@ async function rpc(command, payload = {}) {
       return mountPreparedArchives(payload);
     case "realEngineInit":
       return realEngineInit(payload);
+    case "realEngineSetLlmAiProfiles":
+      {
+        try {
+          llmAiProfileCatalog = normalizeLlmAiProfileCatalog(payload.profiles ?? []);
+          harnessState.llmAiProfileCatalog = llmAiProfileCatalog.map((profile) => ({ ...profile }));
+          const packed = packLlmAiProfileCatalog();
+          if (cncPortThreadedMode && threadedEngine?.engineThreadStarted) {
+            const result = await threadedEngine.engineCall(
+              "cnc_port_real_engine_set_llm_ai_profiles", "string", ["string"], [packed]);
+            return { ok: result?.ok === true, command, applied: true, result };
+          }
+          const wasmModule = await wasmModulePromise;
+          if (typeof wasmModule?.realEngineSetLlmAiProfiles !== "function") {
+            return { ok: false, command, applied: false, error: "LLM AI profile catalog export unavailable" };
+          }
+          const result = JSON.parse(wasmModule.realEngineSetLlmAiProfiles(packed));
+          return { ok: result?.ok === true, command, applied: true, result };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
     case "persistSaves":
       // Flush MEMFS -> IndexedDB so newly written ".sav" files survive a reload.
       // Call this after the in-game Save dialog reports success.

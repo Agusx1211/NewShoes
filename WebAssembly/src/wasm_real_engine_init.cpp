@@ -82,6 +82,7 @@
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
 #include "GameNetwork/GameInfo.h"
+#include "GameNetwork/GameSpy/ThreadUtils.h"
 #include "wasm_browser_mouse.h"
 #include "GameLogic/AI.h"
 #include "GameLogic/Module/AIUpdate.h"
@@ -311,6 +312,105 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_commander_n
 	json = g_browser_commander_name.empty()
 		? "{\"ok\":false,\"error\":\"emptyCommanderName\"}"
 		: "{\"ok\":true}";
+	return json.c_str();
+}
+
+static bool decode_llm_ai_catalog_component(const std::string &encoded, std::string &decoded)
+{
+	decoded.clear();
+	decoded.reserve(encoded.size());
+	for (std::size_t i = 0; i < encoded.size(); ++i) {
+		unsigned char c = static_cast<unsigned char>(encoded[i]);
+		if (c != '%') {
+			decoded.push_back(static_cast<char>(c));
+			continue;
+		}
+		if (i + 2 >= encoded.size()
+			|| !std::isxdigit(static_cast<unsigned char>(encoded[i + 1]))
+			|| !std::isxdigit(static_cast<unsigned char>(encoded[i + 2]))) {
+			return false;
+		}
+		auto hex_value = [](char value) -> unsigned char {
+			if (value >= '0' && value <= '9') return static_cast<unsigned char>(value - '0');
+			if (value >= 'a' && value <= 'f') return static_cast<unsigned char>(value - 'a' + 10);
+			return static_cast<unsigned char>(value - 'A' + 10);
+		};
+		decoded.push_back(static_cast<char>((hex_value(encoded[i + 1]) << 4)
+			| hex_value(encoded[i + 2])));
+		i += 2;
+	}
+	return true;
+}
+
+static bool valid_llm_ai_profile_id(const std::string &id)
+{
+	if (id.empty() || id.size() > 128) return false;
+	for (unsigned char c : id) {
+		if (!std::isalnum(c) && c != '.' && c != '_' && c != '-') return false;
+	}
+	return true;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_llm_ai_profiles(const char *catalog)
+{
+	static std::string json;
+	std::vector<std::pair<std::string, std::string> > parsed;
+	std::string packed = catalog != NULL ? catalog : "";
+	std::size_t start = 0;
+	std::string error;
+	while (start < packed.size()) {
+		std::size_t end = packed.find('&', start);
+		if (end == std::string::npos) end = packed.size();
+		std::string row = packed.substr(start, end - start);
+		std::size_t separator = row.find('=');
+		std::string id;
+		std::string name;
+		if (separator == std::string::npos
+			|| !decode_llm_ai_catalog_component(row.substr(0, separator), id)
+			|| !decode_llm_ai_catalog_component(row.substr(separator + 1), name)) {
+			error = "invalidEncoding";
+			break;
+		}
+		if (!valid_llm_ai_profile_id(id) || name.empty() || name.size() > 256) {
+			error = "invalidProfile";
+			break;
+		}
+		bool duplicate = false;
+		for (const auto &entry : parsed) {
+			if (entry.first == id) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (duplicate) {
+			error = "duplicateProfile";
+			break;
+		}
+		parsed.push_back(std::make_pair(id, name));
+		if (parsed.size() > MAX_LLM_AI_PROFILES) {
+			error = "tooManyProfiles";
+			break;
+		}
+		start = end + 1;
+	}
+
+	if (!error.empty()) {
+		json = "{\"ok\":false,\"error\":\"" + error + "\"}";
+		return json.c_str();
+	}
+
+	ClearLlmAiProfileCatalog();
+	for (const auto &entry : parsed) {
+		UnicodeString name;
+		name.set(MultiByteToWideCharSingleLine(entry.second.c_str()).c_str());
+		if (!AddLlmAiProfileToCatalog(AsciiString(entry.first.c_str()), name)) {
+			ClearLlmAiProfileCatalog();
+			json = "{\"ok\":false,\"error\":\"catalogRejected\"}";
+			return json.c_str();
+		}
+	}
+	json = "{\"ok\":true,\"profileCount\":"
+		+ std::to_string(static_cast<long long>(GetLlmAiProfileCount())) + "}";
 	return json.c_str();
 }
 static unsigned int g_frame_texture_apply_count = 0;
@@ -3696,6 +3796,9 @@ void append_game_slot_json(std::string &json, const char *field_name, const Game
 		json += slot->isHuman() ? "true" : "false";
 		json += ",\"ai\":";
 		json += slot->isAI() ? "true" : "false";
+		json += ",\"llmAi\":";
+		json += slot->isLlmAi() ? "true" : "false";
+		json += ",\"llmAiProfileId\":\"" + json_escape(slot->getLlmAiProfileId().str()) + "\"";
 		json += ",\"occupied\":";
 		json += slot->isOccupied() ? "true" : "false";
 		json += ",\"color\":" + std::to_string(static_cast<long long>(slot->getColor()));
@@ -3753,6 +3856,9 @@ void append_game_info_json(std::string &json, const char *field_name, const Game
 			json += slot->isHuman() ? "true" : "false";
 			json += ",\"ai\":";
 			json += slot->isAI() ? "true" : "false";
+			json += ",\"llmAi\":";
+			json += slot->isLlmAi() ? "true" : "false";
+			json += ",\"llmAiProfileId\":\"" + json_escape(slot->getLlmAiProfileId().str()) + "\"";
 			json += ",\"color\":" + std::to_string(static_cast<long long>(slot->getColor()));
 			json += ",\"startPos\":" + std::to_string(static_cast<long long>(slot->getStartPos()));
 			json += ",\"teamNumber\":" + std::to_string(static_cast<long long>(slot->getTeamNumber()));
