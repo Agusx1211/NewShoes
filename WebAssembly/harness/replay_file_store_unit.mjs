@@ -37,10 +37,12 @@ function fakeFilesystem() {
 
 const fake = fakeFilesystem();
 const persistReasons = [];
+const replayDirectory = `${CNC_PORT_REPLAY_DIR}/isolated-context`;
 const store = createReplayFileStore({
   ready: async () => {},
   getModule: () => ({ FS: fake.FS }),
   persist: async (reason) => { persistReasons.push(reason); return { ok: true }; },
+  directory: replayDirectory,
 });
 const retailShape = new Uint8Array([0x47, 0x45, 0x4e, 0x52, 0x45, 0x50, 1, 2, 3, 4]);
 
@@ -57,7 +59,7 @@ await assert.rejects(() => store.importFile("../escape.rep", retailShape), /inva
 await assert.rejects(() => store.importFile("missing-extension", retailShape), /\.rep/);
 await assert.rejects(() => store.importFile("huge.rep", new Uint8Array(MAX_REPLAY_BYTES + 1)), /64 MB/);
 
-fake.FS.writeFile(`${CNC_PORT_REPLAY_DIR}/00000000.rep`, retailShape);
+fake.FS.writeFile(`${replayDirectory}/00000000.rep`, retailShape);
 await assert.rejects(() => store.remove("00000000.rep"), /protected/);
 await store.remove("battle.rep");
 assert.deepEqual((await store.list()).files.map((file) => file.name), ["00000000.rep", "battle (2).rep"]);

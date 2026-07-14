@@ -61,7 +61,7 @@ function fileModified(stat) {
   return Number.isNaN(value.getTime()) ? null : value.toISOString();
 }
 
-function uniqueReplayName(FS, requested) {
+function uniqueReplayName(FS, requested, directory) {
   const dot = requested.toLowerCase().lastIndexOf(".rep");
   const stem = requested.slice(0, dot);
   const extension = requested.slice(dot);
@@ -69,7 +69,7 @@ function uniqueReplayName(FS, requested) {
   let index = 2;
   while (true) {
     try {
-      FS.stat(`${CNC_PORT_REPLAY_DIR}/${candidate}`);
+      FS.stat(`${directory}/${candidate}`);
       candidate = `${stem} (${index++})${extension}`;
     } catch {
       return candidate;
@@ -77,7 +77,12 @@ function uniqueReplayName(FS, requested) {
   }
 }
 
-export function createReplayFileStore({ ready, getModule, persist }) {
+export function createReplayFileStore({
+  ready,
+  getModule,
+  persist,
+  directory = CNC_PORT_REPLAY_DIR,
+}) {
   if (typeof ready !== "function" || typeof getModule !== "function" || typeof persist !== "function") {
     throw new TypeError("Replay store requires ready, getModule, and persist functions");
   }
@@ -85,16 +90,16 @@ export function createReplayFileStore({ ready, getModule, persist }) {
   async function filesystem() {
     await ready();
     const FS = moduleFilesystem(getModule());
-    mkdirTree(FS, CNC_PORT_REPLAY_DIR);
+    mkdirTree(FS, directory);
     return FS;
   }
 
   async function list() {
     const FS = await filesystem();
     const files = [];
-    for (const name of FS.readdir(CNC_PORT_REPLAY_DIR)) {
+    for (const name of FS.readdir(directory)) {
       if (name === "." || name === ".." || !/\.rep$/i.test(name)) continue;
-      const path = `${CNC_PORT_REPLAY_DIR}/${name}`;
+      const path = `${directory}/${name}`;
       try {
         const stat = FS.stat(path);
         if (typeof FS.isFile === "function" && !FS.isFile(stat.mode)) continue;
@@ -104,13 +109,13 @@ export function createReplayFileStore({ ready, getModule, persist }) {
       }
     }
     files.sort((left, right) => left.name.localeCompare(right.name));
-    return { ok: true, files, dir: CNC_PORT_REPLAY_DIR };
+    return { ok: true, files, dir: directory };
   }
 
   async function read(name) {
     const safeName = replayName(name);
     const FS = await filesystem();
-    const bytes = FS.readFile(`${CNC_PORT_REPLAY_DIR}/${safeName}`, { encoding: "binary" });
+    const bytes = FS.readFile(`${directory}/${safeName}`, { encoding: "binary" });
     return new Uint8Array(bytes);
   }
 
@@ -118,8 +123,8 @@ export function createReplayFileStore({ ready, getModule, persist }) {
     const requested = replayName(name);
     const bytes = replayBytes(value);
     const FS = await filesystem();
-    const finalName = uniqueReplayName(FS, requested);
-    const path = `${CNC_PORT_REPLAY_DIR}/${finalName}`;
+    const finalName = uniqueReplayName(FS, requested, directory);
+    const path = `${directory}/${finalName}`;
     FS.writeFile(path, bytes, { canOwn: false });
     const result = await persist("replay-import");
     if (!result?.ok) {
@@ -135,7 +140,7 @@ export function createReplayFileStore({ ready, getModule, persist }) {
       throw new Error("Last Replay is protected while the game runtime is open");
     }
     const FS = await filesystem();
-    const path = `${CNC_PORT_REPLAY_DIR}/${safeName}`;
+    const path = `${directory}/${safeName}`;
     const backup = FS.readFile(path, { encoding: "binary" });
     FS.unlink(path);
     const result = await persist("replay-delete");

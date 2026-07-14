@@ -2,10 +2,11 @@
 
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PAGES_HARNESS_FILES,
+  PAGES_DEPENDENCY_FILES,
   PAGES_RUNTIME_FILES,
   PAGES_TEMPLATE_FILES,
 } from "./pages_site_manifest.mjs";
@@ -95,9 +96,24 @@ for (const name of PAGES_HARNESS_FILES) {
     }
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, template.replaceAll("__GA_MEASUREMENT_ID__", measurementId));
+  } else if (name === "mod-package-worker.mjs") {
+    const sourceText = await readFile(source, "utf8");
+    const developmentRoot = "../node_modules/7z-wasm/";
+    if (!sourceText.includes(developmentRoot)) {
+      throw new Error("mod-package-worker.mjs has no development 7z-wasm path marker");
+    }
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, sourceText.replaceAll(developmentRoot, "./vendor/7z-wasm/"));
   } else {
     await copyRegularFile(source, destination);
   }
+}
+
+for (const name of PAGES_DEPENDENCY_FILES) {
+  await copyRegularFile(
+    join(wasmRoot, "node_modules/7z-wasm", basename(name)),
+    join(outputRoot, name),
+  );
 }
 
 const release = await readReleaseMetadata(repoRoot);

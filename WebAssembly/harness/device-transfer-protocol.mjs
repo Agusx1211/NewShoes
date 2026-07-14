@@ -1,5 +1,5 @@
-export const DEVICE_TRANSFER_APP_ID = "project-new-shoes-device-transfer-v1";
-export const DEVICE_TRANSFER_VERSION = 2;
+export const DEVICE_TRANSFER_APP_ID = "project-new-shoes-device-transfer-v3";
+export const DEVICE_TRANSFER_VERSION = 3;
 export const DEVICE_TRANSFER_CHUNK_BYTES = 64 * 1024;
 export const DEVICE_TRANSFER_CHECKPOINT_BYTES = 2 * 1024 * 1024;
 

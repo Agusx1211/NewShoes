@@ -6,10 +6,11 @@ export const TRANSFER_REPLAY_DIR = `${TRANSFER_USER_DATA_DIR}/Replays`;
 const MAX_SAVE_BYTES = 512 * 1024 * 1024;
 const MAX_REPLAY_BYTES = 64 * 1024 * 1024;
 const REPLAY_MAGIC = new Uint8Array([0x47, 0x45, 0x4e, 0x52, 0x45, 0x50]);
+const MOD_USER_DATA_PATTERN = /^\/home\/web_user\/Command and Conquer Generals Zero Hour Data\/ModData\/[a-f0-9]{64}\/Home\/Command and Conquer Generals Zero Hour Data$/;
 
 function kindSpec(kind) {
-  if (kind === "save") return { directory: TRANSFER_SAVE_DIR, extension: ".sav", maxBytes: MAX_SAVE_BYTES };
-  if (kind === "replay") return { directory: TRANSFER_REPLAY_DIR, extension: ".rep", maxBytes: MAX_REPLAY_BYTES };
+  if (kind === "save") return { extension: ".sav", maxBytes: MAX_SAVE_BYTES };
+  if (kind === "replay") return { extension: ".rep", maxBytes: MAX_REPLAY_BYTES };
   throw new Error("Transfer user-data kind is invalid");
 }
 
@@ -71,8 +72,8 @@ function uniqueName(FS, directory, requested) {
   return candidate;
 }
 
-function fileEntries(FS, kind) {
-  const { directory, extension, maxBytes } = kindSpec(kind);
+function fileEntries(FS, kind, directory) {
+  const { extension, maxBytes } = kindSpec(kind);
   mkdirTree(FS, directory);
   const files = [];
   for (const name of FS.readdir(directory)) {
@@ -103,25 +104,43 @@ function readBytes(FS, path, offset, length) {
   }
 }
 
-export function createTransferUserDataStore({ ready, getModule, persist, randomId = () => crypto.randomUUID() }) {
+export function createTransferUserDataStore({
+  ready,
+  getModule,
+  persist,
+  randomId = () => crypto.randomUUID(),
+  userDataDirectory = TRANSFER_USER_DATA_DIR,
+}) {
   if (typeof ready !== "function" || typeof getModule !== "function" || typeof persist !== "function") {
     throw new TypeError("Transfer user-data store requires ready, getModule, and persist functions");
   }
+  const root = String(userDataDirectory ?? "");
+  if (root !== TRANSFER_USER_DATA_DIR && !MOD_USER_DATA_PATTERN.test(root)) {
+    throw new Error("Transfer user-data directory is invalid");
+  }
+  const directories = {
+    save: `${root}/Save`,
+    replay: `${root}/Replays`,
+  };
+  const directoryFor = (kind) => {
+    if (!directories[kind]) throw new Error("Transfer user-data kind is invalid");
+    return directories[kind];
+  };
 
   async function filesystem() {
     await ready();
     const FS = getModule()?.FS;
     if (!FS) throw new Error("Transfer user-data filesystem is unavailable");
-    mkdirTree(FS, TRANSFER_SAVE_DIR);
-    mkdirTree(FS, TRANSFER_REPLAY_DIR);
+    mkdirTree(FS, directories.save);
+    mkdirTree(FS, directories.replay);
     return FS;
   }
 
   async function list({ includeSaves = false, includeReplays = false } = {}) {
     const FS = await filesystem();
     const files = [];
-    if (includeSaves) files.push(...fileEntries(FS, "save"));
-    if (includeReplays) files.push(...fileEntries(FS, "replay"));
+    if (includeSaves) files.push(...fileEntries(FS, "save", directories.save));
+    if (includeReplays) files.push(...fileEntries(FS, "replay", directories.replay));
     return files.map((file, index) => ({ ...file, id: `user-${index + 1}` }));
   }
 
@@ -132,7 +151,7 @@ export function createTransferUserDataStore({ ready, getModule, persist, randomI
       throw new Error("Transfer user-data read range is invalid");
     }
     const FS = await filesystem();
-    const { directory } = kindSpec(file.kind);
+    const directory = directoryFor(file.kind);
     const path = `${directory}/${file.name}`;
     if (Number(FS.stat(path).size) !== file.bytes) throw new Error(`${file.name} changed during transfer`);
     return readBytes(FS, path, offset, length);
@@ -167,7 +186,7 @@ export function createTransferUserDataStore({ ready, getModule, persist, randomI
         throw new Error("Transfer user-data file order is invalid");
       }
       const file = files[index];
-      const { directory } = kindSpec(file.kind);
+      const directory = directoryFor(file.kind);
       const finalName = uniqueName(FS, directory, file.name);
       const tempPath = `${directory}/.newshoes-transfer-${randomId()}.part`;
       current = {

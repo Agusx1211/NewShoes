@@ -1,5 +1,6 @@
 import { joinRoom } from "./vendor/trystero-nostr.min.mjs";
 import { PROJECT_NOSTR_RELAY } from "./webrtc-udp-endpoint.mjs";
+import { loadActiveModContext } from "./mod-context.mjs";
 import {
   DEVICE_TRANSFER_APP_ID,
   DEVICE_TRANSFER_CHECKPOINT_BYTES,
@@ -123,18 +124,31 @@ function validateCombinedManifest(value) {
       ? { entryCount: Number(file?.entryCount) } : {}),
   }));
   const ids = new Set(files.map((file) => file.id));
-  if (files.some((file) => !file.id || !["archive", "video", "cursor", "save", "replay"].includes(file.kind)
+  if (files.some((file) => !file.id
+      || !["archive", "video", "cursor", "mod-archive", "save", "replay"].includes(file.kind)
       || !file.name || !Number.isSafeInteger(file.bytes) || file.bytes <= 0)
       || ids.size !== files.length) {
     throw new Error("The sender returned an invalid file list");
   }
+  const modFiles = files.filter((file) => file.kind === "mod-archive");
+  const mods = value.mods ?? null;
+  if (Boolean(modFiles.length) !== Boolean(mods)) {
+    throw new Error("The sender returned incomplete mod transfer metadata");
+  }
   const totalBytes = files.reduce((sum, file) => sum + file.bytes, 0);
   if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) throw new Error("Transfer size is invalid");
-  return { version: DEVICE_TRANSFER_VERSION, game: "zeroHour", files, totalBytes };
+  const modContextId = String(value?.modContextId ?? "vanilla");
+  if (!/^(?:vanilla|[a-f0-9]{64})$/.test(modContextId)) {
+    throw new Error("The sender returned an invalid mod configuration identity");
+  }
+  return { version: DEVICE_TRANSFER_VERSION, game: "zeroHour", modContextId, files, mods, totalBytes };
 }
 
-async function createOutgoingSource({ includeSaves, includeReplays }) {
+async function createOutgoingSource({ includeMods, includeSaves, includeReplays }) {
   const game = await window.ZeroHAssetLibrary.createTransferSource();
+  const mods = includeMods && window.ZeroHModManager.store.list().length
+    ? await window.ZeroHModManager.store.createTransferSource()
+    : null;
   let userFiles = [];
   if (includeSaves || includeReplays) {
     if (typeof window.CnCPort?.listTransferUserFiles !== "function") {
@@ -143,18 +157,27 @@ async function createOutgoingSource({ includeSaves, includeReplays }) {
     await window.CnCPort.persistSaves?.("device-transfer-snapshot");
     userFiles = await window.CnCPort.listTransferUserFiles({ includeSaves, includeReplays });
   }
-  const files = [...game.manifest.files, ...userFiles];
+  const files = [...game.manifest.files, ...(mods?.files ?? []), ...userFiles];
+  const modContextId = loadActiveModContext(window.localStorage).id;
   const byId = new Map(files.map((file) => [file.id, file]));
   const totalBytes = files.reduce((sum, file) => sum + file.bytes, 0);
   return {
-    manifest: { version: DEVICE_TRANSFER_VERSION, game: "zeroHour", files },
+    manifest: {
+      version: DEVICE_TRANSFER_VERSION,
+      game: "zeroHour",
+      modContextId,
+      files,
+      ...(mods ? { mods: mods.manifest } : {}),
+    },
     totalBytes,
     async readChunk(id, offset, length) {
       const file = byId.get(id);
       if (!file) throw new Error("Transfer source file is missing");
-      return file.kind === "archive" || file.kind === "video" || file.kind === "cursor"
-        ? game.readChunk(id, offset, length)
-        : window.CnCPort.readTransferUserFileChunk(file, offset, length);
+      if (file.kind === "archive" || file.kind === "video" || file.kind === "cursor") {
+        return game.readChunk(id, offset, length);
+      }
+      if (file.kind === "mod-archive") return mods.readChunk(id, offset, length);
+      return window.CnCPort.readTransferUserFileChunk(file, offset, length);
     },
   };
 }
@@ -280,6 +303,7 @@ async function abortIncoming() {
   state.incoming = null;
   await Promise.allSettled([
     incoming?.gameSession?.abort?.(),
+    incoming?.modSession?.abort?.(),
     incoming?.userSession?.abort?.(),
   ]);
 }
@@ -305,22 +329,37 @@ async function prepareIncoming(message) {
   const manifest = validateCombinedManifest(message.manifest);
   const gameFiles = manifest.files.filter((file) =>
     file.kind === "archive" || file.kind === "video" || file.kind === "cursor");
+  const modFiles = manifest.files.filter((file) => file.kind === "mod-archive");
   const userFiles = manifest.files.filter((file) => file.kind === "save" || file.kind === "replay");
+  if (userFiles.length > 0 && !manifest.mods) {
+    const localContextId = loadActiveModContext(window.localStorage).id;
+    if (manifest.modContextId !== localContextId) {
+      throw new Error("Transferred saves and replays belong to a different exact mod configuration. Activate that configuration before receiving them, or use the Save & Replay Manager for an explicit compatibility override.");
+    }
+  }
   const gameSession = await window.ZeroHAssetLibrary.beginTransferredLibrary({
     version: DEVICE_TRANSFER_VERSION,
     game: "zeroHour",
     files: gameFiles,
   });
+  let modSession = null;
   let userSession = null;
   try {
+    if (manifest.mods) {
+      modSession = await window.ZeroHModManager.store.beginTransferImport(
+        manifest.mods,
+        modFiles,
+        { expectedContextId: manifest.modContextId },
+      );
+    }
     if (userFiles.length) {
       if (typeof window.CnCPort?.beginTransferUserDataImport !== "function") {
         throw new Error("This runtime cannot receive saves and replays");
       }
-      userSession = await window.CnCPort.beginTransferUserDataImport(userFiles);
+      userSession = await window.CnCPort.beginTransferUserDataImport(userFiles, manifest.modContextId);
     }
   } catch (error) {
-    await gameSession.abort();
+    await Promise.allSettled([gameSession.abort(), modSession?.abort?.()]);
     throw error;
   }
   state.incoming = {
@@ -332,6 +371,7 @@ async function prepareIncoming(message) {
     totalBytes: manifest.totalBytes,
     startedAt: Date.now(),
     gameSession,
+    modSession,
     userSession,
   };
   document.querySelector("#transferReceiveTitle").textContent = "Receiving your Zero Hour installation";
@@ -354,8 +394,11 @@ function currentIncomingFile(message) {
 }
 
 function sessionForFile(incoming, file) {
-  return file.kind === "archive" || file.kind === "video" || file.kind === "cursor"
-    ? incoming.gameSession : incoming.userSession;
+  if (file.kind === "archive" || file.kind === "video" || file.kind === "cursor") {
+    return incoming.gameSession;
+  }
+  if (file.kind === "mod-archive") return incoming.modSession;
+  return incoming.userSession;
 }
 
 async function handleReceiverMessage(peerId, message, payload) {
@@ -412,13 +455,23 @@ async function handleReceiverMessage(peerId, message, payload) {
     }
     const importedUserFiles = incoming.userSession ? await incoming.userSession.finish() : [];
     await incoming.gameSession.finish();
+    const importedMods = incoming.modSession ? await incoming.modSession.finish() : null;
     await sendEncrypted(peerId, { type: "complete-ack", transferId: incoming.transferId });
     state.incoming = null;
-    document.querySelector("#transferCompleteSummary").textContent = importedUserFiles.length
-      ? `Game files and ${importedUserFiles.length} save/replay file${importedUserFiles.length === 1 ? "" : "s"} are ready on this device.`
+    const additions = [];
+    if (importedMods) {
+      const count = importedMods.installed + importedMods.reused;
+      additions.push(`${count} mod${count === 1 ? "" : "s"}`);
+    }
+    if (importedUserFiles.length) {
+      additions.push(`${importedUserFiles.length} save/replay file${importedUserFiles.length === 1 ? "" : "s"}`);
+    }
+    document.querySelector("#transferCompleteSummary").textContent = additions.length
+      ? `Your game files and ${additions.join(" and ")} are ready on this device.`
       : "Your game files are ready on this device.";
     showScreen("complete");
-    window.ZeroHDesktop?.showToast("Transfer complete", "Zero Hour is installed and ready to launch.");
+    window.ZeroHDesktop?.showToast("Transfer complete",
+      importedMods ? "Zero Hour and its transferred mods are ready to launch." : "Zero Hour is installed and ready to launch.");
   }
 }
 
@@ -550,6 +603,7 @@ async function startSender() {
   status.textContent = "Preparing a read-only snapshot of your installed files…";
   try {
     state.outgoing = await createOutgoingSource({
+      includeMods: document.querySelector("#transferIncludeMods").checked,
       includeSaves: document.querySelector("#transferIncludeSaves").checked,
       includeReplays: document.querySelector("#transferIncludeReplays").checked,
     });
@@ -589,9 +643,19 @@ async function startReceiver() {
 async function refreshSendAvailability() {
   const status = document.querySelector("#transferInstallStatus");
   const installed = window.ZeroHAssetLibrary.installedLibrary();
+  const mods = window.ZeroHModManager?.store.list() ?? [];
+  const modOption = document.querySelector("#transferIncludeMods");
+  modOption.disabled = mods.length === 0;
+  if (mods.length === 0) {
+    modOption.checked = false;
+    delete modOption.dataset.initialized;
+  } else if (!modOption.dataset.initialized) {
+    modOption.checked = true;
+    modOption.dataset.initialized = "true";
+  }
   status.classList.toggle("is-error", !installed);
   status.textContent = installed
-    ? `Installed Zero Hour library ready · ${formatTransferBytes(installed.totalBytes)}`
+    ? `Installed Zero Hour library ready · ${formatTransferBytes(installed.totalBytes)}${mods.length ? ` · ${mods.length} installed mod${mods.length === 1 ? "" : "s"} available` : ""}`
     : "No installed Zero Hour library was found. Use the Game Launcher and choose “Install in this browser” first.";
   document.querySelector("#transferStartSend").disabled =
     !installed || !document.querySelector("#transferSendOwnership").checked;

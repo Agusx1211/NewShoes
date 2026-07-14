@@ -28,6 +28,12 @@ import {
   registerP2pBestEffort,
   shouldAutoConnectP2p,
 } from "./multiplayer_launch_policy.mjs";
+import {
+  activeModMountPlan,
+  deriveMultiplayerRoom,
+  loadActiveModContext,
+  vanillaModContext,
+} from "./mod-context.mjs";
 
 const analytics = window.ZeroHAnalytics;
 const track = (name, params) => analytics?.track(name, params);
@@ -44,6 +50,13 @@ const progressNode = document.querySelector("#launchStatus");
 const progressSentinel = document.querySelector("#progress");
 const bootSentinel = document.querySelector("#overlay");
 const queryParams = new URLSearchParams(window.location.search);
+const activeModContext = (() => {
+  try {
+    return loadActiveModContext(window.localStorage);
+  } catch {
+    return vanillaModContext();
+  }
+})();
 const performanceOverlayNode = document.querySelector("#performanceOverlay");
 const performanceGraphNode = document.querySelector("#performanceGraph");
 const performanceClientFpsNode = document.querySelector("#performanceClientFps");
@@ -886,9 +899,15 @@ async function start() {
     activeRpc = rpc;
     const networkSettings = networkSettingsFromInputs();
     saveNetworkSettings(networkSettings);
+    const discoveryRoom = deriveMultiplayerRoom(networkSettings.room, activeModContext);
     let networkRuntime = null;
-    if (shouldAutoConnectP2p(networkSettings.room)) {
-      networkRuntime = { status: "registering", room: networkSettings.room };
+    if (shouldAutoConnectP2p(discoveryRoom)) {
+      networkRuntime = {
+        status: "registering",
+        room: networkSettings.room,
+        discoveryRoom,
+        modContextId: activeModContext.id,
+      };
       if (networkStatusNode) {
         networkStatusNode.textContent = "Discovering peers in the background; game launch will continue offline until connected.";
       }
@@ -901,13 +920,16 @@ async function start() {
         : [];
       void registerP2pBestEffort({
         rpc,
-        room: networkSettings.room,
+        room: discoveryRoom,
         peerId: networkSettings.name || null,
         displayName: networkSettings.name || null,
         iceServers,
       }).then((registration) => {
         if (registration.ok) {
           networkRuntime = registration.runtime;
+          networkRuntime.room = networkSettings.room;
+          networkRuntime.discoveryRoom = discoveryRoom;
+          networkRuntime.modContextId = activeModContext.id;
           const endpoint = networkRuntime?.endpoint;
           const virtualIp = endpoint?.localIp >>> 0;
           const ipText = [24, 16, 8, 0]
@@ -921,6 +943,8 @@ async function start() {
           networkRuntime = {
             status: "offline",
             room: networkSettings.room,
+            discoveryRoom,
+            modContextId: activeModContext.id,
             error: registration.error,
           };
           if (networkStatusNode) {
@@ -1002,6 +1026,7 @@ async function start() {
       videos: window.ZeroHAssetLibrary?.preparedVideos ?? [],
       includeVideos: queryParams.get("videos") === "1"
         || window.ZeroHAssetLibrary?.includeVideos === true,
+      mods: activeModMountPlan(activeModContext),
     });
     if (mount?.archiveSet?.archiveCount !== archives.length) {
       throw launchFailure("archive mount failed", mount?.error ?? mount?.archiveSet);
@@ -1055,6 +1080,7 @@ async function start() {
         maxCameraHeight: cameraZoomHeight,
         bootWidth: bootResolution?.width,
         bootHeight: bootResolution?.height,
+        modDirectory: mount.modDirectory ?? "",
       });
     } finally {
       window.removeEventListener("cncport:initprogress", onInitProgress);

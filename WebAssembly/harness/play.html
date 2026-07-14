@@ -26,6 +26,7 @@
       <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.3" fill="#d7e5ee"/><path d="M12 2.7a9.3 9.3 0 0 1 8.8 6.3L14 11a2.6 2.6 0 0 0-1-1.3L12 2.7Z" fill="#eef7fa"/><path d="m4.5 17.5 5.7-4.1a2.6 2.6 0 0 0 1.7 1.2l2.4 6.3a9.3 9.3 0 0 1-9.8-3.4Z" fill="#b9d0df"/><circle cx="12" cy="12" r="2.4" fill="#6289a3"/><circle cx="12" cy="12" r=".9" fill="#d9eef6"/></symbol>
       <symbol id="i-box" viewBox="0 0 24 24"><path d="m3 7 9-4.4L21 7v10l-9 4.4L3 17V7Z" fill="#ca8b42"/><path d="m3 7 9 4.4L21 7l-9-4.4L3 7Z" fill="#edb969"/><path d="m12 11.4 9-4.4v10l-9 4.4v-10Z" fill="#a96831"/><path d="m7.4 4.8 9 4.4v3.3l-1.8-.5-1.4 1.9v-3.4L4.8 6.4l2.6-1.6Z" fill="#ffd895"/></symbol>
       <symbol id="i-apps" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5" fill="#4d91cf"/><rect x="13" y="3" width="8" height="8" rx="1.5" fill="#dc8446"/><rect x="3" y="13" width="8" height="8" rx="1.5" fill="#79a952"/><rect x="13" y="13" width="8" height="8" rx="1.5" fill="#e0ba3f"/></symbol>
+      <symbol id="i-mod" viewBox="0 0 24 24"><path d="M4.2 4.2h4.1a3.7 3.7 0 1 1 7.4 0h4.1v4.1a3.7 3.7 0 1 1 0 7.4v4.1h-4.1a3.7 3.7 0 1 1-7.4 0H4.2v-4.1a3.7 3.7 0 1 1 0-7.4V4.2Z" fill="#7457ad"/><path d="M12 2.3c-1 0-1.8.8-1.8 1.9 0 .7.4 1.3 1 1.6H6v5.4a1.9 1.9 0 1 0 0 3.6V18h5.2a1.9 1.9 0 1 1 3.6 0H18v-5.2a1.9 1.9 0 1 0 0-3.6V6h-5.2c.7-.3 1-1 1-1.8 0-1-.8-1.9-1.8-1.9Z" fill="#9d83cf"/><path d="M6 11.2a1.9 1.9 0 1 0 0 3.6" fill="none" stroke="#eadfff" stroke-width="1.1"/></symbol>
       <symbol id="i-gear" viewBox="0 0 24 24"><path d="M9.8 2.6h4.4l.7 2.3c.5.2 1 .5 1.4.8l2.3-.5 2.2 3.7-1.6 1.8v1.7l1.6 1.8-2.2 3.7-2.3-.5c-.4.3-.9.6-1.4.8l-.7 2.3H9.8l-.7-2.3c-.5-.2-1-.5-1.4-.8l-2.3.5-2.2-3.7 1.6-1.8v-1.7L3.2 8.9l2.2-3.7 2.3.5c.4-.3.9-.6 1.4-.8l.7-2.3Z" fill="#7893a5"/><circle cx="12" cy="11.7" r="3.4" fill="#e8f1f5"/><circle cx="12" cy="11.7" r="1.6" fill="#65849a"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="#5b9dd3"/><circle cx="12" cy="7.2" r="1.3" fill="#fff"/><path d="M10.7 10.2h2.5v7.1h-2.5z" fill="#fff"/></symbol>
       <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2.2 8 3v5.9c0 5.2-3.3 8.7-8 10.7-4.7-2-8-5.5-8-10.7V5.2l8-3Z" fill="#5d9e72"/><path d="m8.2 11.8 2.3 2.3 5.4-5.5" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -73,6 +74,12 @@
         </button>
         <button class="desktop-icon" type="button" data-open="explorer" aria-label="Open Save Files">
           <span class="desktop-icon-art"><svg><use href="#i-folder"/></svg></span><span>My Files</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="mods" aria-label="Open Mod Manager">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-mod"/></svg></span><span>Mod Manager</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="gameData" aria-label="Open Save and Replay Manager">
+          <span class="desktop-icon-art"><svg><use href="#i-save"/></svg></span><span>Save &amp; Replay Manager</span>
         </button>
         <button class="desktop-icon" type="button" data-open="browser" aria-label="Open Project New Shoes Browser">
           <span class="desktop-icon-art app-art"><svg><use href="#i-browser"/></svg></span><span>Project New Shoes Browser</span>
@@ -309,6 +316,44 @@
           </div>
         </article>
 
+        <article id="modsWindow" class="window mods-window" data-app="mods" style="--x: 52%; --y: 45%; --w: 860px; --h: 620px;" aria-label="Mod Manager">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-mod"/></svg></span><span>Zero Hour Mod Manager</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="mod-manager-body">
+            <header class="manager-heading"><div><p class="eyebrow">BROWSER MOD LIBRARY</p><h1>Zero Hour Mod Manager</h1><p>Import a ModDB download, installer, BIG file, or unpacked folder. Enabled mods load in the order shown.</p></div><div id="activeModBadge" class="active-context-badge">Vanilla Zero Hour</div></header>
+            <section class="mod-import-panel" aria-labelledby="modImportTitle">
+              <div><h2 id="modImportTitle">Import a mod</h2><p>ZIP, 7z, RAR, NSIS/EXE, BIG, and loose engine folders are inspected locally. Native Windows DLL/EXE code is reported and ignored.</p></div>
+              <label>Name <input id="modImportName" maxlength="120" placeholder="Optional display name"></label>
+              <label>Version <input id="modImportVersion" maxlength="80" placeholder="Auto-detect"></label>
+              <div class="mod-import-actions"><button id="modImportPackageButton" type="button" class="button primary small">Import package…</button><button id="modImportFolderButton" type="button" class="button secondary small">Import folder…</button></div>
+              <input id="modImportPackageInput" type="file" accept=".big,.zip,.7z,.rar,.exe,.001" hidden>
+              <input id="modImportFolderInput" type="file" webkitdirectory directory multiple hidden>
+              <div id="modImportProgress" class="mod-import-progress" role="status">Ready to import. Files remain on this device.</div>
+            </section>
+            <section class="installed-mods-panel"><header><div><h2>Launch configuration</h2><p id="modConfigurationSummary">No mods enabled.</p></div><div><button id="modUseVanillaButton" type="button" class="button secondary small">Use vanilla</button><button id="modApplyButton" type="button" class="button primary small">Apply &amp; reload</button></div></header><div id="installedModList" class="installed-mod-list"></div><div id="installedModEmpty" class="manager-empty"><svg><use href="#i-mod"/></svg><strong>No mods installed</strong><span>Import a downloaded package or an unpacked mod folder.</span></div></section>
+          </div>
+        </article>
+
+        <article id="gameDataWindow" class="window game-data-window" data-app="gameData" style="--x: 54%; --y: 46%; --w: 900px; --h: 620px;" aria-label="Save and Replay Manager">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-save"/></svg></span><span>Save &amp; Replay Manager</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="game-data-manager-body">
+            <header class="manager-heading"><div><p class="eyebrow">ISOLATED GAME DATA</p><h1>Save &amp; Replay Manager</h1><p>Saves and replays are isolated by exact mod configuration. Compatibility copies require an explicit override.</p></div><div class="game-data-actions"><button id="importSaveButton" type="button" class="button secondary small">Import save</button><button id="importReplayDataButton" type="button" class="button secondary small">Import replay</button><button id="refreshGameDataButton" type="button" class="button primary small">Refresh</button></div><input id="importSaveInput" type="file" accept=".sav" hidden><input id="importReplayDataInput" type="file" accept=".rep" hidden></header>
+            <section id="compatibilityOverridePanel" class="compatibility-override-panel" hidden>
+              <div><strong>Compatibility override</strong><span id="compatibilityOverrideSource"></span></div>
+              <label>Copy into <select id="compatibilityOverrideTarget"></select></label>
+              <label class="compatibility-risk"><input id="compatibilityOverrideRisk" type="checkbox"> I understand this file was created by a different configuration and may fail to load, crash, or desync.</label>
+              <div><button id="compatibilityOverrideCancel" type="button" class="button secondary small">Cancel</button><button id="compatibilityOverrideCopy" type="button" class="button primary small" disabled>Override &amp; copy</button></div>
+            </section>
+            <div id="gameDataStatus" class="game-data-status" role="status">Loading isolated game data…</div>
+            <div id="gameDataContextList" class="game-data-context-list"></div>
+          </div>
+        </article>
+
         <article id="explorerWindow" class="window explorer-window" data-app="explorer" style="--x: 48%; --y: 45%; --w: 860px; --h: 560px;" aria-label="My Files">
           <header class="titlebar">
             <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-folder"/></svg></span><span id="explorerTitle">My Files</span></div>
@@ -414,7 +459,7 @@
               <div class="transfer-heading"><p class="eyebrow">SEND YOUR COPY</p><h1>Confirm ownership</h1><p>You may only transfer these files to another device you control. Transferring game files to third parties is not allowed.</p></div>
               <div id="transferInstallStatus" class="transfer-install-status" role="status">Checking the installed library…</div>
               <label class="transfer-legal-check"><input id="transferSendOwnership" type="checkbox"><span>✓</span><strong>I confirm that I legally own these game files and will only transfer them to a device I control.</strong></label>
-              <fieldset class="transfer-options"><legend>Also include</legend><label><input id="transferIncludeSaves" type="checkbox"><svg><use href="#i-save"/></svg><span><strong>Saved games</strong><small>Copy personal campaign and skirmish saves</small></span></label><label><input id="transferIncludeReplays" type="checkbox"><svg><use href="#i-replay"/></svg><span><strong>Replays</strong><small>Copy recorded matches</small></span></label></fieldset>
+              <fieldset class="transfer-options"><legend>Also include</legend><label><input id="transferIncludeMods" type="checkbox"><svg><use href="#i-mod"/></svg><span><strong>Installed mods</strong><small>Copy packages and the active load order</small></span></label><label><input id="transferIncludeSaves" type="checkbox"><svg><use href="#i-save"/></svg><span><strong>Saved games</strong><small>Copy personal campaign and skirmish saves</small></span></label><label><input id="transferIncludeReplays" type="checkbox"><svg><use href="#i-replay"/></svg><span><strong>Replays</strong><small>Copy recorded matches</small></span></label></fieldset>
               <footer class="transfer-actions"><button type="button" class="button secondary" data-transfer-back="choose">Back</button><button id="transferStartSend" type="button" class="button primary" disabled>Generate transfer code</button></footer>
             </section>
 
@@ -549,6 +594,8 @@
           <div class="start-primary">
             <button type="button" data-open="setup"><span class="start-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><div><strong>Project New Shoes Game Launcher</strong><small>Add files and start a game</small></div></button>
             <button type="button" data-open="explorer"><span class="start-icon"><svg><use href="#i-folder"/></svg></span><div><strong>My Files</strong><small>Browse folders and local files</small></div></button>
+            <button type="button" data-open="mods"><span class="start-icon"><svg><use href="#i-mod"/></svg></span><div><strong>Mod Manager</strong><small>Import and choose launch mods</small></div></button>
+            <button type="button" data-open="gameData"><span class="start-icon"><svg><use href="#i-save"/></svg></span><div><strong>Save &amp; Replay Manager</strong><small>Browse isolated game data</small></div></button>
             <button type="button" data-open="browser"><span class="start-icon"><svg><use href="#i-browser"/></svg></span><div><strong>Project New Shoes Browser</strong><small>Command Net and the open web</small></div></button>
             <button type="button" data-open="notepad"><span class="start-icon"><svg><use href="#i-note"/></svg></span><div><strong>Notepad</strong><small>Write notes to your virtual drive</small></div></button>
             <button type="button" data-open="games"><span class="start-icon"><svg><use href="#i-games"/></svg></span><div><strong>Games</strong><small>Classic XP games, command-approved</small></div></button>

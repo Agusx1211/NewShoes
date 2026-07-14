@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:browser-vendor": "node tools/build_trystero_bundle.mjs",
+    "build:browser-vendor": "node tools/build_trystero_bundle.mjs && node tools/build_seek_bzip_bundle.mjs",
     "build:pages-runtime": "bash tools/build_pages_runtime.sh",
     "build:pages-site": "node tools/build_pages_site.mjs",
     "build:cloudflare-site": "node tools/build_cloudflare_site.mjs pages-dist cloudflare-dist",
-    "check:pages": "node tools/build_trystero_bundle.mjs --check && node tools/check_pages_sources.mjs && node tools/verify_crash_diagnostics_zero_overhead.mjs",
+    "check:pages": "node tools/build_trystero_bundle.mjs --check && node tools/build_seek_bzip_bundle.mjs --check && node tools/check_pages_sources.mjs && node tools/verify_crash_diagnostics_zero_overhead.mjs",
     "verify:pages-site": "node tools/verify_pages_site.mjs pages-dist",
     "verify:cloudflare-site": "node tools/verify_cloudflare_site.mjs cloudflare-dist",
     "test:pages-artifact-guard": "node tools/pages_artifact_guard_smoke.mjs",
@@ -95,6 +95,13 @@
     "test:issue-recorder": "node tools/verify_crash_diagnostics_zero_overhead.mjs && node harness/issue_recorder_unit.mjs && node harness/network_diagnostics_unit.mjs && node harness/issue_dump_network_decode_smoke.mjs && node harness/issue_dump_upload_smoke.mjs && node harness/issue_recorder_ui_smoke.mjs",
     "test:multiplayer-identity": "node harness/multiplayer_identity_unit.mjs",
     "test:multiplayer-launch-policy": "node harness/multiplayer_launch_policy_unit.mjs",
+    "test:mod-context": "node harness/mod-context_unit.mjs",
+    "test:mod-package-format": "node harness/mod-package-format_unit.mjs",
+    "test:clickteam-installer": "node harness/clickteam-installer_unit.mjs",
+    "test:mod-package-store": "node harness/mod-package-store_unit.mjs",
+    "test:mod-manager-browser": "node harness/mod_manager_browser_smoke.mjs",
+    "test:real-mod-packages": "node harness/mod_real_package_smoke.mjs",
+    "test:game-data-store": "node harness/game-data-store_unit.mjs",
     "test:startup-vertical": "npm run build:startup-vertical && node tools/run_startup_vertical_smoke.mjs",
     "test:startup-vertical-browser": "npm run build:port && node harness/startup_vertical_smoke.mjs",
     "test:real-shellmap": "npm run build:port && node harness/shellmap_real_init_gate.mjs",
@@ -261,5 +268,9 @@
     "wrangler": "4.110.0",
     "ws": "8.21.0",
     "yaml": "2.9.0"
+  },
+  "dependencies": {
+    "7z-wasm": "1.2.0",
+    "seek-bzip": "2.0.0"
   }
 }

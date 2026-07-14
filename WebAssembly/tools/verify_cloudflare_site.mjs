@@ -120,7 +120,7 @@ for (const { name } of inventory) {
   }
 }
 
-const [index, headers, redirects, license, legal, manifestText, analytics, retirementWorker, retirementBootstrap, buildInfoText] = await Promise.all([
+const [index, headers, redirects, license, legal, manifestText, analytics, retirementWorker, retirementBootstrap, buildInfoText, modPackageWorker] = await Promise.all([
   readFile(resolve(root, "index.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "_headers"), "utf8").catch(() => ""),
   readFile(resolve(root, "_redirects"), "utf8").catch(() => ""),
@@ -131,7 +131,13 @@ const [index, headers, redirects, license, legal, manifestText, analytics, retir
   readFile(resolve(root, "coi-serviceworker.js"), "utf8").catch(() => ""),
   readFile(resolve(root, "retire-service-worker.js"), "utf8").catch(() => ""),
   readFile(resolve(root, "harness/build-info.json"), "utf8").catch(() => ""),
+  readFile(resolve(root, "harness/mod-package-worker.mjs"), "utf8").catch(() => ""),
 ]);
+
+if (modPackageWorker.includes("../node_modules/7z-wasm/")
+    || !modPackageWorker.includes("./vendor/7z-wasm/")) {
+  findings.push("harness/mod-package-worker.mjs: production 7z-wasm paths are unresolved");
+}
 
 for (const contract of [
   "Cross-Origin-Opener-Policy: same-origin",

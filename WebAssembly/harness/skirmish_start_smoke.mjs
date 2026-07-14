@@ -95,6 +95,11 @@ const replayPlaybackScreenshotPath = resolve(
   process.env.SKIRMISH_REPLAY_PLAYBACK_SCREENSHOT ??
     resolve(screenshotsRoot, "replay-playback-roundtrip.png"));
 const browserProfileDir = String(process.env.SKIRMISH_START_PROFILE_DIR ?? "").trim();
+const requestedModPackage = String(process.env.SKIRMISH_START_MOD_PACKAGE ?? "").trim();
+const requestedModName = String(process.env.SKIRMISH_START_MOD_NAME ?? "").trim();
+if (requestedModPackage && !/^[A-Za-z0-9_.-]+\.(?:zip|7z|rar|exe|big)$/i.test(requestedModPackage)) {
+  throw new Error(`Invalid SKIRMISH_START_MOD_PACKAGE: ${requestedModPackage}`);
+}
 
 function parsePositiveInt(name, fallback) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
@@ -1001,10 +1006,17 @@ async function waitForSkirmishMatch(page) {
   let framesAdvanced = 0;
   while (framesAdvanced < maxStartFrames) {
     const frames = Math.min(frameChunk, maxStartFrames - framesAdvanced);
+    const startedAt = performance.now();
     const result = await runSummary(page, frames, "skirmish match wait");
+    const wallMs = performance.now() - startedAt;
     framesAdvanced += frames;
     const gameplay = result.frame?.gameplay;
-    const sample = compactGameplay(result.frame);
+    const sample = {
+      ...compactGameplay(result.frame),
+      requestedFrames: frames,
+      wallMs,
+      wallMsPerFrame: wallMs / frames,
+    };
     samples.push(sample);
     if (gameplay?.gameMode === GAME_SKIRMISH &&
         gameplay?.inGame === true &&
@@ -1028,9 +1040,16 @@ async function runPostActiveFrames(page, totalFrames, chunkSize) {
   let last = null;
   while (framesAdvanced < totalFrames) {
     const frames = Math.min(chunkSize, totalFrames - framesAdvanced);
+    const startedAt = performance.now();
     last = await runSummary(page, frames, "skirmish post-active wait");
+    const wallMs = performance.now() - startedAt;
     framesAdvanced += frames;
-    samples.push(compactGameplay(last.frame));
+    samples.push({
+      ...compactGameplay(last.frame),
+      requestedFrames: frames,
+      wallMs,
+      wallMsPerFrame: wallMs / frames,
+    });
   }
   return { result: last, framesAdvanced, samples };
 }
@@ -1609,6 +1628,35 @@ async function main() {
       }
     });
 
+    let activeMod = null;
+    if (requestedModPackage) {
+      console.error(`[skirmish-start] import mod ${requestedModPackage}`);
+      const importUrl = new URL(
+        `artifacts/mod-packages/${encodeURIComponent(requestedModPackage)}`, server.url).href;
+      await page.goto(new URL("harness/play.html", server.url).href, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => Boolean(window.ZeroHModManager?.store));
+      activeMod = await page.evaluate(async ({ url, fileName, displayName }) => {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Mod package fetch failed (${response.status})`);
+        const file = new File([await response.blob()], fileName);
+        const imported = await window.ZeroHModManager.store.importFiles([file], { name: displayName });
+        const context = await window.ZeroHModManager.store.apply([imported.mod.id]);
+        return {
+          id: imported.mod.id,
+          name: imported.mod.name,
+          archiveCount: imported.mod.archives.filter((archive) => archive.enabled).length,
+          totalBytes: imported.mod.totalBytes,
+          contentHash: imported.mod.contentHash,
+          contextId: context.id,
+        };
+      }, {
+        url: importUrl,
+        fileName: requestedModPackage,
+        displayName: requestedModName || requestedModPackage.replace(/\.[^.]+$/, ""),
+      });
+      console.error(`[skirmish-start] imported ${activeMod.name}: ${activeMod.archiveCount} enabled archives`);
+    }
+
     const harnessUrl = new URL("harness/index.html", server.url);
     harnessUrl.searchParams.set("dist", distDir);
     if (process.env.SKIRMISH_START_THREADS === "1") harnessUrl.searchParams.set("threads", "1");
@@ -1621,6 +1669,12 @@ async function main() {
     await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
     await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
     await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+    const modMountPlan = activeMod
+      ? await page.evaluate(async () => {
+        const { activeModMountPlan, loadActiveModContext } = await import("./mod-context.mjs");
+        return activeModMountPlan(loadActiveModContext(window.localStorage));
+      })
+      : [];
 
     let audioSetup = null;
     if (expectMenuMusicStop) {
@@ -1647,17 +1701,28 @@ async function main() {
       path: "/assets/skirmish-start",
       verifyEach: false,
       archives: buildArchives(server.url),
+      mods: modMountPlan,
     });
     expect(mount?.archiveSet?.archiveCount === archiveSpecs.length,
       "failed to mount runtime archives", mount?.archiveSet ?? mount);
+    if (activeMod) {
+      expect(mount?.modSet?.archiveCount === activeMod.archiveCount
+          && mount?.modSet?.modCount === 1,
+      "failed to mount imported mod archives", mount?.modSet ?? mount);
+    }
 
     console.error("[skirmish-start] real init");
     const init = await rpc(page, "realEngineInit", {
       runDirectory: "/assets/skirmish-start",
       shellMap: true,
+      modDirectory: mount.modDirectory ?? "",
     });
     expect(init?.ok === true && init?.aborted === false && init?.frontier?.initReturned === true,
       "real engine init failed", init?.frontier ?? init);
+    if (activeMod) {
+      expect(init.frontier.commandLine?.includes("-mod /assets/cnc-mods-active"),
+        "real engine did not receive the imported mod directory", init.frontier);
+    }
 
     if (expectReplayRoundTrip) {
       const existingReplays = await rpc(page, "listReplays");
@@ -2106,6 +2171,10 @@ async function main() {
       ok: true,
       source: "skirmish-start-smoke",
       distDir,
+      activeMod,
+      modSet: mount.modSet ?? null,
+      engineCommandLine: init.frontier?.commandLine ?? null,
+      engineUserDataHome: init.frontier?.userDataHome ?? null,
       archiveCount: mount.archiveSet.archiveCount,
       requestedMap: requestedSkirmishMap || null,
       selectedMap: mapCache?.probe?.skirmishGameInfo?.map

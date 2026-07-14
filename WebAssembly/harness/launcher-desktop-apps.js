@@ -5,21 +5,21 @@
   const FILESYSTEM_KEY = "zeroh-filesystem-v1";
   const MAX_IMPORT_BYTES = 512 * 1024;
   const TEXT_EXTENSIONS = new Set(["txt", "md", "ini", "log", "json", "cfg"]);
+  const LEGACY_WELCOME_CONTENT = "Welcome, Commander.\n\nThis Notepad document lives on the Project New Shoes virtual drive. Edit it, save it, close the browser, and open it again from My Files.\n\nUseful places:\n- Game Saves\n- Replays\n- Screenshots\n- Mods\n";
+  const WELCOME_CONTENT = LEGACY_WELCOME_CONTENT.replace("\n- Mods\n", "\n");
 
   function seedFileSystem() {
     const modified = new Date().toISOString();
     return {
-      version: 2,
+      version: 3,
       nodes: [
         { id: "root", parent: null, type: "folder", name: "New Shoes Drive", modified },
         { id: "saves", parent: "root", type: "folder", name: "Game Saves", modified },
         { id: "replays", parent: "root", type: "folder", name: "Replays", modified },
         { id: "notes", parent: "root", type: "folder", name: "Notes", modified },
         { id: "screens", parent: "root", type: "folder", name: "Screenshots", modified },
-        { id: "mods", parent: "root", type: "folder", name: "Mods", modified },
-        { id: "note-1", parent: "notes", type: "file", kind: "text", name: "Welcome to Project New Shoes.txt", modified, size: 268, content: "Welcome, Commander.\n\nThis Notepad document lives on the Project New Shoes virtual drive. Edit it, save it, close the browser, and open it again from My Files.\n\nUseful places:\n- Game Saves\n- Replays\n- Screenshots\n- Mods\n" },
+        { id: "note-1", parent: "notes", type: "file", kind: "text", name: "Welcome to Project New Shoes.txt", modified, size: WELCOME_CONTENT.length, content: WELCOME_CONTENT },
         { id: "note-2", parent: "notes", type: "file", kind: "text", name: "Battle plan.txt", modified, size: 151, content: "BATTLE PLAN\n===========\n1. Secure both supply docks.\n2. Scout the northern ridge.\n3. Keep one dozer in reserve.\n4. Do not panic.\n" },
-        { id: "mod-readme", parent: "mods", type: "file", kind: "text", name: "About mods.txt", modified, size: 150, content: "MOD STAGING AREA\n================\nImported files remain in this browser workspace. The game currently launches only original unmodified runtime archives.\n" },
       ],
     };
   }
@@ -27,7 +27,20 @@
   function loadFileSystem() {
     try {
       const stored = JSON.parse(localStorage.getItem(FILESYSTEM_KEY));
-      if (stored?.version === 2 && Array.isArray(stored.nodes) && stored.nodes.some((node) => node.id === "root")) return stored;
+      if ((stored?.version === 2 || stored?.version === 3)
+          && Array.isArray(stored.nodes) && stored.nodes.some((node) => node.id === "root")) {
+        if (stored.version === 2) {
+          stored.version = 3;
+          stored.nodes = stored.nodes.filter((node) => node.id !== "mods" && node.id !== "mod-readme");
+          const welcome = stored.nodes.find((node) => node.id === "note-1");
+          if (welcome?.content === LEGACY_WELCOME_CONTENT) {
+            welcome.content = WELCOME_CONTENT;
+            welcome.size = WELCOME_CONTENT.length;
+          }
+          try { localStorage.setItem(FILESYSTEM_KEY, JSON.stringify(stored)); } catch { /* optional migration */ }
+        }
+        return stored;
+      }
     } catch { /* seed a fresh drive */ }
     return seedFileSystem();
   }
