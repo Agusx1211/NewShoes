@@ -55,8 +55,12 @@ const result = await build({
   write: false,
 });
 
-const output = result.outputFiles?.[0]?.text;
-if (!output) throw new Error("esbuild did not produce the seek-bzip browser bundle");
+const rawOutput = result.outputFiles?.[0]?.text;
+if (!rawOutput) throw new Error("esbuild did not produce the seek-bzip browser bundle");
+
+// esbuild 0.28 retains this redundant directive on ARM64 but removes it on x64.
+// ESM is always strict, so normalizing it out keeps the checked-in bundle portable.
+const output = rawOutput.replaceAll('"use strict";', "");
 
 if (checkOnly) {
   const existing = await readFile(outputPath, "utf8").catch(() => "");
