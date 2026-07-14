@@ -28,6 +28,35 @@ function delay(ms) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 }
 
+async function collectSSE(response, messages) {
+  const decoder = new TextDecoder();
+  let buffered = "";
+  for await (const chunk of response.body) {
+    buffered += decoder.decode(chunk, { stream: true }).replaceAll("\r\n", "\n");
+    for (;;) {
+      const boundary = buffered.indexOf("\n\n");
+      if (boundary < 0) break;
+      const block = buffered.slice(0, boundary);
+      buffered = buffered.slice(boundary + 2);
+      let event = "";
+      let id = null;
+      const data = [];
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event: ")) event = line.slice(7);
+        else if (line.startsWith("id: ")) id = Number(line.slice(4));
+        else if (line.startsWith("data: ")) data.push(line.slice(6));
+      }
+      if (event) {
+        messages.push({
+          event,
+          id,
+          data: data.length ? JSON.parse(data.join("\n")) : null,
+        });
+      }
+    }
+  }
+}
+
 async function unusedPort() {
   const server = createServer();
   server.unref();
@@ -113,6 +142,8 @@ async function main() {
   await mkdir(screenshotDir, { recursive: true });
 
   let browser;
+  let eventStreamAbort;
+  let eventCollector;
   let pageDiagnostic = null;
   const consoleErrors = [];
   const httpFailures = [];
@@ -471,6 +502,30 @@ async function main() {
       })}`);
     }
 
+    const eventMessages = [];
+    eventStreamAbort = new AbortController();
+    const eventParameters = new URLSearchParams({
+      mode: "camera",
+      types: "stream.baseline,construction.started,economy.changed",
+      relationships: "self",
+    });
+    const eventResponse = await fetch(`${bridgeBase}${sessionPath}/events?${eventParameters}`, {
+      headers: authorization,
+      signal: eventStreamAbort.signal,
+    });
+    if (!eventResponse.ok
+        || !eventResponse.headers.get("content-type")?.startsWith("text/event-stream")) {
+      throw new Error(`event stream failed: ${eventResponse.status}`);
+    }
+    eventCollector = collectSSE(eventResponse, eventMessages).catch((error) => {
+      if (error?.name !== "AbortError") throw error;
+    });
+    const streamBaseline = await waitFor("camera-bound tactical event baseline",
+      () => eventMessages.find((message) => message.event === "stream.baseline"),
+      (message) => message?.data?.observationMode === "camera"
+        && Number.isSafeInteger(message.id) && message.id > 0,
+      30000);
+
     const selectionReply = await rest(`${sessionPath}/game/selection`, {
       method: "POST",
       body: JSON.stringify({ objectIds: [builder.id] }),
@@ -555,6 +610,17 @@ async function main() {
         moneyAfterConstruction,
       })}`);
     }
+    const constructionEvent = await waitFor("coalesced semantic construction event",
+      () => eventMessages.find((message) =>
+        message.event === "construction.started"
+        && message.data?.objectIds?.includes(constructedObject.id)),
+      (message) => message?.id > streamBaseline.id
+        && message.data?.relationship === "self"
+        && message.data?.wake === false,
+      30000);
+    if (eventMessages.length > 16) {
+      throw new Error(`filtered event stream was unexpectedly noisy: ${JSON.stringify(eventMessages)}`);
+    }
     const matchScreenshot = resolve(screenshotDir, "agent-bridge-live-skirmish.png");
     const matchPixels = await page.screenshot({ path: matchScreenshot });
 
@@ -616,6 +682,13 @@ async function main() {
         construction: constructedObject.construction,
         moneySpent: moneyBeforeConstruction - moneyAfterConstruction,
       },
+      events: {
+        observationMode: streamBaseline.data.observationMode,
+        baselineCursor: streamBaseline.id,
+        constructionCursor: constructionEvent.id,
+        deliveredCount: eventMessages.length,
+        constructionType: constructionEvent.event,
+      },
       terrain: {
         knownCount: terrain.knownCount,
         visibleCount: terrain.visibleCount,
@@ -636,6 +709,8 @@ async function main() {
       + `${httpFailures.length ? `\nHTTP failures:\n${JSON.stringify(httpFailures, null, 2)}` : ""}`
       + `${bridgeError ? `\nbridge stderr:\n${bridgeError}` : ""}`);
   } finally {
+    eventStreamAbort?.abort();
+    await eventCollector?.catch(() => {});
     if (browser) await browser.close();
     await server.close();
     await stopBridge(bridge);

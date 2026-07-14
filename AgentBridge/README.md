@@ -136,6 +136,48 @@ passengers, current weapons/range/damage/target classes, production queues,
 command availability, and real special-power source/cooldown state. Omit the
 capability dictionaries from high-frequency tactical reads after discovery.
 
+### Tactical event stream
+
+The Go bridge can maintain the fast tactical loop and deliver bounded,
+coalesced changes as authenticated server-sent events. It does not poll until a
+client opens this endpoint:
+
+```sh
+curl -N -H 'Authorization: Bearer TOKEN' \
+  'http://127.0.0.1:18888/v1/sessions/game-1/events?mode=unrestricted'
+```
+
+Each event has a monotonically increasing `cursor`, simulation `frame`,
+`snapshotId`, severity, compact object IDs/area/details, and a `wake` flag. A
+cheap background controller can consume every event while a planning model
+uses a deliberately quiet subscription such as:
+
+```sh
+curl -N -H 'Authorization: Bearer TOKEN' \
+  'http://127.0.0.1:18888/v1/sessions/game-1/events?mode=unrestricted&wakeOnly=true&minSeverity=warning'
+```
+
+Optional comma-separated `types`, `relationships`, and `objectIds` filters and
+an all-or-nothing `minX`, `minY`, `maxX`, `maxY` region further narrow delivery.
+`relationships` accepts `self`, `allies`, `enemies`, `neutral`, and `unknown`.
+The event source uses the requested fog-safe observation mode; a camera stream
+therefore cannot derive changes from objects outside the current tactical view.
+
+Reconnect with the standard `Last-Event-ID` header or the equivalent `after`
+query parameter. The bridge retains a bounded replay ring during a short idle
+grace period. A client that falls behind receives `stream.resync` with the
+current and oldest available cursors and must refresh `/world`; the bridge
+never grows an unbounded queue. Heartbeats are SSE comments, so they keep the
+connection alive without waking an event listener. `stream.baseline` marks the
+first authoritative snapshot, and `game.outcome` is a critical wake event.
+
+Diffing, replay cursors, filters, severity, and coalescing intentionally live
+in Go as API sugar. The engine remains the authority for compact snapshots,
+fog/stealth filtering, stable opaque identities, and terminal results. The
+watcher stops after the idle grace period when no subscribers remain. Poll,
+capability-refresh, coalescing, idle, heartbeat, and replay limits can be tuned
+with the bridge command's `-event-*` flags.
+
 Terrain is a bounded, caller-sized cell-center grid. Bounds must stay inside
 the extent returned by `/world`; each axis is limited to 128 samples and the
 grid to 16,384 samples:
@@ -220,6 +262,10 @@ first JSON `hello` frame. The protocol advertises capabilities explicitly.
 `game.order`, `game.command`, `world.snapshot`, `terrain.query`, `ui.snapshot`,
 `ui.activate`, `ui.setText`, `ui.selectIndex`, and `ui.listItems` are the
 currently advertised operations.
+
+The SSE endpoint is not another engine operation. It is a bridge-side view
+built from authenticated `world.snapshot` calls only while subscribed, keeping
+the raw browser protocol small and the disabled path free of background work.
 
 The C++ implementation owns observation and mutations. It traverses the real
 `GameWindowManager` on demand and drives the original gadget input/system

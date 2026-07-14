@@ -37,6 +37,7 @@ type Session struct {
 	closed  chan struct{}
 	once    sync.Once
 	nextID  atomic.Uint64
+	events  *eventManager
 }
 
 // SessionInfo is the public REST representation of a connected runtime.
@@ -51,9 +52,10 @@ func newSession(
 	id string,
 	capabilities []string,
 	conn *websocket.Conn,
+	eventsConfig eventRuntimeConfig,
 ) *Session {
 	readCtx, cancel := context.WithCancel(ctx)
-	return &Session{
+	session := &Session{
 		id:           id,
 		capabilities: append([]string(nil), capabilities...),
 		connectedAt:  time.Now().UTC(),
@@ -63,6 +65,8 @@ func newSession(
 		pending:      make(map[string]chan response),
 		closed:       make(chan struct{}),
 	}
+	session.events = newEventManager(session, eventsConfig)
+	return session
 }
 
 func (s *Session) info() SessionInfo {
@@ -71,6 +75,15 @@ func (s *Session) info() SessionInfo {
 		ConnectedAt:  s.connectedAt,
 		Capabilities: append([]string(nil), s.capabilities...),
 	}
+}
+
+func (s *Session) supports(capability string) bool {
+	for _, candidate := range s.capabilities {
+		if candidate == capability {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Session) write(ctx context.Context, message protocolMessage) error {

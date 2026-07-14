@@ -31,6 +31,18 @@ func main() {
 	engineToken := flag.String("engine-token", "", "browser-to-bridge token (random when omitted)")
 	apiToken := flag.String("api-token", "", "REST bearer token (random when omitted)")
 	requestTimeout := flag.Duration("request-timeout", 30*time.Second, "maximum REST-to-engine request time")
+	eventPollInterval := flag.Duration("event-poll-interval", 250*time.Millisecond,
+		"compact snapshot interval while an event subscriber is active")
+	eventCapabilityInterval := flag.Duration("event-capability-interval", time.Second,
+		"capability snapshot interval while an event subscriber is active")
+	eventCoalesceWindow := flag.Duration("event-coalesce-window", 500*time.Millisecond,
+		"window for combining related tactical changes")
+	eventIdleTimeout := flag.Duration("event-idle-timeout", 30*time.Second,
+		"grace period to retain a resumable watcher after its final subscriber disconnects")
+	eventHeartbeatInterval := flag.Duration("event-heartbeat-interval", 15*time.Second,
+		"SSE heartbeat interval")
+	eventReplayLimit := flag.Int("event-replay-limit", 2048,
+		"maximum coalesced events retained per observation mode")
 	flag.Parse()
 
 	if *engineToken == "" {
@@ -56,9 +68,15 @@ func main() {
 	}
 
 	bridge, err := agentbridge.NewServer(agentbridge.Config{
-		EngineToken:    *engineToken,
-		APIToken:       *apiToken,
-		RequestTimeout: *requestTimeout,
+		EngineToken:             *engineToken,
+		APIToken:                *apiToken,
+		RequestTimeout:          *requestTimeout,
+		EventPollInterval:       *eventPollInterval,
+		EventCapabilityInterval: *eventCapabilityInterval,
+		EventCoalesceWindow:     *eventCoalesceWindow,
+		EventIdleTimeout:        *eventIdleTimeout,
+		EventHeartbeatInterval:  *eventHeartbeatInterval,
+		EventReplayLimit:        *eventReplayLimit,
 	})
 	if err != nil {
 		log.Fatal(err)

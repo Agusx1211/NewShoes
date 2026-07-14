@@ -22,16 +22,23 @@ var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
 // Config controls authentication and request lifetimes for a bridge server.
 type Config struct {
-	EngineToken    string
-	APIToken       string
-	RequestTimeout time.Duration
+	EngineToken             string
+	APIToken                string
+	RequestTimeout          time.Duration
+	EventPollInterval       time.Duration
+	EventCapabilityInterval time.Duration
+	EventCoalesceWindow     time.Duration
+	EventIdleTimeout        time.Duration
+	EventHeartbeatInterval  time.Duration
+	EventReplayLimit        int
 }
 
 // Server accepts raw browser sessions and presents their operations as REST.
 type Server struct {
-	config   Config
-	sessions *sessionStore
-	handler  http.Handler
+	config       Config
+	eventsConfig eventRuntimeConfig
+	sessions     *sessionStore
+	handler      http.Handler
 }
 
 // NewServer constructs a bridge with separate browser and REST credentials.
@@ -45,7 +52,11 @@ func NewServer(config Config) (*Server, error) {
 	if config.RequestTimeout <= 0 {
 		config.RequestTimeout = 30 * time.Second
 	}
-	server := &Server{config: config, sessions: newSessionStore()}
+	server := &Server{
+		config:       config,
+		eventsConfig: eventConfig(config),
+		sessions:     newSessionStore(),
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /engine", server.engine)
@@ -56,6 +67,7 @@ func NewServer(config Config) (*Server, error) {
 	mux.Handle("POST /v1/sessions/{session}/game/orders", server.requireAPIAuth(http.HandlerFunc(server.gameOrder)))
 	mux.Handle("POST /v1/sessions/{session}/game/commands", server.requireAPIAuth(http.HandlerFunc(server.gameCommand)))
 	mux.Handle("GET /v1/sessions/{session}/world", server.requireAPIAuth(http.HandlerFunc(server.worldSnapshot)))
+	mux.Handle("GET /v1/sessions/{session}/events", server.requireAPIAuth(http.HandlerFunc(server.tacticalEvents)))
 	mux.Handle("GET /v1/sessions/{session}/terrain", server.requireAPIAuth(http.HandlerFunc(server.terrainQuery)))
 	mux.Handle("GET /v1/sessions/{session}/ui", server.requireAPIAuth(http.HandlerFunc(server.uiSnapshot)))
 	mux.Handle("GET /v1/sessions/{session}/ui/items", server.requireAPIAuth(http.HandlerFunc(server.uiItems)))
@@ -133,7 +145,7 @@ func (s *Server) engine(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	session := newSession(ctx, hello.SessionID, hello.Capabilities, conn)
+	session := newSession(ctx, hello.SessionID, hello.Capabilities, conn, s.eventsConfig)
 	s.sessions.register(session)
 	defer func() {
 		s.sessions.remove(session)
