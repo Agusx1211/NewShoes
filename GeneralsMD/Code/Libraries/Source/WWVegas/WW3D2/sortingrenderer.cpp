@@ -397,8 +397,11 @@ void SortingRendererClass::Insert_To_Sorting_Pool(SortingNodeStruct* state)
 static void Apply_Render_State(RenderStateStruct& render_state)
 {
 
-
-
+	// Sorted draws are replayed after other scene passes have had a chance to
+	// program texture-stage state directly on D3D. Force the captured shader
+	// to restore both stages even when its bit field matches the last shader;
+	// otherwise a stale stage-one combiner can intermittently mask particles.
+	ShaderClass::Invalidate();
 	DX8Wrapper::Set_Shader(render_state.shader);
 
 	DX8Wrapper::Set_Material(render_state.material);

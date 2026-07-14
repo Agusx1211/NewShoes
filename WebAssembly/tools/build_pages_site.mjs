@@ -10,6 +10,7 @@ import {
   PAGES_TEMPLATE_FILES,
 } from "./pages_site_manifest.mjs";
 import { createBuildInfo, readReleaseMetadata } from "./release_metadata.mjs";
+import { buildBinkDecoderRuntime } from "./build_bink_decoder.mjs";
 
 const wasmRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(wasmRoot, "..");
@@ -118,6 +119,9 @@ await mkdir(join(outputRoot, "harness"), { recursive: true });
 await writeFile(join(outputRoot, "harness", "build-info.json"), `${JSON.stringify(buildInfo, null, 2)}\n`);
 
 const playSource = await readFile(join(wasmRoot, "harness", "play.html"), "utf8");
+const videoPolicyMarker = 'data-bink-video-sidecars="auto"';
+if (!playSource.includes(videoPolicyMarker)) throw new Error("play.html has no Bink video sidecar policy marker");
+const hostedPlaySource = playSource.replace(videoPolicyMarker, 'data-bink-video-sidecars="direct"');
 const directBootstrap = "    <script src=\"../coi-direct.js\"></script>\n";
 const legacyDocumentHead = `    <link rel="canonical" href="../">\n${directBootstrap}`;
 const rootDocumentHead = [
@@ -133,13 +137,13 @@ if (!aboutLegalPattern.test(playSource)) throw new Error("play.html has no About
 await mkdir(join(outputRoot, "harness"), { recursive: true });
 await writeFile(
   join(outputRoot, "harness", "play.html"),
-  playSource
+  hostedPlaySource
     .replace("<head>\n", `<head>\n${legacyDocumentHead}`)
     .replace(aboutLegalPattern, legalNotice),
 );
 await writeFile(
   join(outputRoot, "launcher.html"),
-  playSource
+  hostedPlaySource
     .replace("<head>\n", `<head>\n${rootDocumentHead}`)
     .replace('href="./manifest.webmanifest"', 'href="../manifest.webmanifest"')
     .replace(aboutLegalPattern, legalNotice),
@@ -160,6 +164,7 @@ await writeFile(join(outputRoot, "manifest.webmanifest"), `${JSON.stringify(root
 for (const name of PAGES_RUNTIME_FILES) {
   await copyRegularFile(join(runtimeDist, name), join(outputRoot, "dist-threaded-release", name));
 }
+await buildBinkDecoderRuntime(outputRoot);
 await copyRegularFile(join(repoRoot, "LICENSE.md"), join(outputRoot, "LICENSE.md"));
 await writeFile(join(outputRoot, ".nojekyll"), "");
 console.log(outputRoot);

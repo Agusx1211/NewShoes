@@ -155,10 +155,40 @@ try {
     throw new Error(`Wasm delivery check failed: ${JSON.stringify(wasm)}`);
   }
 
-  // The empty mount proves the packaged Wasm archive API is live. Preparing
-  // the worker realm is explicit: mountArchives validates an empty list before
-  // its real OPFS path needs the realm, so relying on it to start the worker is
-  // a race with unrelated launcher activity.
+  await page.waitForFunction(() => window.ZeroHDesktop?.videoSupport?.checking === false);
+  const videoSupport = await page.evaluate(() => ({
+    policy: document.documentElement.dataset.binkVideoSidecars,
+    support: window.ZeroHDesktop.videoSupport,
+    disabled: document.querySelector("#includeVideosToggle")?.disabled,
+    description: document.querySelector("#includeVideosDescription")?.textContent || "",
+  }));
+  if (videoSupport.policy !== "direct"
+      || videoSupport.support?.available !== true
+      || videoSupport.support?.mode !== "direct"
+      || videoSupport.disabled !== false
+      || !/play original movies directly/i.test(videoSupport.description)) {
+    throw new Error(`Hosted optional-video support failed: ${JSON.stringify(videoSupport)}`);
+  }
+  const videoRuntime = await page.evaluate(async () => {
+    const base = new URL("../video-runtime/", document.baseURI);
+    const manifestResponse = await fetch(new URL("bink-decoder-manifest.json", base));
+    const manifest = await manifestResponse.json();
+    const response = await fetch(new URL(manifest.wasmFile, base));
+    const bytes = await response.arrayBuffer();
+    const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+      .map((value) => value.toString(16).padStart(2, "0")).join("");
+    return { manifestOk: manifestResponse.ok, wasmOk: response.ok, manifest, bytes: bytes.byteLength, digest };
+  });
+  if (!videoRuntime.manifestOk || !videoRuntime.wasmOk
+      || videoRuntime.bytes !== videoRuntime.manifest.wasmBytes
+      || videoRuntime.bytes > 128 * 1024
+      || videoRuntime.digest !== videoRuntime.manifest.wasmSha256) {
+    throw new Error(`Hosted video runtime delivery failed: ${JSON.stringify(videoRuntime)}`);
+  }
+
+  // The empty mount validates before worker startup, so prepare the realm
+  // explicitly afterward. Reaching threadedMode proves the actual Emscripten
+  // pthread worker accepted the transferred viewport OffscreenCanvas.
   const emptyMount = await page.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
   if (emptyMount.ok !== false || !/Missing archive list/.test(emptyMount.error || "")) {
     throw new Error(`Unexpected empty-mount result: ${JSON.stringify(emptyMount)}`);
@@ -166,6 +196,26 @@ try {
   const prep = await page.evaluate(() => window.CnCPort.rpc("threadedStatus", {}));
   if (prep.ok !== true || prep.threaded !== true) {
     throw new Error(`Threaded realm preparation failed: ${JSON.stringify(prep)}`);
+  }
+  const videoFallbackMount = await page.evaluate(async () => {
+    const bytes = new Uint8Array(64);
+    bytes.set(new TextEncoder().encode("BIGF"));
+    const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+    return window.CnCPort.rpc("mountArchives", {
+      path: "/assets/deployment-video-fallback",
+      verifyEach: false,
+      includeVideos: true,
+      archives: [{
+        name: "DeploymentVideoFallback.big",
+        url: `data:application/octet-stream;base64,${btoa(binary)}`,
+        expectedBytes: bytes.byteLength,
+      }],
+    });
+  });
+  if (videoFallbackMount.ok !== true
+      || videoFallbackMount.archiveSet?.archiveCount !== 1
+      || videoFallbackMount.state?.binkVideoAssets?.unavailable !== true) {
+    throw new Error(`Missing optional-video sources blocked archive mounting: ${JSON.stringify(videoFallbackMount)}`);
   }
   await page.waitForFunction(() => window.CnCPort?.state?.threadedMode === true, null, { timeout: 30000 });
   const runtime = await page.evaluate(() => ({
@@ -453,6 +503,8 @@ try {
     baseUrl,
     isolation,
     wasm,
+    videoSupport,
+    videoRuntime: { bytes: videoRuntime.bytes, abiVersion: videoRuntime.manifest.abiVersion },
     runtime,
     canonicalPath: { first: firstPathname, reload: reloadPathname },
     domainRootCanonical: true,

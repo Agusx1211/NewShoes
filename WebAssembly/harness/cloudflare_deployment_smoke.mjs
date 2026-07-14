@@ -114,6 +114,49 @@ try {
     return { ok: response.ok, type: response.headers.get("content-type"), bytes: (await response.arrayBuffer()).byteLength };
   });
   if (!wasm.ok || wasm.type !== "application/wasm" || wasm.bytes < 1024) throw new Error(`Wasm delivery failed: ${JSON.stringify(wasm)}`);
+  await page.waitForFunction(() => window.ZeroHDesktop?.videoSupport?.checking === false);
+  const videoSupport = await page.evaluate(() => ({
+    policy: document.documentElement.dataset.binkVideoSidecars,
+    support: window.ZeroHDesktop.videoSupport,
+    disabled: document.querySelector("#includeVideosToggle")?.disabled,
+    description: document.querySelector("#includeVideosDescription")?.textContent || "",
+  }));
+  if (videoSupport.policy !== "direct"
+      || videoSupport.support?.available !== true
+      || videoSupport.support?.mode !== "direct"
+      || videoSupport.disabled !== false
+      || !/play original movies directly/i.test(videoSupport.description)) {
+    throw new Error(`Hosted optional-video support failed: ${JSON.stringify(videoSupport)}`);
+  }
+  const videoRuntime = await page.evaluate(async () => {
+    const base = new URL("../video-runtime/", document.baseURI);
+    const manifestResponse = await fetch(new URL("bink-decoder-manifest.json", base));
+    const manifest = await manifestResponse.json();
+    const response = await fetch(new URL(manifest.wasmFile, base));
+    const bytes = await response.arrayBuffer();
+    const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+      .map((value) => value.toString(16).padStart(2, "0")).join("");
+    return { manifestOk: manifestResponse.ok, wasmOk: response.ok, manifest, bytes: bytes.byteLength, digest };
+  });
+  if (!videoRuntime.manifestOk || !videoRuntime.wasmOk
+      || videoRuntime.bytes !== videoRuntime.manifest.wasmBytes
+      || videoRuntime.bytes > 128 * 1024
+      || videoRuntime.digest !== videoRuntime.manifest.wasmSha256) {
+    throw new Error(`Hosted video runtime delivery failed: ${JSON.stringify(videoRuntime)}`);
+  }
+  const videoScreenshot = process.env.CLOUDFLARE_VIDEO_SUPPORT_SCREENSHOT
+    || process.env.CLOUDFLARE_VIDEO_UNAVAILABLE_SCREENSHOT;
+  if (videoScreenshot) {
+    await page.evaluate(() => {
+      document.querySelectorAll("[data-wizard-page]").forEach((wizardPage) => {
+        const visible = wizardPage.dataset.wizardPage === "2";
+        wizardPage.classList.toggle("is-visible", visible);
+        wizardPage.setAttribute("aria-hidden", String(!visible));
+      });
+    });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: videoScreenshot, fullPage: true });
+  }
   const emptyMount = await page.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
   if (emptyMount.ok !== false || !/Missing archive list/.test(emptyMount.error || "")) {
     throw new Error(`Unexpected empty mount: ${JSON.stringify(emptyMount)}`);
@@ -121,6 +164,26 @@ try {
   const prep = await page.evaluate(() => window.CnCPort.rpc("threadedStatus", {}));
   if (prep.ok !== true || prep.threaded !== true) {
     throw new Error(`Threaded realm preparation failed: ${JSON.stringify(prep)}`);
+  }
+  const videoFallbackMount = await page.evaluate(async () => {
+    const bytes = new Uint8Array(64);
+    bytes.set(new TextEncoder().encode("BIGF"));
+    const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+    return window.CnCPort.rpc("mountArchives", {
+      path: "/assets/deployment-video-fallback",
+      verifyEach: false,
+      includeVideos: true,
+      archives: [{
+        name: "DeploymentVideoFallback.big",
+        url: `data:application/octet-stream;base64,${btoa(binary)}`,
+        expectedBytes: bytes.byteLength,
+      }],
+    });
+  });
+  if (videoFallbackMount.ok !== true
+      || videoFallbackMount.archiveSet?.archiveCount !== 1
+      || videoFallbackMount.state?.binkVideoAssets?.unavailable !== true) {
+    throw new Error(`Missing optional-video sources blocked archive mounting: ${JSON.stringify(videoFallbackMount)}`);
   }
   await page.waitForFunction(() => window.CnCPort?.state?.threadedMode === true, null, { timeout: 30000 });
   const runtime = await page.evaluate(() => ({
@@ -190,7 +253,22 @@ try {
 
   const screenshot = process.env.CLOUDFLARE_SMOKE_SCREENSHOT;
   if (screenshot) await page.screenshot({ path: screenshot, fullPage: true });
-  console.log(JSON.stringify({ ok: true, baseUrl, initial, wasm, runtime, legacyRedirect: true, oldWorkerRetired: true }, null, 2));
+  console.log(JSON.stringify({
+    ok: true,
+    baseUrl,
+    initial,
+    wasm,
+    videoSupport,
+    videoRuntime: { bytes: videoRuntime.bytes, abiVersion: videoRuntime.manifest.abiVersion },
+    videoFallbackMount: {
+      ok: videoFallbackMount.ok,
+      archiveCount: videoFallbackMount.archiveSet?.archiveCount,
+      binkVideoAssets: videoFallbackMount.state?.binkVideoAssets,
+    },
+    runtime,
+    legacyRedirect: true,
+    oldWorkerRetired: true,
+  }, null, 2));
 } finally {
   await context.close();
   await browser.close();

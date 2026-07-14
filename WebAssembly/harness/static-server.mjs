@@ -32,6 +32,7 @@ const contentTypes = new Map([
   [".wasm", "application/wasm"],
   [".webm", "video/webm"],
   [".webmanifest", "application/manifest+json; charset=utf-8"],
+  [".webp", "image/webp"],
 ]);
 
 const maxDumpUploadBytes = 256 * 1024 * 1024;
