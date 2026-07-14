@@ -163,7 +163,7 @@ edits, and follow-up changes. Human-authored artifacts do not require it.
 ## Branch and worktree lifecycle
 
 All implementation work uses a dedicated branch created from an up-to-date
-`main`, checked out in a dedicated worktree under:
+`dev`, checked out in a dedicated worktree under:
 
 ```text
 ~/worktrees/<project>/<feature>
@@ -176,19 +176,19 @@ Before creating it:
 
 - inspect `git worktree list`, local branches, and the matching GitHub issue;
 - confirm no other agent owns the issue, branch, or destination path;
-- confirm the primary `main` worktree has no user changes that would be disturbed;
-- fetch and fast-forward `main` without force, reset, or history rewriting;
-- if `main` cannot be updated safely, stop and report the conflict instead of
+- confirm the primary `dev` worktree has no user changes that would be disturbed;
+- fetch and fast-forward `dev` without force, reset, or history rewriting;
+- if `dev` cannot be updated safely, stop and report the conflict instead of
   inventing a new base.
 
-Then create both the feature branch and worktree from `main`, for example:
+Then create both the feature branch and worktree from `dev`, for example:
 
 ```sh
 mkdir -p ~/worktrees/CnC_Generals_Zero_Hour
 git worktree add \
   -b issue-123-short-name \
   ~/worktrees/CnC_Generals_Zero_Hour/issue-123-short-name \
-  main
+  dev
 ```
 
 Collision rules:

@@ -163,7 +163,7 @@ under [`archive/`](archive/).
   behavior without explicit approval.
 - Verify rendering with browser state or pixels.
 - Track durable work and coordination in `Agusx1211/NewShoes` GitHub Issues.
-- Develop on a branch from `main` in an isolated
+- Develop on a branch from `dev` in an isolated
   `~/worktrees/<project>/<feature>` worktree, avoid collisions with other agents,
   and remove the worktree when the task is finished.
 - Keep the archived port checklists frozen; they are historical evidence, not
