@@ -119,7 +119,14 @@ const [license, index, legal, launcher, play, manifestText, bootstrap, serviceWo
   readFile(resolve(root, "coi-serviceworker.js"), "utf8").catch(() => ""),
   readFile(resolve(root, "harness/build-info.json"), "utf8").catch(() => ""),
 ]);
-const analytics = await readFile(resolve(root, "harness/analytics.mjs"), "utf8").catch(() => "");
+const [analytics, modPackageWorker] = await Promise.all([
+  readFile(resolve(root, "harness/analytics.mjs"), "utf8").catch(() => ""),
+  readFile(resolve(root, "harness/mod-package-worker.mjs"), "utf8").catch(() => ""),
+]);
+if (modPackageWorker.includes("../node_modules/7z-wasm/")
+    || !modPackageWorker.includes("./vendor/7z-wasm/")) {
+  findings.push("harness/mod-package-worker.mjs: production 7z-wasm paths are unresolved");
+}
 if (analytics.includes("__GA_MEASUREMENT_ID__")) findings.push("harness/analytics.mjs: unresolved analytics configuration marker");
 for (const match of analytics.matchAll(/\bG-[A-Z0-9]+\b/g)) {
   if (!/^G-[A-Z0-9]+$/.test(match[0])) findings.push("harness/analytics.mjs: invalid generated measurement ID");

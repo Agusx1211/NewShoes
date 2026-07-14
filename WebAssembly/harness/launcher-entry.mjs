@@ -5,3 +5,4 @@ import "./launcher-device-transfer.mjs";
 import "./launcher-desktop-apps.js";
 import "./launcher-hardware-info.js";
 import "./launcher-build-info.js";
+import "./mod-manager-ui.mjs";

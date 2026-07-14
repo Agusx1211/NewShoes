@@ -1,10 +1,16 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
 import { createBinkVideoRuntime } from "./bink_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
+import { createGameDataStore } from "./game-data-store.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
 import { createReplayFileStore } from "./replay-file-store.mjs";
 import { createTransferUserDataStore } from "./transfer-user-data-store.mjs";
+import {
+  loadActiveModContext,
+  modContextPaths,
+  vanillaModContext,
+} from "./mod-context.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
 import { networkDiagnostics } from "./network-diagnostics.mjs";
 import {
@@ -1398,6 +1404,8 @@ function createThreadedEngineController() {
         maxCameraHeight: payload.maxCameraHeight,
         stepBudgetMs: payload.stepBudgetMs,
         commanderName: payload.commanderName,
+        modDirectory: payload.modDirectory,
+        userDataHome: CNC_PORT_USER_DATA_HOME,
       }, {
         // SwiftShader full boots take minutes; each init slice posts progress
         // which re-arms this deadline, so a genuine hang is what times out.
@@ -1695,6 +1703,11 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "readReplay",
   "importReplay",
   "deleteReplay",
+  "listGameData",
+  "readGameData",
+  "importGameData",
+  "copyGameDataOverride",
+  "deleteGameData",
   // WebRTC signaling and RTCDataChannels live in the window realm. Their
   // datagrams cross into the engine worker through threadedUdpBridge.
   "browserWebRtcEndpointConnect",
@@ -5151,8 +5164,8 @@ const { cncGdiMeasure, cncGdiRasterizeGlyph } = createGdiHooks();
 // code path: raw fopen/fwrite against a path built from
 //   getPath_UserData()  ==  "$HOME/<UserDataLeafName>/"
 // and getSaveDirectory() appends "Save/". In the browser build:
-//   - HOME is pinned to CNC_PORT_USER_DATA_HOME (see preRun) so the path is
-//     deterministic and stable across reloads.
+//   - the real-init bridge sets HOME to the exact active context before the
+//     original GlobalData constructor resolves CSIDL_PERSONAL;
 //   - <UserDataLeafName> defaults to "Command and Conquer Generals Zero Hour
 //     Data" (GlobalData.cpp, the registry lookup fails in the shim).
 // We mount IDBFS on the whole user-data directory so the engine's own
@@ -5161,10 +5174,23 @@ const { cncGdiMeasure, cncGdiRasterizeGlyph } = createGdiHooks();
 // Xfer/Snapshot serialization changes — this only re-targets where the bytes
 // physically live.
 // ---------------------------------------------------------------------------
-const CNC_PORT_USER_DATA_HOME = "/home/web_user";
+const CNC_PORT_IDBFS_HOME = "/home/web_user";
 const CNC_PORT_USER_DATA_LEAF = "Command and Conquer Generals Zero Hour Data";
-const CNC_PORT_USER_DATA_DIR = `${CNC_PORT_USER_DATA_HOME}/${CNC_PORT_USER_DATA_LEAF}`;
-const CNC_PORT_SAVE_DIR = `${CNC_PORT_USER_DATA_DIR}/Save`;
+const CNC_PORT_USER_DATA_DIR = `${CNC_PORT_IDBFS_HOME}/${CNC_PORT_USER_DATA_LEAF}`;
+const CNC_PORT_MOD_STORAGE = (() => {
+  try { return globalThis.localStorage; } catch { return null; }
+})();
+const CNC_PORT_ACTIVE_MOD_CONTEXT = (() => {
+  try {
+    return loadActiveModContext(CNC_PORT_MOD_STORAGE);
+  } catch (error) {
+    recordLog("mod context storage error", { error: error?.message ?? String(error) });
+    return vanillaModContext();
+  }
+})();
+const CNC_PORT_ACTIVE_CONTEXT_PATHS = modContextPaths(CNC_PORT_ACTIVE_MOD_CONTEXT);
+const CNC_PORT_USER_DATA_HOME = CNC_PORT_ACTIVE_CONTEXT_PATHS.home;
+const CNC_PORT_SAVE_DIR = CNC_PORT_ACTIVE_CONTEXT_PATHS.saveDir;
 
 // Set once mountSaveFilesystem succeeds; guards persist/read calls.
 let cncPortSaveFsMounted = false;
@@ -5233,7 +5259,11 @@ function mountSaveFilesystem(m) {
       if (err) {
         recordLog("saveFsSyncInError", { error: String(err) });
       } else {
-        recordLog("saveFsMounted", { path: CNC_PORT_SAVE_DIR });
+        recordLog("saveFsMounted", {
+          path: CNC_PORT_SAVE_DIR,
+          modContextId: CNC_PORT_ACTIVE_MOD_CONTEXT.id,
+          modContextLabel: CNC_PORT_ACTIVE_MOD_CONTEXT.label,
+        });
       }
       if (typeof m.removeRunDependency === "function") {
         m.removeRunDependency("cnc-port-idbfs");
@@ -5282,12 +5312,21 @@ const replayFileStore = createReplayFileStore({
   ready: () => wasmModulePromise,
   getModule: () => cncPortEmscriptenModule,
   persist: (reason) => persistSaveFilesystem(reason),
+  directory: CNC_PORT_ACTIVE_CONTEXT_PATHS.replayDir,
+});
+
+const gameDataStore = createGameDataStore({
+  ready: () => wasmModulePromise,
+  getModule: () => cncPortEmscriptenModule,
+  persist: (reason) => persistSaveFilesystem(reason),
+  storage: CNC_PORT_MOD_STORAGE,
 });
 
 const transferUserDataStore = createTransferUserDataStore({
   ready: () => wasmModulePromise,
   getModule: () => cncPortEmscriptenModule,
   persist: (reason) => persistSaveFilesystem(reason),
+  userDataDirectory: CNC_PORT_ACTIVE_CONTEXT_PATHS.userDataDir,
 });
 
 function bytesToBase64(bytes) {
@@ -5387,16 +5426,8 @@ async function loadWasmModule() {
       cncGdiRasterizeGlyph,
       // Persist the in-game save directory to IndexedDB via IDBFS so ".sav"
       // files written by the real GameState / XferSave path survive a reload.
-      // HOME is pinned so getPath_UserData() ("$HOME/<leaf>/") is deterministic
-      // JS-side; the real engine still creates the leaf/Save dirs itself.
       preRun: [
         (m) => {
-          try {
-            m.ENV = m.ENV || {};
-            m.ENV.HOME = CNC_PORT_USER_DATA_HOME;
-          } catch (envError) {
-            recordLog("saveFsEnvError", { error: String(envError) });
-          }
           mountSaveFilesystem(m);
         },
       ],
@@ -5559,6 +5590,16 @@ async function loadWasmModule() {
       realEngineInit: module.cwrap("cnc_port_real_engine_init", "string", ["string", "number"]),
       realEngineInitBegin: module.cwrap("cnc_port_real_engine_init_begin", "string", ["string", "number"]),
       realEngineInitStep: module.cwrap("cnc_port_real_engine_init_step", "string", ["number"]),
+      realEngineSetModDirectory: module.cwrap(
+        "cnc_port_real_engine_set_mod_directory",
+        "number",
+        ["string"],
+      ),
+      realEngineSetUserDataHome: module.cwrap(
+        "cnc_port_real_engine_set_user_data_home",
+        "number",
+        ["string"],
+      ),
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
       realEngineSetCommanderName: module.cwrap(
         "cnc_port_real_engine_set_commander_name",
@@ -10380,6 +10421,15 @@ async function realEngineInit(payload = {}) {
       return { ok: false, command: "realEngineInit", error: "commander identity rejected" };
     }
   }
+  if (typeof wasmModule.realEngineSetUserDataHome !== "function"
+      || wasmModule.realEngineSetUserDataHome(CNC_PORT_USER_DATA_HOME) !== 1) {
+    return { ok: false, command: "realEngineInit", error: "user-data home rejected" };
+  }
+  const modDirectory = String(payload.modDirectory ?? "");
+  if (typeof wasmModule.realEngineSetModDirectory === "function"
+      && wasmModule.realEngineSetModDirectory(modDirectory) !== 1) {
+    return { ok: false, command: "realEngineInit", error: "mod directory rejected" };
+  }
   const useStepped = payload.stepped === true
     && typeof wasmModule.realEngineInitBegin === "function"
     && typeof wasmModule.realEngineInitStep === "function";
@@ -10837,6 +10887,56 @@ function skipBinkRuntimeFiles() {
   };
 }
 
+function stageManagedModArchives(wasmModule, inputs, stageMap, command) {
+  const modDirectory = "/assets/cnc-mods-active";
+  const archives = [];
+  const modIds = new Set();
+  for (const input of Array.isArray(inputs) ? inputs : []) {
+    const name = String(input?.name ?? "");
+    const opfsPath = String(input?.opfsPath ?? "").replace(/^\/+/, "");
+    const modId = String(input?.modId ?? "");
+    const bytes = Number(input?.size ?? input?.bytes ?? 0);
+    if (!/^\d{3}-\d{3}-[A-Za-z0-9_.-]+\.big$/i.test(name)
+        || !/^mod-[a-f0-9-]{8,64}$/.test(modId)
+        || opfsPath.includes("..")
+        || !Number.isSafeInteger(bytes)
+        || bytes <= 4) {
+      return { error: `Invalid prepared mod archive: ${name || opfsPath}`, command };
+    }
+    const expectedPath = new RegExp(`^cnc-mods/${modId}/archives/[A-Za-z0-9._ -]+\\.big$`, "i");
+    if (!expectedPath.test(opfsPath)) {
+      return { error: `Invalid prepared mod archive: ${name || opfsPath}`, command };
+    }
+    const enginePath = `${modDirectory}/${name}`;
+    ensureMemfsDirectory(wasmModule.fs, parentDirectory(enginePath));
+    wasmModule.fs.writeFile(enginePath, new Uint8Array(0));
+    stageMap[enginePath] = opfsPath;
+    modIds.add(modId);
+    archives.push({
+      name,
+      modId,
+      modName: String(input?.modName ?? modId),
+      path: enginePath,
+      bytes,
+      expectedBytes: bytes,
+      bytesMatch: true,
+      reader: "mod manager prepared OPFS",
+      opfsPath,
+    });
+  }
+  return { archives, modIds, modDirectory: archives.length > 0 ? modDirectory : "" };
+}
+
+function managedModSet(staged) {
+  return {
+    path: staged.modDirectory || null,
+    archiveCount: staged.archives.length,
+    totalBytes: staged.archives.reduce((sum, archive) => sum + archive.bytes, 0),
+    modCount: staged.modIds.size,
+    archives: staged.archives,
+  };
+}
+
 async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirectory) {
   const emitProgressEvents = payload.progressEvents !== false;
   const parsedArchives = archiveInputs.map((input) => archivePathFromPayload(input, baseDirectory));
@@ -10950,6 +11050,11 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
     });
   }
 
+  const stagedMods = stageManagedModArchives(wasmModule, payload.mods, stageMap, "mountArchives");
+  if (stagedMods.error) {
+    return { ok: false, command: stagedMods.command, error: stagedMods.error, archives };
+  }
+
   if (payload.includeVideos === true) {
     await stageBinkRuntimeFiles(wasmModule, namespace, baseDirectory, stageMap);
   } else {
@@ -10960,6 +11065,12 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
   const registered = await registerOpfsInterceptPrefix(prefix);
   if (!registered.ok) {
     return { ok: false, command: "mountArchives", error: registered.error, archives };
+  }
+  if (stagedMods.archives.length > 0) {
+    const registeredMods = await registerOpfsInterceptPrefix(`${stagedMods.modDirectory}/`);
+    if (!registeredMods.ok) {
+      return { ok: false, command: "mountArchives", error: registeredMods.error, archives };
+    }
   }
 
   let staging = null;
@@ -11025,6 +11136,8 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
     archiveCount: archives.length,
     totalBytes,
     ok,
+    modArchiveCount: stagedMods.archives.length,
+    modCount: stagedMods.modIds.size,
   });
 
   return {
@@ -11032,6 +11145,8 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
     command: "mountArchives",
     state: snapshotState(),
     archiveSet,
+    modSet: managedModSet(stagedMods),
+    modDirectory: stagedMods.modDirectory,
   };
 }
 
@@ -11103,6 +11218,15 @@ async function mountPreparedArchives(payload = {}) {
     });
   }
 
+  // Mod packages are managed independently from the retail installation and
+  // staged outside runDirectory. The original engine receives this directory
+  // through its -mod command line and applies ArchiveFileSystem::loadMods().
+  const stagedMods = stageManagedModArchives(
+    moduleResult.wasmModule, payload.mods, stageMap, "mountPreparedArchives");
+  if (stagedMods.error) {
+    return { ok: false, command: stagedMods.command, error: stagedMods.error, archives };
+  }
+
   const preparedVideos = [];
   for (const input of Array.isArray(payload.videos) ? payload.videos : []) {
     const name = String(input?.name ?? "");
@@ -11146,6 +11270,12 @@ async function mountPreparedArchives(payload = {}) {
   const registered = await registerOpfsInterceptPrefix(prefix);
   if (!registered.ok) {
     return { ok: false, command: "mountPreparedArchives", error: registered.error, archives };
+  }
+  if (stagedMods.archives.length > 0) {
+    const registeredMods = await registerOpfsInterceptPrefix(`${stagedMods.modDirectory}/`);
+    if (!registeredMods.ok) {
+      return { ok: false, command: "mountPreparedArchives", error: registeredMods.error, archives };
+    }
   }
   let staging;
   try {
@@ -11196,8 +11326,17 @@ async function mountPreparedArchives(payload = {}) {
     archiveCount: archives.length,
     totalBytes,
     ok,
+    modArchiveCount: stagedMods.archives.length,
+    modCount: stagedMods.modIds.size,
   });
-  return { ok, command: "mountPreparedArchives", state: snapshotState(), archiveSet };
+  return {
+    ok,
+    command: "mountPreparedArchives",
+    state: snapshotState(),
+    archiveSet,
+    modSet: managedModSet(stagedMods),
+    modDirectory: stagedMods.modDirectory,
+  };
 }
 
 async function mountArchives(payload = {}) {
@@ -11218,6 +11357,14 @@ async function mountArchives(payload = {}) {
 
   if (opfsArchiveMountEnabled()) {
     return mountArchivesToOpfs(moduleResult.wasmModule, payload, archiveInputs, baseDirectory);
+  }
+
+  if (Array.isArray(payload.mods) && payload.mods.length > 0) {
+    return {
+      ok: false,
+      command: "mountArchives",
+      error: "Managed mods require the threaded OPFS runtime",
+    };
   }
 
   // MEMFS mounts survive ONLY as the harness/index.html legacy-boot surface
@@ -11465,6 +11612,60 @@ async function rpc(command, payload = {}) {
             allowLastReplay: payload.allowLastReplay === true,
           });
           return { command, ...result };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "listGameData":
+      {
+        try {
+          return { command, ...await gameDataStore.list() };
+        } catch (error) {
+          return { ok: false, command, contexts: [], error: error?.message ?? String(error) };
+        }
+      }
+    case "readGameData":
+      {
+        try {
+          const bytes = await gameDataStore.read(payload.contextId, payload.kind, payload.name);
+          return { ok: true, command, bytesBase64: bytesToBase64(bytes) };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "importGameData":
+      {
+        try {
+          return {
+            command,
+            ...await gameDataStore.importFile(
+              payload.contextId,
+              payload.kind,
+              payload.name,
+              base64ToBytes(payload.bytesBase64),
+            ),
+          };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "copyGameDataOverride":
+      {
+        try {
+          return { command, ...await gameDataStore.copyWithCompatibilityOverride(payload) };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "deleteGameData":
+      {
+        try {
+          return {
+            command,
+            ...await gameDataStore.remove(payload.contextId, payload.kind, payload.name, {
+              allowActiveLastReplay: payload.allowActiveLastReplay === true,
+            }),
+          };
         } catch (error) {
           return { ok: false, command, error: error?.message ?? String(error) };
         }
@@ -23256,6 +23457,13 @@ window.CnCPort = {
   readReplay: (name) => replayFileStore.read(name),
   importReplay: (name, bytes) => replayFileStore.importFile(name, bytes),
   deleteReplay: (name, options) => replayFileStore.remove(name, options),
+  listGameData: () => gameDataStore.list(),
+  readGameData: (contextId, kind, name) => gameDataStore.read(contextId, kind, name),
+  importGameData: (contextId, kind, name, bytes) =>
+    gameDataStore.importFile(contextId, kind, name, bytes),
+  copyGameDataOverride: (options) => gameDataStore.copyWithCompatibilityOverride(options),
+  deleteGameData: (contextId, kind, name, options) =>
+    gameDataStore.remove(contextId, kind, name, options),
   listTransferUserFiles: (options) => transferUserDataStore.list(options),
   readTransferUserFileChunk: (file, offset, length) =>
     transferUserDataStore.readChunk(file, offset, length),

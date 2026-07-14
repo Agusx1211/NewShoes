@@ -1,5 +1,6 @@
 import { joinRoom } from "./vendor/trystero-nostr.min.mjs";
 import { PROJECT_NOSTR_RELAY } from "./webrtc-udp-endpoint.mjs";
+import { loadActiveModContext } from "./mod-context.mjs";
 import {
   DEVICE_TRANSFER_APP_ID,
   DEVICE_TRANSFER_CHECKPOINT_BYTES,
@@ -129,7 +130,11 @@ function validateCombinedManifest(value) {
   }
   const totalBytes = files.reduce((sum, file) => sum + file.bytes, 0);
   if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) throw new Error("Transfer size is invalid");
-  return { version: DEVICE_TRANSFER_VERSION, game: "zeroHour", files, totalBytes };
+  const modContextId = String(value?.modContextId ?? "vanilla");
+  if (!/^(?:vanilla|[a-f0-9]{64})$/.test(modContextId)) {
+    throw new Error("The sender returned an invalid mod configuration identity");
+  }
+  return { version: DEVICE_TRANSFER_VERSION, game: "zeroHour", modContextId, files, totalBytes };
 }
 
 async function createOutgoingSource({ includeSaves, includeReplays }) {
@@ -143,10 +148,11 @@ async function createOutgoingSource({ includeSaves, includeReplays }) {
     userFiles = await window.CnCPort.listTransferUserFiles({ includeSaves, includeReplays });
   }
   const files = [...game.manifest.files, ...userFiles];
+  const modContextId = loadActiveModContext(window.localStorage).id;
   const byId = new Map(files.map((file) => [file.id, file]));
   const totalBytes = files.reduce((sum, file) => sum + file.bytes, 0);
   return {
-    manifest: { version: DEVICE_TRANSFER_VERSION, game: "zeroHour", files },
+    manifest: { version: DEVICE_TRANSFER_VERSION, game: "zeroHour", modContextId, files },
     totalBytes,
     async readChunk(id, offset, length) {
       const file = byId.get(id);
@@ -304,6 +310,12 @@ async function prepareIncoming(message) {
   const manifest = validateCombinedManifest(message.manifest);
   const gameFiles = manifest.files.filter((file) => file.kind === "archive" || file.kind === "video");
   const userFiles = manifest.files.filter((file) => file.kind === "save" || file.kind === "replay");
+  if (userFiles.length > 0) {
+    const localContextId = loadActiveModContext(window.localStorage).id;
+    if (manifest.modContextId !== localContextId) {
+      throw new Error("Transferred saves and replays belong to a different exact mod configuration. Activate that configuration before receiving them, or use the Save & Replay Manager for an explicit compatibility override.");
+    }
+  }
   const gameSession = await window.ZeroHAssetLibrary.beginTransferredLibrary({
     version: DEVICE_TRANSFER_VERSION,
     game: "zeroHour",

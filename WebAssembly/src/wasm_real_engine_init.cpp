@@ -16,6 +16,7 @@
 
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -822,6 +823,36 @@ std::string g_state_json;
 // Opt-in only: default boots stay -noshellmap so harness expectations hold;
 // the human play page can request the original ShellMapMD menu background.
 static bool g_use_shell_map = false;
+static std::string g_mod_directory;
+static std::string g_user_data_home = "/home/web_user";
+static std::vector<std::string> g_engine_argument_storage;
+static std::vector<char *> g_engine_argv;
+static std::string g_engine_command_line;
+
+void build_engine_arguments()
+{
+	g_engine_argument_storage.clear();
+	g_engine_argv.clear();
+	g_engine_argument_storage.reserve(5);
+	g_engine_argument_storage.push_back("CnCGeneralsZH");
+	if (!g_use_shell_map) {
+		g_engine_argument_storage.push_back("-noshellmap");
+	}
+	g_engine_argument_storage.push_back("-win");
+	if (!g_mod_directory.empty()) {
+		g_engine_argument_storage.push_back("-mod");
+		g_engine_argument_storage.push_back(g_mod_directory);
+	}
+	g_engine_argv.reserve(g_engine_argument_storage.size());
+	for (std::string &argument : g_engine_argument_storage) {
+		g_engine_argv.push_back(&argument[0]);
+	}
+	g_engine_command_line.clear();
+	for (size_t i = 1; i < g_engine_argument_storage.size(); ++i) {
+		if (!g_engine_command_line.empty()) g_engine_command_line += " ";
+		g_engine_command_line += g_engine_argument_storage[i];
+	}
+}
 
 std::string json_escape(const std::string &value)
 {
@@ -917,9 +948,10 @@ const char *build_state_json()
 	json += ",\"source\":\"GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp::init\"";
 	json += ",\"factory\":\"GeneralsMD/Code/Main/WinMain.cpp::CreateGameEngine\"";
 	json += ",\"commandLine\":\"";
-	json += g_use_shell_map ? "-win" : "-noshellmap -win";
+	json += json_escape(g_engine_command_line);
 	json += "\"";
 	json += ",\"runDirectory\":\"" + json_escape(g_state.run_directory) + "\"";
+	json += ",\"userDataHome\":\"" + json_escape(g_user_data_home) + "\"";
 	json += ",\"initReturned\":";
 	json += g_state.init_returned ? "true" : "false";
 	json += ",\"quittingAfterInit\":";
@@ -8477,6 +8509,43 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frontier()
 	return build_state_json();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_mod_directory(const char *mod_directory)
+{
+	if (g_state.attempted) return 0;
+	const std::string requested = mod_directory != NULL ? mod_directory : "";
+	if (!requested.empty() && requested != "/assets/cnc-mods-active") {
+		return 0;
+	}
+	g_mod_directory = requested;
+	return 1;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_user_data_home(const char *user_data_home)
+{
+	if (g_state.attempted || user_data_home == NULL) return 0;
+	const std::string requested = user_data_home;
+	const std::string vanilla_home = "/home/web_user";
+	const std::string mod_prefix = vanilla_home
+		+ "/Command and Conquer Generals Zero Hour Data/ModData/";
+	const std::string mod_suffix = "/Home";
+	bool valid = requested == vanilla_home;
+	if (!valid && requested.size() == mod_prefix.size() + 64 + mod_suffix.size()
+		&& requested.compare(0, mod_prefix.size(), mod_prefix) == 0
+		&& requested.compare(requested.size() - mod_suffix.size(), mod_suffix.size(), mod_suffix) == 0) {
+		valid = true;
+		for (size_t index = mod_prefix.size(); index < mod_prefix.size() + 64; ++index) {
+			const char value = requested[index];
+			if (!((value >= '0' && value <= '9') || (value >= 'a' && value <= 'f'))) {
+				valid = false;
+				break;
+			}
+		}
+	}
+	if (!valid || ::setenv("HOME", requested.c_str(), 1) != 0) return 0;
+	g_user_data_home = requested;
+	return 1;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char *run_directory, int use_shell_map)
 {
 	if (g_state.attempted) {
@@ -8501,14 +8570,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char
 	ensure_real_engine_input_window();
 	cnc_port_terrain_probe_set_shroud_enabled(true);
 
-	static const char *argv_storage[] = {"CnCGeneralsZH", "-noshellmap", "-win"};
-	static const char *argv_shellmap_storage[] = {"CnCGeneralsZH", "-win"};
-	const int argc = g_use_shell_map ? 2 : 3;
-	char **argv = const_cast<char **>(g_use_shell_map ? argv_shellmap_storage : argv_storage);
+	build_engine_arguments();
+	const int argc = static_cast<int>(g_engine_argv.size());
+	char **argv = g_engine_argv.data();
 
 	std::printf("cnc-port: real-init begin dir=%s argv=%s\n",
 		g_state.run_directory.c_str(),
-		g_use_shell_map ? "-win" : "-noshellmap -win");
+		g_engine_command_line.c_str());
 	std::fflush(stdout);
 
 	const double started_at = emscripten_get_now();
@@ -8572,14 +8640,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init_begin(cons
 	ensure_real_engine_input_window();
 	cnc_port_terrain_probe_set_shroud_enabled(true);
 
-	static const char *argv_storage[] = {"CnCGeneralsZH", "-noshellmap", "-win"};
-	static const char *argv_shellmap_storage[] = {"CnCGeneralsZH", "-win"};
-	const int argc = g_use_shell_map ? 2 : 3;
-	char **argv = const_cast<char **>(g_use_shell_map ? argv_shellmap_storage : argv_storage);
+	build_engine_arguments();
+	const int argc = static_cast<int>(g_engine_argv.size());
+	char **argv = g_engine_argv.data();
 
 	std::printf("cnc-port: real-init-begin (stepped) dir=%s argv=%s\n",
 		g_state.run_directory.c_str(),
-		g_use_shell_map ? "-win" : "-noshellmap -win");
+		g_engine_command_line.c_str());
 	std::fflush(stdout);
 
 	static std::string json;

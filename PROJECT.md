@@ -66,6 +66,23 @@ The engine worker opens synchronous access handles and exposes ordinary
 archive parsing, INI loading, map loading, texture lookup, and audio lookup in
 the original engine while avoiding a second multi-gigabyte JavaScript copy.
 
+The browser mod library accepts BIG archives, loose engine-data folders, and
+downloaded ZIP, 7z, RAR, NSIS, and Clickteam Install Creator packages. Installers
+are decoded as data and are never executed. Native DLL and executable components
+are reported but cannot run in the WebAssembly engine. Imported BIG archives are
+kept in OPFS and exposed to the original `-mod` loading path. Users can enable
+multiple mods, choose their archive options, and order them; later archives and
+mods retain the engine's normal override precedence.
+
+Every launch configuration has a SHA-256 identity derived from the ordered mod
+and archive content hashes. That exact identity owns a separate engine `HOME`
+under the persistent user-data mount, so saves and replays do not leak between
+vanilla or differently ordered mod sets. The launcher can browse those isolated
+folders and make an explicit, risk-acknowledged compatibility copy without
+changing the source file. Multiplayer discovery incorporates the same identity,
+preventing peers with different content or load order from sharing a room.
+Cross-device save/replay transfer also requires matching active identities.
+
 ### Audio, video, and networking
 
 Miles-compatible calls schedule Web Audio buffers, streams, mixer buses, and
@@ -88,7 +105,8 @@ disconnect behavior and long determinism runs remain open.
 deployment serves that launcher at its canonical scope root, including custom
 domains and project subpaths, without exposing the harness path. The Project
 New Shoes desktop handles asset acquisition, install progress, display and
-shader settings, diagnostics, and launch/close lifecycle.
+shader settings, diagnostics, mod installation and selection, isolated save and
+replay management, and launch/close lifecycle.
 
 Closing the game persists saves, shuts down original engine ownership, closes
 audio and network state, releases OPFS handles and Web Locks, terminates the
@@ -134,6 +152,8 @@ Verified today:
 - WebGL2 fixed-function and shader model 1.1 rendering tiers;
 - engine-driven Web Audio samples and streams;
 - browser-local asset installation and save persistence;
+- browser-local ordered mod installation, exact composition identities, and
+  isolated save/replay management;
 - short WebRTC multiplayer paths up to four players; and
 - launcher shutdown and clean relaunch.
 

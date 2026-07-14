@@ -1,9 +1,5 @@
 import assert from "node:assert/strict";
-import {
-  createTransferUserDataStore,
-  TRANSFER_REPLAY_DIR,
-  TRANSFER_SAVE_DIR,
-} from "./transfer-user-data-store.mjs";
+import { createTransferUserDataStore } from "./transfer-user-data-store.mjs";
 
 function fakeFilesystem() {
   const files = new Map();
@@ -64,19 +60,18 @@ const replay = new Uint8Array([0x47, 0x45, 0x4e, 0x52, 0x45, 0x50, 7, 8, 9]);
 const save = new Uint8Array([10, 11, 12, 13]);
 let randomSequence = 0;
 const persistReasons = [];
+const userDataDirectory = `/home/web_user/Command and Conquer Generals Zero Hour Data/ModData/${"a".repeat(64)}/Home/Command and Conquer Generals Zero Hour Data`;
+const saveDirectory = `${userDataDirectory}/Save`;
+const replayDirectory = `${userDataDirectory}/Replays`;
 const store = createTransferUserDataStore({
   ready: async () => {},
   getModule: () => ({ FS: fake.FS }),
   persist: async (reason) => { persistReasons.push(reason); return { ok: true }; },
   randomId: () => `test-${++randomSequence}`,
+  userDataDirectory,
 });
-fake.FS.mkdir("/home");
-fake.FS.mkdir("/home/web_user");
-fake.FS.mkdir("/home/web_user/Command and Conquer Generals Zero Hour Data");
-fake.FS.mkdir(TRANSFER_SAVE_DIR);
-fake.FS.mkdir(TRANSFER_REPLAY_DIR);
-fake.files.set(`${TRANSFER_SAVE_DIR}/campaign.sav`, save);
-fake.files.set(`${TRANSFER_REPLAY_DIR}/battle.rep`, replay);
+fake.files.set(`${saveDirectory}/campaign.sav`, save);
+fake.files.set(`${replayDirectory}/battle.rep`, replay);
 
 const listed = await store.list({ includeSaves: true, includeReplays: true });
 assert.deepEqual(listed.map(({ kind, name, bytes }) => ({ kind, name, bytes })), [
@@ -101,8 +96,8 @@ await session.finishFile("replay-new");
 const imported = await session.finish();
 assert.equal(imported[0].finalName, "campaign (2).sav");
 assert.equal(imported[1].finalName, "match.rep");
-assert.deepEqual(fake.files.get(`${TRANSFER_SAVE_DIR}/campaign (2).sav`), new Uint8Array([21, 22, 23]));
-assert.deepEqual(fake.files.get(`${TRANSFER_REPLAY_DIR}/match.rep`), replay);
+assert.deepEqual(fake.files.get(`${saveDirectory}/campaign (2).sav`), new Uint8Array([21, 22, 23]));
+assert.deepEqual(fake.files.get(`${replayDirectory}/match.rep`), replay);
 assert.deepEqual(persistReasons, ["device-transfer-import"]);
 
 const invalidReplay = await store.beginImport([

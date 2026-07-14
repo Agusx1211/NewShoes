@@ -50,6 +50,8 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
   const APP_META = {
     setup: { title: "Project New Shoes Game Launcher", launcherLogo: true },
     explorer: { title: "My Files", icon: "#i-folder" },
+    mods: { title: "Mod Manager", icon: "#i-apps" },
+    gameData: { title: "Save & Replay Manager", icon: "#i-save" },
     browser: { title: "Project New Shoes Browser", icon: "#i-browser" },
     notepad: { title: "Notepad", icon: "#i-note" },
     arcade: { title: "Project New Shoes Arcade", icon: "#i-arcade" },
@@ -309,7 +311,15 @@ import { requestOsShutdown } from "./launcher-os-shutdown.mjs";
     closeStartMenu();
     if (!wasOpen) renderTaskbar();
     playInterfaceSound("open");
-    const screen = { setup: "launcher", programs: "library", settings: "settings", explorer: "files", about: "about" }[appId];
+    const screen = {
+      setup: "launcher",
+      programs: "library",
+      settings: "settings",
+      explorer: "files",
+      mods: "mods",
+      gameData: "game_data",
+      about: "about",
+    }[appId];
     if (screen && !wasOpen) track("app_view", { screen });
     if (screen) track("launcher_navigation", { destination: screen });
   }

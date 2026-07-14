@@ -63,6 +63,12 @@
         <button class="desktop-icon" type="button" data-open="explorer" aria-label="Open Save Files">
           <span class="desktop-icon-art"><svg><use href="#i-folder"/></svg></span><span>My Files</span>
         </button>
+        <button class="desktop-icon" type="button" data-open="mods" aria-label="Open Mod Manager">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-apps"/></svg></span><span>Mod Manager</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="gameData" aria-label="Open Save and Replay Manager">
+          <span class="desktop-icon-art"><svg><use href="#i-save"/></svg></span><span>Save &amp; Replay Manager</span>
+        </button>
         <button class="desktop-icon" type="button" data-open="browser" aria-label="Open Project New Shoes Browser">
           <span class="desktop-icon-art app-art"><svg><use href="#i-browser"/></svg></span><span>Project New Shoes Browser</span>
         </button>
@@ -295,6 +301,44 @@
                 </div>
               </section>
             </div>
+          </div>
+        </article>
+
+        <article id="modsWindow" class="window mods-window" data-app="mods" style="--x: 52%; --y: 45%; --w: 860px; --h: 620px;" aria-label="Mod Manager">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-apps"/></svg></span><span>Zero Hour Mod Manager</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="mod-manager-body">
+            <header class="manager-heading"><div><p class="eyebrow">BROWSER MOD LIBRARY</p><h1>Zero Hour Mod Manager</h1><p>Import a ModDB download, installer, BIG file, or unpacked folder. Enabled mods load in the order shown.</p></div><div id="activeModBadge" class="active-context-badge">Vanilla Zero Hour</div></header>
+            <section class="mod-import-panel" aria-labelledby="modImportTitle">
+              <div><h2 id="modImportTitle">Import a mod</h2><p>ZIP, 7z, RAR, NSIS/EXE, BIG, and loose engine folders are inspected locally. Native Windows DLL/EXE code is reported and ignored.</p></div>
+              <label>Name <input id="modImportName" maxlength="120" placeholder="Optional display name"></label>
+              <label>Version <input id="modImportVersion" maxlength="80" placeholder="Auto-detect"></label>
+              <div class="mod-import-actions"><button id="modImportPackageButton" type="button" class="button primary small">Import package…</button><button id="modImportFolderButton" type="button" class="button secondary small">Import folder…</button></div>
+              <input id="modImportPackageInput" type="file" accept=".big,.zip,.7z,.rar,.exe,.001" hidden>
+              <input id="modImportFolderInput" type="file" webkitdirectory directory multiple hidden>
+              <div id="modImportProgress" class="mod-import-progress" role="status">Ready to import. Files remain on this device.</div>
+            </section>
+            <section class="installed-mods-panel"><header><div><h2>Launch configuration</h2><p id="modConfigurationSummary">No mods enabled.</p></div><div><button id="modUseVanillaButton" type="button" class="button secondary small">Use vanilla</button><button id="modApplyButton" type="button" class="button primary small">Apply &amp; reload</button></div></header><div id="installedModList" class="installed-mod-list"></div><div id="installedModEmpty" class="manager-empty"><svg><use href="#i-apps"/></svg><strong>No mods installed</strong><span>Import a downloaded package or an unpacked mod folder.</span></div></section>
+          </div>
+        </article>
+
+        <article id="gameDataWindow" class="window game-data-window" data-app="gameData" style="--x: 54%; --y: 46%; --w: 900px; --h: 620px;" aria-label="Save and Replay Manager">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-save"/></svg></span><span>Save &amp; Replay Manager</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="game-data-manager-body">
+            <header class="manager-heading"><div><p class="eyebrow">ISOLATED GAME DATA</p><h1>Save &amp; Replay Manager</h1><p>Saves and replays are isolated by exact mod configuration. Compatibility copies require an explicit override.</p></div><div class="game-data-actions"><button id="importSaveButton" type="button" class="button secondary small">Import save</button><button id="importReplayDataButton" type="button" class="button secondary small">Import replay</button><button id="refreshGameDataButton" type="button" class="button primary small">Refresh</button></div><input id="importSaveInput" type="file" accept=".sav" hidden><input id="importReplayDataInput" type="file" accept=".rep" hidden></header>
+            <section id="compatibilityOverridePanel" class="compatibility-override-panel" hidden>
+              <div><strong>Compatibility override</strong><span id="compatibilityOverrideSource"></span></div>
+              <label>Copy into <select id="compatibilityOverrideTarget"></select></label>
+              <label class="compatibility-risk"><input id="compatibilityOverrideRisk" type="checkbox"> I understand this file was created by a different configuration and may fail to load, crash, or desync.</label>
+              <div><button id="compatibilityOverrideCancel" type="button" class="button secondary small">Cancel</button><button id="compatibilityOverrideCopy" type="button" class="button primary small" disabled>Override &amp; copy</button></div>
+            </section>
+            <div id="gameDataStatus" class="game-data-status" role="status">Loading isolated game data…</div>
+            <div id="gameDataContextList" class="game-data-context-list"></div>
           </div>
         </article>
 
@@ -547,6 +591,8 @@
           <div class="start-primary">
             <button type="button" data-open="setup"><span class="start-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><div><strong>Project New Shoes Game Launcher</strong><small>Add files and start a game</small></div></button>
             <button type="button" data-open="explorer"><span class="start-icon"><svg><use href="#i-folder"/></svg></span><div><strong>My Files</strong><small>Browse folders and local files</small></div></button>
+            <button type="button" data-open="mods"><span class="start-icon"><svg><use href="#i-apps"/></svg></span><div><strong>Mod Manager</strong><small>Import and choose launch mods</small></div></button>
+            <button type="button" data-open="gameData"><span class="start-icon"><svg><use href="#i-save"/></svg></span><div><strong>Save &amp; Replay Manager</strong><small>Browse isolated game data</small></div></button>
             <button type="button" data-open="browser"><span class="start-icon"><svg><use href="#i-browser"/></svg></span><div><strong>Project New Shoes Browser</strong><small>Command Net and the open web</small></div></button>
             <button type="button" data-open="notepad"><span class="start-icon"><svg><use href="#i-note"/></svg></span><div><strong>Notepad</strong><small>Write notes to your virtual drive</small></div></button>
             <button type="button" data-open="arcade"><span class="start-icon"><svg><use href="#i-arcade"/></svg></span><div><strong>Project New Shoes Arcade</strong><small>Minefield and Signal Match</small></div></button>
