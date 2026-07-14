@@ -114,8 +114,14 @@ try {
     return { ok: response.ok, type: response.headers.get("content-type"), bytes: (await response.arrayBuffer()).byteLength };
   });
   if (!wasm.ok || wasm.type !== "application/wasm" || wasm.bytes < 1024) throw new Error(`Wasm delivery failed: ${JSON.stringify(wasm)}`);
-  const prep = await page.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
-  if (prep.ok !== false || !/Missing archive list/.test(prep.error || "")) throw new Error(`Unexpected empty mount: ${JSON.stringify(prep)}`);
+  const emptyMount = await page.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
+  if (emptyMount.ok !== false || !/Missing archive list/.test(emptyMount.error || "")) {
+    throw new Error(`Unexpected empty mount: ${JSON.stringify(emptyMount)}`);
+  }
+  const prep = await page.evaluate(() => window.CnCPort.rpc("threadedStatus", {}));
+  if (prep.ok !== true || prep.threaded !== true) {
+    throw new Error(`Threaded realm preparation failed: ${JSON.stringify(prep)}`);
+  }
   await page.waitForFunction(() => window.CnCPort?.state?.threadedMode === true, null, { timeout: 30000 });
   const runtime = await page.evaluate(() => ({
     heapShared: window.CnCPort.engineModule()?.HEAP8?.buffer instanceof SharedArrayBuffer,

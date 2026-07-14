@@ -155,12 +155,17 @@ try {
     throw new Error(`Wasm delivery check failed: ${JSON.stringify(wasm)}`);
   }
 
-  // An empty mount is rejected after module/realm preparation. Reaching the
-  // threadedMode state proves the actual Emscripten pthread worker accepted
-  // the transferred viewport OffscreenCanvas; no proprietary assets are used.
-  const prep = await page.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
-  if (prep.ok !== false || !/Missing archive list/.test(prep.error || "")) {
-    throw new Error(`Unexpected empty-mount result: ${JSON.stringify(prep)}`);
+  // The empty mount proves the packaged Wasm archive API is live. Preparing
+  // the worker realm is explicit: mountArchives validates an empty list before
+  // its real OPFS path needs the realm, so relying on it to start the worker is
+  // a race with unrelated launcher activity.
+  const emptyMount = await page.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
+  if (emptyMount.ok !== false || !/Missing archive list/.test(emptyMount.error || "")) {
+    throw new Error(`Unexpected empty-mount result: ${JSON.stringify(emptyMount)}`);
+  }
+  const prep = await page.evaluate(() => window.CnCPort.rpc("threadedStatus", {}));
+  if (prep.ok !== true || prep.threaded !== true) {
+    throw new Error(`Threaded realm preparation failed: ${JSON.stringify(prep)}`);
   }
   await page.waitForFunction(() => window.CnCPort?.state?.threadedMode === true, null, { timeout: 30000 });
   const runtime = await page.evaluate(() => ({
