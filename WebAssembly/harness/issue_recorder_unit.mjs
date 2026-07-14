@@ -3,10 +3,10 @@ import {
   compactRpcResult,
   dataUrlSizeBytes,
   makeDumpId,
-  normalizeCrashFailure,
   redactLarge,
   sanitizeDumpFileName,
 } from "./issue-recorder.mjs";
+import { normalizeCrashFailure } from "./crash-diagnostics.mjs";
 
 assert.match(makeDumpId(new Date("2026-07-05T12:34:56.789Z")), /^cnc-2026-07-05T12-34-56-789Z$/);
 assert.equal(sanitizeDumpFileName("bad / name ?.json"), "bad-name-.json");

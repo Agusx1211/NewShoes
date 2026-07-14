@@ -615,29 +615,6 @@
     </main>
     <div id="consolePanel" class="hidden" aria-label="Engine log"></div>
     <div id="issueModal" class="hidden" aria-label="Report issue dialog"><div id="issueDialog" role="dialog" aria-modal="true"><div class="issueTop"><input id="issueTitle" type="text" maxlength="120" placeholder="Short issue title"><label>color <input id="issueColor" type="color" value="#ff3b30"></label><label>stroke <input id="issueStroke" type="range" min="2" max="16" value="5"></label></div><div class="issueCanvasWrap"><canvas id="issueScreenshotCanvas" width="1280" height="720"></canvas><canvas id="issueAnnotationCanvas" width="1280" height="720"></canvas></div><div class="issueBottom"><textarea id="issueComment" placeholder="What is wrong? What did you expect?"></textarea><div class="issueActions"><button id="issueClear" type="button">clear</button><button id="issueCancel" type="button">cancel</button><button id="issueSave" type="button">add issue</button></div></div></div></div>
-    <div id="crashModal" class="crash-modal" hidden>
-      <section class="crash-dialog" role="alertdialog" aria-modal="true" aria-labelledby="crashDialogTitle" aria-describedby="crashDialogMessage">
-        <header class="crash-titlebar"><span>Project New Shoes</span><button id="crashClose" type="button" aria-label="Restart Project New Shoes">×</button></header>
-        <div class="crash-body">
-          <div class="crash-error-icon" aria-hidden="true">×</div>
-          <div class="crash-copy">
-            <h1 id="crashDialogTitle">Zero Hour has encountered a problem</h1>
-            <p id="crashDialogMessage">The game runtime stopped unexpectedly. A diagnostics report can tell us what happened.</p>
-            <pre id="crashTechnicalDetail" class="crash-technical-detail"></pre>
-            <ol>
-              <li>Download the full diagnostics report below.</li>
-              <li>Create an issue, describe what you were doing, and attach the <code>.cncdump.json</code> file.</li>
-            </ol>
-            <p class="crash-privacy">The report contains engine logs, build and browser details, recent runtime events, and a screenshot when available. It does not include your original game archives.</p>
-          </div>
-        </div>
-        <footer class="crash-actions">
-          <button id="crashDownload" class="crash-download" type="button">Download full diagnostics report</button>
-          <a id="crashCreateIssue" href="https://github.com/Agusx1211/NewShoes/issues/new" target="_blank" rel="noopener noreferrer">Create GitHub issue</a>
-          <button id="crashReload" type="button">Restart</button>
-        </footer>
-      </section>
-    </div>
     <span id="buildAge" hidden>build —</span>
     <script type="module" src="./bridge.js"></script>
     <script type="module" src="./play.mjs"></script>

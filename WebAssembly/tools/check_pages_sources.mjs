@@ -21,6 +21,7 @@ const scripts = [
   "harness/camera_zoom_config_unit.mjs",
   "harness/camera_zoom_runtime_smoke.mjs",
   "harness/cloudflare_deployment_smoke.mjs",
+  "harness/crash-diagnostics.mjs",
   "harness/d3d8_executor.mjs",
   "harness/device-transfer-protocol.mjs",
   "harness/device_transfer_browser_smoke.mjs",
@@ -70,6 +71,7 @@ const scripts = [
   "tools/pages_site_manifest.mjs",
   "tools/release_metadata.mjs",
   "tools/release_metadata_unit.mjs",
+  "tools/verify_crash_diagnostics_zero_overhead.mjs",
   "tools/verify_cloudflare_site.mjs",
   "tools/verify_pages_site.mjs",
 ];

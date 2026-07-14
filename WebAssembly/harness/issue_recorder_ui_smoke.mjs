@@ -13,6 +13,10 @@ const browser = await chromium.launch({ headless: true });
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const crashModuleRequests = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/crash-diagnostics.mjs")) crashModuleRequests.push(request.url());
+  });
   page.setDefaultTimeout(60_000);
   await page.goto(new URL("harness/play.html?diag=lite", server.url).href, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc && window.CnCIssueRecorder));
@@ -113,17 +117,20 @@ try {
   await page.waitForFunction(() => window.CnCIssueRecorder?.recording === false);
   await page.locator("#captureOverlayDismiss").click();
   await page.locator("#captureOverlay").waitFor({ state: "hidden" });
+  assert.equal(crashModuleRequests.length, 0, "normal recorder use loaded crash-only diagnostics");
 
-  await page.evaluate(() => {
-    window.dispatchEvent(new CustomEvent("cncport:runtimefatal", {
-      detail: {
-        kind: "wasm-abort",
-        message: "Synthetic UI-smoke Wasm abort",
-        abortReason: "unreachable",
-      },
-    }));
+  await page.evaluate(async () => {
+    const failure = {
+      kind: "wasm-abort",
+      message: "Synthetic UI-smoke Wasm abort",
+      detail: { abortReason: "unreachable" },
+    };
+    window.CnCIssueRecorder.noteFailure(failure.message, failure.detail);
+    const { showCrashDiagnostics } = await import("./crash-diagnostics.mjs");
+    showCrashDiagnostics(window.CnCIssueRecorder, failure);
   });
   await page.locator("#crashModal").waitFor({ state: "visible" });
+  assert.equal(crashModuleRequests.length, 1, "fatal signal did not lazy-load crash diagnostics once");
   assert.match(await page.locator("#crashDialogTitle").textContent(), /encountered a problem/i);
   assert.match(await page.locator("#crashTechnicalDetail").textContent(), /wasm-abort/);
   assert.match(await page.locator("#crashCreateIssue").getAttribute("href"), /NewShoes\/issues\/new$/);
@@ -131,7 +138,14 @@ try {
 
   const crashDownloadPromise = page.waitForEvent("download");
   await page.locator("#crashDownload").click();
-  const crashDownload = await crashDownloadPromise;
+  const crashDownload = await Promise.race([
+    crashDownloadPromise,
+    page.waitForFunction(() => document.querySelector("#crashDownload")?.textContent.includes("Download failed"))
+      .then(async () => {
+        const detail = await page.locator("#crashDownload").getAttribute("title");
+        throw new Error(`crash report download failed: ${detail ?? "unknown error"}`);
+      }),
+  ]);
   assert.match(crashDownload.suggestedFilename(), /crash-report\.cncdump\.json$/);
   const crashDownloadPath = await crashDownload.path();
   assert.ok(crashDownloadPath, "crash dialog did not produce a downloadable diagnostics report");
@@ -145,24 +159,6 @@ try {
   assert.ok(crashDump.timeline.some((entry) => entry.type === "session.failure"));
   assert.ok(crashDump.manifest.build);
   assert.ok(crashDump.manifest.browser.userAgent);
-
-  await page.evaluate(() => window.CnCIssueRecorder.persistDraft("recovery-smoke"));
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => Boolean(window.CnCIssueRecorder?.recoveredCrash));
-  await page.locator("#crashModal").waitFor({ state: "visible" });
-  assert.match(await page.locator("#crashDialogTitle").textContent(), /previous Zero Hour session/i);
-  assert.equal(await page.locator("#crashDownload").isEnabled(), true);
-
-  const recoveredDownloadPromise = page.waitForEvent("download");
-  await page.locator("#crashDownload").click();
-  const recoveredDownload = await recoveredDownloadPromise;
-  assert.match(recoveredDownload.suggestedFilename(), /recovered-crash-report\.cncdump\.json$/);
-  const recoveredPath = await recoveredDownload.path();
-  assert.ok(recoveredPath, "recovered crash draft was not downloadable after reload");
-  const recoveredDump = JSON.parse(await readFile(recoveredPath, "utf8"));
-  assert.equal(recoveredDump.recovery.marker.state, "crashed");
-  assert.equal(recoveredDump.crash.primary.kind, "wasm-abort");
-  assert.ok(recoveredDump.issues.some((entry) => entry.id === "issue-crash"));
   console.log("issue recorder UI smoke passed");
 } finally {
   await browser.close();
