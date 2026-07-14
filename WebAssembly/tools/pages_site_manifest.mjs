@@ -4,6 +4,10 @@ export const PAGES_TEMPLATE_FILES = Object.freeze([
   "coi-serviceworker.js",
   "index.html",
   "legal.html",
+  "llms.txt",
+  "project.md",
+  "robots.txt",
+  "sitemap.xml",
 ]);
 
 export const PAGES_HARNESS_FILES = Object.freeze([

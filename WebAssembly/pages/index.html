@@ -4,23 +4,50 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#14272b">
-    <meta name="description" content="Project New Shoes runs the original Generals and Zero Hour engine in your browser with game data you own.">
+    <meta name="description" content="Play the original Command &amp; Conquer: Generals Zero Hour engine in a desktop browser through WebAssembly, using game files you own.">
+    <meta name="robots" content="index, follow">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Project New Shoes">
+    <meta property="og:title" content="Project New Shoes: Zero Hour in your browser">
+    <meta property="og:description" content="The original Generals Zero Hour engine, ported to WebAssembly. Bring game files you own and play locally in a desktop browser.">
+    <meta property="og:url" content="https://newshoes.gg/">
+    <meta property="og:image" content="https://newshoes.gg/harness/assets/brand/project-new-shoes-icon-512.png">
     <title>Project New Shoes</title>
     <link rel="canonical" href="./">
+    <link rel="help" type="text/plain" href="./llms.txt" title="Project New Shoes LLM index">
+    <link rel="alternate" type="text/markdown" href="./project.md" title="Project New Shoes complete text guide">
     <link rel="icon" href="./harness/assets/brand/project-new-shoes.ico" sizes="any">
     <link rel="apple-touch-icon" href="./harness/assets/brand/project-new-shoes-apple-touch.png">
     <link rel="manifest" href="./manifest.webmanifest">
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": ["VideoGame", "WebApplication"],
+        "name": "Project New Shoes",
+        "url": "https://newshoes.gg/",
+        "description": "A WebAssembly port of the original Command & Conquer: Generals Zero Hour C++ engine that runs with user-owned game data in a desktop browser.",
+        "applicationCategory": "Game",
+        "operatingSystem": "Modern desktop web browser",
+        "isAccessibleForFree": true,
+        "license": "https://newshoes.gg/LICENSE.md",
+        "sameAs": "https://github.com/Agusx1211/NewShoes",
+        "softwareHelp": "https://newshoes.gg/project.md"
+      }
+    </script>
     <style>
       :root { color-scheme: dark; font-family: system-ui, sans-serif; }
       * { box-sizing: border-box; }
       body { min-height: 100vh; margin: 0; display: grid; place-items: center; color: #eef7f3; background: radial-gradient(circle at 50% 25%, #315f64, #14272b 48%, #091113); }
-      main { width: min(34rem, calc(100% - 2rem)); padding: 2rem; border: 1px solid #72989a; background: rgba(11, 25, 27, .92); box-shadow: 0 1.5rem 5rem #0009; }
+      main { width: min(40rem, calc(100% - 2rem)); padding: 2rem; border: 1px solid #72989a; background: rgba(11, 25, 27, .92); box-shadow: 0 1.5rem 5rem #0009; }
       h1 { margin: 0 0 .5rem; font-size: 1.55rem; }
       p { line-height: 1.5; color: #bdd1cc; }
       .meter { height: .45rem; margin: 1.5rem 0; overflow: hidden; background: #233c3e; }
       .meter::after { content: ""; display: block; width: 42%; height: 100%; background: #d99445; animation: sweep 1.2s ease-in-out infinite alternate; }
       .error { color: #ffd7ce; }
       button { padding: .65rem .9rem; border: 1px solid #aebfba; color: inherit; background: #27484a; cursor: pointer; }
+      .project-summary { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #3d5c5f; }
+      .project-summary h2 { margin: 0; font-size: 1rem; }
+      .project-summary p { margin: .5rem 0; font-size: .9rem; }
       footer { margin-top: 1.25rem; font-size: .78rem; line-height: 1.5; color: #aabeba; }
       a { color: #ffd18a; }
       [hidden] { display: none; }
@@ -35,6 +62,11 @@
       <div class="meter" aria-hidden="true"></div>
       <p id="coi-error" class="error" role="alert" hidden></p>
       <button id="coi-retry" type="button" hidden>Try again</button>
+      <section class="project-summary" aria-labelledby="project-summary-title">
+        <h2 id="project-summary-title">The original Zero Hour engine, ported to the web</h2>
+        <p>Project New Shoes runs the real C++ game engine through WebAssembly. Players bring a complete Generals and Zero Hour copy they own; selection, installation, and play stay in the local browser.</p>
+        <p><a href="./project.md">Read the complete project and setup guide</a> · <a href="./llms.txt">LLM text index</a> · <a href="https://github.com/Agusx1211/NewShoes">Source and issues</a></p>
+      </section>
       <footer>Modified GPLv3 software, copyright © Electronic Arts Inc. and Project New Shoes contributors. No warranty. <a href="./legal.html">License and notices</a> · <a href="__PAGES_SOURCE_URL__">Corresponding source</a></footer>
     </main>
     <script src="./coi-bootstrap.js" data-coi-target="./"></script>

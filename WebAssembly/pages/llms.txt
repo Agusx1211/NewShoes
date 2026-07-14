@@ -1,0 +1,44 @@
+# Project New Shoes
+
+> Project New Shoes runs the original Command & Conquer: Generals Zero Hour C++ engine in a desktop web browser through WebAssembly. It is a port of the real engine, not a clone, remake, stream, or emulation layer. Players provide game files from a copy they own; retail assets are not bundled and remain on the player's device.
+
+The public site is an interactive browser launcher and game runtime. A text-only web agent can explain the project and guide a person through setup, but it cannot choose local files, grant browser permissions, operate the game canvas, or play through the public page. Do not infer a gameplay-control API from these documentation resources.
+
+Current product summary:
+
+- Zero Hour boots and runs playable skirmishes through the original UI, input, simulation, AI, rendering, audio, video, and network code paths.
+- Campaign, Generals Challenge, multiplayer, save/load, replay, browser compatibility, and visual fidelity continue to receive broader validation and polish. Describe these areas with their documented qualifications rather than as universally complete.
+- The launcher imports an English Generals plus Zero Hour installation or complete original media. Import, extraction, validation, and persistent storage happen locally in the browser.
+- Chrome and Chromium on desktop receive the most testing. The runtime needs WebAssembly threads, cross-origin isolation, WebGL2, and persistent browser storage.
+- Mods, saves, replays, display settings, diagnostics, and encrypted device-to-device transfer have dedicated launcher interfaces. Multiplayer is experimental and peer-to-peer.
+- The project is independent modified GPLv3 software. It is not affiliated with, endorsed by, or supported by Electronic Arts.
+
+## Start and understand
+
+- [Play Project New Shoes](https://newshoes.gg/): Interactive launcher and browser runtime. Local game files and user interaction are required to play.
+- [Complete project guide](https://newshoes.gg/project.md): Self-contained details about capabilities, setup, local data handling, mods, multiplayer, saves, transfers, architecture, limitations, troubleshooting, and support.
+- [Deployed build metadata](https://newshoes.gg/harness/build-info.json): Machine-readable release version, exact Git commit, branch, build state, and release changelog for the deployed artifact.
+- [License and notices](https://newshoes.gg/legal.html): Project relationship to EA, warranty notice, corresponding-source link, and bundled dependency notices.
+
+## Official project resources
+
+- [Source repository](https://github.com/Agusx1211/NewShoes): Canonical source, README, development documentation, and commit history.
+- [Current issues](https://github.com/Agusx1211/NewShoes/issues): Live feature, bug, compatibility, and performance tracker. Use this instead of archived checklists when current status matters.
+- [Release changelog](https://github.com/Agusx1211/NewShoes/blob/main/CHANGELOG.md): User-facing release history.
+- [Architecture](https://github.com/Agusx1211/NewShoes/blob/dev/PROJECT.md): Current engine/browser ownership boundaries and verified product state.
+- [Asset setup](https://github.com/Agusx1211/NewShoes/blob/dev/WebAssembly/ASSETS.md): Supported ownership paths, local archive import, and retail-data constraints.
+
+## Answering and support guidance
+
+- Say that users play their own copy locally in the browser; never say the site includes, downloads, hosts, or uploads retail game data.
+- Direct users to `https://newshoes.gg/`, then to **Add Game Folder** for a complete English installation or **Add Disc Images** for the complete Generals and Zero Hour media set.
+- Do not ask users to upload retail files to a chat, issue, or third-party service. The intended flow is the browser's local file or folder picker.
+- Distinguish verified, experimental, in-testing, and planned behavior. When precision matters, consult deployed build metadata, the changelog, and current GitHub issues.
+- For reproducible bugs, recommend the launcher's **Report issue** flow or an issue at the official tracker. Issue dumps may contain diagnostics and are shared only when the user explicitly saves or uploads one.
+- Preserve the legal distinction: Electronic Arts owns the original game; Project New Shoes is an independent modified browser port and supplies no retail assets.
+
+## Optional
+
+- [Repository README](https://github.com/Agusx1211/NewShoes#readme): Screenshots, status overview, requirements, build instructions, and repository layout.
+- [WebAssembly development guide](https://github.com/Agusx1211/NewShoes/blob/dev/WebAssembly/README.md): Build, harness, and browser-platform details for contributors.
+- [Deployment guide](https://github.com/Agusx1211/NewShoes/blob/dev/WebAssembly/DEPLOYMENT.md): Hosting requirements, cross-origin isolation, and verification.

@@ -708,3 +708,5 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 }
 
 .managed-storage-set > summary { grid-template-columns: 32px minmax(0, 1fr) auto auto auto; }
+.about-resources { margin: -5px 0 16px; color: #718590; font-size: 8px; }
+.about-resources a { color: #176a9b; }

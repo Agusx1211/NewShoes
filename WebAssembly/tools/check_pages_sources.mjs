@@ -14,6 +14,7 @@ const scripts = [
   "harness/analytics.mjs",
   "harness/analytics_unit.mjs",
   "harness/analytics_browser_smoke.mjs",
+  "harness/agent_resources_smoke.mjs",
   "harness/bink_direct_decoder_browser_smoke.mjs",
   "harness/bink_decode_worker.mjs",
   "harness/bink_decoder.mjs",
