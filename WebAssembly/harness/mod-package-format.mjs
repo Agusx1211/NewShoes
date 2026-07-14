@@ -23,6 +23,47 @@ const CONTAINER_EXTENSIONS = /\.(?:7z|exe|rar|zip)$/i;
 // extension while selecting optional archives (Contra uses .ctr; ShockWave
 // distributions have used .gib). The browser manager normalizes them to .big.
 const BIG_PAYLOAD_EXTENSIONS = /\.(?:big|ctr|gib)$/i;
+const DEFAULT_ENABLED_CUSTOM_ARCHIVE_SUFFIXES = [
+  "disablefogeffects",
+  "hotkeysoriginalenglish",
+  "musicthescore",
+  "unitvoicesenglish",
+];
+const DEFAULT_DISABLED_CUSTOM_ARCHIVE_SUFFIXES = [
+  "cameoshd",
+  "controlbarpro",
+  "controlbarstandard",
+  "disableextrabuildingprops",
+  "disablewatereffects",
+  "funnygeneralportraits",
+  "hotkeysleikezeenglish",
+  "hotkeysleikezerussian",
+  "hotkeysoriginalrussian",
+  "musicenhanced",
+  "unitvoicesnative",
+];
+
+export function defaultArchiveEnabled(value) {
+  const fileName = String(value).replaceAll("\\", "/").split("/").pop() ?? "";
+  if (!/\.(?:ctr|gib)$/i.test(fileName)) return true;
+
+  const stem = fileName.replace(/\.(?:ctr|gib)$/i, "");
+  const normalized = stem.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+  // Launcher-managed archives use custom extensions to keep mutually exclusive
+  // choices dormant until launch. Match the launchers' English defaults instead
+  // of mounting every choice at once. In particular, Contra X control-bar
+  // variants replace overlapping WND layouts and cannot be combined.
+  if (DEFAULT_ENABLED_CUSTOM_ARCHIVE_SUFFIXES.some((suffix) => normalized.endsWith(suffix))) {
+    return true;
+  }
+  if (DEFAULT_DISABLED_CUSTOM_ARCHIVE_SUFFIXES.some((suffix) => normalized.endsWith(suffix))) {
+    return false;
+  }
+
+  // Contra 009 and other older launcher packages use abbreviated option names.
+  return !/(?:^|[_-])(?:ru|natvo|newmusic|fogoff|funnygenpics)(?:$|[_-])/i.test(stem);
+}
 
 export function classifyArchiveHeader(value) {
   const bytes = value instanceof Uint8Array ? value : new Uint8Array(value ?? 0);

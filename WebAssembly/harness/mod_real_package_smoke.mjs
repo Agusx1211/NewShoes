@@ -13,7 +13,14 @@ const allPackages = [
   { file: "ROTRBeta_185.zip", name: "Rise of the Reds", archives: 14, clickteam: true },
   { file: "MODDB_Ver11.rar", name: "The End of Days", archives: 11 },
   { file: "Contra009Final.rar", name: "Contra", archives: 8, disabled: 5 },
-  { file: "ContraXBeta2.zip", name: "Contra X Beta 2", archives: 24, native: true, optional: true },
+  {
+    file: "ContraXBeta2.zip",
+    name: "Contra X Beta 2",
+    archives: 24,
+    disabled: 11,
+    native: true,
+    optional: true,
+  },
 ];
 const requestedPackages = new Set(String(process.env.REAL_MOD_PACKAGES || "")
   .split(",").map((value) => value.trim()).filter(Boolean));
