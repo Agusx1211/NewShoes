@@ -195,16 +195,28 @@ async function main() {
         && reply.body.sessions?.some((session) => session.id === sessionId),
       30000);
 
-    const snapshotsPath = `/v1/sessions/${encodeURIComponent(sessionId)}/ui`;
+    const sessionPath = `/v1/sessions/${encodeURIComponent(sessionId)}`;
+    const snapshotsPath = `${sessionPath}/ui`;
+    const pointerPath = `${sessionPath}/input/pointer`;
     const pointer = await rest(
-      `/v1/sessions/${encodeURIComponent(sessionId)}/input/pointer`,
+      pointerPath,
       { method: "POST", body: JSON.stringify({ x: 160, y: 160 }) },
     );
     if (pointer.status !== 200 || pointer.body.result?.ok !== true) {
       throw new Error(`pointer move failed: ${JSON.stringify(pointer)}`);
     }
+    let nextPointerWake = 0;
     const mainMenu = await waitFor("semantic main-menu snapshot",
-      () => rest(snapshotsPath),
+      async () => {
+        if (Date.now() >= nextPointerWake) {
+          nextPointerWake = Date.now() + 1000;
+          await rest(pointerPath, {
+            method: "POST",
+            body: JSON.stringify({ x: 160, y: 160 }),
+          });
+        }
+        return rest(snapshotsPath);
+      },
       (reply) => reply.status === 200
         && reply.body.result?.windows?.some((window) =>
           window.name === "MainMenu.wnd:ButtonSinglePlayer"
@@ -265,7 +277,147 @@ async function main() {
     const submenuScreenshot = resolve(screenshotDir, "agent-bridge-single-player-menu.png");
     const submenuPixels = await page.screenshot({ path: submenuScreenshot });
 
-    if (mainPixels.length < 10 * 1024 || submenuPixels.length < 10 * 1024) {
+    const skirmishButton = submenu.body.result.windows.find((window) =>
+      window.name === "MainMenu.wnd:ButtonSkirmish");
+    const skirmishActivation = await rest(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/ui/activate`,
+      {
+        method: "POST",
+        body: JSON.stringify({ windowId: skirmishButton.id, name: skirmishButton.name }),
+      },
+    );
+    if (skirmishActivation.status !== 200 || skirmishActivation.body.result?.ok !== true) {
+      throw new Error(`skirmish activation failed: ${JSON.stringify(skirmishActivation)}`);
+    }
+    const skirmishOptions = await waitFor("semantic skirmish options",
+      () => rest(snapshotsPath),
+      (reply) => reply.status === 200
+        && reply.body.result?.windows?.some((window) =>
+          window.name === "SkirmishGameOptionsMenu.wnd:ButtonStart"
+          && window.visible === true
+          && window.interactive === true),
+      60000);
+    const startButton = skirmishOptions.body.result.windows.find((window) =>
+      window.name === "SkirmishGameOptionsMenu.wnd:ButtonStart");
+    const optionsScreenshot = resolve(screenshotDir, "agent-bridge-skirmish-options.png");
+    const optionsPixels = await page.screenshot({ path: optionsScreenshot });
+    const startActivation = await rest(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/ui/activate`,
+      {
+        method: "POST",
+        body: JSON.stringify({ windowId: startButton.id, name: startButton.name }),
+      },
+    );
+    if (startActivation.status !== 200 || startActivation.body.result?.ok !== true) {
+      throw new Error(`skirmish start failed: ${JSON.stringify(startActivation)}`);
+    }
+
+    const worldPath = `/v1/sessions/${encodeURIComponent(sessionId)}/world`;
+    const unrestrictedWorld = await waitFor("live unrestricted world observation",
+      () => rest(`${worldPath}?mode=unrestricted`),
+      (reply) => reply.status === 200
+        && reply.body.result?.game?.mode === "skirmish"
+        && reply.body.result?.game?.playable === true
+        && reply.body.result?.objects?.some((object) => object.capabilities !== null)
+        && reply.body.result?.players?.some((player) => player.local && player.economy !== null),
+      Math.min(timeoutMs, 8 * 60_000));
+    const world = unrestrictedWorld.body.result;
+    const objectIds = world.objects.map((object) => object.id);
+    if (world.truncated === true
+        || world.objects.some((object) => object.shroud !== "clear" && object.shroud !== "partial")
+        || world.players.some((player) => !player.local && player.economy !== null)
+        || objectIds.some((id) => !Number.isSafeInteger(id) || id < 1)
+        || new Set(objectIds).size !== objectIds.length
+        || "worldObjectCount" in world
+        || "visibilityRejectedCount" in world
+        || "cameraRejectedCount" in world) {
+      throw new Error(`unrestricted world violated visibility contract: ${JSON.stringify({
+        truncated: world.truncated,
+        objectCount: world.objectCount,
+        shroud: [...new Set(world.objects.map((object) => object.shroud))],
+        remoteEconomy: world.players.filter((player) => !player.local).map((player) => player.economy),
+      })}`);
+    }
+    const cameraWorldReply = await rest(`${worldPath}?mode=camera`);
+    const cameraWorld = cameraWorldReply.body.result;
+    if (cameraWorldReply.status !== 200
+        || cameraWorld?.observationMode !== "camera"
+        || cameraWorld.objectCount > world.objectCount
+        || cameraWorld.objects.some((object) => object.screen === null)) {
+      throw new Error(`camera world violated view contract: ${JSON.stringify(cameraWorldReply)}`);
+    }
+
+    const terrainExtent = world.terrain.extent;
+    const terrainParameters = new URLSearchParams({
+      mode: "unrestricted",
+      minX: String(terrainExtent.lo.x),
+      minY: String(terrainExtent.lo.y),
+      maxX: String(terrainExtent.hi.x),
+      maxY: String(terrainExtent.hi.y),
+      columns: "32",
+      rows: "32",
+    });
+    const terrainReply = await rest(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/terrain?${terrainParameters}`,
+    );
+    const terrain = terrainReply.body.result;
+    const heightBytes = terrain?.height?.data
+      ? Buffer.from(terrain.height.data, "base64")
+      : Buffer.alloc(0);
+    const flagBytes = terrain?.flags?.data
+      ? Buffer.from(terrain.flags.data, "base64")
+      : Buffer.alloc(0);
+    if (terrainReply.status !== 200
+        || terrain?.columns !== 32
+        || terrain?.rows !== 32
+        || terrain.knownCount < 1
+        || terrain.visibleCount < 1
+        || terrain.visibleCount >= 32 * 32
+        || terrain.knownCount < terrain.visibleCount
+        || heightBytes.length !== 32 * 32 * 2
+        || flagBytes.length !== 32 * 32) {
+      throw new Error(`terrain observation violated compact visibility contract: ${JSON.stringify({
+        status: terrainReply.status,
+        terrain,
+        heightBytes: heightBytes.length,
+        flagBytes: flagBytes.length,
+      })}`);
+    }
+    terrainParameters.set("mode", "camera");
+    const cameraTerrainReply = await rest(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/terrain?${terrainParameters}`,
+    );
+    const cameraTerrain = cameraTerrainReply.body.result;
+    if (cameraTerrainReply.status !== 200
+        || cameraTerrain?.observationMode !== "camera"
+        || cameraTerrain.inCameraCount < 1
+        || cameraTerrain.inCameraCount >= 32 * 32
+        || cameraTerrain.knownCount > cameraTerrain.inCameraCount
+        || cameraTerrain.knownCount > terrain.knownCount) {
+      throw new Error(`camera terrain violated view contract: ${JSON.stringify(cameraTerrainReply)}`);
+    }
+    await delay(2000);
+    const repeatedWorldReply = await rest(`${worldPath}?mode=unrestricted`);
+    const repeatedWorld = repeatedWorldReply.body.result;
+    const repeatedById = new Map(
+      repeatedWorld?.objects?.map((object) => [object.id, object]) ?? [],
+    );
+    const localReferences = world.objects.filter((object) => object.capabilities !== null);
+    if (repeatedWorldReply.status !== 200
+        || localReferences.some((object) => repeatedById.get(object.id)?.template !== object.template)) {
+      throw new Error(`world object identities were not stable: ${JSON.stringify({
+        status: repeatedWorldReply.status,
+        before: localReferences.map(({ id, template }) => ({ id, template })),
+        after: repeatedWorld?.objects?.map(({ id, template }) => ({ id, template })),
+      })}`);
+    }
+    const matchScreenshot = resolve(screenshotDir, "agent-bridge-live-skirmish.png");
+    const matchPixels = await page.screenshot({ path: matchScreenshot });
+
+    if (mainPixels.length < 10 * 1024
+        || submenuPixels.length < 10 * 1024
+        || optionsPixels.length < 10 * 1024
+        || matchPixels.length < 10 * 1024) {
       throw new Error("browser screenshots were unexpectedly small");
     }
     const unexpectedHttpFailures = httpFailures.filter((failure) =>
@@ -296,12 +448,30 @@ async function main() {
       unrestrictedWindowCount: unrestrictedMenu.body.result.windowCount,
       unrestrictedTruncated: unrestrictedMenu.body.result.truncated,
       submenuWindowCount: submenu.body.result.windowCount,
+      skirmishOptionsWindowCount: skirmishOptions.body.result.windowCount,
       staleWindowGuard: true,
       pointerWake: true,
       unrestrictedPreservesVisible: true,
       activation: singlePlayer.name,
+      skirmishActivation: skirmishButton.name,
+      startActivation: startButton.name,
+      world: {
+        frame: repeatedWorld.frame,
+        objectCount: repeatedWorld.objectCount,
+        cameraObjectCount: cameraWorld.objectCount,
+        localMoney: world.players.find((player) => player.local)?.economy?.money,
+      },
+      terrain: {
+        knownCount: terrain.knownCount,
+        visibleCount: terrain.visibleCount,
+        cameraKnownCount: cameraTerrain.knownCount,
+        cameraSampleCount: cameraTerrain.inCameraCount,
+        sampleCount: terrain.columns * terrain.rows,
+        heightBytes: heightBytes.length,
+        flagBytes: flagBytes.length,
+      },
       expectedOptional404s: httpFailures.map((failure) => new URL(failure.url).pathname),
-      screenshots: [mainScreenshot, submenuScreenshot],
+      screenshots: [mainScreenshot, submenuScreenshot, optionsScreenshot, matchScreenshot],
     }, null, 2)}\n`);
   } catch (error) {
     const bridgeError = bridge.failureDetail();

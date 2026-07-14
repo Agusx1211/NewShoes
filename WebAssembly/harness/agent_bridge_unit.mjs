@@ -81,6 +81,8 @@ test("authenticates and maps raw UI requests to engine-thread RPC", async () => 
     capabilities: [
       "protocol.describe",
       "input.pointerMove",
+      "world.snapshot",
+      "terrain.query",
       "ui.snapshot",
       "ui.activate",
       "ui.setText",
@@ -134,6 +136,99 @@ test("authenticates and maps raw UI requests to engine-thread RPC", async () => 
     ok: true,
     result: { ok: true, x: 32, y: 96 },
   });
+  controller.stop();
+});
+
+test("maps bounded world and terrain observations to engine RPC", async () => {
+  FakeWebSocket.instances.length = 0;
+  const calls = [];
+  const controller = createAgentBridgeConnection({
+    config: { url: "ws://localhost/engine", token: "token", sessionId: "world" },
+    rpc: async (command, payload) => {
+      calls.push({ command, payload });
+      return { ok: true, result: { ok: true, command } };
+    },
+    WebSocketImpl: FakeWebSocket,
+    cryptoImpl: { randomUUID: () => "unused" },
+  });
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  socket.receive({ type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "world" });
+  socket.receive({
+    type: "request",
+    id: "world-1",
+    op: "world.snapshot",
+    args: { mode: "camera" },
+  });
+  socket.receive({
+    type: "request",
+    id: "terrain-1",
+    op: "terrain.query",
+    args: {
+      mode: "unrestricted",
+      minX: 0,
+      minY: 10,
+      maxX: 1000,
+      maxY: 900,
+      columns: 64,
+      rows: 32,
+    },
+  });
+  await flush();
+  await flush();
+
+  assert.deepEqual(calls, [
+    { command: "agentWorldSnapshot", payload: { mode: "camera" } },
+    {
+      command: "agentTerrainQuery",
+      payload: {
+        mode: "unrestricted",
+        minX: 0,
+        minY: 10,
+        maxX: 1000,
+        maxY: 900,
+        columns: 64,
+        rows: 32,
+      },
+    },
+  ]);
+  assert.equal(socket.sent[1].id, "world-1");
+  assert.equal(socket.sent[1].ok, true);
+  assert.equal(socket.sent[2].id, "terrain-1");
+  assert.equal(socket.sent[2].ok, true);
+  controller.stop();
+});
+
+test("rejects invalid observation modes and oversized terrain grids", async () => {
+  FakeWebSocket.instances.length = 0;
+  let calls = 0;
+  const controller = createAgentBridgeConnection({
+    config: { url: "ws://localhost/engine", token: "token", sessionId: "bounds" },
+    rpc: async () => { calls += 1; },
+    WebSocketImpl: FakeWebSocket,
+    cryptoImpl: { randomUUID: () => "unused" },
+  });
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  socket.receive({ type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "bounds" });
+  socket.receive({
+    type: "request",
+    id: "bad-mode",
+    op: "world.snapshot",
+    args: { mode: "omniscient" },
+  });
+  socket.receive({
+    type: "request",
+    id: "bad-grid",
+    op: "terrain.query",
+    args: { minX: 0, minY: 0, maxX: 10, maxY: 10, columns: 129, rows: 1 },
+  });
+  await flush();
+  await flush();
+
+  assert.equal(calls, 0);
+  assert.equal(socket.sent[1].error.code, "invalid_arguments");
+  assert.equal(socket.sent[2].error.code, "invalid_arguments");
   controller.stop();
 });
 

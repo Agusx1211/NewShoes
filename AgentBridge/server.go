@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -50,6 +51,8 @@ func NewServer(config Config) (*Server, error) {
 	mux.HandleFunc("GET /engine", server.engine)
 	mux.Handle("GET /v1/sessions", server.requireAPIAuth(http.HandlerFunc(server.listSessions)))
 	mux.Handle("POST /v1/sessions/{session}/input/pointer", server.requireAPIAuth(http.HandlerFunc(server.pointerMove)))
+	mux.Handle("GET /v1/sessions/{session}/world", server.requireAPIAuth(http.HandlerFunc(server.worldSnapshot)))
+	mux.Handle("GET /v1/sessions/{session}/terrain", server.requireAPIAuth(http.HandlerFunc(server.terrainQuery)))
 	mux.Handle("GET /v1/sessions/{session}/ui", server.requireAPIAuth(http.HandlerFunc(server.uiSnapshot)))
 	mux.Handle("GET /v1/sessions/{session}/ui/items", server.requireAPIAuth(http.HandlerFunc(server.uiItems)))
 	mux.Handle("POST /v1/sessions/{session}/ui/activate", server.requireAPIAuth(http.HandlerFunc(server.uiActivate)))
@@ -178,6 +181,76 @@ func (s *Server) pointerMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.call(w, r, "input.pointerMove", request)
+}
+
+func observationMode(r *http.Request) (string, error) {
+	mode := r.URL.Query().Get("mode")
+	if mode == "" {
+		mode = "unrestricted"
+	}
+	if mode != "unrestricted" && mode != "camera" {
+		return "", errors.New("mode must be unrestricted or camera")
+	}
+	return mode, nil
+}
+
+func (s *Server) worldSnapshot(w http.ResponseWriter, r *http.Request) {
+	mode, err := observationMode(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	s.call(w, r, "world.snapshot", map[string]any{"mode": mode})
+}
+
+func (s *Server) terrainQuery(w http.ResponseWriter, r *http.Request) {
+	mode, err := observationMode(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	minX, err := requiredQueryFloat(r, "minX")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	minY, err := requiredQueryFloat(r, "minY")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	maxX, err := requiredQueryFloat(r, "maxX")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	maxY, err := requiredQueryFloat(r, "maxY")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if minX >= maxX || minY >= maxY {
+		writeError(w, http.StatusBadRequest, "invalid_request", "terrain bounds must be ordered")
+		return
+	}
+	columns, err := queryInt(r, "columns", 32, 1, 128)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	rows, err := queryInt(r, "rows", 32, 1, 128)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if columns*rows > 16384 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "terrain query may contain at most 16384 samples")
+		return
+	}
+	s.call(w, r, "terrain.query", map[string]any{
+		"mode": mode, "minX": minX, "minY": minY, "maxX": maxX, "maxY": maxY,
+		"columns": columns, "rows": rows,
+	})
 }
 
 func (r windowReference) validate() error {
@@ -309,7 +382,7 @@ func (s *Server) call(w http.ResponseWriter, r *http.Request, op string, args an
 			status = http.StatusNotFound
 		case "not_ready", "not_interactive":
 			status = http.StatusConflict
-		case "invalid_arguments", "invalid_request", "invalid_text", "index_out_of_range":
+		case "invalid_arguments", "invalid_request", "invalid_text", "index_out_of_range", "bounds_out_of_range":
 			status = http.StatusBadRequest
 		case "unsupported_operation":
 			status = http.StatusNotImplemented
@@ -332,6 +405,18 @@ func queryInt(r *http.Request, name string, fallback, minimum, maximum int64) (i
 	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || value < minimum || value > maximum {
 		return 0, fmt.Errorf("%s must be an integer from %d through %d", name, minimum, maximum)
+	}
+	return value, nil
+}
+
+func requiredQueryFloat(r *http.Request, name string) (float64, error) {
+	raw := r.URL.Query().Get(name)
+	value, err := strconv.ParseFloat(raw, 64)
+	if raw == "" || err != nil {
+		return 0, fmt.Errorf("%s must be a finite number", name)
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, fmt.Errorf("%s must be a finite number", name)
 	}
 	return value, nil
 }

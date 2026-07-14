@@ -7,10 +7,21 @@
 #include <emscripten/emscripten.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <cstdint>
+#include <limits>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
+#include "Common/Energy.h"
+#include "Common/Money.h"
+#include "Common/Player.h"
+#include "Common/PlayerList.h"
+#include "Common/Team.h"
+#include "Common/ThingTemplate.h"
+#include "GameClient/Drawable.h"
 #include "Common/UnicodeString.h"
 #include "GameClient/Gadget.h"
 #include "GameClient/GadgetComboBox.h"
@@ -18,7 +29,19 @@
 #include "GameClient/GadgetTextEntry.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
+#include "GameClient/View.h"
 #include "GameClient/WinInstanceData.h"
+#include "GameLogic/AI.h"
+#include "GameLogic/AIPathfind.h"
+#include "GameLogic/GameLogic.h"
+#include "GameLogic/Object.h"
+#include "GameLogic/PartitionManager.h"
+#include "GameLogic/TerrainLogic.h"
+#include "GameLogic/VictoryConditions.h"
+#include "GameLogic/Module/AIUpdate.h"
+#include "GameLogic/Module/BodyModule.h"
+#include "GameLogic/Module/PhysicsUpdate.h"
+#include "GameLogic/Module/StealthUpdate.h"
 
 namespace {
 
@@ -29,8 +52,18 @@ constexpr Int kMaxListColumns = 16;
 constexpr Int kMaxListQueryRows = 128;
 constexpr std::size_t kMaxTextCodepoints = 1024;
 constexpr std::size_t kMaxInputCodepoints = 4096;
+constexpr Int kMaxWorldObjects = 4096;
+constexpr Int kMaxTerrainSamplesPerAxis = 128;
+constexpr Int kMaxTerrainSamples = 16384;
 
 std::uint64_t g_snapshot_id = 0;
+std::uint64_t g_world_snapshot_id = 0;
+std::uint64_t g_terrain_query_id = 0;
+std::unordered_map<ObjectID, std::uint64_t> g_public_object_ids;
+std::uint64_t g_next_public_object_id = 1;
+UnsignedInt g_last_world_frame = 0;
+bool g_have_world_snapshot = false;
+bool g_last_world_playable = false;
 
 void append_utf8_codepoint(std::string &out, std::uint32_t codepoint)
 {
@@ -461,6 +494,388 @@ GameWindow *list_box_for(GameWindow *window)
 	return nullptr;
 }
 
+void append_real(std::string &json, Real value)
+{
+	if (!std::isfinite(value)) {
+		json += "null";
+		return;
+	}
+	char buffer[48];
+	std::snprintf(buffer, sizeof(buffer), "%.3f", static_cast<double>(value));
+	json += buffer;
+}
+
+void append_coord(std::string &json, const Coord3D &value)
+{
+	json += "{\"x\":";
+	append_real(json, value.x);
+	json += ",\"y\":";
+	append_real(json, value.y);
+	json += ",\"z\":";
+	append_real(json, value.z);
+	json += "}";
+}
+
+const char *game_mode_name(Int mode)
+{
+	switch (mode) {
+		case GAME_SINGLE_PLAYER: return "singlePlayer";
+		case GAME_LAN: return "lan";
+		case GAME_SKIRMISH: return "skirmish";
+		case GAME_REPLAY: return "replay";
+		case GAME_SHELL: return "shell";
+		case GAME_INTERNET: return "internet";
+		case GAME_NONE: return "none";
+		default: return "unknown";
+	}
+}
+
+const char *player_type_name(PlayerType type)
+{
+	switch (type) {
+		case PLAYER_HUMAN: return "human";
+		case PLAYER_COMPUTER: return "computer";
+		default: return "unknown";
+	}
+}
+
+const char *relationship_name(Relationship relationship)
+{
+	switch (relationship) {
+		case ALLIES: return "allies";
+		case ENEMIES: return "enemies";
+		case NEUTRAL: return "neutral";
+		default: return "unknown";
+	}
+}
+
+const char *object_shroud_name(ObjectShroudStatus status)
+{
+	switch (status) {
+		case OBJECTSHROUD_CLEAR: return "clear";
+		case OBJECTSHROUD_PARTIAL_CLEAR: return "partial";
+		case OBJECTSHROUD_FOGGED: return "fogged";
+		case OBJECTSHROUD_SHROUDED: return "shrouded";
+		case OBJECTSHROUD_INVALID:
+		case OBJECTSHROUD_INVALID_BUT_PREVIOUS_VALID:
+		default: return "invalid";
+	}
+}
+
+bool point_in_camera(const Coord3D &position, ICoord2D *screen = nullptr)
+{
+	if (TheTacticalView == nullptr) return false;
+	ICoord2D projected = {0, 0};
+	if (TheTacticalView->worldToScreenTriReturn(&position, &projected)
+		!= View::WTS_INSIDE_FRUSTUM) {
+		return false;
+	}
+	Int origin_x = 0;
+	Int origin_y = 0;
+	TheTacticalView->getOrigin(&origin_x, &origin_y);
+	const bool inside = projected.x >= origin_x && projected.y >= origin_y
+		&& projected.x < origin_x + TheTacticalView->getWidth()
+		&& projected.y < origin_y + TheTacticalView->getHeight();
+	if (inside && screen != nullptr) *screen = projected;
+	return inside;
+}
+
+Relationship relationship_to_local(const Player *player, const Player *local_player)
+{
+	if (player == nullptr || local_player == nullptr || player->getDefaultTeam() == nullptr) {
+		return NEUTRAL;
+	}
+	return local_player->getRelationship(player->getDefaultTeam());
+}
+
+bool is_observable_object(
+	Object *object,
+	Player *local_player,
+	ObjectShroudStatus &shroud,
+	ICoord2D &screen,
+	bool &in_camera)
+{
+	if (object == nullptr || local_player == nullptr || ThePartitionManager == nullptr) return false;
+	shroud = object->getShroudedStatus(local_player->getPlayerIndex());
+	if (shroud != OBJECTSHROUD_CLEAR && shroud != OBJECTSHROUD_PARTIAL_CLEAR) return false;
+
+	Drawable *drawable = object->getDrawable();
+	const bool locally_controlled = object->isLocallyControlled();
+	if (drawable != nullptr) {
+		if (drawable->getStealthLook() == STEALTHLOOK_INVISIBLE) return false;
+		if (drawable->isDrawableEffectivelyHidden() && !locally_controlled) return false;
+	} else if (!locally_controlled) {
+		// Logic-only enemy objects are not a client-visible observation.
+		return false;
+	}
+
+	in_camera = point_in_camera(*object->getPosition(), &screen);
+	return true;
+}
+
+std::uint64_t public_object_id(const Object *object)
+{
+	if (object == nullptr) return 0;
+	const ObjectID engine_id = object->getID();
+	auto [entry, inserted] = g_public_object_ids.emplace(engine_id, 0);
+	if (inserted) entry->second = g_next_public_object_id++;
+	return entry->second;
+}
+
+void begin_world_identity_scope(UnsignedInt frame, bool playable)
+{
+	if (!g_have_world_snapshot || frame < g_last_world_frame
+		|| (playable && !g_last_world_playable)) {
+		g_public_object_ids.clear();
+		g_next_public_object_id = 1;
+	}
+	g_have_world_snapshot = true;
+	g_last_world_frame = frame;
+	g_last_world_playable = playable;
+}
+
+void append_kind_tags(std::string &json, const ThingTemplate *thing_template)
+{
+	json += "[";
+	bool first = true;
+	auto add = [&](KindOfType kind, const char *name) {
+		if (thing_template == nullptr || !thing_template->isKindOf(kind)) return;
+		if (!first) json += ",";
+		first = false;
+		append_json_string(json, name);
+	};
+	add(KINDOF_STRUCTURE, "structure");
+	add(KINDOF_INFANTRY, "infantry");
+	add(KINDOF_VEHICLE, "vehicle");
+	add(KINDOF_AIRCRAFT, "aircraft");
+	add(KINDOF_DOZER, "builder");
+	add(KINDOF_HARVESTER, "harvester");
+	add(KINDOF_COMMANDCENTER, "commandCenter");
+	add(KINDOF_SUPPLY_SOURCE, "supplySource");
+	add(KINDOF_PROJECTILE, "projectile");
+	add(KINDOF_BRIDGE, "bridge");
+	add(KINDOF_MINE, "mine");
+	json += "]";
+}
+
+void append_object_status(std::string &json, const Object *object, bool full_detail)
+{
+	json += "[";
+	bool first = true;
+	auto add = [&](ObjectStatusTypes status, const char *name) {
+		if (!object->testStatus(status)) return;
+		if (!first) json += ",";
+		first = false;
+		append_json_string(json, name);
+	};
+	add(OBJECT_STATUS_DESTROYED, "destroyed");
+	add(OBJECT_STATUS_UNDER_CONSTRUCTION, "underConstruction");
+	add(OBJECT_STATUS_AIRBORNE_TARGET, "airborne");
+	add(OBJECT_STATUS_IS_FIRING_WEAPON, "firing");
+	add(OBJECT_STATUS_IS_ATTACKING, "attacking");
+	add(OBJECT_STATUS_IS_USING_ABILITY, "usingAbility");
+	add(OBJECT_STATUS_UNDERGOING_REPAIR, "repairing");
+	add(OBJECT_STATUS_SOLD, "sold");
+	if (full_detail) {
+		add(OBJECT_STATUS_STEALTHED, "stealthed");
+		add(OBJECT_STATUS_DETECTED, "detected");
+		add(OBJECT_STATUS_IMMOBILE, "immobile");
+		add(OBJECT_STATUS_DEPLOYED, "deployed");
+		add(OBJECT_STATUS_PARACHUTING, "parachuting");
+	}
+	json += "]";
+}
+
+Player *perceived_owner(Object *object, Drawable *drawable, bool &disguised)
+{
+	disguised = false;
+	Player *owner = object != nullptr ? object->getControllingPlayer() : nullptr;
+	if (object == nullptr || drawable == nullptr
+		|| drawable->getStealthLook() != STEALTHLOOK_DISGUISED_ENEMY) {
+		return owner;
+	}
+	StealthUpdate *stealth = object->getStealth();
+	if (stealth == nullptr || !stealth->isDisguised() || ThePlayerList == nullptr) return owner;
+	Player *shown_owner = ThePlayerList->getNthPlayer(stealth->getDisguisedPlayerIndex());
+	if (shown_owner != nullptr) {
+		disguised = true;
+		return shown_owner;
+	}
+	return owner;
+}
+
+void append_player(std::string &json, Player *player, Player *local_player)
+{
+	const bool local = player == local_player;
+	const Relationship relationship = local ? ALLIES : relationship_to_local(player, local_player);
+	json += "{\"index\":" + std::to_string(player->getPlayerIndex());
+	json += ",\"name\":";
+	append_json_string(json, unicode_to_utf8(player->getPlayerDisplayName()));
+	json += ",\"side\":";
+	append_json_string(json, player->getSide().str());
+	json += ",\"type\":";
+	append_json_string(json, player_type_name(player->getPlayerType()));
+	json += ",\"local\":";
+	json += local ? "true" : "false";
+	json += ",\"relationship\":";
+	append_json_string(json, relationship_name(relationship));
+	json += ",\"active\":";
+	json += player->isPlayerActive() ? "true" : "false";
+	json += ",\"observer\":";
+	json += player->isPlayerObserver() ? "true" : "false";
+	json += ",\"economy\":";
+	if (!local) {
+		json += "null";
+	} else {
+		const Energy *energy = player->getEnergy();
+		json += "{\"money\":" + std::to_string(player->getMoney()->countMoney());
+		json += ",\"powerProduction\":" + std::to_string(energy->getProduction());
+		json += ",\"powerConsumption\":" + std::to_string(energy->getConsumption());
+		json += ",\"powerSufficient\":";
+		json += energy->hasSufficientPower() ? "true" : "false";
+		json += ",\"rank\":" + std::to_string(player->getRankLevel());
+		json += ",\"skillPoints\":" + std::to_string(player->getSkillPoints());
+		json += ",\"sciencePurchasePoints\":"
+			+ std::to_string(player->getSciencePurchasePoints()) + "}";
+	}
+	json += "}";
+}
+
+void append_object(std::string &json, Object *object, Player *local_player,
+	ObjectShroudStatus shroud, const ICoord2D &screen, bool in_camera)
+{
+	Drawable *drawable = object->getDrawable();
+	bool disguised = false;
+	Player *owner = perceived_owner(object, drawable, disguised);
+	const Relationship relationship = relationship_to_local(owner, local_player);
+	const bool locally_controlled = object->isLocallyControlled();
+	const ThingTemplate *thing_template = disguised && drawable != nullptr
+		? drawable->getTemplate() : object->getTemplate();
+	const Coord3D *position = object->getPosition();
+
+	json += "{\"id\":" + std::to_string(public_object_id(object));
+	json += ",\"template\":";
+	append_json_string(json, thing_template != nullptr ? thing_template->getName().str() : "");
+	json += ",\"owner\":";
+	json += owner != nullptr ? std::to_string(owner->getPlayerIndex()) : "null";
+	json += ",\"relationship\":";
+	append_json_string(json, relationship_name(relationship));
+	json += ",\"position\":";
+	append_coord(json, *position);
+	json += ",\"orientation\":";
+	append_real(json, object->getOrientation());
+	json += ",\"screen\":";
+	if (in_camera) {
+		json += "{\"x\":" + std::to_string(screen.x)
+			+ ",\"y\":" + std::to_string(screen.y) + "}";
+	} else {
+		json += "null";
+	}
+	json += ",\"shroud\":";
+	append_json_string(json, object_shroud_name(shroud));
+	json += ",\"selected\":";
+	json += drawable != nullptr && drawable->isSelected() ? "true" : "false";
+	json += ",\"categories\":";
+	append_kind_tags(json, thing_template);
+	json += ",\"status\":";
+	append_object_status(json, object, locally_controlled && !disguised);
+
+	BodyModuleInterface *body = object->getBodyModule();
+	json += ",\"health\":";
+	if (body == nullptr) {
+		json += "null";
+	} else {
+		json += "{\"current\":";
+		append_real(json, body->getHealth());
+		json += ",\"max\":";
+		append_real(json, body->getMaxHealth());
+		json += "}";
+	}
+	json += ",\"construction\":";
+	append_real(json, object->getConstructionPercent());
+	json += ",\"geometry\":{\"radius\":";
+	append_real(json, object->getGeometryInfo().getBoundingCircleRadius());
+	json += ",\"height\":";
+	append_real(json, object->getGeometryInfo().getMaxHeightAbovePosition());
+	json += "}";
+
+	json += ",\"capabilities\":";
+	if (!locally_controlled || disguised) {
+		json += "null";
+	} else {
+		json += "{\"selectable\":";
+		json += object->isSelectable() ? "true" : "false";
+		json += ",\"mobile\":";
+		json += object->isMobile() ? "true" : "false";
+		json += ",\"attack\":";
+		json += object->isAbleToAttack() ? "true" : "false";
+		json += ",\"weaponRange\":";
+		append_real(json, object->getLargestWeaponRange());
+		json += ",\"visionRange\":";
+		append_real(json, object->getVisionRange());
+		json += ",\"production\":";
+		json += object->getProductionUpdateInterface() != nullptr ? "true" : "false";
+		json += ",\"commandSet\":";
+		append_json_string(json, object->getCommandSetString().str());
+		json += "}";
+	}
+
+	json += ",\"motion\":";
+	PhysicsBehavior *physics = object->getPhysics();
+	if (!locally_controlled || physics == nullptr) {
+		json += "null";
+	} else {
+		json += "{\"velocity\":";
+		append_coord(json, *physics->getVelocity());
+		AIUpdateInterface *ai = object->getAIUpdateInterface();
+		json += ",\"ai\":";
+		if (ai == nullptr) {
+			json += "null";
+		} else {
+			json += "{\"state\":";
+			append_json_string(json, ai->getCurrentStateName().str());
+			Object *goal_object = ai->getGoalObject();
+			ObjectShroudStatus goal_shroud = OBJECTSHROUD_INVALID;
+			ICoord2D goal_screen = {0, 0};
+			bool goal_in_camera = false;
+			const bool goal_observable = is_observable_object(
+				goal_object, local_player, goal_shroud, goal_screen, goal_in_camera);
+			json += ",\"goalObjectId\":";
+			json += goal_observable ? std::to_string(public_object_id(goal_object)) : "null";
+			json += ",\"goalPosition\":";
+			const Coord3D *goal_position = ai->getGoalPosition();
+			if (goal_position != nullptr) append_coord(json, *goal_position);
+			else json += "null";
+			json += "}";
+		}
+		json += "}";
+	}
+
+	json += ",\"containedById\":";
+	const Object *container = locally_controlled ? object->getContainedBy() : nullptr;
+	json += container != nullptr ? std::to_string(public_object_id(container)) : "null";
+	json += "}";
+}
+
+std::string encode_base64(const std::vector<std::uint8_t> &bytes)
+{
+	static const char alphabet[] =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	std::string encoded;
+	encoded.reserve(((bytes.size() + 2) / 3) * 4);
+	for (std::size_t i = 0; i < bytes.size(); i += 3) {
+		const std::uint32_t a = bytes[i];
+		const std::uint32_t b = i + 1 < bytes.size() ? bytes[i + 1] : 0;
+		const std::uint32_t c = i + 2 < bytes.size() ? bytes[i + 2] : 0;
+		const std::uint32_t value = (a << 16) | (b << 8) | c;
+		encoded.push_back(alphabet[(value >> 18) & 0x3f]);
+		encoded.push_back(alphabet[(value >> 12) & 0x3f]);
+		encoded.push_back(i + 1 < bytes.size() ? alphabet[(value >> 6) & 0x3f] : '=');
+		encoded.push_back(i + 2 < bytes.size() ? alphabet[value & 0x3f] : '=');
+	}
+	return encoded;
+}
+
 } // namespace
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_snapshot(Int include_hidden)
@@ -681,6 +1096,301 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_list_items(
 	json += ",\"limit\":" + std::to_string(bounded_limit);
 	json += ",\"rows\":";
 	append_list_rows(json, list_box, bounded_offset, bounded_limit);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(Int camera_bound)
+{
+	static std::string json;
+	if (camera_bound != 0 && camera_bound != 1) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "camera_bound must be 0 or 1");
+		json += "}";
+		return json.c_str();
+	}
+	if (TheGameLogic == nullptr || ThePlayerList == nullptr
+		|| ThePartitionManager == nullptr || TheTerrainLogic == nullptr
+		|| TheTacticalView == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "gameplay observation subsystems are not ready");
+		json += "}";
+		return json.c_str();
+	}
+
+	Player *local_player = ThePlayerList->getLocalPlayer();
+	if (local_player == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "local player is not ready");
+		json += "}";
+		return json.c_str();
+	}
+
+	const bool bounded_to_camera = camera_bound != 0;
+	const Int game_mode = TheGameLogic->getGameMode();
+	const bool playable = game_mode == GAME_SINGLE_PLAYER || game_mode == GAME_LAN
+		|| game_mode == GAME_SKIRMISH || game_mode == GAME_INTERNET;
+	const UnsignedInt frame = TheGameLogic->getFrame();
+	begin_world_identity_scope(frame, playable);
+	const UnsignedInt end_frame = TheVictoryConditions != nullptr
+		? TheVictoryConditions->getEndFrame() : 0;
+
+	begin_result(json, true);
+	json += ",\"snapshotId\":" + std::to_string(++g_world_snapshot_id);
+	json += ",\"frame\":" + std::to_string(frame);
+	json += ",\"observationMode\":";
+	append_json_string(json, bounded_to_camera ? "camera" : "unrestricted");
+	json += ",\"game\":{\"mode\":";
+	append_json_string(json, game_mode_name(game_mode));
+	json += ",\"playable\":";
+	json += playable ? "true" : "false";
+	json += ",\"endFrame\":" + std::to_string(end_frame);
+	json += ",\"outcome\":";
+	if (!playable || end_frame == 0 || TheVictoryConditions == nullptr) {
+		json += "null";
+	} else if (TheVictoryConditions->isLocalAlliedVictory()) {
+		append_json_string(json, "victory");
+	} else if (TheVictoryConditions->isLocalAlliedDefeat()) {
+		append_json_string(json, "defeat");
+	} else {
+		append_json_string(json, "ended");
+	}
+	json += "}";
+
+	Coord3D look_at;
+	TheTacticalView->getPosition(&look_at);
+	const Coord3D camera_position = TheTacticalView->get3DCameraPosition();
+	Int origin_x = 0;
+	Int origin_y = 0;
+	TheTacticalView->getOrigin(&origin_x, &origin_y);
+	json += ",\"camera\":{\"lookAt\":";
+	append_coord(json, look_at);
+	json += ",\"position\":";
+	append_coord(json, camera_position);
+	json += ",\"angle\":";
+	append_real(json, TheTacticalView->getAngle());
+	json += ",\"pitch\":";
+	append_real(json, TheTacticalView->getPitch());
+	json += ",\"zoom\":";
+	append_real(json, TheTacticalView->getZoom());
+	json += ",\"fieldOfView\":";
+	append_real(json, TheTacticalView->getFieldOfView());
+	json += ",\"viewport\":{\"x\":" + std::to_string(origin_x)
+		+ ",\"y\":" + std::to_string(origin_y)
+		+ ",\"width\":" + std::to_string(TheTacticalView->getWidth())
+		+ ",\"height\":" + std::to_string(TheTacticalView->getHeight()) + "}}";
+
+	Region3D extent;
+	TheTerrainLogic->getExtent(&extent);
+	json += ",\"terrain\":{\"extent\":{\"lo\":";
+	append_coord(json, extent.lo);
+	json += ",\"hi\":";
+	append_coord(json, extent.hi);
+	json += "},\"partitionCellSize\":";
+	append_real(json, ThePartitionManager->getCellSize());
+	json += ",\"pathfindCellSize\":";
+	append_real(json, PATHFIND_CELL_SIZE);
+	json += "}";
+
+	json += ",\"localPlayerIndex\":" + std::to_string(local_player->getPlayerIndex());
+	json += ",\"players\":[";
+	bool first_player = true;
+	for (Int i = 0; i < ThePlayerList->getPlayerCount(); ++i) {
+		Player *player = ThePlayerList->getNthPlayer(i);
+		if (player == nullptr) continue;
+		if (!first_player) json += ",";
+		first_player = false;
+		append_player(json, player, local_player);
+	}
+	json += "]";
+
+	std::vector<Object *> objects;
+	for (Object *object = TheGameLogic->getFirstObject();
+		object != nullptr; object = object->getNextObject()) {
+		objects.push_back(object);
+	}
+	std::sort(objects.begin(), objects.end(), [](const Object *left, const Object *right) {
+		return left->getID() < right->getID();
+	});
+
+	json += ",\"objects\":[";
+	Int observed = 0;
+	bool first_object = true;
+	bool truncated = false;
+	for (Object *object : objects) {
+		ObjectShroudStatus shroud = OBJECTSHROUD_INVALID;
+		ICoord2D screen = {0, 0};
+		bool in_camera = false;
+		if (!is_observable_object(object, local_player, shroud, screen, in_camera)) {
+			continue;
+		}
+		if (bounded_to_camera && !in_camera) {
+			continue;
+		}
+		if (observed >= kMaxWorldObjects) {
+			truncated = true;
+			break;
+		}
+		if (!first_object) json += ",";
+		first_object = false;
+		append_object(json, object, local_player, shroud, screen, in_camera);
+		++observed;
+	}
+	json += "]";
+	json += ",\"objectCount\":" + std::to_string(observed);
+	json += ",\"truncated\":";
+	json += truncated ? "true" : "false";
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_terrain_query(
+	Int camera_bound,
+	Real min_x,
+	Real min_y,
+	Real max_x,
+	Real max_y,
+	Int columns,
+	Int rows)
+{
+	static std::string json;
+	if ((camera_bound != 0 && camera_bound != 1)
+		|| !std::isfinite(min_x) || !std::isfinite(min_y)
+		|| !std::isfinite(max_x) || !std::isfinite(max_y)
+		|| min_x >= max_x || min_y >= max_y
+		|| columns < 1 || columns > kMaxTerrainSamplesPerAxis
+		|| rows < 1 || rows > kMaxTerrainSamplesPerAxis
+		|| columns * rows > kMaxTerrainSamples) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments",
+			"terrain bounds must be finite and ordered; rows and columns must be 1 through 128 with at most 16384 samples");
+		json += "}";
+		return json.c_str();
+	}
+	if (TheTerrainLogic == nullptr || ThePartitionManager == nullptr
+		|| ThePlayerList == nullptr || TheTacticalView == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "terrain observation subsystems are not ready");
+		json += "}";
+		return json.c_str();
+	}
+	Player *local_player = ThePlayerList->getLocalPlayer();
+	if (local_player == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "local player is not ready");
+		json += "}";
+		return json.c_str();
+	}
+
+	Region3D extent;
+	TheTerrainLogic->getExtent(&extent);
+	if (min_x < extent.lo.x || min_y < extent.lo.y
+		|| max_x > extent.hi.x || max_y > extent.hi.y) {
+		begin_result(json, false);
+		append_error(json, "bounds_out_of_range", "terrain query must stay inside the active map extent");
+		json += "}";
+		return json.c_str();
+	}
+
+	const Int sample_count = columns * rows;
+	std::vector<Real> heights(static_cast<std::size_t>(sample_count), 0.0f);
+	std::vector<bool> known(static_cast<std::size_t>(sample_count), false);
+	std::vector<std::uint8_t> flags(static_cast<std::size_t>(sample_count), 0);
+	Real known_min = (std::numeric_limits<Real>::max)();
+	Real known_max = (std::numeric_limits<Real>::lowest)();
+	Int known_count = 0;
+	Int visible_count = 0;
+	Int in_camera_count = 0;
+	const Real step_x = (max_x - min_x) / static_cast<Real>(columns);
+	const Real step_y = (max_y - min_y) / static_cast<Real>(rows);
+	Pathfinder *pathfinder = TheAI != nullptr ? TheAI->pathfinder() : nullptr;
+
+	for (Int row = 0; row < rows; ++row) {
+		for (Int column = 0; column < columns; ++column) {
+			const Int index = row * columns + column;
+			Coord3D position;
+			position.x = min_x + (static_cast<Real>(column) + 0.5f) * step_x;
+			position.y = min_y + (static_cast<Real>(row) + 0.5f) * step_y;
+			position.z = TheTerrainLogic->getGroundHeight(position.x, position.y);
+			const bool in_camera = point_in_camera(position);
+			if (in_camera) {
+				flags[index] |= 0x80;
+				++in_camera_count;
+			}
+			if (camera_bound != 0 && !in_camera) continue;
+
+			const CellShroudStatus shroud = ThePartitionManager->getShroudStatusForPlayer(
+				local_player->getPlayerIndex(), &position);
+			if (shroud == CELLSHROUD_SHROUDED) continue;
+			const bool visible = shroud == CELLSHROUD_CLEAR;
+			flags[index] |= visible ? 0x02 : 0x01;
+			known[index] = true;
+			heights[index] = position.z;
+			known_min = (std::min)(known_min, position.z);
+			known_max = (std::max)(known_max, position.z);
+			++known_count;
+			if (TheTerrainLogic->isCliffCell(position.x, position.y)) flags[index] |= 0x04;
+			if (!visible) continue;
+			++visible_count;
+			if (TheTerrainLogic->isUnderwater(position.x, position.y)) flags[index] |= 0x08;
+			PathfindCell *cell = pathfinder != nullptr
+				? pathfinder->getCell(LAYER_GROUND, &position) : nullptr;
+			if (cell != nullptr) {
+				flags[index] |= static_cast<std::uint8_t>((static_cast<Int>(cell->getType()) + 1) << 4);
+			}
+		}
+	}
+
+	if (known_count == 0) {
+		known_min = 0.0f;
+		known_max = 0.0f;
+	}
+	const Real height_scale = known_max > known_min
+		? (known_max - known_min) / 65534.0f : 1.0f;
+	std::vector<std::uint8_t> height_bytes(static_cast<std::size_t>(sample_count) * 2, 0);
+	for (Int index = 0; index < sample_count; ++index) {
+		if (!known[index]) continue;
+		const Real normalized = height_scale > 0.0f
+			? (heights[index] - known_min) / height_scale : 0.0f;
+		const std::uint32_t rounded = static_cast<std::uint32_t>(normalized + 0.5f);
+		const std::uint16_t encoded = static_cast<std::uint16_t>(
+			1u + (std::min)(rounded, static_cast<std::uint32_t>(65534)));
+		height_bytes[static_cast<std::size_t>(index) * 2] = encoded & 0xff;
+		height_bytes[static_cast<std::size_t>(index) * 2 + 1] = encoded >> 8;
+	}
+
+	begin_result(json, true);
+	json += ",\"queryId\":" + std::to_string(++g_terrain_query_id);
+	json += ",\"frame\":" + std::to_string(TheGameLogic != nullptr ? TheGameLogic->getFrame() : 0);
+	json += ",\"observationMode\":";
+	append_json_string(json, camera_bound != 0 ? "camera" : "unrestricted");
+	json += ",\"bounds\":{\"minX\":";
+	append_real(json, min_x);
+	json += ",\"minY\":";
+	append_real(json, min_y);
+	json += ",\"maxX\":";
+	append_real(json, max_x);
+	json += ",\"maxY\":";
+	append_real(json, max_y);
+	json += "},\"columns\":" + std::to_string(columns)
+		+ ",\"rows\":" + std::to_string(rows);
+	json += ",\"sampleOrigin\":\"cellCenter\"";
+	json += ",\"height\":{\"encoding\":\"uint16le-base64\",\"unknown\":0,\"offset\":";
+	append_real(json, known_min);
+	json += ",\"scale\":";
+	append_real(json, height_scale);
+	json += ",\"data\":";
+	append_json_string(json, encode_base64(height_bytes));
+	json += "}";
+	json += ",\"flags\":{\"encoding\":\"uint8-base64\",\"layout\":";
+	append_json_string(json,
+		"bits0-1 knowledge(0 unknown,1 explored,2 visible); bit2 cliff; bit3 water; bits4-6 visible path type plus one; bit7 in camera");
+	json += ",\"pathTypes\":[\"clear\",\"water\",\"cliff\",\"rubble\",\"obstacle\",\"bridgeImpassable\",\"impassable\"],\"data\":";
+	append_json_string(json, encode_base64(flags));
+	json += "}";
+	json += ",\"knownCount\":" + std::to_string(known_count);
+	json += ",\"visibleCount\":" + std::to_string(visible_count);
+	json += ",\"inCameraCount\":" + std::to_string(in_camera_count);
 	json += "}";
 	return json.c_str();
 }

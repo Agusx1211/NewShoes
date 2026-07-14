@@ -84,11 +84,63 @@ func TestRESTForwardsUISnapshotToAuthenticatedEngine(t *testing.T) {
 			engineDone <- &testError{"unexpected pointer request"}
 			return
 		}
-		engineDone <- wsjson.Write(ctx, conn, protocolMessage{
+		if err := wsjson.Write(ctx, conn, protocolMessage{
 			Type:   "response",
 			ID:     request.ID,
 			OK:     true,
 			Result: json.RawMessage(`{"ok":true,"x":32,"y":96}`),
+		}); err != nil {
+			engineDone <- err
+			return
+		}
+
+		if err := wsjson.Read(ctx, conn, &request); err != nil {
+			engineDone <- err
+			return
+		}
+		var world struct {
+			Mode string `json:"mode"`
+		}
+		if request.Type != "request" || request.Op != "world.snapshot" ||
+			json.Unmarshal(request.Args, &world) != nil || world.Mode != "camera" {
+			engineDone <- &testError{"unexpected world request"}
+			return
+		}
+		if err := wsjson.Write(ctx, conn, protocolMessage{
+			Type:   "response",
+			ID:     request.ID,
+			OK:     true,
+			Result: json.RawMessage(`{"ok":true,"frame":77,"observationMode":"camera"}`),
+		}); err != nil {
+			engineDone <- err
+			return
+		}
+
+		if err := wsjson.Read(ctx, conn, &request); err != nil {
+			engineDone <- err
+			return
+		}
+		var terrain struct {
+			Mode    string  `json:"mode"`
+			MinX    float64 `json:"minX"`
+			MinY    float64 `json:"minY"`
+			MaxX    float64 `json:"maxX"`
+			MaxY    float64 `json:"maxY"`
+			Columns int64   `json:"columns"`
+			Rows    int64   `json:"rows"`
+		}
+		if request.Type != "request" || request.Op != "terrain.query" ||
+			json.Unmarshal(request.Args, &terrain) != nil || terrain.Mode != "unrestricted" ||
+			terrain.MinX != 0 || terrain.MinY != 10 || terrain.MaxX != 100 || terrain.MaxY != 90 ||
+			terrain.Columns != 16 || terrain.Rows != 8 {
+			engineDone <- &testError{"unexpected terrain request"}
+			return
+		}
+		engineDone <- wsjson.Write(ctx, conn, protocolMessage{
+			Type:   "response",
+			ID:     request.ID,
+			OK:     true,
+			Result: json.RawMessage(`{"ok":true,"columns":16,"rows":8,"knownCount":64}`),
 		})
 	}()
 
@@ -147,6 +199,56 @@ func TestRESTForwardsUISnapshotToAuthenticatedEngine(t *testing.T) {
 	}
 	if !pointerBody.OK || pointerBody.Result.X != 32 || pointerBody.Result.Y != 96 {
 		t.Fatalf("unexpected pointer REST body: %#v", pointerBody)
+	}
+
+	worldRequest, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		httpServer.URL+"/v1/sessions/match-one/world?mode=camera", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worldRequest.Header.Set("Authorization", "Bearer api-secret")
+	worldResponse, err := http.DefaultClient.Do(worldRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer worldResponse.Body.Close()
+	var worldBody struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Frame int64  `json:"frame"`
+			Mode  string `json:"observationMode"`
+		} `json:"result"`
+	}
+	if worldResponse.StatusCode != http.StatusOK ||
+		json.NewDecoder(worldResponse.Body).Decode(&worldBody) != nil ||
+		!worldBody.OK || worldBody.Result.Frame != 77 || worldBody.Result.Mode != "camera" {
+		t.Fatalf("unexpected world REST response: status=%d body=%#v", worldResponse.StatusCode, worldBody)
+	}
+
+	terrainRequest, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		httpServer.URL+"/v1/sessions/match-one/terrain?minX=0&minY=10&maxX=100&maxY=90&columns=16&rows=8", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	terrainRequest.Header.Set("Authorization", "Bearer api-secret")
+	terrainResponse, err := http.DefaultClient.Do(terrainRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer terrainResponse.Body.Close()
+	var terrainBody struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Columns int64 `json:"columns"`
+			Rows    int64 `json:"rows"`
+			Known   int64 `json:"knownCount"`
+		} `json:"result"`
+	}
+	if terrainResponse.StatusCode != http.StatusOK ||
+		json.NewDecoder(terrainResponse.Body).Decode(&terrainBody) != nil ||
+		!terrainBody.OK || terrainBody.Result.Columns != 16 || terrainBody.Result.Rows != 8 ||
+		terrainBody.Result.Known != 64 {
+		t.Fatalf("unexpected terrain REST response: status=%d body=%#v", terrainResponse.StatusCode, terrainBody)
 	}
 
 	if err := <-engineDone; err != nil {

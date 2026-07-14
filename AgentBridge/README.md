@@ -5,12 +5,11 @@ requests into data-layer operations on a running browser game. The browser
 opens the connection outward, so the engine does not listen on a port and does
 not need screenshots, OCR, DOM selectors, or synthetic browser clicks.
 
-The current `cnc-agent/1` slice covers semantic shell UI observation and the
-real engine action paths for pointer motion, buttons, text entries, list boxes,
-and combo boxes. Battlefield observation, camera policy, selection, orders,
-and placement are tracked separately in
-[issue #75](https://github.com/Agusx1211/NewShoes/issues/75) and are not claimed
-by this first slice.
+The current `cnc-agent/1` surface covers semantic shell UI observation, the
+real engine action paths for pointer motion and shell gadgets, and read-only
+battlefield/player/camera/terrain observation. Selection, orders, production,
+placement, and the full agent-play proof remain tracked in
+[issue #75](https://github.com/Agusx1211/NewShoes/issues/75).
 
 ## Run locally
 
@@ -99,6 +98,40 @@ not enough:
 GET /v1/sessions/game-1/ui/items?windowId=789&name=Lobby.wnd%3AMapList&offset=0&limit=64
 ```
 
+Read the current battlefield either across the map or restricted to the
+current tactical camera:
+
+```sh
+curl -H 'Authorization: Bearer TOKEN' \
+  'http://127.0.0.1:18888/v1/sessions/game-1/world?mode=unrestricted'
+
+curl -H 'Authorization: Bearer TOKEN' \
+  'http://127.0.0.1:18888/v1/sessions/game-1/world?mode=camera'
+```
+
+The snapshot reports game/end state, the tactical camera, map extent, public
+player roster, local-player economy, and observable objects. Object IDs are
+stable opaque identifiers allocated only after an object is observable; they
+do not expose gaps in the engine's private object sequence. Enemy economy and
+locally controlled capabilities/motion are `null`. Objects hidden by shroud,
+stealth, or client-side drawable policy are omitted. Camera mode additionally
+omits observable objects outside the rendered tactical view.
+
+Terrain is a bounded, caller-sized cell-center grid. Bounds must stay inside
+the extent returned by `/world`; each axis is limited to 128 samples and the
+grid to 16,384 samples:
+
+```sh
+curl -H 'Authorization: Bearer TOKEN' \
+  'http://127.0.0.1:18888/v1/sessions/game-1/terrain?mode=camera&minX=0&minY=0&maxX=1000&maxY=1000&columns=32&rows=32'
+```
+
+Heights are `uint16le-base64` with zero reserved for unknown cells and the
+reported offset/scale used for decoding. One byte per sample carries knowledge,
+cliff, water, visible path type, and in-camera flags. Shrouded cells remain
+unknown; explored fog exposes static height/cliff data but not water/path data;
+camera mode masks every sample outside the current view.
+
 `POST /v1/sessions/{session}/requests` exposes the versioned raw operation
 envelope for forward-compatible clients. `POST` bodies are limited to 1 MiB,
 browser messages to 4 MiB, list pages to 128 rows, and bridge calls to 30
@@ -108,9 +141,9 @@ seconds by default.
 
 The browser uses WebSocket subprotocol `cnc-agent.v1` and authenticates in its
 first JSON `hello` frame. The protocol advertises capabilities explicitly.
-`protocol.describe`, `input.pointerMove`, `ui.snapshot`, `ui.activate`,
-`ui.setText`, `ui.selectIndex`, and `ui.listItems` are the only operations in
-this slice.
+`protocol.describe`, `input.pointerMove`, `world.snapshot`, `terrain.query`,
+`ui.snapshot`, `ui.activate`, `ui.setText`, `ui.selectIndex`, and
+`ui.listItems` are the currently advertised operations.
 
 The C++ implementation owns observation and mutations. It traverses the real
 `GameWindowManager` on demand and drives the original gadget input/system

@@ -7,6 +7,8 @@ const MAX_TEXT_LENGTH = 16 * 1024;
 const CAPABILITIES = Object.freeze([
   "protocol.describe",
   "input.pointerMove",
+  "world.snapshot",
+  "terrain.query",
   "ui.snapshot",
   "ui.activate",
   "ui.setText",
@@ -53,6 +55,40 @@ function pointerPosition(args) {
     );
   }
   return { x, y };
+}
+
+function observationMode(args) {
+  const mode = args?.mode ?? "unrestricted";
+  if (mode !== "unrestricted" && mode !== "camera") {
+    throw new ProtocolFault("invalid_arguments", "mode must be unrestricted or camera");
+  }
+  return mode;
+}
+
+function terrainQuery(args) {
+  const mode = observationMode(args);
+  const minX = Number(args?.minX);
+  const minY = Number(args?.minY);
+  const maxX = Number(args?.maxX);
+  const maxY = Number(args?.maxY);
+  if (![minX, minY, maxX, maxY].every(Number.isFinite)
+      || minX >= maxX || minY >= maxY) {
+    throw new ProtocolFault(
+      "invalid_arguments",
+      "minX, minY, maxX, and maxY must be finite ordered bounds",
+    );
+  }
+  const columns = Number(args?.columns ?? 32);
+  const rows = Number(args?.rows ?? 32);
+  if (!Number.isInteger(columns) || columns < 1 || columns > 128
+      || !Number.isInteger(rows) || rows < 1 || rows > 128
+      || columns * rows > 16384) {
+    throw new ProtocolFault(
+      "invalid_arguments",
+      "rows and columns must be integers from 1 through 128 with at most 16384 samples",
+    );
+  }
+  return { mode, minX, minY, maxX, maxY, columns, rows };
 }
 
 function normalizeConfig(config, cryptoImpl) {
@@ -158,6 +194,10 @@ export function createAgentBridgeConnection({
         }
         return { ok: true, ...point };
       }
+      case "world.snapshot":
+        return engineRequest("agentWorldSnapshot", { mode: observationMode(args) });
+      case "terrain.query":
+        return engineRequest("agentTerrainQuery", terrainQuery(args));
       case "ui.snapshot":
         if (args?.includeHidden !== undefined && typeof args.includeHidden !== "boolean") {
           throw new ProtocolFault("invalid_arguments", "includeHidden must be boolean");

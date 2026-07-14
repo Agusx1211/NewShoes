@@ -2181,6 +2181,35 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "agentWorldSnapshot": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_world_snapshot", "string", ["number"],
+          [payload.mode === "camera" ? 1 : 0]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentTerrainQuery": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_terrain_query", "string",
+          ["number", "number", "number", "number", "number", "number", "number"],
+          [
+            payload.mode === "camera" ? 1 : 0,
+            Number(payload.minX),
+            Number(payload.minY),
+            Number(payload.maxX),
+            Number(payload.maxY),
+            Number(payload.columns),
+            Number(payload.rows),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "agentUiActivate": {
       try {
         const result = await threadedEngine.engineCall(
@@ -5930,6 +5959,16 @@ async function loadWasmModule() {
         "cnc_port_agent_ui_snapshot",
         "string",
         ["number"],
+      ),
+      agentWorldSnapshot: module.cwrap(
+        "cnc_port_agent_world_snapshot",
+        "string",
+        ["number"],
+      ),
+      agentTerrainQuery: module.cwrap(
+        "cnc_port_agent_terrain_query",
+        "string",
+        ["number", "number", "number", "number", "number", "number", "number"],
       ),
       agentUiActivate: module.cwrap(
         "cnc_port_agent_ui_activate",
@@ -12894,6 +12933,8 @@ async function rpc(command, payload = {}) {
         };
       }
     case "agentUiSnapshot":
+    case "agentWorldSnapshot":
+    case "agentTerrainQuery":
     case "agentUiActivate":
     case "agentUiSetText":
     case "agentUiSelectIndex":
@@ -12909,6 +12950,14 @@ async function rpc(command, payload = {}) {
           let raw = null;
           if (command === "agentUiSnapshot") {
             raw = module.agentUiSnapshot(payload.includeHidden === true ? 1 : 0);
+          } else if (command === "agentWorldSnapshot") {
+            raw = module.agentWorldSnapshot(payload.mode === "camera" ? 1 : 0);
+          } else if (command === "agentTerrainQuery") {
+            raw = module.agentTerrainQuery(
+              payload.mode === "camera" ? 1 : 0,
+              Number(payload.minX), Number(payload.minY),
+              Number(payload.maxX), Number(payload.maxY),
+              Number(payload.columns), Number(payload.rows));
           } else if (command === "agentUiActivate") {
             raw = module.agentUiActivate(Number(payload.windowId), String(payload.name ?? ""));
           } else if (command === "agentUiSetText") {

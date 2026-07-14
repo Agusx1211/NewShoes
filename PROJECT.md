@@ -56,11 +56,14 @@ versioned raw WebSocket protocol, and the optional Go process in
 the launcher has no agent configuration, it does not import the adapter or
 create a socket, reconnect timer, or per-frame work.
 
-The first `cnc-agent/1` slice exposes the original `GameWindowManager` tree and
-real gadget action paths. Battlefield state, camera-bounded visibility, compact
-terrain, selections, orders, and placement remain follow-up capabilities under
-GitHub issue 75. See [`AgentBridge/README.md`](AgentBridge/README.md) for the
-wire boundary and local usage.
+The `cnc-agent/1` surface exposes the original `GameWindowManager` tree, real
+gadget action paths, fog/stealth-filtered battlefield state, camera-bounded
+visibility, and compact terrain grids. The engine owns the filtering and uses
+opaque observation IDs so transport layers cannot infer hidden object counts.
+Selections, orders, production, placement, and a complete independently driven
+match remain follow-up capabilities under GitHub issue 75. See
+[`AgentBridge/README.md`](AgentBridge/README.md) for the wire boundary and local
+usage.
 
 ### Rendering
 
