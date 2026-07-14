@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { lstat, readFile, readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, extname, relative, resolve } from "node:path";
 import { PAGES_OUTPUT_FILES } from "./pages_site_manifest.mjs";
 import { validateBuildInfo } from "./release_metadata.mjs";
@@ -100,12 +101,36 @@ async function verifyStaticModuleReferences() {
   }
 }
 
+async function verifyVideoRuntime() {
+  try {
+    const runtimeRoot = resolve(root, "video-runtime");
+    const manifest = JSON.parse(await readFile(resolve(runtimeRoot, "bink-decoder-manifest.json"), "utf8"));
+    if (manifest.schema !== "cnc-zh-bink-decoder-runtime/v1"
+        || manifest.abiVersion !== 1
+        || manifest.wasmFile !== "bink-decoder.wasm"
+        || !(manifest.wasmBytes > 0) || manifest.wasmBytes > 128 * 1024
+        || manifest.maxWasmBytes !== 128 * 1024
+        || !/^[a-f0-9]{64}$/.test(String(manifest.wasmSha256))) {
+      findings.push("video-runtime: decoder manifest contract is invalid");
+      return;
+    }
+    const bytes = await readFile(resolve(runtimeRoot, manifest.wasmFile));
+    if (bytes.byteLength !== manifest.wasmBytes
+        || createHash("sha256").update(bytes).digest("hex") !== manifest.wasmSha256) {
+      findings.push("video-runtime: decoder failed integrity validation");
+    }
+  } catch (error) {
+    findings.push(`video-runtime: decoder packaging is unreadable (${error?.message ?? String(error)})`);
+  }
+}
+
 await walk(root);
 const actualFiles = new Set(inventory.map(({ name }) => name));
 for (const name of expectedFiles) {
   if (!actualFiles.has(name)) findings.push(`${name}: allowlisted file is missing`);
 }
 await verifyStaticModuleReferences();
+await verifyVideoRuntime();
 if (totalBytes > 250 * 1024 * 1024) findings.push(`artifact is unexpectedly large: ${totalBytes} bytes`);
 
 const [license, index, legal, launcher, play, manifestText, bootstrap, serviceWorker, buildInfoText] = await Promise.all([
@@ -138,12 +163,14 @@ if (!index.includes("No warranty") || !index.includes("./legal.html")
     || !index.includes('rel="canonical" href="./"') || !index.includes('data-coi-target="./"')) {
   findings.push("index.html: root canonical, launcher target, or visible legal notice is missing");
 }
-if (!legal.includes("absolutely no warranty") || !legal.includes("Corresponding source") || legal.includes("__PAGES_SOURCE_URL__")) {
+if (!legal.includes("absolutely no warranty") || !legal.includes("Corresponding source")
+    || !legal.includes("bink-decoder-SOURCE.txt") || legal.includes("__PAGES_SOURCE_URL__")) {
   findings.push("legal.html: no-warranty, source, or resolved legal notice is missing");
 }
 if (!launcher.includes('<base href="./harness/">')
     || !launcher.includes('rel="canonical" href="../"')
     || !launcher.includes("data-cnc-play-page")
+    || !launcher.includes('data-bink-video-sidecars="direct"')
     || !launcher.includes('src="../coi-direct.js"')
     || !launcher.includes('href="../manifest.webmanifest"')
     || !launcher.includes('id="aboutVersion"')
@@ -153,6 +180,7 @@ if (!launcher.includes('<base href="./harness/">')
   findings.push("launcher.html: canonical root launcher contract is missing");
 }
 if (!play.includes('rel="canonical" href="../"')
+    || !play.includes('data-bink-video-sidecars="direct"')
     || !play.includes('id="publicLegalNotice"') || !play.includes("Corresponding source")) {
   findings.push("harness/play.html: launcher About legal notice is missing");
 }

@@ -1,3 +1,174 @@
+import { browserBinkDecoderSupport } from "./bink_decoder.mjs";
+
+export const BINK_VIDEO_MANIFEST_URL = new URL(
+  "../artifacts/browser-video/bink/bink-browser-video-manifest.json",
+  import.meta.url,
+).href;
+
+export const BINK_DECODER_RUNTIME_MANIFEST_URL = new URL(
+  "../video-runtime/bink-decoder-manifest.json",
+  import.meta.url,
+).href;
+
+const HOSTED_VIDEO_UNAVAILABLE_REASON =
+  "Original-video playback is unavailable in this hosted build because browser-compatible movie copies are not packaged with it.";
+
+export function binkVideoPolicy() {
+  return globalThis.document?.documentElement?.dataset?.binkVideoSidecars ?? "auto";
+}
+
+function validateBinkVideoManifest(manifest) {
+  if (manifest?.ok !== true || !Array.isArray(manifest.payloads) || manifest.payloads.length === 0) {
+    throw new Error("Bink video manifest is incomplete");
+  }
+  for (const payload of manifest.payloads) {
+    const sourceFile = String(payload?.sourceFile ?? "");
+    const outputFile = String(payload?.outputFile ?? "");
+    const direct = payload?.outputVideoCodec === "bink-v1-wasm";
+    if (!/^[A-Za-z0-9_.-]+\.bik$/i.test(sourceFile)
+        || !(direct ? outputFile === sourceFile : /^[A-Za-z0-9_.-]+\.webm$/i.test(outputFile))
+        || !(Number(payload?.frames) > 0)
+        || !(Number(payload?.width) > 0)
+        || !(Number(payload?.height) > 0)
+        || !(Number(payload?.outputDurationSeconds) > 0)) {
+      throw new Error(`Bink video manifest contains an invalid payload for ${sourceFile || "an unnamed movie"}`);
+    }
+  }
+  return manifest;
+}
+
+export async function loadBinkVideoManifest({
+  policy = binkVideoPolicy(),
+  url = BINK_VIDEO_MANIFEST_URL,
+  fetchImpl = globalThis.fetch?.bind(globalThis),
+} = {}) {
+  if (policy === "unavailable") {
+    throw new Error(HOSTED_VIDEO_UNAVAILABLE_REASON);
+  }
+  if (policy === "direct") {
+    throw new Error("The hosted Bink manifest is generated from the selected user-owned movies");
+  }
+  if (policy !== "auto") {
+    throw new Error(`Unknown Bink video sidecar policy: ${policy}`);
+  }
+  if (typeof fetchImpl !== "function") {
+    throw new Error("Bink video manifest cannot be loaded because fetch is unavailable");
+  }
+  let response;
+  try {
+    response = await fetchImpl(url, { cache: "no-store" });
+  } catch (error) {
+    throw new Error(`Bink video manifest request failed: ${error?.message ?? String(error)}`);
+  }
+  if (!response?.ok) {
+    throw new Error(`Bink video manifest fetch failed (${response?.status ?? "unknown"})`);
+  }
+  const contentType = response.headers?.get?.("content-type") ?? "unknown content type";
+  let manifest;
+  try {
+    manifest = JSON.parse(await response.text());
+  } catch {
+    throw new Error(`Bink video manifest response is not JSON (${contentType})`);
+  }
+  return validateBinkVideoManifest(manifest);
+}
+
+export async function probeBinkVideoSupport(options = {}) {
+  const policy = options.policy ?? binkVideoPolicy();
+  if (policy === "direct") {
+    const support = browserBinkDecoderSupport(options.scope ?? globalThis);
+    if (!support.available) return { ...support, payloadCount: 0, mode: "direct" };
+    try {
+      const fetchImpl = options.fetchImpl ?? globalThis.fetch?.bind(globalThis);
+      if (typeof fetchImpl !== "function") throw new Error("fetch is unavailable");
+      const response = await fetchImpl(
+        options.runtimeUrl ?? BINK_DECODER_RUNTIME_MANIFEST_URL,
+        { cache: "no-store" },
+      );
+      if (!response?.ok) throw new Error(`decoder manifest failed (${response?.status ?? "unknown"})`);
+      const runtime = JSON.parse(await response.text());
+      if (runtime?.schema !== "cnc-zh-bink-decoder-runtime/v1"
+          || runtime?.abiVersion !== 1
+          || runtime?.wasmFile !== "bink-decoder.wasm"
+          || !(Number(runtime?.wasmBytes) > 0)
+          || Number(runtime.wasmBytes) > 128 * 1024
+          || !/^[a-f0-9]{64}$/.test(String(runtime?.wasmSha256))) {
+        throw new Error("decoder manifest is invalid");
+      }
+      return { available: true, payloadCount: 0, reason: null, mode: "direct" };
+    } catch (error) {
+      return {
+        available: false,
+        payloadCount: 0,
+        reason: `On-device Bink decoding is unavailable: ${error?.message ?? String(error)}`,
+        mode: "direct",
+      };
+    }
+  }
+  try {
+    const manifest = await loadBinkVideoManifest({ ...options, policy });
+    return {
+      available: true,
+      payloadCount: manifest.payloads.length,
+      reason: null,
+      mode: "sidecar",
+    };
+  } catch (error) {
+    return {
+      available: false,
+      payloadCount: 0,
+      reason: error?.message ?? String(error),
+      mode: policy,
+    };
+  }
+}
+
+export function buildPreparedBinkManifest(videos = []) {
+  const payloads = videos.map((video) => {
+    const sourceFile = String(video?.name ?? "");
+    const frames = Number(video?.frames);
+    const width = Number(video?.width);
+    const height = Number(video?.height);
+    const fpsNum = Number(video?.fpsNum);
+    const fpsDen = Number(video?.fpsDen);
+    const sourceSize = Number(video?.bytes);
+    const duration = frames * fpsDen / fpsNum;
+    if (!/^[A-Za-z0-9_.-]+\.bik$/i.test(sourceFile)
+        || !Number.isSafeInteger(frames) || frames <= 0
+        || !Number.isSafeInteger(width) || width <= 0
+        || !Number.isSafeInteger(height) || height <= 0
+        || !Number.isSafeInteger(fpsNum) || fpsNum <= 0
+        || !Number.isSafeInteger(fpsDen) || fpsDen <= 0
+        || !Number.isSafeInteger(sourceSize) || sourceSize <= 44
+        || !/^[0-9a-f]{88}$/i.test(String(video?.headerHex ?? ""))) {
+      throw new Error(`Prepared Bink metadata is invalid for ${sourceFile || "an unnamed movie"}`);
+    }
+    return {
+      sourceFile,
+      sourceSize,
+      sourceHeaderHex: String(video.headerHex),
+      frames,
+      width,
+      height,
+      fpsNum,
+      fpsDen,
+      sourceAudioStreams: Number(video.audioTracks ?? 0),
+      outputFile: sourceFile,
+      outputFrameCount: frames,
+      outputDurationSeconds: duration,
+      outputVideoCodec: "bink-v1-wasm",
+      outputAudioCodecs: Number(video.audioTracks ?? 0) > 0 ? ["pcm_s16le"] : [],
+      preparation: "streaming-direct",
+    };
+  });
+  return validateBinkVideoManifest({
+    ok: payloads.length > 0,
+    schema: "cnc-zh-bink-browser-video-manifest/v1",
+    generatedBy: "browser-direct-bink-decoder",
+    payloads,
+  });
+}
+
 function resolveVideoUrl(videoPath) {
   const normalized = String(videoPath ?? "").replace(/^\/+/, "");
   return new URL(`../${normalized}`, import.meta.url).href;
@@ -9,7 +180,12 @@ function frameNumberForTime(session, mediaTime) {
   return Math.max(1, Math.min(session.frames, frame));
 }
 
-export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
+export function createBinkVideoRuntime({
+  sendFrame,
+  resolveMedia = null,
+  onPreparation = () => {},
+  log = () => {},
+} = {}) {
   if (typeof sendFrame !== "function") {
     throw new Error("createBinkVideoRuntime requires sendFrame");
   }
@@ -30,23 +206,26 @@ export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
       handle: session.handle,
       sourcePath: session.sourcePath,
       videoPath: session.videoPath,
-      readyState: session.video.readyState,
-      paused: session.video.paused,
-      ended: session.video.ended,
-      currentTime: session.video.currentTime,
-      duration: session.video.duration,
+      readyState: session.video?.readyState ?? 0,
+      paused: session.video?.paused ?? true,
+      ended: session.video?.ended ?? false,
+      currentTime: session.video?.currentTime ?? 0,
+      duration: session.video?.duration ?? null,
       lastFrameNum: session.lastFrameNum,
       framesTransferred: session.framesTransferred,
+      preparing: session.preparing,
     }));
   }
 
   function stopSession(session) {
     session.closed = true;
+    session.mediaAbort?.abort();
     if (session.frameCallbackId != null
         && typeof session.video.cancelVideoFrameCallback === "function") {
       session.video.cancelVideoFrameCallback(session.frameCallbackId);
     }
     session.video.pause();
+    session.audio?.pause();
     if (session.fallbackFrameHandler) {
       session.video.removeEventListener("timeupdate", session.fallbackFrameHandler);
       session.video.removeEventListener("seeked", session.fallbackFrameHandler);
@@ -56,6 +235,11 @@ export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
     }
     session.video.removeAttribute("src");
     session.video.load();
+    if (session.audio) {
+      session.audio.removeAttribute("src");
+      session.audio.load();
+    }
+    session.preparedMedia?.revoke?.();
     session.canvas.width = 1;
     session.canvas.height = 1;
   }
@@ -73,6 +257,10 @@ export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
   function transferFrame(session, mediaTime) {
     if (session.closed || session.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
     try {
+      if (session.audio?.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+          && Math.abs(session.audio.currentTime - mediaTime) > 0.15) {
+        session.audio.currentTime = mediaTime;
+      }
       session.context.drawImage(session.video, 0, 0, session.width, session.height);
       const image = session.context.getImageData(0, 0, session.width, session.height);
       const bytes = new Uint8Array(image.data.buffer);
@@ -120,13 +308,106 @@ export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
 
   async function startSession(session) {
     try {
-      await session.video.play();
+      const plays = [session.video.play()];
+      if (session.audio) plays.push(session.audio.play());
+      const results = await Promise.allSettled(plays);
+      if (results[0].status === "rejected") throw results[0].reason;
+      if (results[1]?.status === "rejected") {
+        log("Bink sidecar audio play failed", {
+          handle: session.handle,
+          error: results[1].reason?.message ?? String(results[1].reason),
+        });
+      }
     } catch (error) {
       diagnostics.playFailures += 1;
       diagnostics.lastError = error?.message ?? String(error);
       log("Bink sidecar play failed", { handle: session.handle, error: diagnostics.lastError });
     }
     publishDiagnostics();
+  }
+
+  function waitForMedia(element) {
+    if (element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const loaded = () => { cleanup(); resolve(); };
+      const failed = () => { cleanup(); reject(new Error(`media error ${element.error?.code ?? "unknown"}`)); };
+      const cleanup = () => {
+        element.removeEventListener("loadeddata", loaded);
+        element.removeEventListener("error", failed);
+      };
+      element.addEventListener("loadeddata", loaded, { once: true });
+      element.addEventListener("error", failed, { once: true });
+    });
+  }
+
+  function sendFailureFrame(session) {
+    if (session.closed || session.failureFrameSent) return;
+    session.failureFrameSent = true;
+    const bytes = new Uint8Array(session.width * session.height * 4);
+    sendFrame({
+      handle: session.handle,
+      frameNum: session.frames,
+      width: session.width,
+      height: session.height,
+      bytes,
+    });
+  }
+
+  async function prepareSession(session, payload) {
+    try {
+      onPreparation({ phase: "start", handle: session.handle, sourcePath: session.sourcePath });
+      const prepared = typeof resolveMedia === "function"
+        ? await resolveMedia(payload, { signal: session.mediaAbort.signal }) : null;
+      if (session.closed) {
+        prepared?.revoke?.();
+        return;
+      }
+      session.preparedMedia = prepared;
+      session.video.src = prepared?.videoUrl ?? resolveVideoUrl(payload.videoPath);
+      session.video.muted = prepared?.videoOnly === true;
+      if (prepared?.audioUrl) {
+        session.audio = document.createElement("audio");
+        session.audio.preload = "auto";
+        session.audio.src = prepared.audioUrl;
+        session.audio.volume = session.volume;
+      }
+      session.video.volume = session.audio ? 0 : session.volume;
+      await Promise.all([waitForMedia(session.video), session.audio ? waitForMedia(session.audio) : null]);
+      if (session.closed) return;
+      session.preparing = false;
+      transferFrame(session, session.video.currentTime);
+      scheduleFrames(session);
+      await startSession(session);
+      onPreparation({
+        phase: "ready",
+        handle: session.handle,
+        sourcePath: session.sourcePath,
+        cached: prepared?.cached === true,
+      });
+    } catch (error) {
+      if (session.closed) return;
+      session.preparing = false;
+      if (error?.name === "AbortError") {
+        onPreparation({
+          phase: "cancelled",
+          handle: session.handle,
+          sourcePath: session.sourcePath,
+        });
+        sendFailureFrame(session);
+        publishDiagnostics();
+        return;
+      }
+      diagnostics.lastError = error?.message ?? String(error);
+      log("Bink media preparation failed", { handle: session.handle, error: diagnostics.lastError });
+      onPreparation({
+        phase: "error",
+        handle: session.handle,
+        sourcePath: session.sourcePath,
+        error: diagnostics.lastError,
+      });
+      sendFailureFrame(session);
+      publishDiagnostics();
+    }
   }
 
   function open(payload) {
@@ -139,7 +420,6 @@ export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
     const video = document.createElement("video");
     video.preload = "auto";
     video.playsInline = true;
-    video.src = resolveVideoUrl(payload.videoPath);
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
@@ -158,9 +438,15 @@ export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
       frames: Number(payload.frames ?? 0) >>> 0,
       durationSeconds: Number(payload.durationSeconds ?? 0),
       video,
+      audio: null,
       canvas,
       context,
       closed: false,
+      preparing: true,
+      mediaAbort: new AbortController(),
+      preparedMedia: null,
+      failureFrameSent: false,
+      volume: 1,
       frameCallbackId: null,
       fallbackFrameHandler: null,
       endedFrameHandler: null,
@@ -175,18 +461,10 @@ export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
       // Bink's original caller waits for FrameNum == Frames before applying
       // its logo/copyright hold and advancing to the next movie.
       transferFrame(session, session.durationSeconds || session.video.duration);
+      session.audio?.pause();
     };
     video.addEventListener("ended", session.endedFrameHandler);
-    video.addEventListener("loadeddata", () => {
-      transferFrame(session, video.currentTime);
-      scheduleFrames(session);
-      void startSession(session);
-    }, { once: true });
-    video.addEventListener("error", () => {
-      diagnostics.lastError = `video error ${video.error?.code ?? "unknown"}`;
-      log("Bink sidecar video error", { handle, error: diagnostics.lastError });
-      publishDiagnostics();
-    });
+    void prepareSession(session, payload);
     publishDiagnostics();
   }
 
@@ -199,11 +477,14 @@ export function createBinkVideoRuntime({ sendFrame, log = () => {} } = {}) {
         const frameNum = Math.max(1, Math.min(session.frames, Number(payload.arg0 ?? 1) >>> 0));
         if (session.durationSeconds > 0 && session.frames > 0) {
           session.video.currentTime = ((frameNum - 1) / session.frames) * session.durationSeconds;
+          if (session.audio) session.audio.currentTime = session.video.currentTime;
         }
         break;
       }
       case "setVolume":
-        session.video.volume = Math.max(0, Math.min(1, Number(payload.arg0 ?? 0) / 32768));
+        session.volume = Math.max(0, Math.min(1, Number(payload.arg0 ?? 0) / 32768));
+        session.video.volume = session.audio ? 0 : session.volume;
+        if (session.audio) session.audio.volume = session.volume;
         break;
       default:
         break;

@@ -138,6 +138,33 @@ permission is unavailable, do not silently fall back to a maintainer's GitHub
 identity. Stop before the GitHub write and ask the user how to proceed. Read-only
 operations may still use public endpoints or existing read credentials.
 
+## Pull request handoff
+
+Completed implementation work MUST be handed off through an open pull request
+in `Agusx1211/NewShoes`. A local commit or pushed feature branch by itself is
+not a completed handoff.
+
+After implementation and verification:
+
+1. Commit the intended scope with the required `Agent-Model` trailer.
+2. Push the feature branch with `new-shoes-agent-push`.
+3. Open a pull request targeting `dev` and link the tracking issue. Use a draft
+   only when the work is intentionally incomplete; completed, verified work
+   should be ready for review.
+4. Summarize the change and verification in the PR body, ending with the exact
+   `Agent-Model` signature.
+5. Read the PR back and confirm that it is open, targets `dev`, uses the intended
+   head branch, contains the expected commits, and preserves the signature.
+
+Do not report the task complete until the PR URL is recorded. If credentials,
+permissions, or repository state prevent opening the PR, report that explicit
+blocker and the recoverable branch state instead of presenting a local commit or
+push as a finished result.
+
+Do not push directly to `dev` or `main` unless the user explicitly requests that
+specific direct update. Normal feature, bug-fix, cleanup, and documentation work
+always goes through a feature branch and PR.
+
 ## Agent identity and authorship
 
 Every repository artifact authored by an AI agent MUST identify the exact model
@@ -163,7 +190,7 @@ edits, and follow-up changes. Human-authored artifacts do not require it.
 ## Branch and worktree lifecycle
 
 All implementation work uses a dedicated branch created from an up-to-date
-`main`, checked out in a dedicated worktree under:
+`dev`, checked out in a dedicated worktree under:
 
 ```text
 ~/worktrees/<project>/<feature>
@@ -176,19 +203,19 @@ Before creating it:
 
 - inspect `git worktree list`, local branches, and the matching GitHub issue;
 - confirm no other agent owns the issue, branch, or destination path;
-- confirm the primary `main` worktree has no user changes that would be disturbed;
-- fetch and fast-forward `main` without force, reset, or history rewriting;
-- if `main` cannot be updated safely, stop and report the conflict instead of
+- confirm the primary `dev` worktree has no user changes that would be disturbed;
+- fetch and fast-forward `dev` without force, reset, or history rewriting;
+- if `dev` cannot be updated safely, stop and report the conflict instead of
   inventing a new base.
 
-Then create both the feature branch and worktree from `main`, for example:
+Then create both the feature branch and worktree from `dev`, for example:
 
 ```sh
 mkdir -p ~/worktrees/CnC_Generals_Zero_Hour
 git worktree add \
   -b issue-123-short-name \
   ~/worktrees/CnC_Generals_Zero_Hour/issue-123-short-name \
-  main
+  dev
 ```
 
 Collision rules:
@@ -203,13 +230,14 @@ Collision rules:
 - preserve unrelated changes and never clean, reset, or delete another agent's
   files.
 
-Worktree cleanup is part of the definition of done. After committing and
-verifying the work:
+Worktree cleanup is part of the definition of done. After committing, verifying,
+pushing, and opening the pull request:
 
 1. Confirm the feature worktree is clean with `git status --short`.
-2. Run `git worktree remove <path>` from another worktree.
-3. Run `git worktree prune` and confirm the directory is gone.
-4. Preserve the branch while it is awaiting review or integration; delete it
+2. Confirm the PR is open with the intended feature head and `dev` base.
+3. Run `git worktree remove <path>` from another worktree.
+4. Run `git worktree prune` and confirm the directory is gone.
+5. Preserve the branch while it is awaiting review or integration; delete it
    only after it is merged or explicitly abandoned.
 
 Never use forced worktree removal to discard uncommitted work. For a handoff,

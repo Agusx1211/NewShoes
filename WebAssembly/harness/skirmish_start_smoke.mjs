@@ -12,6 +12,7 @@ const artifactsRoot = resolve(wasmRoot, "artifacts/skirmish");
 
 const GAME_SKIRMISH = 2;
 const WIN_STATUS_IMAGE = 0x80;
+const D3DTOP_DISABLE = 1;
 const WM_MOUSEMOVE = 0x0200;
 const WM_LBUTTONDOWN = 0x0201;
 const WM_LBUTTONUP = 0x0202;
@@ -82,6 +83,10 @@ const expectLightPulseProbe = process.env.SKIRMISH_START_LIGHT_PULSE_PROBE === "
 const expectReplayRoundTrip = process.env.SKIRMISH_START_REPLAY_ROUNDTRIP === "1";
 const retailReplayFixture = String(process.env.SKIRMISH_REPLAY_FIXTURE ?? "").trim();
 const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
+const expectParticleVisibilityProbe =
+  process.env.SKIRMISH_START_PARTICLE_VISIBILITY_PROBE === "1";
+const particleVisibilityFrames = parsePositiveInt(
+  "SKIRMISH_START_PARTICLE_VISIBILITY_FRAMES", 30);
 const distDir = parseDistDir();
 const replayMenuScreenshotPath = resolve(
   process.env.SKIRMISH_REPLAY_MENU_SCREENSHOT ??
@@ -1346,6 +1351,176 @@ async function driveScorchProbe(page) {
   return { target: target.name, position, trigger: trigger.result, scorchDraws, screenshot };
 }
 
+function particleEffectDraws(frame) {
+  const labels = new Map(
+    (locateNested(frame?.frame, ["textureDiagnostics"])?.labels ?? [])
+      .map((label) => [Number(label.id), label.name || label.path || ""]),
+  );
+  return lightProbeDrawHistory(frame)
+    .map((draw) => ({
+      label: labels.get(Number(draw.texture0?.id ?? 0)) ?? "",
+      sequence: draw.drawSequence,
+      indexCount: draw.indexCount,
+      stage0: {
+        colorOp: draw.renderState?.textureStage0?.colorOp ?? null,
+        alphaOp: draw.renderState?.textureStage0?.alphaOp ?? null,
+      },
+      stage1: {
+        colorOp: draw.renderState?.textureStage1?.colorOp ?? null,
+        alphaOp: draw.renderState?.textureStage1?.alphaOp ?? null,
+      },
+      projectedVertices: draw.vertexSummary?.projected?.visible ?? 0,
+    }))
+    .filter((draw) => /cloud|smoke|dust/i.test(draw.label));
+}
+
+async function inspectGraphics(page) {
+  return page.evaluate(() => {
+    const canvas = document.querySelector("#viewport");
+    const context = canvas?.getContext("webgl2");
+    const debugInfo = context?.getExtension("WEBGL_debug_renderer_info");
+    return {
+      renderer: context?.getParameter(
+        debugInfo?.UNMASKED_RENDERER_WEBGL ?? context?.RENDERER,
+      ) ?? null,
+      contextLost: context?.isContextLost() ?? true,
+      contextLossBanner: Boolean(document.querySelector("#webglContextLostBanner")),
+    };
+  });
+}
+
+async function driveParticleVisibilityProbe(page) {
+  const screenshot = resolve(screenshotsRoot, "particle-visibility-smoke.png");
+  await rpc(page, "revealLocalMap", { permanent: true });
+  await runFrames(page, 2, "particle visibility reveal settle");
+
+  const drawables = await rpc(page, "queryDrawables");
+  const target = (drawables?.result?.drawables ?? []).find((drawable) =>
+    drawable.localOwned === true && drawable.onScreen === true &&
+    drawable.hidden !== true && drawable.worldPos);
+  expect(Boolean(target),
+    "particle visibility probe could not find a visible local target", drawables?.result);
+
+  const before = await runSummary(page, 1, "particle visibility baseline");
+  const beforeParticleCount = Number(before?.frame?.particles?.particleCount ?? 0);
+  const beforeOnScreenCount = Number(before?.frame?.particles?.onScreenParticleCount ?? 0);
+  await page.evaluate(() => {
+    window.__cncSetD3D8PerfCounters?.(true);
+    window.__cncSetD3D8SceneDrawHistoryLimit?.(4096);
+  });
+
+  const systems = ["MOABDustWave", "SubExplosionSmoke02"];
+  const triggers = [];
+  for (const name of systems) {
+    const trigger = await rpc(page, "realEngineSpawnParticleSystem", {
+      name,
+      ...target.worldPos,
+      useViewPosition: false,
+      clampToTerrain: true,
+    });
+    expect(trigger?.ok === true, "particle visibility system trigger failed", { name, trigger });
+    triggers.push(trigger.result);
+  }
+
+  const frames = [];
+  const maxFrames = particleVisibilityFrames + 120;
+  for (let advanced = 1; advanced <= maxFrames && frames.length < particleVisibilityFrames;
+    ++advanced) {
+    const beforePerf = await page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? {});
+    const frame = await runSummary(page, 1, "particle visibility continuity");
+    const afterPerf = await page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? {});
+    const particleCount = Number(frame?.frame?.particles?.particleCount ?? 0);
+    const onScreenParticleCount = Number(
+      frame?.frame?.particles?.onScreenParticleCount ?? 0);
+    if (particleCount <= beforeParticleCount + 10 ||
+        onScreenParticleCount <= beforeOnScreenCount + 10) {
+      continue;
+    }
+
+    const activeFrame = frames.length + 1;
+    const sample = {
+      advanced,
+      activeFrame,
+      particleCount,
+      onScreenParticleCount,
+      particleProgramDraws: Number(afterPerf.particleProgramDraws ?? 0) -
+        Number(beforePerf.particleProgramDraws ?? 0),
+      effectDraws: null,
+    };
+
+    // Full draw history synchronizes the GPU once per draw. Sample it at
+    // intervals while the lightweight counter checks every continuity frame.
+    if (activeFrame === 1 || activeFrame % 10 === 0) {
+      await page.evaluate(() => {
+        window.__cncClearD3D8SceneDrawHistory?.();
+        window.__cncSetDiagLevel?.("full");
+      });
+      const diagnostic = await runSummary(page, 1, "particle visibility draw-state sample");
+      sample.effectDraws = particleEffectDraws(diagnostic);
+      await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+    }
+    frames.push(sample);
+
+    if (activeFrame === 8) {
+      await page.locator("#viewport").screenshot({ path: screenshot });
+    }
+  }
+
+  if (frames.length < 8) {
+    await page.locator("#viewport").screenshot({ path: screenshot });
+  }
+
+  const missingProgramFrames = frames.filter((frame) => frame.particleProgramDraws <= 0);
+  const diagnosticFrames = frames.filter((frame) => frame.effectDraws !== null);
+  const missingDrawFrames = diagnosticFrames.filter((frame) => frame.effectDraws.length === 0);
+  const missingTextureFrames = diagnosticFrames.filter((frame) =>
+    !frame.effectDraws.some((draw) => /excloud01/i.test(draw.label)) ||
+    !frame.effectDraws.some((draw) => /exsmokepuff/i.test(draw.label)));
+  const sampledDraws = diagnosticFrames.flatMap((frame) => frame.effectDraws);
+  const staleStageDraws = sampledDraws.filter((draw) =>
+    draw.stage1.colorOp !== D3DTOP_DISABLE || draw.stage1.alphaOp !== D3DTOP_DISABLE);
+  const offscreenDraws = sampledDraws
+    .filter((draw) => draw.projectedVertices === 0);
+  const graphics = await inspectGraphics(page);
+  const expectedRenderer = String(
+    process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
+
+  expect(frames.length === particleVisibilityFrames,
+    "spawned smoke and dust did not stay visibly active long enough", {
+      beforeParticleCount,
+      beforeOnScreenCount,
+      frames,
+    });
+  expect(missingProgramFrames.length === 0,
+    "visible smoke or dust intermittently missed the particle renderer", missingProgramFrames);
+  expect(missingDrawFrames.length === 0,
+    "visible smoke or dust intermittently lost its renderer draw", missingDrawFrames);
+  expect(missingTextureFrames.length === 0,
+    "sampled frames did not contain both shipped smoke and dust textures",
+    missingTextureFrames);
+  expect(staleStageDraws.length === 0,
+    "particle draws inherited a stale stage-one texture combiner", staleStageDraws);
+  expect(offscreenDraws.length === 0,
+    "sampled particle draws did not project into the viewport", offscreenDraws);
+  expect(graphics.contextLost === false && graphics.contextLossBanner === false,
+    "particle visibility run lost its WebGL context", graphics);
+  if (expectedRenderer) {
+    expect(String(graphics.renderer ?? "").toLowerCase().includes(expectedRenderer),
+      "particle visibility run used an unexpected GPU renderer", graphics);
+  }
+
+  return {
+    target: { name: target.name, worldPos: target.worldPos, screenPos: target.screenPos },
+    systems,
+    triggers,
+    beforeParticleCount,
+    beforeOnScreenCount,
+    frames,
+    graphics,
+    screenshot,
+  };
+}
+
 // Tree-lighting discriminator: read the baked per-vertex diffuse of the tree
 // draw pass (FVF XYZ|NORMAL|DIFFUSE|TEX1 = 0x152, stride 36) from the draw
 // history. If diffuse is ~white the CPU bake is wrong (sun-direction/light data
@@ -1815,6 +1990,12 @@ async function main() {
       scorchProbe = await driveScorchProbe(page);
       console.error("[skirmish-start] scorchProbe:", JSON.stringify(scorchProbe));
     }
+    let particleVisibilityProbe = null;
+    if (expectParticleVisibilityProbe) {
+      particleVisibilityProbe = await driveParticleVisibilityProbe(page);
+      console.error("[skirmish-start] particleVisibilityProbe:",
+        JSON.stringify(particleVisibilityProbe));
+    }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
     expect(renderProbe.ok === true,
@@ -2026,6 +2207,7 @@ async function main() {
       escMenuResume,
       rallyProbe,
       scorchProbe,
+      particleVisibilityProbe,
       lightPulseProbe,
       replayRoundTrip,
       renderProbe,

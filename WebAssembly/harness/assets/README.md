@@ -10,9 +10,10 @@ runtime BIG archive inventory.
 | `launcher-logo.webp` | runtime copy of the Project New Shoes mark |
 | `zeroh-command-desert.webp` | project-owned launcher artwork; ownership confirmed by the project owner on 2026-07-11 (generation details are not recorded) |
 | `zeroh-{bliss-at-war,autumn-offensive,azul-armada,red-moon-front}-*` | project-owned desktop wallpapers and swatches created for the launcher |
+| `games/card-back-war.webp` | original AI-generated project artwork created with OpenAI image generation on 2026-07-13; no reference image, third-party asset, or retail game material was used, and it is distributable with Project New Shoes |
 
-The directory contains 16 binary UI files: six brand/icon variants, one runtime
-logo, `zeroh-command-desert.webp`, and four full-size wallpaper/swatch pairs.
+The directory contains 17 binary UI files: six brand/icon variants, one runtime
+logo, `zeroh-command-desert.webp`, one game card back, and four full-size wallpaper/swatch pairs.
 Twenty unused launcher-concept logo candidates were removed before publication.
 The corresponding commits and `archive/DONE.md` describe the retained files as
 project-owned UI art.

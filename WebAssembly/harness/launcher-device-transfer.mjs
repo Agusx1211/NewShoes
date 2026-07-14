@@ -120,11 +120,12 @@ function validateCombinedManifest(value) {
     kind: String(file?.kind ?? ""),
     name: String(file?.name ?? ""),
     bytes: Number(file?.bytes),
-    ...(file?.kind === "archive" ? { entryCount: Number(file?.entryCount) } : {}),
+    ...(["archive", "cursor"].includes(file?.kind)
+      ? { entryCount: Number(file?.entryCount) } : {}),
   }));
   const ids = new Set(files.map((file) => file.id));
   if (files.some((file) => !file.id
-      || !["archive", "video", "mod-archive", "save", "replay"].includes(file.kind)
+      || !["archive", "video", "cursor", "mod-archive", "save", "replay"].includes(file.kind)
       || !file.name || !Number.isSafeInteger(file.bytes) || file.bytes <= 0)
       || ids.size !== files.length) {
     throw new Error("The sender returned an invalid file list");
@@ -172,7 +173,9 @@ async function createOutgoingSource({ includeMods, includeSaves, includeReplays 
     async readChunk(id, offset, length) {
       const file = byId.get(id);
       if (!file) throw new Error("Transfer source file is missing");
-      if (file.kind === "archive" || file.kind === "video") return game.readChunk(id, offset, length);
+      if (file.kind === "archive" || file.kind === "video" || file.kind === "cursor") {
+        return game.readChunk(id, offset, length);
+      }
       if (file.kind === "mod-archive") return mods.readChunk(id, offset, length);
       return window.CnCPort.readTransferUserFileChunk(file, offset, length);
     },
@@ -324,7 +327,8 @@ function renderReceiverProgress() {
 async function prepareIncoming(message) {
   if (state.incoming) throw new Error("The sender tried to start a second transfer");
   const manifest = validateCombinedManifest(message.manifest);
-  const gameFiles = manifest.files.filter((file) => file.kind === "archive" || file.kind === "video");
+  const gameFiles = manifest.files.filter((file) =>
+    file.kind === "archive" || file.kind === "video" || file.kind === "cursor");
   const modFiles = manifest.files.filter((file) => file.kind === "mod-archive");
   const userFiles = manifest.files.filter((file) => file.kind === "save" || file.kind === "replay");
   if (userFiles.length > 0 && !manifest.mods) {
@@ -390,7 +394,9 @@ function currentIncomingFile(message) {
 }
 
 function sessionForFile(incoming, file) {
-  if (file.kind === "archive" || file.kind === "video") return incoming.gameSession;
+  if (file.kind === "archive" || file.kind === "video" || file.kind === "cursor") {
+    return incoming.gameSession;
+  }
   if (file.kind === "mod-archive") return incoming.modSession;
   return incoming.userSession;
 }

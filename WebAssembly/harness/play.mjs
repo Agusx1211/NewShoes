@@ -12,6 +12,7 @@ import {
   normalizeCameraZoomHeight,
   saveCameraZoomHeight,
 } from "./camera-zoom-config.mjs";
+import { loadCursorStyle, saveCursorStyle } from "./cursor-style-config.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import {
   runRuntimeShutdownSequence,
@@ -71,6 +72,12 @@ const networkIceUsernameNode = document.querySelector("#networkIceUsername");
 const networkIceCredentialNode = document.querySelector("#networkIceCredential");
 const networkStatusNode = document.querySelector("#networkStatus");
 const networkDiagnosticsToggleNode = document.querySelector("#networkDiagnosticsToggle");
+const binkPreparationOverlay = document.querySelector("#binkPreparationOverlay");
+const binkPreparationName = document.querySelector("#binkPreparationName");
+const binkPreparationProgress = document.querySelector("#binkPreparationProgress");
+const binkPreparationFill = document.querySelector("#binkPreparationFill");
+const binkPreparationDetail = document.querySelector("#binkPreparationDetail");
+const binkPreparationCancel = document.querySelector("#binkPreparationCancel");
 const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
 let networkStorage = null;
 try {
@@ -78,6 +85,56 @@ try {
 } catch {
   // Privacy settings can make the localStorage property itself throw.
 }
+let cursorStyle = loadCursorStyle(networkStorage);
+
+function binkPreparationPercent(detail) {
+  const progress = Number.isFinite(Number(detail?.progress))
+    ? Math.max(0, Math.min(1, Number(detail.progress))) : 0;
+  if (detail?.phase === "runtime") return 5 + progress * 20;
+  if (detail?.phase === "video") return 25 + progress * 60;
+  if (detail?.phase === "audio") return 85 + progress * 14;
+  if (detail?.phase === "ready") return 100;
+  return 2;
+}
+
+function updateBinkPreparation(event) {
+  if (!binkPreparationOverlay) return;
+  const detail = event.detail ?? {};
+  const terminal = detail.phase === "ready" || detail.phase === "cancelled";
+  if (terminal) {
+    binkPreparationOverlay.hidden = true;
+    return;
+  }
+  binkPreparationOverlay.hidden = false;
+  const sourceName = String(detail.sourcePath ?? "").replaceAll("\\", "/").split("/").pop();
+  if (sourceName && binkPreparationName) binkPreparationName.textContent = sourceName;
+  const percent = Math.round(binkPreparationPercent(detail));
+  if (binkPreparationFill) binkPreparationFill.style.width = `${percent}%`;
+  binkPreparationProgress?.setAttribute("aria-valuenow", String(percent));
+  if (binkPreparationDetail) {
+    binkPreparationDetail.textContent = detail.phase === "error"
+      ? `Could not prepare this movie: ${detail.error || "unknown error"}`
+      : detail.detail || "Preparing this movie locally. Nothing is uploaded.";
+  }
+  if (binkPreparationCancel) {
+    binkPreparationCancel.disabled = false;
+    binkPreparationCancel.textContent = detail.phase === "error" ? "Dismiss" : "Skip movie";
+    binkPreparationCancel.dataset.action = detail.phase === "error" ? "dismiss" : "cancel";
+  }
+}
+
+window.addEventListener("cncport:binkprepare", updateBinkPreparation);
+binkPreparationCancel?.addEventListener("click", () => {
+  if (binkPreparationCancel.dataset.action === "dismiss") {
+    binkPreparationOverlay.hidden = true;
+    return;
+  }
+  const cancelled = window.CnCPort?.cancelBinkPreparation?.() === true;
+  if (cancelled) {
+    binkPreparationCancel.disabled = true;
+    binkPreparationCancel.textContent = "Skipping…";
+  }
+});
 
 function loadNetworkDiagnosticsEnabled() {
   const queryValue = queryParams.get("networkDiagnostics");
@@ -357,6 +414,14 @@ const issueRecorder = createIssueRecorder({
 const recorderReady = issueRecorder.init();
 window.CnCIssueRecorder = issueRecorder;
 
+function showRuntimeCrash(failure) {
+  gameRunning = false;
+  renderPerformanceOverlay();
+  void import("./crash-diagnostics.mjs")
+    .then(({ showCrashDiagnostics }) => showCrashDiagnostics(issueRecorder, failure))
+    .catch((error) => console.error("[play] crash diagnostics unavailable", error));
+}
+
 function report(message) {
   progressNode.textContent = message;
   if (progressSentinel) progressSentinel.textContent = message;
@@ -575,9 +640,14 @@ if (threadedUnavailable) {
   }
 }
 
-function fail(message, detail) {
+function fail(message, detail, {
+  kind = runtimeStarted ? "runtime-failure" : "launch-failure",
+  stage = issueRecorder.session?.phase ?? null,
+  error = null,
+} = {}) {
   console.error("[play]", message, detail ?? "");
   issueRecorder.noteFailure(message, detail);
+  showRuntimeCrash({ kind, stage, message, detail, error });
   let detailText = "";
   try {
     detailText = typeof detail === "string" ? detail
@@ -799,7 +869,10 @@ async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
     previous = { now: status.now, clientFrames: loop.clientFrames, logicFrames: loop.logicFrames };
   });
   window.addEventListener("cncport:threadedlooperror", (event) => {
-    fail("engine thread frame loop failed", event.detail?.error ?? event.detail);
+    fail("engine thread frame loop failed", event.detail?.error ?? event.detail, {
+      kind: "engine-loop",
+      stage: issueRecorder.session?.phase ?? "running",
+    });
   });
 }
 
@@ -1086,7 +1159,11 @@ async function start() {
       stage: analyticsStage,
       duration: analytics?.bucketDuration(Date.now() - Number(window.__newShoesLaunchStartedAt || Date.now()), "launch") || "unknown",
     });
-    fail(error?.message ?? String(error), error?.launchDetail ?? error);
+    fail(error?.message ?? String(error), error?.launchDetail ?? error, {
+      kind: "launch-failure",
+      stage: analyticsStage,
+      error,
+    });
     throw error;
   }
 }
@@ -1761,6 +1838,8 @@ function syncDesktopGameSettings() {
   const cameraZoomOutput = document.querySelector("#cameraZoomHeightValue");
   if (cameraZoomInput) cameraZoomInput.value = String(cameraZoomHeight);
   if (cameraZoomOutput) cameraZoomOutput.value = String(cameraZoomHeight);
+  const gameCursorToggle = document.querySelector("#gameCursorToggle");
+  if (gameCursorToggle) gameCursorToggle.checked = cursorStyle === "game";
   const fullscreenButton = document.querySelector("#fullscreenButton");
   if (fullscreenButton) {
     fullscreenButton.hidden = !fullscreenSupported();
@@ -1828,6 +1907,17 @@ function bindDesktopGameSettings() {
     syncDesktopGameSettings();
     track("setting_changed", { category: "gameplay", setting: "camera_zoom", value: String(cameraZoomHeight) });
   });
+  document.querySelector("#gameCursorToggle")?.addEventListener("change", (event) => {
+    cursorStyle = saveCursorStyle(networkStorage, event.currentTarget.checked ? "game" : "system");
+    window.dispatchEvent(new CustomEvent("cncport:cursorstylechange", {
+      detail: { style: cursorStyle },
+    }));
+    track("setting_changed", {
+      category: "display",
+      setting: "cursor_style",
+      value: cursorStyle === "game" ? "original" : "system",
+    });
+  });
   document.querySelector("#performanceOverlayToggle")?.addEventListener("change", (event) => {
     setPerformanceOverlay({ enabled: event.currentTarget.checked });
     track("setting_changed", { category: "performance", setting: "performance_overlay", value: event.currentTarget.checked ? "enabled" : "disabled" });
@@ -1886,6 +1976,7 @@ function playConfiguration() {
     display: { ...displaySettings },
     diagnostics: configuredDiagLevel,
     shaderTier: effectiveShaderTier(),
+    cursorStyle,
     maxCameraHeight: cameraZoomHeight,
     consoleVisible: !consolePanel.classList.contains("hidden"),
     fullscreen: Boolean(fullscreenElement()),

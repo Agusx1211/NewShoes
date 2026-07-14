@@ -638,10 +638,10 @@
 
   // Browser
   const browserPages = {
-    "newshoes://start": `<main class="net-home"><section class="net-hero"><div class="net-mark"><svg><use href="#i-system"/></svg></div><p>PROJECT NEW SHOES LOCAL INTRANET</p><h1>COMMAND NET</h1><span>Local services are online. Choose a channel.</span></section><section class="net-cards"><button data-browser-page="newshoes://manual"><b>01</b><strong>FIELD MANUAL</strong><span>How this desktop works</span></button><button data-browser-page="newshoes://status"><b>02</b><strong>SYSTEM STATUS</strong><span>Runtime and storage telemetry</span></button><button data-browser-page="newshoes://arcade"><b>03</b><strong>FIELD ARCADE</strong><span>Authorized downtime</span></button></section><footer>NEWSHOES://LOCAL-NET · BROWSER-LOCAL UPLINK</footer></main>`,
+    "newshoes://start": `<main class="net-home"><section class="net-hero"><div class="net-mark"><svg><use href="#i-system"/></svg></div><p>PROJECT NEW SHOES LOCAL INTRANET</p><h1>COMMAND NET</h1><span>Local services are online. Choose a channel.</span></section><section class="net-cards"><button data-browser-page="newshoes://manual"><b>01</b><strong>FIELD MANUAL</strong><span>How this desktop works</span></button><button data-browser-page="newshoes://status"><b>02</b><strong>SYSTEM STATUS</strong><span>Runtime and storage telemetry</span></button><button data-browser-page="newshoes://games"><b>03</b><strong>GAMES</strong><span>Command-approved downtime</span></button></section><footer>NEWSHOES://LOCAL-NET · BROWSER-LOCAL UPLINK</footer></main>`,
     "newshoes://manual": `<main class="net-document"><header><span>PROJECT NEW SHOES FIELD MANUAL</span><h1>Browser desktop quick start</h1></header><section><h2>Game library</h2><p>Open the Game Launcher, select an owned disc image or installation folder, then choose temporary, remembered, or browser-installed storage.</p><h2>My Files</h2><p>Double-click folders to navigate. Text files open in Notepad. Imports smaller than 512 KB are retained and can be downloaded again.</p><h2>Desktop controls</h2><p>Drag title bars, double-click a title to maximize, and use the taskbar to minimize or restore applications.</p><h2>External web</h2><p>Type a URL in the address bar. Sites that disallow embedding can always be opened with the ↗ button.</p></section></main>`,
     "newshoes://status": `<main class="net-status-page"><header><span>UPLINK TELEMETRY</span><h1>Local runtime status</h1></header><div class="status-grid"><article><i></i><strong>WASM RUNTIME</strong><b>READY</b><span>Real engine bridge loaded</span></article><article><i></i><strong>LOCAL DRIVE</strong><b>OPFS</b><span>Private browser filesystem available</span></article><article><i></i><strong>GRAPHICS</strong><b>WEBGL2</b><span>Live capability report in Settings</span></article><article><i></i><strong>NETWORK</strong><b>WEBRTC</b><span>Optional peer-to-peer transport</span></article></div></main>`,
-    "newshoes://arcade": `<main class="net-document arcade-link-page"><header><span>RECREATION CHANNEL</span><h1>Field Arcade</h1></header><section><p>Command has authorized a short break. Clear a minefield or exercise signal recall.</p><button data-browser-open-app="arcade">Open Project New Shoes Arcade</button></section></main>`,
+    "newshoes://games": `<main class="net-document games-link-page"><header><span>RECREATION CHANNEL</span><h1>Games</h1></header><section><p>Command has authorized a short break. The classics have been requisitioned and given a completely unnecessary military briefing.</p><button data-browser-open-app="games">Open Games folder</button></section></main>`,
   };
   let browserHistory = ["newshoes://start"];
   let browserIndex = 0;
@@ -686,179 +686,6 @@
       browserIndex = browserHistory.length - 1;
     }
     renderBrowser(address);
-  }
-
-  // Minefield
-  const MINE_SIZE = 9;
-  const MINE_TOTAL = 10;
-  let mineState;
-
-  function mineNeighbors(index) {
-    const row = Math.floor(index / MINE_SIZE);
-    const column = index % MINE_SIZE;
-    const neighbors = [];
-    for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) {
-      for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
-        const nextRow = row + rowOffset;
-        const nextColumn = column + columnOffset;
-        if ((rowOffset || columnOffset) && nextRow >= 0 && nextRow < MINE_SIZE && nextColumn >= 0 && nextColumn < MINE_SIZE) neighbors.push(nextRow * MINE_SIZE + nextColumn);
-      }
-    }
-    return neighbors;
-  }
-
-  function placeMines(safeIndex) {
-    const choices = Array.from({ length: MINE_SIZE * MINE_SIZE }, (_, index) => index).filter((index) => index !== safeIndex);
-    for (let count = 0; count < MINE_TOTAL; count += 1) {
-      const pick = Math.floor(Math.random() * choices.length);
-      mineState.cells[choices.splice(pick, 1)[0]].mine = true;
-    }
-    mineState.cells.forEach((cell, index) => { cell.nearby = mineNeighbors(index).filter((neighbor) => mineState.cells[neighbor].mine).length; });
-  }
-
-  function renderMinefield() {
-    const grid = document.querySelector("#mineGrid");
-    grid.replaceChildren();
-    mineState.cells.forEach((cell, index) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `mine-cell${cell.revealed ? " is-revealed" : ""}${cell.flagged ? " is-flagged" : ""}${cell.revealed && cell.mine ? " is-mine" : ""}${cell.revealed && cell.nearby ? ` n${cell.nearby}` : ""}`;
-      button.textContent = cell.flagged ? "⚑" : cell.revealed && cell.mine ? "✹" : cell.revealed && cell.nearby ? String(cell.nearby) : "";
-      button.setAttribute("aria-label", cell.flagged ? "Flagged cell" : !cell.revealed ? "Hidden cell"
-        : cell.mine ? "Revealed mine" : cell.nearby ? `${cell.nearby} adjacent mines` : "Clear cell");
-      button.addEventListener("click", () => revealMineCell(index));
-      button.addEventListener("contextmenu", (event) => { event.preventDefault(); toggleMineFlag(index); });
-      grid.append(button);
-    });
-    const flags = mineState.cells.filter((cell) => cell.flagged).length;
-    document.querySelector("#mineCount").textContent = String(Math.max(0, MINE_TOTAL - flags)).padStart(2, "0");
-    document.querySelector("#mineTimer").textContent = String(mineState.time).padStart(3, "0");
-    document.querySelector("#mineReset").textContent = mineState.won ? "😎" : mineState.ended ? "😵" : "🙂";
-  }
-
-  function startMineTimer() {
-    if (mineState.timer) return;
-    mineState.timer = window.setInterval(() => {
-      mineState.time = Math.min(999, mineState.time + 1);
-      document.querySelector("#mineTimer").textContent = String(mineState.time).padStart(3, "0");
-    }, 1000);
-  }
-
-  function finishMinefield(won) {
-    mineState.ended = true;
-    mineState.won = won;
-    window.clearInterval(mineState.timer);
-    mineState.timer = null;
-    if (!won) mineState.cells.forEach((cell) => { if (cell.mine) cell.revealed = true; });
-    desktop.showToast(won ? "Sector cleared" : "Mine triggered", won ? `Minefield secured in ${mineState.time} seconds.` : "Reset the board and try another approach.", won ? "success" : "warning");
-    renderMinefield();
-  }
-
-  function revealMineCell(index) {
-    if (mineState.ended || mineState.cells[index].flagged || mineState.cells[index].revealed) return;
-    if (!mineState.started) {
-      mineState.started = true;
-      placeMines(index);
-      startMineTimer();
-    }
-    if (mineState.cells[index].mine) {
-      mineState.cells[index].revealed = true;
-      return finishMinefield(false);
-    }
-    const queue = [index];
-    const visited = new Set();
-    while (queue.length) {
-      const current = queue.shift();
-      if (visited.has(current)) continue;
-      visited.add(current);
-      const cell = mineState.cells[current];
-      if (cell.flagged || cell.mine) continue;
-      cell.revealed = true;
-      if (cell.nearby === 0) mineNeighbors(current).forEach((neighbor) => queue.push(neighbor));
-    }
-    if (mineState.cells.filter((cell) => cell.revealed && !cell.mine).length === MINE_SIZE * MINE_SIZE - MINE_TOTAL) return finishMinefield(true);
-    renderMinefield();
-  }
-
-  function toggleMineFlag(index) {
-    const cell = mineState.cells[index];
-    if (mineState.ended || cell.revealed) return;
-    cell.flagged = !cell.flagged;
-    renderMinefield();
-  }
-
-  function resetMinefield() {
-    if (mineState?.timer) window.clearInterval(mineState.timer);
-    mineState = { cells: Array.from({ length: MINE_SIZE * MINE_SIZE }, () => ({ mine: false, nearby: 0, revealed: false, flagged: false })), started: false, ended: false, won: false, time: 0, timer: null };
-    renderMinefield();
-  }
-
-  // Signal Match
-  const MEMORY_SIGNALS = ["◆", "●", "▲", "✦", "⬢", "⌁", "✚", "◈"];
-  let memoryState;
-  let memoryGeneration = 0;
-
-  function shuffle(values) {
-    for (let index = values.length - 1; index > 0; index -= 1) {
-      const pick = Math.floor(Math.random() * (index + 1));
-      [values[index], values[pick]] = [values[pick], values[index]];
-    }
-    return values;
-  }
-
-  function renderMemory() {
-    const grid = document.querySelector("#memoryGrid");
-    grid.replaceChildren();
-    memoryState.cards.forEach((card, index) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `memory-card${card.revealed || card.matched ? " is-revealed" : ""}${card.matched ? " is-matched" : ""}`;
-      button.innerHTML = `<span>${card.revealed || card.matched ? card.signal : "?"}</span>`;
-      button.setAttribute("aria-label", card.matched ? `Matched ${card.signal}` : card.revealed ? `Signal ${card.signal}` : "Hidden signal");
-      button.addEventListener("click", () => revealMemoryCard(index));
-      grid.append(button);
-    });
-    document.querySelector("#memoryMoves").textContent = String(memoryState.moves);
-    document.querySelector("#memoryPairs").textContent = `${memoryState.pairs}/8`;
-  }
-
-  function revealMemoryCard(index) {
-    const card = memoryState.cards[index];
-    if (memoryState.locked || card.revealed || card.matched) return;
-    card.revealed = true;
-    memoryState.open.push(index);
-    renderMemory();
-    if (memoryState.open.length < 2) return;
-    memoryState.moves += 1;
-    renderMemory();
-    const [first, second] = memoryState.open;
-    if (memoryState.cards[first].signal === memoryState.cards[second].signal) {
-      memoryState.cards[first].matched = true;
-      memoryState.cards[second].matched = true;
-      memoryState.cards[first].revealed = false;
-      memoryState.cards[second].revealed = false;
-      memoryState.open = [];
-      memoryState.pairs += 1;
-      if (memoryState.pairs === 8) desktop.showToast("Signals decoded", `All pairs matched in ${memoryState.moves} moves.`);
-      renderMemory();
-    } else {
-      memoryState.locked = true;
-      const generation = memoryGeneration;
-      window.setTimeout(() => {
-        if (generation !== memoryGeneration) return;
-        memoryState.cards[first].revealed = false;
-        memoryState.cards[second].revealed = false;
-        memoryState.open = [];
-        memoryState.locked = false;
-        renderMemory();
-      }, 650);
-    }
-  }
-
-  function resetMemory() {
-    memoryGeneration += 1;
-    memoryState = { cards: shuffle([...MEMORY_SIGNALS, ...MEMORY_SIGNALS]).map((signal) => ({ signal, revealed: false, matched: false })), open: [], moves: 0, pairs: 0, locked: false };
-    renderMemory();
   }
 
   // Bind filesystem.
@@ -916,30 +743,6 @@
   });
   document.querySelectorAll(".browser-favorites [data-browser-page]").forEach((button) => button.addEventListener("click", () => navigateBrowser(button.dataset.browserPage)));
 
-  // Bind Arcade.
-  const arcadeTabs = [...document.querySelectorAll("[data-arcade-tab]")];
-  function selectArcadeTab(button) {
-    arcadeTabs.forEach((tab) => {
-      const selected = tab === button;
-      tab.classList.toggle("is-selected", selected);
-      tab.setAttribute("aria-selected", String(selected));
-      tab.tabIndex = selected ? 0 : -1;
-    });
-    document.querySelectorAll("[data-arcade-panel]").forEach((panel) => panel.classList.toggle("is-visible", panel.dataset.arcadePanel === button.dataset.arcadeTab));
-  }
-  arcadeTabs.forEach((button, index) => {
-    button.addEventListener("click", () => selectArcadeTab(button));
-    button.addEventListener("keydown", (event) => {
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      event.preventDefault();
-      const next = arcadeTabs[(index + (event.key === "ArrowRight" ? 1 : -1) + arcadeTabs.length) % arcadeTabs.length];
-      next.focus();
-      selectArcadeTab(next);
-    });
-  });
-  document.querySelector("#mineReset").addEventListener("click", resetMinefield);
-  document.querySelector("#memoryReset").addEventListener("click", resetMemory);
-
   window.addEventListener("zeroh:reset-apps", () => {
     try { localStorage.removeItem(FILESYSTEM_KEY); } catch { /* storage is optional */ }
     fileSystem = seedFileSystem();
@@ -950,8 +753,7 @@
     persistFileSystem();
     newNote();
     navigateTo("root", false);
-    resetMinefield();
-    resetMemory();
+    window.ZeroHGames?.resetAll();
   });
   window.addEventListener("cncport:runtimeclosed", () => void refreshManagedReplays());
 
@@ -960,8 +762,6 @@
   void refreshManagedReplays();
   newNote();
   renderBrowser("newshoes://start");
-  resetMinefield();
-  resetMemory();
 
   window.ZeroHApps = { navigateTo, showManagedStorage, openTextFile, getFileSystem: () => fileSystem };
 })();

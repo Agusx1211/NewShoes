@@ -6350,6 +6350,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int
 	json += (TheGameLogic != NULL && TheGameLogic->isLoadSessionActive()) ? "true" : "false";
 	json += ",\"loadProgress\":" + std::to_string(
 		TheGameLogic != NULL ? (long long)TheGameLogic->getLoadSessionProgress() : -1);
+	json += ",\"browserCursor\":{\"cursorSet\":";
+	json += WasmWin32Input::current_cursor != NULL ? "true" : "false";
+	json += ",\"cursorFile\":";
+	if (WasmWin32Input::current_cursor_file != NULL) {
+		json += "\"" + json_escape(WasmWin32Input::current_cursor_file) + "\"";
+	} else {
+		json += "null";
+	}
+	json += "}";
 	// W3D animation clock (drives every HAnim/particle/muzzle-flash timeline).
 	// If w3dSyncTimeMs stops advancing while clientFrame does, animations are
 	// frozen — the exact owner-reported symptom class (units move, nothing

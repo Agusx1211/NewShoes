@@ -59,6 +59,19 @@ async function seedSenderInstall(page) {
       });
       totalBytes += bytes.byteLength;
     }
+    const cursorBytes = new Uint8Array(96);
+    cursorBytes.fill(0x5a);
+    const cursorHandle = await install.getFileHandle("OriginalCursors.big", { create: true });
+    const cursorWriter = await cursorHandle.createWritable();
+    await cursorWriter.write(cursorBytes);
+    await cursorWriter.close();
+    const cursorAsset = {
+      name: "OriginalCursors.big",
+      bytes: cursorBytes.byteLength,
+      entryCount: 52,
+      opfsPath: `${installRoot}/OriginalCursors.big`,
+    };
+    totalBytes += cursorBytes.byteLength;
     localStorage.setItem("zeroh-installed-library.v5", JSON.stringify({
       version: 5,
       game: "zeroHour",
@@ -68,8 +81,15 @@ async function seedSenderInstall(page) {
       includeVideos: false,
       archives,
       videos: [],
+      cursorAsset,
     }));
-    return { archiveCount: archives.length, totalBytes, first: archives[0], last: archives.at(-1) };
+    return {
+      archiveCount: archives.length,
+      totalBytes,
+      first: archives[0],
+      last: archives.at(-1),
+      cursorAsset,
+    };
   });
 }
 
@@ -194,6 +214,7 @@ try {
         }
         modFile = await (await modDirectory.getFileHandle(name, { create: false })).getFile();
       }
+      const cursor = await (await directory.getFileHandle(installed.cursorAsset.name)).getFile();
       return {
         archiveCount: installed.archives.length,
         totalBytes: installed.totalBytes,
@@ -204,6 +225,9 @@ try {
         modBytes: modFile?.size ?? 0,
         modFirstByte: modFile ? new Uint8Array(await modFile.slice(0, 1).arrayBuffer())[0] : null,
         activeModContext: active.id,
+        cursorBytes: cursor.size,
+        cursorFirstByte: new Uint8Array(await cursor.slice(0, 1).arrayBuffer())[0],
+        cursorEntryCount: installed.cursorAsset.entryCount,
         transfer: window.ZeroHDeviceTransfer.snapshot(),
       };
     });
@@ -222,6 +246,9 @@ try {
     assert.equal(verified.modBytes, seededMod.bytes);
     assert.equal(verified.modFirstByte, "B".charCodeAt(0));
     assert.equal(verified.activeModContext, seededMod.contextId);
+    assert.equal(verified.cursorBytes, seeded.cursorAsset.bytes);
+    assert.equal(verified.cursorFirstByte, 0x5a);
+    assert.equal(verified.cursorEntryCount, 52);
   }
   assert.equal(await sender.page.locator(".transfer-peer").count(), 2);
   assert.equal(events.filter((event) => event.type === "pageerror").length, 0,

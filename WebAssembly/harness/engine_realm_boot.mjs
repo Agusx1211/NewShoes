@@ -732,6 +732,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     quitRequested: false,
   };
   let framePacedFn = null;
+  let lastBrowserCursorKey = null;
 
   function runPacedFrame(runLogic) {
     try {
@@ -860,6 +861,17 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     }
     loop.clientFrames += 1;
     loop.lastResult = result;
+    const browserCursor = result.browserCursor;
+    if (browserCursor && typeof browserCursor === "object") {
+      const cursorSet = browserCursor.cursorSet === true;
+      const cursorFile = typeof browserCursor.cursorFile === "string"
+        ? browserCursor.cursorFile : null;
+      const cursorKey = `${cursorSet ? 1 : 0}\u0000${cursorFile ?? ""}`;
+      if (cursorKey !== lastBrowserCursorKey) {
+        lastBrowserCursorKey = cursorKey;
+        postToMain({ cmd: "browserCursor", cursorSet, cursorFile });
+      }
+    }
     loop.pacingSamples.push({ t: stamp, logic: logicToRun });
     if (loop.pacingSamples.length > 900) {
       loop.pacingSamples.splice(0, loop.pacingSamples.length - 900);

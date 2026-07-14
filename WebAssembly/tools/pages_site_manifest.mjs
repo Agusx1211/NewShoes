@@ -13,6 +13,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "assets/brand/project-new-shoes-icon-512.png",
   "assets/brand/project-new-shoes.ico",
   "assets/launcher-logo.webp",
+  "assets/games/card-back-war.webp",
   "assets/zeroh-autumn-offensive-1440p.webp",
   "assets/zeroh-autumn-offensive-swatch.webp",
   "assets/zeroh-azul-armada-1440p.webp",
@@ -22,10 +23,15 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "assets/zeroh-command-desert.webp",
   "assets/zeroh-red-moon-front-1440p.webp",
   "assets/zeroh-red-moon-front-swatch.webp",
+  "bink_decode_worker.mjs",
+  "bink_decoder.mjs",
+  "bink_direct_runtime.mjs",
   "bink_runtime.mjs",
   "bridge.js",
   "camera-zoom-config.mjs",
   "clickteam-installer.mjs",
+  "crash-diagnostics.mjs",
+  "cursor-style-config.mjs",
   "d3d8_executor.mjs",
   "device-transfer-protocol.mjs",
   "engine_realm_boot.mjs",
@@ -41,6 +47,8 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "launcher-desktop-apps.js",
   "launcher-device-transfer.mjs",
   "launcher-entry.mjs",
+  "launcher-games.css",
+  "launcher-games.mjs",
   "launcher-hardware-info.js",
   "launcher-os-shutdown.mjs",
   "launcher-retail-presentation.mjs",
@@ -56,6 +64,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "mod-package-store.mjs",
   "mod-manager-ui.mjs",
   "network-diagnostics.mjs",
+  "original-cursor-assets.mjs",
   "opfs_realm_files.mjs",
   "play.mjs",
   "replay-file-store.mjs",
@@ -91,6 +100,12 @@ export const PAGES_RUNTIME_FILES = Object.freeze([
   "cnc-port.worker.js",
 ]);
 
+export const PAGES_VIDEO_RUNTIME_FILES = Object.freeze([
+  "video-runtime/bink-decoder.wasm",
+  "video-runtime/bink-decoder-manifest.json",
+  "video-runtime/bink-decoder-SOURCE.txt",
+]);
+
 export const PAGES_ROOT_LAUNCHER_FILES = Object.freeze([
   "launcher.html",
   "manifest.webmanifest",
@@ -106,4 +121,5 @@ export const PAGES_OUTPUT_FILES = Object.freeze([
   "harness/build-info.json",
   "harness/play.html",
   ...PAGES_RUNTIME_FILES.map((name) => `dist-threaded-release/${name}`),
+  ...PAGES_VIDEO_RUNTIME_FILES,
 ].sort());

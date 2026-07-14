@@ -9,6 +9,7 @@
 /WebAssembly/pages-build/
 /WebAssembly/pages-dist/
 /WebAssembly/cloudflare-dist/
+/WebAssembly/bink-decoder/target/
 /WebAssembly/.wrangler/
 /WebAssembly/err.txt
 # Per-box persistent self-signed HTTPS cert (generated once by harness/static-server.mjs)

@@ -72,8 +72,8 @@ export const EVENT_SCHEMAS = Object.freeze({
   }),
   setting_changed: Object.freeze({
     category: enumParam("appearance", "audio", "display", "shader", "performance", "diagnostics", "privacy"),
-    setting: enumParam("wallpaper", "ui_scale", "interface_sound", "reduce_motion", "resolution_mode", "fullscreen", "shader_tier", "performance_overlay", "performance_window", "diagnostics_level", "analytics"),
-    value: enumParam("enabled", "disabled", "dynamic", "fixed", "classic", "enhanced", "short", "medium", "long", "lite", "full", "granted", "denied"),
+    setting: enumParam("wallpaper", "ui_scale", "interface_sound", "reduce_motion", "resolution_mode", "fullscreen", "shader_tier", "cursor_style", "performance_overlay", "performance_window", "diagnostics_level", "analytics"),
+    value: enumParam("enabled", "disabled", "dynamic", "fixed", "classic", "enhanced", "original", "system", "short", "medium", "long", "lite", "full", "granted", "denied"),
   }),
   audio_activation: Object.freeze({
     trigger: enumParam("pointer", "keyboard", "click", "play_start", "settings", "unknown"),
