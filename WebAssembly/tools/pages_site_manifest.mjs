@@ -23,6 +23,8 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "assets/zeroh-red-moon-front-1440p.webp",
   "assets/zeroh-red-moon-front-swatch.webp",
   "bink_runtime.mjs",
+  "bink_transcode_worker.mjs",
+  "bink_transcoder.mjs",
   "bridge.js",
   "camera-zoom-config.mjs",
   "d3d8_executor.mjs",
@@ -72,6 +74,16 @@ export const PAGES_RUNTIME_FILES = Object.freeze([
   "cnc-port.worker.js",
 ]);
 
+export const PAGES_VIDEO_RUNTIME_FILES = Object.freeze([
+  "video-runtime/ffmpeg-core.js",
+  "video-runtime/ffmpeg-core-manifest.json",
+  "video-runtime/ffmpeg-core-SOURCE.txt",
+  "video-runtime/ffmpeg-core.wasm.part0",
+  "video-runtime/ffmpeg-core.wasm.part1",
+  "video-runtime/ffmpeg-core.wasm.part2",
+  "video-runtime/ffmpeg-core.wasm.part3",
+]);
+
 export const PAGES_ROOT_LAUNCHER_FILES = Object.freeze([
   "launcher.html",
   "manifest.webmanifest",
@@ -86,4 +98,5 @@ export const PAGES_OUTPUT_FILES = Object.freeze([
   "harness/build-info.json",
   "harness/play.html",
   ...PAGES_RUNTIME_FILES.map((name) => `dist-threaded-release/${name}`),
+  ...PAGES_VIDEO_RUNTIME_FILES,
 ].sort());

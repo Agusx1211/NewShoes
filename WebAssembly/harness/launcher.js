@@ -264,9 +264,13 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
       if (description) description.textContent = "Checking video playback support…";
       if (tooltip) tooltip.textContent = "Checking whether this build has the browser-compatible video runtime.";
     } else if (available) {
-      if (description) description.textContent = "Install and play the EA intro and in-game cinematics.";
+      if (description) description.textContent = state.videoSupport.mode === "transcode"
+        ? "Prepare and play original movies locally when first viewed."
+        : "Install and play the EA intro and in-game cinematics.";
       if (tooltip) {
-        tooltip.textContent = "The English retail movie set uses about 0.9 GB extra: roughly 0.59 GB of original Bink files plus 0.29 GB of browser-compatible copies. Preparation also takes longer. Leave this off for the smallest, fastest installation; you can reinstall later to add them.";
+        tooltip.textContent = state.videoSupport.mode === "transcode"
+          ? "The original Bink files stay on this device. Each movie is converted the first time the game requests it, then its browser-compatible video and audio are cached for later playback. Nothing is uploaded."
+          : "The English retail movie set uses about 0.9 GB extra: roughly 0.59 GB of original Bink files plus 0.29 GB of browser-compatible copies. Preparation also takes longer. Leave this off for the smallest, fastest installation; you can reinstall later to add them.";
       }
     } else {
       if (description) description.textContent = "Unavailable in this build; the game still launches normally.";
@@ -289,10 +293,11 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
   function updateInstallSizeEstimate() {
     const scan = state.source?.scan;
     if (!scan) return;
-    // The supplied English corpus produces browser sidecars at ~49% of the
-    // source BIK size (305,435,862 / 618,084,532 bytes). Round to 1.5x so the
-    // install estimate covers both copies without promising byte precision.
-    const videoInstallBytes = Math.ceil(Number(scan.videoBytes ?? 0) * 1.5);
+    // Hosted builds install the original Bink sources first. Browser media is
+    // prepared and cached lazily when a movie is actually requested.
+    const sidecarsIncludedAtInstall = state.videoSupport.mode !== "transcode";
+    const videoMultiplier = sidecarsIncludedAtInstall ? 1.5 : 1;
+    const videoInstallBytes = Math.ceil(Number(scan.videoBytes ?? 0) * videoMultiplier);
     const bytes = scan.totalBytes + (state.includeVideos ? videoInstallBytes : 0);
     const videoSuffix = state.includeVideos && scan.videoCount
       ? ` · ${scan.videoCount} videos` : "";
