@@ -119,10 +119,11 @@ function validateCombinedManifest(value) {
     kind: String(file?.kind ?? ""),
     name: String(file?.name ?? ""),
     bytes: Number(file?.bytes),
-    ...(file?.kind === "archive" ? { entryCount: Number(file?.entryCount) } : {}),
+    ...(["archive", "cursor"].includes(file?.kind)
+      ? { entryCount: Number(file?.entryCount) } : {}),
   }));
   const ids = new Set(files.map((file) => file.id));
-  if (files.some((file) => !file.id || !["archive", "video", "save", "replay"].includes(file.kind)
+  if (files.some((file) => !file.id || !["archive", "video", "cursor", "save", "replay"].includes(file.kind)
       || !file.name || !Number.isSafeInteger(file.bytes) || file.bytes <= 0)
       || ids.size !== files.length) {
     throw new Error("The sender returned an invalid file list");
@@ -151,7 +152,7 @@ async function createOutgoingSource({ includeSaves, includeReplays }) {
     async readChunk(id, offset, length) {
       const file = byId.get(id);
       if (!file) throw new Error("Transfer source file is missing");
-      return file.kind === "archive" || file.kind === "video"
+      return file.kind === "archive" || file.kind === "video" || file.kind === "cursor"
         ? game.readChunk(id, offset, length)
         : window.CnCPort.readTransferUserFileChunk(file, offset, length);
     },
@@ -302,7 +303,8 @@ function renderReceiverProgress() {
 async function prepareIncoming(message) {
   if (state.incoming) throw new Error("The sender tried to start a second transfer");
   const manifest = validateCombinedManifest(message.manifest);
-  const gameFiles = manifest.files.filter((file) => file.kind === "archive" || file.kind === "video");
+  const gameFiles = manifest.files.filter((file) =>
+    file.kind === "archive" || file.kind === "video" || file.kind === "cursor");
   const userFiles = manifest.files.filter((file) => file.kind === "save" || file.kind === "replay");
   const gameSession = await window.ZeroHAssetLibrary.beginTransferredLibrary({
     version: DEVICE_TRANSFER_VERSION,
@@ -352,7 +354,8 @@ function currentIncomingFile(message) {
 }
 
 function sessionForFile(incoming, file) {
-  return file.kind === "archive" || file.kind === "video" ? incoming.gameSession : incoming.userSession;
+  return file.kind === "archive" || file.kind === "video" || file.kind === "cursor"
+    ? incoming.gameSession : incoming.userSession;
 }
 
 async function handleReceiverMessage(peerId, message, payload) {

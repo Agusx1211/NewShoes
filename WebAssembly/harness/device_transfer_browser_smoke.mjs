@@ -59,6 +59,19 @@ async function seedSenderInstall(page) {
       });
       totalBytes += bytes.byteLength;
     }
+    const cursorBytes = new Uint8Array(96);
+    cursorBytes.fill(0x5a);
+    const cursorHandle = await install.getFileHandle("OriginalCursors.big", { create: true });
+    const cursorWriter = await cursorHandle.createWritable();
+    await cursorWriter.write(cursorBytes);
+    await cursorWriter.close();
+    const cursorAsset = {
+      name: "OriginalCursors.big",
+      bytes: cursorBytes.byteLength,
+      entryCount: 52,
+      opfsPath: `${installRoot}/OriginalCursors.big`,
+    };
+    totalBytes += cursorBytes.byteLength;
     localStorage.setItem("zeroh-installed-library.v5", JSON.stringify({
       version: 5,
       game: "zeroHour",
@@ -68,8 +81,15 @@ async function seedSenderInstall(page) {
       includeVideos: false,
       archives,
       videos: [],
+      cursorAsset,
     }));
-    return { archiveCount: archives.length, totalBytes, first: archives[0], last: archives.at(-1) };
+    return {
+      archiveCount: archives.length,
+      totalBytes,
+      first: archives[0],
+      last: archives.at(-1),
+      cursorAsset,
+    };
   });
 }
 
@@ -137,11 +157,15 @@ try {
       }
       const first = await (await directory.getFileHandle(installed.archives[0].name)).getFile();
       const last = await (await directory.getFileHandle(installed.archives.at(-1).name)).getFile();
+      const cursor = await (await directory.getFileHandle(installed.cursorAsset.name)).getFile();
       return {
         archiveCount: installed.archives.length,
         totalBytes: installed.totalBytes,
         firstByte: new Uint8Array(await first.slice(0, 1).arrayBuffer())[0],
         lastByte: new Uint8Array(await last.slice(0, 1).arrayBuffer())[0],
+        cursorBytes: cursor.size,
+        cursorFirstByte: new Uint8Array(await cursor.slice(0, 1).arrayBuffer())[0],
+        cursorEntryCount: installed.cursorAsset.entryCount,
         transfer: window.ZeroHDeviceTransfer.snapshot(),
       };
     });
@@ -155,6 +179,9 @@ try {
     assert.equal(verified.totalBytes, seeded.totalBytes);
     assert.equal(verified.firstByte, 17);
     assert.equal(verified.lastByte, (seeded.archiveCount - 1 + 17) & 0xff);
+    assert.equal(verified.cursorBytes, seeded.cursorAsset.bytes);
+    assert.equal(verified.cursorFirstByte, 0x5a);
+    assert.equal(verified.cursorEntryCount, 52);
   }
   assert.equal(await sender.page.locator(".transfer-peer").count(), 2);
   assert.equal(events.filter((event) => event.type === "pageerror").length, 0,
