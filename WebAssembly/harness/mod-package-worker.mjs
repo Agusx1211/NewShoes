@@ -3,6 +3,7 @@ import { inspectClickteamInstaller, readClickteamEntryReader } from "./clickteam
 import { decompressBzip } from "./vendor/seek-bzip.min.mjs";
 import {
   Sha256,
+  classifyArchiveHeader,
   classifyContainerEntries,
   createBigDirectory,
   modContentHash,
@@ -15,6 +16,7 @@ const MAX_EXPANDED_BYTES = 4 * 1024 * 1024 * 1024;
 const MAX_FILES = 200_000;
 const CHUNK_BYTES = 4 * 1024 * 1024;
 const MOD_ROOT_PATTERN = /^cnc-mods\/(mod-[a-f0-9-]{8,64})$/;
+const CUSTOM_ARCHIVE_EXTENSION = /\.(?:ctr|gib)$/i;
 
 let activeRequestId = null;
 let activeSevenZipOutput = [];
@@ -238,9 +240,19 @@ async function withPayloadReader(payload, sevenZip, index, callback) {
   }
 }
 
-async function copyBigPayload(payload, sevenZip, outputPath, index, totals) {
+async function copyBigPayload(payload, sevenZip, outputPath, index, totals, {
+  ignoreNativeWindows = false,
+  acceptSize = null,
+} = {}) {
   return withPayloadReader(payload, sevenZip, index, async (reader) => {
+    if (ignoreNativeWindows) {
+      // Contra packages place PE launcher utilities beside BIGF archives using
+      // the same .ctr extension. Only the native alias is optional here.
+      const header = await reader.read(0, Math.min(4, reader.size));
+      if (classifyArchiveHeader(header) === "native-windows") return null;
+    }
     await validateBigReader(reader, payload.path);
+    acceptSize?.(reader.size);
     const output = await openOutput(outputPath);
     const hash = new Sha256();
     let offset = 0;
@@ -341,21 +353,42 @@ async function importPackage(payload) {
     if (expandedBytes <= 0) {
       throw new Error("No Zero Hour BIG archives or loose engine files were found in this package");
     }
-    if (expandedBytes > MAX_EXPANDED_BYTES) throw new Error("Expanded mod exceeds the 4 GiB browser limit");
-
     const generatedDirectory = discovered.loose.length > 0 ? createBigDirectory(discovered.loose) : null;
+    let acceptedExpandedBytes = discovered.bigs
+      .filter((entry) => !CUSTOM_ARCHIVE_EXTENSION.test(entry.path))
+      .reduce((sum, entry) => sum + entry.size, generatedDirectory?.totalSize ?? 0);
+    if (acceptedExpandedBytes > MAX_EXPANDED_BYTES) {
+      throw new Error("Expanded mod exceeds the 4 GiB browser limit");
+    }
     const totals = {
       completed: 0,
       total: discovered.bigs.reduce((sum, entry) => sum + entry.size, 0)
         + (generatedDirectory?.totalSize ?? 0),
     };
     const archives = [];
+    let customArchiveCount = 0;
     for (let index = 0; index < discovered.bigs.length; index += 1) {
       const entry = discovered.bigs[index];
-      const name = safeArchiveName(entry.path, index);
+      const customArchive = CUSTOM_ARCHIVE_EXTENSION.test(entry.path);
+      const name = safeArchiveName(entry.path, archives.length);
       const opfsPath = `${outputRoot}/archives/${name}`;
-      const result = await copyBigPayload(entry, sevenZip, opfsPath, index, totals);
+      const result = await copyBigPayload(entry, sevenZip, opfsPath, index, totals, {
+        ignoreNativeWindows: customArchive,
+        acceptSize: customArchive ? (size) => {
+          acceptedExpandedBytes += size;
+          if (acceptedExpandedBytes > MAX_EXPANDED_BYTES) {
+            throw new Error("Expanded mod exceeds the 4 GiB browser limit");
+          }
+        } : null,
+      });
+      if (!result) {
+        discovered.ignoredNative.push({ path: entry.path, size: entry.size, folder: false });
+        totals.completed += entry.size;
+        progress("write", `Ignoring native ${basename(entry.path)}`, totals.completed, totals.total);
+        continue;
+      }
       archives.push({ opfsPath, name, enabled: defaultArchiveEnabled(entry.path), ...result });
+      if (customArchive) customArchiveCount += 1;
     }
     if (discovered.loose.length > 0) {
       const name = safeArchiveName("loose-content.big", archives.length);
@@ -364,15 +397,17 @@ async function importPackage(payload) {
         discovered.loose, sevenZip, opfsPath, discovered.bigs.length, totals);
       archives.push({ opfsPath, name, enabled: true, ...result });
     }
+    if (archives.length === 0) {
+      throw new Error("No Zero Hour BIG archives or loose engine files were found in this package");
+    }
     const contentHash = modContentHash(archives);
     const warnings = [];
     if (discovered.ignoredNative.length > 0) {
-      warnings.push(`Ignored ${discovered.ignoredNative.length} native Windows code file(s); DLL/EXE extensions cannot run in the browser.`);
+      warnings.push(`Ignored ${discovered.ignoredNative.length} native Windows code file(s); DLL/EXE code cannot run in the browser.`);
     }
-    const customArchives = discovered.bigs.filter((entry) => /\.(?:ctr|gib)$/i.test(entry.path));
-    if (customArchives.length > 0) {
+    if (customArchiveCount > 0) {
       const disabled = archives.filter((archive) => !archive.enabled).length;
-      warnings.push(`Found ${customArchives.length} launcher-controlled archive(s). Review the archive switches; ${disabled} optional or alternate archive(s) start disabled.`);
+      warnings.push(`Found ${customArchiveCount} launcher-controlled archive(s). Review the archive switches; ${disabled} optional or alternate archive(s) start disabled.`);
     }
     const requestedName = String(payload.name ?? "").trim();
     const requestedVersion = String(payload.version ?? "").trim();

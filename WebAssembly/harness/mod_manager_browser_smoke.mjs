@@ -111,6 +111,13 @@ try {
       name: "Loose ZIP Smoke",
       version: "2.0",
     });
+    const disguisedNative = new File([Uint8Array.of(0x4d, 0x5a, 0x90, 0x00)], "generals.ctr");
+    const folderIni = new File(["AliasValue = 3\n"], "Data/INI/AliasSmoke.ini");
+    const nativeAlias = await store.importFiles([disguisedNative, folderIni], {
+      name: "Native Alias Smoke",
+      version: "3.0",
+    });
+    await store.remove(nativeAlias.mod.id);
     const composition = await store.apply([direct.mod.id, loose.mod.id]);
     await store.useVanilla();
     const saveBytes = new TextEncoder().encode("browser smoke save");
@@ -137,6 +144,7 @@ try {
     return {
       direct: direct.mod,
       loose: loose.mod,
+      nativeAlias: nativeAlias.mod,
       composition,
       installed: store.list().length,
       active: store.active().id,
@@ -149,6 +157,8 @@ try {
   assert.equal(result.active, "vanilla");
   assert.equal(result.direct.archives.length, 1);
   assert.equal(result.loose.archives.length, 1);
+  assert.equal(result.nativeAlias.archives.length, 1);
+  assert.match(result.nativeAlias.warnings.join(" "), /Ignored 1 native Windows code file/i);
   assert.equal(result.loose.looseFileCount, undefined,
     "only normalized persistent metadata should leave the package worker");
   assert.match(result.direct.contentHash, /^[a-f0-9]{64}$/);

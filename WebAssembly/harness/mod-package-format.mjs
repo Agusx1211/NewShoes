@@ -24,6 +24,18 @@ const CONTAINER_EXTENSIONS = /\.(?:7z|exe|rar|zip)$/i;
 // distributions have used .gib). The browser manager normalizes them to .big.
 const BIG_PAYLOAD_EXTENSIONS = /\.(?:big|ctr|gib)$/i;
 
+export function classifyArchiveHeader(value) {
+  const bytes = value instanceof Uint8Array ? value : new Uint8Array(value ?? 0);
+  if (bytes.length >= 4 && bytes[0] === 0x42 && bytes[1] === 0x49
+      && bytes[2] === 0x47 && bytes[3] === 0x46) {
+    return "big";
+  }
+  if (bytes.length >= 2 && bytes[0] === 0x4d && bytes[1] === 0x5a) {
+    return "native-windows";
+  }
+  return "unknown";
+}
+
 function rotateRight(value, amount) {
   return (value >>> amount) | (value << (32 - amount));
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   Sha256,
+  classifyArchiveHeader,
   classifyContainerEntries,
   createBigDirectory,
   enginePathFromContainerPath,
@@ -16,6 +17,15 @@ assert.equal(new Sha256().update(long.subarray(0, 17)).update(long.subarray(17))
   "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
 assert.equal(modContentHash([{ name: "Content.BIG", size: 3, sha256: "a".repeat(64) }]),
   modContentHash([{ name: "content.big", size: 3, sha256: "A".repeat(64) }]));
+assert.equal(classifyArchiveHeader(new TextEncoder().encode("BIGFpayload")), "big");
+const nativeHeader = new Uint8Array(16);
+nativeHeader.set([0x4d, 0x5a, 0x90, 0x00]);
+assert.equal(classifyArchiveHeader(nativeHeader), "native-windows");
+assert.equal(classifyArchiveHeader(new TextEncoder().encode("not an archive")), "unknown");
+await assert.rejects(() => validateBigReader({
+  size: nativeHeader.byteLength,
+  read: async (offset, length) => nativeHeader.subarray(offset, offset + length),
+}, "native alias"), /missing BIGF header/);
 
 const parsed = parse7zSlt([
   "  0M Scan /input/\b\bPath = Wrapper/Data/INI/GameData.ini",

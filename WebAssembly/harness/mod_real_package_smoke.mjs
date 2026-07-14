@@ -13,12 +13,13 @@ const allPackages = [
   { file: "ROTRBeta_185.zip", name: "Rise of the Reds", archives: 14, clickteam: true },
   { file: "MODDB_Ver11.rar", name: "The End of Days", archives: 11 },
   { file: "Contra009Final.rar", name: "Contra", archives: 8, disabled: 5 },
+  { file: "ContraXBeta2.zip", name: "Contra X Beta 2", archives: 24, native: true, optional: true },
 ];
 const requestedPackages = new Set(String(process.env.REAL_MOD_PACKAGES || "")
   .split(",").map((value) => value.trim()).filter(Boolean));
 const packages = requestedPackages.size > 0
   ? allPackages.filter((item) => requestedPackages.has(item.file))
-  : allPackages;
+  : allPackages.filter((item) => !item.optional);
 if (packages.length === 0 || (requestedPackages.size > 0 && packages.length !== requestedPackages.size)) {
   throw new Error("REAL_MOD_PACKAGES contains an unknown test package");
 }
@@ -85,7 +86,7 @@ try {
     if (item.disabled != null) {
       assert.equal(imported.archives.filter((archive) => !archive.enabled).length, item.disabled);
     }
-    if (item.clickteam) {
+    if (item.clickteam || item.native) {
       assert.match(imported.warnings.join(" "), /native Windows code/i);
     }
     console.log("imported", item.file, {
