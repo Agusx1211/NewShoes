@@ -12,6 +12,7 @@
     <link rel="preload" href="./assets/zeroh-command-desert.webp" as="image" type="image/webp">
     <link rel="stylesheet" href="./harness.css">
     <link rel="stylesheet" href="./launcher.css">
+    <link rel="stylesheet" href="./launcher-games.css">
     <link rel="stylesheet" href="./launcher-runtime.css">
   </head>
   <body>
@@ -42,7 +43,17 @@
       <!-- Primer Octicons mark-github-24, copyright GitHub Inc., MIT license.
            See assets/README.md and vendor/primer-octicons-LICENSE.txt. -->
       <symbol id="i-github" viewBox="0 0 24 24"><path d="M10.226 17.284c-2.965-.36-5.054-2.493-5.054-5.256 0-1.123.404-2.336 1.078-3.144-.292-.741-.247-2.314.09-2.965.898-.112 2.111.36 2.83 1.01.853-.269 1.752-.404 2.853-.404 1.1 0 1.999.135 2.807.382.696-.629 1.932-1.1 2.83-.988.315.606.36 2.179.067 2.942.72.854 1.101 2 1.101 3.167 0 2.763-2.089 4.852-5.098 5.234.763.494 1.28 1.572 1.28 2.807v2.336c0 .674.561 1.056 1.235.786 4.066-1.55 7.255-5.615 7.255-10.646C23.5 6.188 18.334 1 11.978 1 5.62 1 .5 6.188.5 12.545c0 4.986 3.167 9.12 7.435 10.669.606.225 1.19-.18 1.19-.786V20.63a2.9 2.9 0 0 1-1.078.224c-1.483 0-2.359-.808-2.987-2.313-.247-.607-.517-.966-1.034-1.033-.27-.023-.359-.135-.359-.27 0-.27.45-.471.898-.471.652 0 1.213.404 1.797 1.235.45.651.921.943 1.483.943.561 0 .92-.202 1.437-.719.382-.381.674-.718.944-.943"/></symbol>
-      <symbol id="i-arcade" viewBox="0 0 48 48"><path d="M8 11h32l4 30H4l4-30Z" fill="#314f62" stroke="#aac4d2" stroke-width="2"/><path d="M12 16h24v14H12z" fill="#142d31" stroke="#68a39b"/><path d="m20 18 7 5-7 5v-10Z" fill="#e2b64f"/><path d="M13 35h8M17 31v8" stroke="#e9f1ed" stroke-width="2"/><circle cx="33" cy="34" r="2.5" fill="#d9693c"/><circle cx="38" cy="38" r="2.5" fill="#e4b84e"/></symbol>
+      <symbol id="i-games" viewBox="0 0 48 48"><path d="M4 14h16l4 4h20v23H4V14Z" fill="#e8a927" stroke="#fff0a8"/><path d="M4 18V9h15l5 5h18v4H4Z" fill="#ffd66b"/><rect x="14" y="21" width="16" height="20" rx="2" transform="rotate(-10 14 21)" fill="#f8f5e7" stroke="#843b32"/><rect x="22" y="20" width="16" height="21" rx="2" transform="rotate(8 22 20)" fill="#f8f5e7" stroke="#263d62"/><path d="m30 25 3 4-3 4-3-4 3-4Z" fill="#263d62"/></symbol>
+      <symbol id="i-solitaire" viewBox="0 0 48 48"><rect x="9" y="5" width="30" height="38" rx="4" fill="#f7f3df" stroke="#6d342d" stroke-width="2"/><path d="M17 15c3-5 11-5 14 0-2 1-4 4-4 7h-6c0-3-2-6-4-7Zm7 7v11" fill="#b34737" stroke="#b34737" stroke-width="2"/><path d="m18 31 6 7 6-7" fill="none" stroke="#394c36" stroke-width="2"/></symbol>
+      <symbol id="i-spider" viewBox="0 0 48 48"><rect x="8" y="5" width="32" height="38" rx="4" fill="#f5f1de" stroke="#313e49" stroke-width="2"/><path d="M24 9v30M12 24h24M15 14l18 20M33 14 15 34" stroke="#9aa5a5"/><circle cx="24" cy="25" r="6" fill="#303d3d"/><path d="m19 20-5-4m5 7-7-1m7 5-7 2m7 1-5 5m15-15 5-4m-5 7 7-1m-7 5 7 2m-7 1 5 5" stroke="#303d3d" stroke-width="2"/></symbol>
+      <symbol id="i-freecell" viewBox="0 0 48 48"><rect x="5" y="7" width="38" height="34" rx="3" fill="#274f40" stroke="#b9d5b4"/><path d="M10 12h7v9h-7zm11 0h7v9h-7zm11 0h7v9h-7z" fill="#ecdfbd" stroke="#84514a"/><rect x="10" y="25" width="11" height="13" rx="2" fill="#f7f3df"/><path d="m15.5 28 3 4-3 4-3-4 3-4Z" fill="#b23e35"/></symbol>
+      <symbol id="i-hearts" viewBox="0 0 48 48"><path d="M24 41S7 31 7 18C7 8 19 5 24 14 29 5 41 8 41 18c0 13-17 23-17 23Z" fill="#be493d" stroke="#ffd1bc" stroke-width="2"/><path d="m26 10-5 11 7 5-6 12" fill="none" stroke="#f8ead5" stroke-width="2.5"/></symbol>
+      <symbol id="i-minesweeper" viewBox="0 0 48 48"><circle cx="24" cy="27" r="13" fill="#343d39" stroke="#b6c4ba" stroke-width="2"/><path d="M24 4v9M8 11l7 7M40 11l-7 7M5 28h7m24 0h7M12 42l5-6m19 6-5-6" stroke="#343d39" stroke-width="3"/><path d="M22 8c8-3 12 2 12 2" fill="none" stroke="#d9993a" stroke-width="3"/><circle cx="20" cy="23" r="3" fill="#ecb94f"/></symbol>
+      <symbol id="i-backgammon" viewBox="0 0 48 48"><rect x="5" y="6" width="38" height="36" rx="3" fill="#b47a43" stroke="#f1d18d" stroke-width="2"/><path d="m8 9 7 14L22 9m4 0 7 14L40 9M8 39l7-14 7 14m4 0 7-14 7 14" fill="#e9d6a7"/><circle cx="15" cy="17" r="4" fill="#39494a"/><circle cx="33" cy="31" r="4" fill="#e7e0ca" stroke="#755036"/></symbol>
+      <symbol id="i-checkers" viewBox="0 0 48 48"><rect x="6" y="6" width="36" height="36" fill="#d9c79a" stroke="#604a35" stroke-width="2"/><path d="M6 6h9v9H6zm18 0h9v9h-9zm-9 9h9v9h-9zm18 0h9v9h-9zM6 24h9v9H6zm18 0h9v9h-9zm-9 9h9v9h-9zm18 0h9v9h-9z" fill="#59634f"/><circle cx="19.5" cy="19.5" r="6" fill="#bd4c3e" stroke="#ffd0a1"/><circle cx="28.5" cy="28.5" r="6" fill="#303a3c" stroke="#bac8bf"/></symbol>
+      <symbol id="i-internet-hearts" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#397dac" stroke="#d8f1ff" stroke-width="2"/><path d="M5 24h38M24 4c6 6 9 13 9 20s-3 14-9 20c-6-6-9-13-9-20S18 10 24 4Z" fill="none" stroke="#cde8f1"/><path d="M24 36S13 30 13 21c0-6 8-8 11-2 3-6 11-4 11 2 0 9-11 15-11 15Z" fill="#c3473c"/></symbol>
+      <symbol id="i-reversi" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#2c7754" stroke="#b9dfc7" stroke-width="2"/><path d="M4 24h40M24 4c6 6 9 13 9 20s-3 14-9 20c-6-6-9-13-9-20S18 10 24 4Z" fill="none" stroke="#72aa8a"/><circle cx="19" cy="24" r="8" fill="#252b2c"/><circle cx="29" cy="24" r="8" fill="#f1edda"/></symbol>
+      <symbol id="i-spades" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#416f99" stroke="#d8efff" stroke-width="2"/><path d="M5 24h38M24 4c6 6 9 13 9 20s-3 14-9 20c-6-6-9-13-9-20S18 10 24 4Z" fill="none" stroke="#b8d5e7"/><path d="M24 10C20 17 12 21 12 28c0 7 8 8 12 3-1 6-3 8-7 9h14c-4-1-6-3-7-9 4 5 12 4 12-3 0-7-8-11-12-18Z" fill="#26333c"/></symbol>
       <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 2.5h10l4 4v15H5v-19Z" fill="#fffce5" stroke="#8996a0"/><path d="M15 2.5v4h4" fill="#dbe5e9"/><path d="M8 10h8M8 13h8M8 16h6" stroke="#64809a" stroke-width="1.2"/></symbol>
       <symbol id="i-replay" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#687eaa"/><path d="m10 7 7 5-7 5V7Z" fill="#fff"/><path d="M6 5v5h5" fill="none" stroke="#f0c45d" stroke-width="1.5"/></symbol>
       <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1" fill="#70a3c4"/><circle cx="16.5" cy="8.5" r="2" fill="#ffe17c"/><path d="m4.5 18 5-6 3.5 3 2.5-2 4 5H4.5Z" fill="#4e7c55"/></symbol>
@@ -72,8 +83,8 @@
         <button class="desktop-icon" type="button" data-open="notepad" aria-label="Open Notepad">
           <span class="desktop-icon-art app-art"><svg><use href="#i-note"/></svg></span><span>Notepad</span>
         </button>
-        <button class="desktop-icon" type="button" data-open="arcade" aria-label="Open Project New Shoes Arcade">
-          <span class="desktop-icon-art app-art"><svg><use href="#i-arcade"/></svg></span><span>Arcade</span>
+        <button class="desktop-icon" type="button" data-open="games" aria-label="Open Games folder">
+          <span class="desktop-icon-art"><svg><use href="#i-games"/></svg></span><span>Games</span>
         </button>
         <button class="desktop-icon" type="button" data-open="programs" aria-label="Open Game Library">
           <span class="desktop-icon-art"><svg><use href="#i-apps"/></svg></span><span>Game Library</span>
@@ -364,20 +375,10 @@
         <article id="browserWindow" class="window browser-window" data-app="browser" style="--x: 52%; --y: 44%; --w: 900px; --h: 600px;" aria-label="Project New Shoes Browser">
           <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-browser"/></svg></span><span>Project New Shoes Browser</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
           <div class="browser-toolbar"><button id="browserBack" type="button" title="Back">‹</button><button id="browserForward" type="button" title="Forward">›</button><button id="browserHome" type="button" title="Home">⌂</button><button id="browserReload" type="button" title="Reload">↻</button><form id="browserAddressForm"><span>Address</span><input id="browserAddress" value="newshoes://start" autocomplete="off" spellcheck="false"><button type="submit">Go</button></form><button id="browserExternal" type="button" title="Open this address in a real browser tab">↗</button></div>
-          <div class="browser-favorites"><span>Links</span><button type="button" data-browser-page="newshoes://start">Command Net</button><button type="button" data-browser-page="newshoes://manual">Field Manual</button><button type="button" data-browser-page="newshoes://status">System Status</button><button type="button" data-browser-page="newshoes://arcade">Arcade</button></div>
+          <div class="browser-favorites"><span>Links</span><button type="button" data-browser-page="newshoes://start">Command Net</button><button type="button" data-browser-page="newshoes://manual">Field Manual</button><button type="button" data-browser-page="newshoes://status">System Status</button><button type="button" data-browser-page="newshoes://games">Games</button></div>
           <div id="browserPage" class="browser-page"></div>
           <iframe id="browserFrame" class="browser-frame" title="External website" sandbox="allow-forms allow-scripts allow-same-origin allow-popups" hidden></iframe>
           <footer class="browser-status"><span id="browserStatus">Local intranet</span><span>Internet zone</span></footer>
-        </article>
-
-        <article id="arcadeWindow" class="window arcade-window" data-app="arcade" style="--x: 56%; --y: 45%; --w: 720px; --h: 570px;" aria-label="Project New Shoes Arcade">
-          <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-arcade"/></svg></span><span>Project New Shoes Arcade</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
-          <div class="arcade-shell">
-            <header class="arcade-header"><div><svg><use href="#i-system"/></svg><span>PROJECT NEW SHOES</span><strong>FIELD ARCADE</strong></div><p>AUTHORIZED DOWNTIME PROTOCOL</p></header>
-            <nav class="arcade-tabs" role="tablist" aria-label="Arcade games"><button id="minefieldTab" type="button" role="tab" aria-controls="minefieldPanel" aria-selected="true" class="is-selected" data-arcade-tab="minefield">Minefield</button><button id="signalsTab" type="button" role="tab" aria-controls="signalsPanel" aria-selected="false" tabindex="-1" data-arcade-tab="signals">Signal Match</button></nav>
-            <section id="minefieldPanel" class="arcade-panel is-visible" role="tabpanel" aria-labelledby="minefieldTab" data-arcade-panel="minefield"><div class="game-instructions"><div><strong>TACTICAL MINEFIELD</strong><span>Clear the sector. Right-click to flag a suspected mine.</span></div><div class="game-counters"><span>MINES <b id="mineCount">10</b></span><button id="mineReset" type="button" aria-label="Reset minefield">🙂</button><span>TIME <b id="mineTimer">000</b></span></div></div><div id="mineGrid" class="mine-grid" aria-label="Minefield game board"></div></section>
-            <section id="signalsPanel" class="arcade-panel" role="tabpanel" aria-labelledby="signalsTab" data-arcade-panel="signals"><div class="game-instructions"><div><strong>SIGNAL MATCH</strong><span>Pair encrypted signals before your memory gives out.</span></div><div class="game-counters"><span>MOVES <b id="memoryMoves">0</b></span><button id="memoryReset" type="button">New grid</button><span>PAIRS <b id="memoryPairs">0/8</b></span></div></div><div id="memoryGrid" class="memory-grid" aria-label="Signal matching game board"></div></section>
-          </div>
         </article>
 
         <article id="programsWindow" class="window programs-window" data-app="programs" style="--x: 53%; --y: 46%; --w: 760px; --h: 515px;" aria-label="Game Library">
@@ -549,7 +550,7 @@
             <button type="button" data-open="explorer"><span class="start-icon"><svg><use href="#i-folder"/></svg></span><div><strong>My Files</strong><small>Browse folders and local files</small></div></button>
             <button type="button" data-open="browser"><span class="start-icon"><svg><use href="#i-browser"/></svg></span><div><strong>Project New Shoes Browser</strong><small>Command Net and the open web</small></div></button>
             <button type="button" data-open="notepad"><span class="start-icon"><svg><use href="#i-note"/></svg></span><div><strong>Notepad</strong><small>Write notes to your virtual drive</small></div></button>
-            <button type="button" data-open="arcade"><span class="start-icon"><svg><use href="#i-arcade"/></svg></span><div><strong>Project New Shoes Arcade</strong><small>Minefield and Signal Match</small></div></button>
+            <button type="button" data-open="games"><span class="start-icon"><svg><use href="#i-games"/></svg></span><div><strong>Games</strong><small>Classic XP games, command-approved</small></div></button>
             <button type="button" data-open="programs"><span class="start-icon"><svg><use href="#i-apps"/></svg></span><div><strong>Game Library</strong><small>Manage installed games</small></div></button>
           </div>
           <div class="start-secondary">
