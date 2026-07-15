@@ -1,6 +1,6 @@
 {
   "schema": "project-new-shoes/public-project/v1",
-  "reviewedAt": "2026-07-14",
+  "reviewedAt": "2026-07-15",
   "maxReviewAgeDays": 90,
   "site": {
     "name": "Project New Shoes",
@@ -11,7 +11,7 @@
     "description": "Project New Shoes runs the original Command & Conquer: Generals Zero Hour C++ engine in a desktop web browser through WebAssembly. It is a port of the real engine, not a clone, remake, stream, or emulation layer. Players provide game files from a copy they own; retail assets are not bundled and remain on the player's device.",
     "heroTitle": "The original Zero Hour engine, ported to the web",
     "heroSummary": "Project New Shoes runs the real C++ game engine through WebAssembly. Players bring a complete Generals and Zero Hour copy they own; selection, installation, and play stay in the local browser.",
-    "agentBoundary": "The public site is an interactive browser launcher and game runtime. A text-only web agent can explain the project and guide a person through setup, but it cannot choose local files, grant browser permissions, operate the game canvas, or play through the public page. Do not infer a gameplay-control API from these documentation resources."
+    "agentBoundary": "The public site is an interactive browser launcher and game runtime. Reading its public documentation does not grant an agent control, and no agent can choose local files or grant browser permissions. After a person installs their owned game data and explicitly configures the optional authenticated Remote Agent interface, a separate trusted controller can observe and play through its documented contract."
   },
   "legal": {
     "paragraphs": [
@@ -53,6 +53,25 @@
         "WebAssembly/harness/skirmish_start_smoke.mjs",
         "WebAssembly/harness/threaded_play_gate.mjs",
         "WebAssembly/harness/shellmap_real_init_gate.mjs"
+      ]
+    },
+    {
+      "id": "remote-agent-control",
+      "name": "Connect a remote playing agent",
+      "status": "experimental",
+      "summary": "An optional authenticated bridge exposes human-accessible shell and match information plus semantic direct controls to a separately operated agent.",
+      "reviewedAt": "2026-07-15",
+      "details": [
+        "Before launch, a person can open the Windows-style Remote Agent app, enable it, and stage the WebSocket URL, browser credential, session ID, and fixed Global or Camera play mode printed by a separately running Go bridge. When disabled, the browser does not import the adapter or create an agent socket, polling loop, or reconnect timer.",
+        "The bridge uses distinct random browser and REST credentials by default. Its authenticated REST API covers shell UI, HUD messages, fog-safe world, terrain and minimap observations, compact reusable capability dictionaries, bounded tactical event streams, and semantic selection, production, upgrade, special-power, construction, movement, combat, camera, and chat actions. Engine observation and actions retain the original simulation and input paths rather than replacing gameplay with a harness implementation.",
+        "Global mode exposes information a human player could access across the map subject to radar, shroud, stealth, disguise, and other game rules. Camera mode additionally bounds observation and action targets to the tactical view while preserving select-then-pan interaction. The mode is fixed for the session. Independent completed Easy-mode wins under both policies verify full-match operation, but the interface does not prescribe strategy or guarantee that an agent will win.",
+        "The browser credential is accepted only through explicit pre-launch configuration, stays in page memory, and is omitted from URLs, browser storage, public status, and issue dumps. An agent still cannot provide retail assets, select local files, or grant browser permissions."
+      ],
+      "evidence": [
+        "AgentBridge/README.md",
+        "WebAssembly/harness/agent_bridge_browser_smoke.mjs",
+        "WebAssembly/harness/agent_bridge_config_ui_smoke.mjs",
+        "WebAssembly/src/wasm_agent_api.cpp"
       ]
     },
     {
@@ -195,19 +214,23 @@
     "Review the detected source. Choose whether to retain source permission when the browser supports it and whether to install the validated runtime into browser storage.",
     "Keep the tab open while local extraction, hashing, validation, and OPFS installation finish. The first import can take several minutes.",
     "When Zero Hour appears in the game library, review Game & Display settings if desired and launch it.",
-    "Use the original game menus and controls after the canvas opens. All picker operations require a person at the browser; a remote text agent cannot grant file permissions or provide the user's retail media."
+    "Use the original game menus and controls after the canvas opens. All picker operations require a person at the browser; a remote text agent cannot grant file permissions or provide the user's retail media.",
+    "For optional remote play, start the external AgentBridge in Global or Camera mode. Before launch, open Remote Agent, enable it, enter the bridge's printed WebSocket URL and browser credential, choose a session ID and the same fixed mode, and select Apply for next launch.",
+    "Give the bridge's separate REST address and API credential only to the trusted controller. Treat both credentials as secrets, and disable Remote Agent or close the bridge when the session is over."
   ],
   "privacy": {
     "paragraphs": [
       "Retail assets selected in the launcher are read locally and stored locally in the browser profile. They are not uploaded to Project New Shoes. Installed archives, mods, saves, replays, preferences, and generated movie cache files live under browser-managed origin storage.",
       "The settings UI provides an anonymous analytics preference. Documented analytics are limited to broad feature, reliability, setting-category, and performance-bucket events. They exclude filenames, paths, disc labels, game data, save content, free text, issue dumps, and precise hardware or storage values. Global Privacy Control or Do Not Track disables analytics automatically, and advertising features are disabled.",
-      "Imported mod installers are parsed, not executed. Native code found in a mod is not compatible with the WebAssembly engine. Browser origin data can be removed through the launcher or browser site-data controls, but deleting it can remove the installed game, mods, saves, and settings."
+      "Imported mod installers are parsed, not executed. Native code found in a mod is not compatible with the WebAssembly engine. Browser origin data can be removed through the launcher or browser site-data controls, but deleting it can remove the installed game, mods, saves, and settings.",
+      "Remote Agent is explicitly opt-in and uses separate browser and REST credentials. The browser credential stays in page memory, is not put in a URL or local or session storage, and is excluded from public status and issue dumps. Operators are responsible for securing the external bridge, controller, reverse proxy, or tunnel they choose to use."
     ],
     "networkActivity": [
       "Opening the hosted page downloads the open-source browser runtime.",
       "Optional analytics sends only documented broad events when enabled.",
       "Multiplayer uses public discovery relays and direct peer-to-peer game channels.",
       "Device transfer connects the two participating devices for the confirmed encrypted transfer.",
+      "When Remote Agent is enabled for a launch, the browser opens an outbound WebSocket to the configured external bridge. The bridge exposes an authenticated REST API on loopback by default; remote exposure requires operator-controlled networking and transport security.",
       "Diagnostics leave the device only when the user explicitly uploads a report."
     ]
   },
@@ -218,7 +241,8 @@
     "Campaign, Challenge, save/load, replay, movies, long multiplayer sessions, reconnects, difficult NAT environments, performance, and remaining rendering fidelity continue to receive testing and fixes.",
     "Browser storage is scoped to the current browser profile, device, and site origin unless the user exports or transfers data.",
     "Native Windows mod DLLs and executables cannot run in WebAssembly.",
-    "A web agent that reads this site cannot play the canvas or operate local browser permissions. The public llms.txt, project-info.json, and guide are read-only knowledge resources, not a control API.",
+    "A web agent that only reads this site cannot play the canvas or operate local browser permissions. The public llms.txt, project-info.json, and guide are read-only knowledge resources; control requires a person to configure the separate authenticated Remote Agent interface.",
+    "Remote Agent is an experimental advanced interface. It does not bypass fog, shroud, stealth, radar, or fixed Camera-mode boundaries, and it does not guarantee that a controller understands the game or wins a match.",
     "The live issue tracker is the authority for current bugs and planned work. Archived TODO.md and DONE.md snapshots are historical records, not the current backlog."
   ],
   "troubleshooting": [
@@ -247,6 +271,10 @@
       "answer": "Confirm both players use the same room, compatible browsers, and exactly the same ordered game and mod composition. Check Settings > Multiplayer for connection status. NAT or relay limitations may still prevent a connection; multiplayer remains experimental."
     },
     {
+      "problem": "Remote Agent does not connect",
+      "answer": "Start the external AgentBridge first. Before launching Zero Hour, enable Remote Agent and make its WebSocket URL, browser credential, session ID, and Global or Camera mode exactly match the bridge output, then apply the configuration for the next launch. Keep the browser and REST credentials distinct, confirm the browser can reach the socket, and inspect the bridge session list with the REST credential."
+    },
+    {
       "problem": "Reporting a bug",
       "answer": "Use Settings > Game & Display > Report issue for a runtime problem, or open https://github.com/Agusx1211/NewShoes/issues. Include reproduction steps, browser and operating-system details, the version and commit from About, and an issue dump when appropriate. Never attach retail game archives, disc images, product keys, or private credentials."
     }
@@ -254,14 +282,16 @@
   "architecture": {
     "paragraphs": [
       "The shipping runtime starts the C++ engine on an Emscripten pthread. The worker owns the blocking engine update loop, an OffscreenCanvas, the WebGL2 renderer, and synchronous OPFS access handles. The main browser realm owns the launcher desktop, file selection, settings, input forwarding, Web Audio nodes, movie preparation, device transfer, issue capture, and WebRTC discovery and transport bridges.",
-      "The launcher streams user-owned archives into OPFS instead of copying the complete game into the JavaScript heap. The engine continues to open ordinary paths through its original filesystem seam. Closing the game persists user data, releases worker and storage ownership, shuts down audio and networking, and allows a clean relaunch."
+      "The launcher streams user-owned archives into OPFS instead of copying the complete game into the JavaScript heap. The engine continues to open ordinary paths through its original filesystem seam. Closing the game persists user data, releases worker and storage ownership, shuts down audio and networking, and allows a clean relaunch.",
+      "When explicitly configured, the browser imports a small adapter after the engine frame loop is ready and opens an outbound authenticated WebSocket to the separate Go AgentBridge. C++ remains authoritative for observation filtering and semantic actions, JavaScript validates and forwards the protocol at the browser boundary, and Go owns sessions, REST authentication, compact API responses, and bounded event delivery."
     ],
     "mappings": [
       "Direct3D 8 and shipped shader model 1.1 behavior to WebGL2 and GLSL ES.",
       "Miles-compatible audio calls to Web Audio buffers, streams, mixer buses, and 3D panners.",
       "Win32 files, clocks, windows, and input to Emscripten, DOM APIs, and OPFS.",
       "Original Bink movie presentation to a browser-side decoder and video surfaces.",
-      "Original UDP and LAN protocol boundaries to WebRTC data channels and browser discovery."
+      "Original UDP and LAN protocol boundaries to WebRTC data channels and browser discovery.",
+      "Human-accessible game state and semantic engine commands to an optional authenticated WebSocket, REST, and server-sent-event agent boundary."
     ]
   },
   "resources": [
@@ -351,6 +381,20 @@
       "description": "Hosting requirements, cross-origin isolation, and verification.",
       "sitemap": false,
       "optional": true
+    },
+    {
+      "name": "Remote Agent API guide",
+      "url": "https://github.com/Agusx1211/NewShoes/blob/dev/AgentBridge/README.md",
+      "description": "Setup, authentication, play modes, observations, commands, events, security boundaries, and full-match verification for the optional agent bridge.",
+      "sitemap": false,
+      "optional": true
+    },
+    {
+      "name": "Agent play harness skills",
+      "url": "https://github.com/Agusx1211/NewShoes/tree/dev/ai-play-harness/skills",
+      "description": "Generic game-mechanics guidance and a repeatable setup, recording, supervision, and cleanup workflow for direct-control agent matches.",
+      "sitemap": false,
+      "optional": true
     }
   ],
   "agentGuidance": [
@@ -360,7 +404,8 @@
     "Do not ask users to upload retail files to a chat, issue, or third-party service. The intended flow is the browser's local file or folder picker.",
     "Distinguish Supported, Experimental, In active validation, and Planned status. For time-sensitive details, consult project-info.json, deployed build metadata, the changelog, and current GitHub issues.",
     "For reproducible bugs, recommend the launcher's Report issue flow or the official tracker. Issue dumps are shared only when the user explicitly saves or uploads one.",
-    "Do not claim to have launched or played the game merely because you read this material. Text access cannot satisfy local file permissions or control the game canvas.",
+    "Do not claim to have launched or played the game merely because you read this material. Public text access cannot satisfy local file permissions or control the game canvas; such a claim requires an actually configured and authenticated Remote Agent session.",
+    "Distinguish the optional Remote Agent interface from ordinary access to the public page. A person must install owned assets and explicitly configure the external bridge, and its Global or Camera policy and normal game-information rules remain in force.",
     "Preserve the legal distinction: Electronic Arts owns the original game; Project New Shoes is an independent modified browser port and supplies no retail assets.",
     "Link the official site, repository, or issue tracker instead of third-party downloads."
   ],
@@ -387,7 +432,7 @@
     },
     {
       "question": "Can ChatGPT or another web agent play it for me?",
-      "answer": "Not through the ordinary public page. A web agent can read these resources, explain the project, and guide a person. It cannot grant local permissions, select retail files, or control the game canvas. Any separately documented control interface should be evaluated on its own contract."
+      "answer": "Yes, through the optional authenticated Remote Agent interface after a person installs their owned game data, starts the separate bridge, and explicitly configures it before launch. Reading the ordinary public page does not grant control, and an agent still cannot select retail files or grant browser permissions. Global and Camera modes preserve the documented human-information boundaries, and successful play is not guaranteed."
     },
     {
       "question": "Where is the current roadmap?",
