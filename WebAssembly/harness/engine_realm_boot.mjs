@@ -113,7 +113,6 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     getHeapF32: () => Module.HEAPF32 ?? null,
     getHeapF64: () => Module.HEAPF64 ?? null,
     preserveDrawingBuffer: opts.preserveDrawingBuffer === true,
-    d3d8BufferMode: opts.d3d8BufferMode,
   });
   for (const [name, hook] of Object.entries(d3d8Hooks)) {
     Module[name] = hook;
