@@ -346,6 +346,7 @@ function summarizeObjectives(objects, localPlayerIndex) {
       return {
         handle: semanticHandle(object, localPlayerIndex),
         kind: "structure",
+        roles: semanticRoles(object),
         position: object.position,
         health: health?.max > 0 ? Math.round(100 * health.current / health.max) : null,
         construction: isConstructionComplete(object)
@@ -404,7 +405,14 @@ function objectDelta(previous, current, localPlayerIndex) {
   return deltas.sort((left, right) => left.handle.localeCompare(right.handle));
 }
 
-function summarizeCombat(objects, deltas, localPlayerIndex) {
+function nonnegativeDifference(current, previous, fallback) {
+  const currentNumber = Number(current);
+  const previousNumber = Number(previous);
+  return Number.isFinite(currentNumber) && Number.isFinite(previousNumber)
+    ? Math.max(0, currentNumber - previousNumber) : fallback;
+}
+
+function summarizeCombat(objects, deltas, localPlayerIndex, currentRecord, previousRecord) {
   const ownedCombat = objects.filter((object) => isManagedSquadMember(object, localPlayerIndex));
   const visibleEnemyCombat = objects.filter((object) =>
     normalizedOwnership(object, localPlayerIndex) === "enemy"
@@ -420,13 +428,19 @@ function summarizeCombat(objects, deltas, localPlayerIndex) {
     }).length,
     visibleEnemies: visibleEnemyCombat.length,
     visibleEnemyStructures: visibleEnemyStructures.length,
+    cumulative: currentRecord || null,
     sincePrevious: {
-      ownedUnitsLost: deltas.filter((delta) => delta.owner === "self"
-        && delta.type === "lost" && delta.kind !== "structure").length,
-      confirmedEnemyUnitsDestroyed: deltas.filter((delta) => delta.owner === "enemy"
-        && delta.type === "destroyed" && delta.kind !== "structure").length,
-      confirmedEnemyStructuresDestroyed: deltas.filter((delta) => delta.owner === "enemy"
-        && delta.type === "destroyed" && delta.kind === "structure").length,
+      ownedUnitsLost: nonnegativeDifference(currentRecord?.unitsLost, previousRecord?.unitsLost,
+        deltas.filter((delta) => delta.owner === "self"
+          && delta.type === "lost" && delta.kind !== "structure").length),
+      confirmedEnemyUnitsDestroyed: nonnegativeDifference(
+        currentRecord?.enemyUnitsDestroyed, previousRecord?.enemyUnitsDestroyed,
+        deltas.filter((delta) => delta.owner === "enemy"
+          && delta.type === "destroyed" && delta.kind !== "structure").length),
+      confirmedEnemyStructuresDestroyed: nonnegativeDifference(
+        currentRecord?.enemyStructuresDestroyed, previousRecord?.enemyStructuresDestroyed,
+        deltas.filter((delta) => delta.owner === "enemy"
+          && delta.type === "destroyed" && delta.kind === "structure").length),
     },
   };
 }
@@ -437,18 +451,39 @@ export function isRelevantStrategicWork(job, frame) {
   return frame - (job.updatedFrame ?? job.createdFrame ?? 0) <= RECENT_WORK_FRAMES;
 }
 
-function routineWork(jobs, frame) {
+function missionMembers(job, raw) {
+  const assigned = new Set(job.objectIds || []);
+  return (raw.objects || []).filter((object) => assigned.has(object.id)
+    && isManagedSquadMember(object, raw.localPlayerIndex));
+}
+
+function composition(records) {
+  return records.reduce((result, record) => {
+    const kind = coarseKind(record);
+    result[kind] = (result[kind] || 0) + 1;
+    return result;
+  }, {});
+}
+
+function routineWork(jobs, raw) {
+  const frame = raw.frame;
   const relevant = jobs.filter((job) => isRelevantStrategicWork(job, frame));
   return {
-    missions: relevant.filter((job) => job.type === "mission").map((job) => ({
-      id: job.id,
-      squadHandle: job.squadHandle || null,
-      mission: job.mission || null,
-      state: job.state,
-      position: job.position || null,
-      target: Number.isInteger(job.targetId) ? `contact:${job.targetId}` : null,
-      blockedReason: job.blockedReason || null,
-    })),
+    missions: relevant.filter((job) => job.type === "mission").map((job) => {
+      const surviving = missionMembers(job, raw);
+      return {
+        id: job.id,
+        squadHandle: job.squadHandle || null,
+        mission: job.mission || null,
+        state: job.state,
+        assignedAtStart: (job.objectIds || []).length,
+        survivingAssigned: surviving.length,
+        survivingComposition: composition(surviving),
+        position: job.position || null,
+        target: Number.isInteger(job.targetId) ? `contact:${job.targetId}` : null,
+        blockedReason: job.blockedReason || null,
+      };
+    }),
     jobs: relevant.filter((job) => job.type !== "mission").map((job) => ({
       id: job.id,
       type: job.type,
@@ -472,7 +507,9 @@ export function compactRoutineObservation(raw, {
   const elapsedFrames = Number.isFinite(previousFrame)
     ? Math.max(0, raw.frame - previousFrame) : 0;
   const deltas = objectDelta(previous, raw, raw.localPlayerIndex);
-  const work = routineWork(jobs, raw.frame);
+  const work = routineWork(jobs, raw);
+  const previousLocal = (previous?.players || []).find((player) =>
+    player.index === raw.localPlayerIndex || player.local);
   const observation = {
     schema: "new-shoes.llm-routine/4",
     snapshot: raw.snapshotId,
@@ -495,7 +532,8 @@ export function compactRoutineObservation(raw, {
     priorities,
     forces: summarizeForces(relevant.filter((object) =>
       normalizedOwnership(object, raw.localPlayerIndex) !== "enemy"), raw.localPlayerIndex),
-    combat: summarizeCombat(relevant, deltas, raw.localPlayerIndex),
+    combat: summarizeCombat(relevant, deltas, raw.localPlayerIndex,
+      local?.combatRecord, previousLocal?.combatRecord),
     facilities: summarizeFacilities(relevant, raw.localPlayerIndex),
     production: summarizeProduction(relevant, raw.localPlayerIndex),
     jobs: work.jobs,

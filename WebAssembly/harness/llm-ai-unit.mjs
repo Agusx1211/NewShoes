@@ -92,7 +92,8 @@ assert.match(buildLlmAiSystemPrompt(profile), /results only on the next planning
 assert.match(buildLlmAiSystemPrompt(profile), /numeric force counts, damage, attrition/);
 assert.match(buildLlmAiSystemPrompt(profile), /feed reinforcements piecemeal/);
 assert.match(buildLlmAiSystemPrompt(profile), /combatProfile metadata/);
-assert.match(buildLlmAiSystemPrompt(profile), /contact:N handle identifies observable targetId N/);
+assert.match(buildLlmAiSystemPrompt(profile), /contact:N handle directly as assign_mission.targetHandle/);
+assert.match(buildLlmAiSystemPrompt(profile), /units produced afterward are not assigned automatically/);
 assert.match(buildLlmAiSystemPrompt(profile), /filter visibility returns row-major readable exploration rows/);
 
 const exported = exportLlmAiSession({
@@ -293,7 +294,7 @@ const tool = {
   assert.deepEqual(strategic.time, { logicFramesPerSecond: 30, gameSeconds: 4,
     sincePrevious: { frames: 60, gameSeconds: 2 } });
   assert.deepEqual(strategic.terrain.extent.hi, [3_000, 3_000, 100]);
-  assert.deepEqual(strategic.objectives, [{ handle: "contact:91", kind: "structure",
+  assert.deepEqual(strategic.objectives, [{ handle: "contact:91", kind: "structure", roles: [],
     position: [2_500, 2_800, 0], health: 75,
     construction: { state: "constructing", percent: 1 } }]);
   assert.equal(strategic.deltas.find((delta) => delta.handle === "contact:91")?.owner, "enemy");
@@ -344,6 +345,7 @@ const tool = {
     ownedDamaged: 0,
     visibleEnemies: 1,
     visibleEnemyStructures: 0,
+    cumulative: null,
     sincePrevious: {
       ownedUnitsLost: 0,
       confirmedEnemyUnitsDestroyed: 0,
@@ -385,7 +387,14 @@ const tool = {
 
   const currentWork = compactRoutineObservation({
     snapshotId: 13, frame: 2_000, localPlayerIndex: 4, game: { outcome: null },
-    players: [{ index: 4, local: true }], objects: [],
+    players: [{ index: 4, local: true }], objects: [
+      { id: 301, owner: 4, teamId: 7, categories: ["infantry", "combat"], construction: -1,
+        capabilities: { orderable: true, mobile: true } },
+      { id: 302, owner: 4, teamId: 7, categories: ["vehicle", "combat"], construction: -1,
+        capabilities: { orderable: true, mobile: true } },
+      { id: 303, owner: 4, teamId: 7, categories: ["infantry", "combat"], construction: -1,
+        capabilities: { orderable: true, mobile: true } },
+    ],
   }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [
     { id: "job:old", type: "production", state: "complete", updatedFrame: 500,
       optionHandle: "produce:Old@facility:1" },
@@ -394,7 +403,8 @@ const tool = {
     { id: "job:blocked", type: "force", state: "blocked", updatedFrame: 1_980,
       archetypeHandle: "force:CurrentTeam", blockedReason: "insufficient funds" },
     { id: "mission:1", type: "mission", state: "moving", updatedFrame: 1_995,
-      squadHandle: "squad:7", mission: "attackRegion", position: { x: 900, y: 800 } },
+      squadHandle: "squad:7", objectIds: [301, 302, 399],
+      mission: "attackRegion", position: { x: 900, y: 800 } },
     { id: "mission:old", type: "mission", state: "failed", updatedFrame: 1_990,
       squadHandle: "squad:7", mission: "scout", blockedReason: "superseded by mission:1" },
   ] });
@@ -406,8 +416,31 @@ const tool = {
   ]);
   assert.deepEqual(currentWork.missions, [{
     id: "mission:1", squadHandle: "squad:7", mission: "attackRegion", state: "moving",
+    assignedAtStart: 3, survivingAssigned: 2,
+    survivingComposition: { infantry: 1, vehicle: 1 },
     position: { x: 900, y: 800 }, target: null, blockedReason: null,
   }]);
+
+  const scoredCombat = compactRoutineObservation({
+    snapshotId: 14, frame: 2_030, localPlayerIndex: 4, game: { outcome: null },
+    players: [{ index: 4, local: true, combatRecord: {
+      unitsBuilt: 20, unitsLost: 7, enemyUnitsDestroyed: 5,
+      structuresBuilt: 8, structuresLost: 1, enemyStructuresDestroyed: 2,
+    } }], objects: [],
+  }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [], previous: {
+    frame: 2_000, players: [{ index: 4, local: true, combatRecord: {
+      unitsBuilt: 18, unitsLost: 4, enemyUnitsDestroyed: 4,
+      structuresBuilt: 8, structuresLost: 1, enemyStructuresDestroyed: 1,
+    } }], objects: [],
+  } });
+  assert.deepEqual(scoredCombat.combat.cumulative, {
+    unitsBuilt: 20, unitsLost: 7, enemyUnitsDestroyed: 5,
+    structuresBuilt: 8, structuresLost: 1, enemyStructuresDestroyed: 2,
+  });
+  assert.deepEqual(scoredCombat.combat.sincePrevious, {
+    ownedUnitsLost: 3, confirmedEnemyUnitsDestroyed: 1,
+    confirmedEnemyStructuresDestroyed: 1,
+  });
 
   assert.equal(hasCategory({ categories: ["STRUC_ture"] }, "structure"), true);
   assert.equal(isConstructionComplete({ construction: -1, status: [] }), true);
@@ -610,7 +643,7 @@ const tool = {
   state.catalogRevision = "catalog:3";
   const tools = createLlmAiGameTools({ rpc, playerIndex: 4, profile, state });
   const mission = await tools.find((entry) => entry.name === "assign_mission").execute({
-    mission: "attackRegion", squadHandle: "squad:9", targetId: 30,
+    mission: "attackRegion", squadHandle: "squad:9", targetHandle: "CONTACT:30",
   });
   assert.equal(mission.ok, true);
   assert.deepEqual(calls.find((entry) => entry.command === "llmAiGameOrder").payload, {

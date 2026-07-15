@@ -281,14 +281,18 @@ try {
             time: { gameSeconds: 11.3 },
             economy: { money: 8_300, powerSufficient: true },
             combat: { ownedReady: 2, ownedDamaged: 0, visibleEnemies: 2,
-              visibleEnemyStructures: 0, sincePrevious: { ownedUnitsLost: 1,
+              visibleEnemyStructures: 0, cumulative: { unitsLost: 3,
+                enemyUnitsDestroyed: 4, enemyStructuresDestroyed: 1 },
+              sincePrevious: { ownedUnitsLost: 1,
                 confirmedEnemyUnitsDestroyed: 0, confirmedEnemyStructuresDestroyed: 0 } },
             forces: [{ handle: "force:owned:builder", count: 2, composition: { infantry: 2 }, roles: ["builder", "harvester"] }],
             facilities: [{ handle: "facility:28", roles: ["commandcenter", "factory"], health: 100, construction: { state: "complete" } }],
             jobs: [{ id: "job:41", type: "production", state: "assembling",
               optionHandle: "produce:GLAInfantryWorker@facility:28", squadHandle: null, blockedReason: null }],
             missions: [{ id: "mission:42", squadHandle: "squad:5", mission: "scout",
-              state: "moving", position: { x: 1750, y: 1750 }, target: null, blockedReason: null }],
+              state: "moving", assignedAtStart: 4, survivingAssigned: 3,
+              survivingComposition: { infantry: 3 },
+              position: { x: 1750, y: 1750 }, target: null, blockedReason: null }],
             threats: [{ handle: "contact:404", kind: "vehicle", count: 2, position: { x: 2010, y: 1800 } }],
             objectives: [{ handle: "objective:supply:4", type: "supply", position: { x: 1880, y: 1650 } }],
             deltas: [
@@ -338,7 +342,7 @@ try {
   assert.equal(await page.locator(".llm-ai-tool-call.is-success").count(), 1);
   assert.equal(await page.locator(".llm-ai-tool-call.is-error").count(), 1);
   assert.match(await page.locator(".llm-ai-transcript-card.is-turn").textContent(), /Turn 1.*Request production.*Assign mission.*Unknown squad handle/is);
-  assert.match(await page.locator(".llm-ai-transcript-card.is-observation").last().textContent(), /Money.*8,300.*Threats.*1.*Recent losses.*1.*job:41.*mission:42.*contact:404/is);
+  assert.match(await page.locator(".llm-ai-transcript-card.is-observation").last().textContent(), /Money.*8,300.*Threats.*1.*Recent losses.*1.*Match losses.*3.*Enemy units destroyed.*4.*Enemy structures destroyed.*1.*job:41.*mission:42.*3\/4 assigned survive.*contact:404/is);
   assert.equal(await page.locator(".llm-ai-raw-details").count() >= 6, true);
   assert.equal(await page.locator(".llm-ai-raw-details[open]").count(), 0);
   const turnRaw = page.locator(".llm-ai-transcript-card.is-turn > .llm-ai-raw-details");

@@ -499,11 +499,18 @@ function describeContact(contact) {
 }
 
 function describeWork(work) {
+  const assigned = work.assignedAtStart === undefined ? null
+    : `${compactValue(work.survivingAssigned)}/${compactValue(work.assignedAtStart)} assigned survive`;
+  const composition = work.survivingComposition
+    && Object.keys(work.survivingComposition).length > 0
+    ? compactValue(work.survivingComposition) : null;
   return [
     work.id,
     work.mission || work.optionHandle || work.type,
     work.squadHandle,
     work.state,
+    assigned,
+    composition,
     work.position ? `at ${compactValue(work.position)}` : null,
     work.target ? `target ${work.target}` : null,
     work.blockedReason,
@@ -543,6 +550,10 @@ function renderObservationEvent(event, startedAt) {
     ["Combat ready", observation.combat?.ownedReady],
     ["Recent losses", observation.combat?.sincePrevious?.ownedUnitsLost,
       observation.combat?.sincePrevious?.ownedUnitsLost ? "warning" : ""],
+    ["Match losses", observation.combat?.cumulative?.unitsLost,
+      observation.combat?.cumulative?.unitsLost ? "warning" : ""],
+    ["Enemy units destroyed", observation.combat?.cumulative?.enemyUnitsDestroyed],
+    ["Enemy structures destroyed", observation.combat?.cumulative?.enemyStructuresDestroyed],
     ["Jobs", observation.jobs?.length ?? 0],
     ["Missions", observation.missions?.length ?? 0],
     ["Objectives", observation.objectives?.length ?? 0],

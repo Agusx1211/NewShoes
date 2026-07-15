@@ -23,6 +23,7 @@
 #include "Common/Money.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
+#include "Common/ScoreKeeper.h"
 #include "Common/SpecialPower.h"
 #include "Common/Team.h"
 #include "Common/ThingFactory.h"
@@ -1584,6 +1585,19 @@ void append_player(std::string &json, Player *player, Player *local_player)
 		json += ",\"skillPoints\":" + std::to_string(player->getSkillPoints());
 		json += ",\"sciencePurchasePoints\":"
 			+ std::to_string(player->getSciencePurchasePoints()) + "}";
+	}
+	json += ",\"combatRecord\":";
+	if (!local) {
+		json += "null";
+	} else {
+		ScoreKeeper *score = player->getScoreKeeper();
+		json += "{\"unitsBuilt\":" + std::to_string(score->getTotalUnitsBuilt());
+		json += ",\"unitsLost\":" + std::to_string(score->getTotalUnitsLost());
+		json += ",\"enemyUnitsDestroyed\":" + std::to_string(score->getTotalUnitsDestroyed());
+		json += ",\"structuresBuilt\":" + std::to_string(score->getTotalBuildingsBuilt());
+		json += ",\"structuresLost\":" + std::to_string(score->getTotalBuildingsLost());
+		json += ",\"enemyStructuresDestroyed\":"
+			+ std::to_string(score->getTotalBuildingsDestroyed()) + "}";
 	}
 	json += "}";
 }

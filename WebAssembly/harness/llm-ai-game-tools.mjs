@@ -47,6 +47,13 @@ function ids(value) {
   return result;
 }
 
+function targetIdFromHandle(value) {
+  if (typeof value !== "string") throw new TypeError("targetHandle must be a string");
+  const match = /^(?:contact|unit|facility):(\d+)$/i.exec(value.trim());
+  if (!match) throw new TypeError("targetHandle must be a contact:, unit:, or facility: handle");
+  return integer(match[1], "target handle ID", 1);
+}
+
 function point(value, required = false) {
   if (value === undefined || value === null) {
     if (required) throw new TypeError("position is required");
@@ -426,11 +433,11 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
     },
     {
       name: "assign_mission",
-      description: "Assign a stable managed squad handle (preferred) or exceptional explicit non-economic unit IDs to defend, scout, capture, harass, attackRegion, escort, or regroup. Managed squads exclude builders and harvesters; use issue_order for deliberate economic-unit movement. Uses original synchronized order, pathfinding, and combat execution. defend, scout, capture, and regroup require position; escort requires targetId; harass and attackRegion accept either position or an observable targetId. Returns persistent mission ID/state. Freshness: execution frame; one command result.",
+      description: "Assign a stable managed squad handle (preferred) or exceptional explicit non-economic unit IDs to defend, scout, capture, harass, attackRegion, escort, or regroup. Managed squads exclude builders and harvesters; use issue_order for deliberate economic-unit movement. Uses original synchronized order, pathfinding, and combat execution. defend, scout, capture, and regroup require position; escort requires an observable targetHandle (preferred) or targetId; harass and attackRegion accept either position or an observable target handle/ID. Returns persistent mission ID/state with exact assigned membership. Freshness: execution frame; one command result.",
       parameters: { type: "object", properties: {
         mission: { type: "string", enum: MISSIONS }, squadHandle: { type: "string", pattern: "^squad:[0-9]+$", maxLength: 64 },
         objectIds: { type: "array", minItems: 1, maxItems: 128, items: { type: "integer", minimum: 1 } },
-        targetId: { type: "integer", minimum: 1 }, position: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false },
+        targetHandle: { type: "string", maxLength: 64 }, targetId: { type: "integer", minimum: 1 }, position: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false },
       }, required: ["mission"], additionalProperties: false },
       validate(args) {
         const value = objectValue(args, "assign_mission arguments");
@@ -439,12 +446,18 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
         if (hasSquad === hasIds) throw new TypeError("provide exactly one of squadHandle or objectIds");
         if (hasSquad && !/^squad:\d+$/.test(value.squadHandle)) throw new TypeError("squadHandle is invalid");
         if (hasIds) ids(value.objectIds);
-        if (value.mission === "escort") integer(value.targetId, "targetId", 1);
-        else if (TARGETABLE_OFFENSIVE_MISSIONS.has(value.mission)) {
-          if (value.targetId === undefined && value.position === undefined) {
-            throw new TypeError(`${value.mission} requires position or targetId`);
+        if (value.targetHandle !== undefined && value.targetId !== undefined) {
+          throw new TypeError("provide targetHandle or targetId, not both");
+        }
+        const hasTarget = value.targetHandle !== undefined || value.targetId !== undefined;
+        if (value.targetHandle !== undefined) targetIdFromHandle(value.targetHandle);
+        if (value.targetId !== undefined) integer(value.targetId, "targetId", 1);
+        if (value.mission === "escort") {
+          if (!hasTarget) throw new TypeError("escort requires targetHandle or targetId");
+        } else if (TARGETABLE_OFFENSIVE_MISSIONS.has(value.mission)) {
+          if (!hasTarget && value.position === undefined) {
+            throw new TypeError(`${value.mission} requires position, targetHandle, or targetId`);
           }
-          if (value.targetId !== undefined) integer(value.targetId, "targetId", 1);
           if (value.position !== undefined) point(value.position, true);
         } else point(value.position, true);
       },
@@ -465,14 +478,16 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
             throw new TypeError(`assign_mission excludes unavailable, builder, or harvester IDs: ${unsafe.join(",")}; use issue_order for deliberate economic-unit movement`);
           }
         }
+        const targetId = args.targetHandle !== undefined
+          ? targetIdFromHandle(args.targetHandle) : args.targetId;
         const position = point(args.position);
         const action = args.mission === "escort" ? "guardObject"
-          : TARGETABLE_OFFENSIVE_MISSIONS.has(args.mission) && args.targetId ? "attack"
+          : TARGETABLE_OFFENSIVE_MISSIONS.has(args.mission) && targetId ? "attack"
             : ["harass", "attackRegion", "capture"].includes(args.mission) ? "attackMove"
               : args.mission === "defend" ? "guardPosition" : "move";
-        const job = strategic.newJob("mission", { mission: args.mission, squadHandle: args.squadHandle || null, objectIds, targetId: args.targetId ?? null, position: position.present ? { x: position.x, y: position.y } : null });
+        const job = strategic.newJob("mission", { mission: args.mission, squadHandle: args.squadHandle || null, objectIds, targetId: targetId ?? null, position: position.present ? { x: position.x, y: position.y } : null });
         try {
-          const result = await call("llmAiGameOrder", { action, objectIds: objectIds.join(","), targetId: args.targetId ?? 0, x: position.x, y: position.y });
+          const result = await call("llmAiGameOrder", { action, objectIds: objectIds.join(","), targetId: targetId ?? 0, x: position.x, y: position.y });
           strategic.supersedeMissions(job);
           return { ok: true, mission: publicJob(job), engine: result };
         } catch (error) {
