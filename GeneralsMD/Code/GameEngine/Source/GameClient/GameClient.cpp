@@ -1075,6 +1075,23 @@ GameMessage::Type GameClient::evaluateContextCommand( Drawable *draw,
 
 }  // end evaluateContextCommand
 
+#ifdef __EMSCRIPTEN__
+void GameClient::agentSynchronizeCommandSelection( void )
+{
+	if( m_commandTranslator )
+		m_commandTranslator->agentSynchronizeSelection();
+}
+
+GameMessage::Type GameClient::agentEvaluateForceAttackCommand( Drawable *draw,
+	const Coord3D *pos,
+	CommandTranslator::CommandEvaluateType cmdType )
+{
+	if( m_commandTranslator )
+		return m_commandTranslator->evaluateForceAttack( draw, pos, cmdType );
+	return GameMessage::MSG_INVALID;
+}
+#endif
+
 //-------------------------------------------------------------------------------------------------
 /** Get the ray effect data for a drawable */
 void GameClient::getRayEffectData( Drawable *draw, RayEffectData *effectData )

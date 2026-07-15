@@ -72,15 +72,51 @@ function diagnosticPageParams() {
   return params;
 }
 
+const hostAgentBridgeConfiguration = window.CnCPortPlayConfig?.agentBridge;
+let agentBridgeConfigurationError = "";
+
+function normalizeAgentBridgeConfiguration(config) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new TypeError("agent bridge configuration must be an object");
+  }
+  const rawUrl = String(config.url ?? "");
+  if (rawUrl.length === 0 || rawUrl.length > 4096) {
+    throw new TypeError("agent bridge URL must be a non-empty string of at most 4096 characters");
+  }
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new TypeError("agent bridge URL is invalid");
+  }
+  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+    throw new TypeError("agent bridge URL must use ws: or wss:");
+  }
+  const token = String(config.token ?? "");
+  if (token.length === 0 || token.length > 4096) {
+    throw new TypeError("agent bridge token must be a non-empty string of at most 4096 characters");
+  }
+  const rawSessionId = String(config.sessionId ?? "");
+  const sessionId = rawSessionId || window.crypto.randomUUID();
+  if (sessionId.length > 128 || !/^[A-Za-z0-9._-]+$/.test(sessionId)) {
+    throw new TypeError("agent bridge session ID may contain only letters, numbers, dot, underscore, and hyphen (128 characters maximum)");
+  }
+  const playMode = String(config.playMode ?? "global");
+  if (playMode !== "global" && playMode !== "camera") {
+    throw new TypeError("agent bridge play mode must be global or camera");
+  }
+  return Object.freeze({ url: url.href, token, sessionId, playMode });
+}
+
 function initialAgentBridgeConfiguration() {
-  const host = window.CnCPortPlayConfig?.agentBridge;
-  const url = typeof host?.url === "string" ? host.url : "";
-  if (!url) return null;
-  return {
-    url,
-    token: String(host?.token ?? ""),
-    sessionId: String(host?.sessionId ?? ""),
-  };
+  const host = hostAgentBridgeConfiguration;
+  if (host == null) return null;
+  try {
+    return normalizeAgentBridgeConfiguration(host);
+  } catch (error) {
+    agentBridgeConfigurationError = error?.message ?? String(error);
+    return null;
+  }
 }
 let agentBridgeConfiguration = initialAgentBridgeConfiguration();
 const activeModContext = (() => {
@@ -1163,6 +1199,7 @@ async function start() {
     // From here onward the engine can be resumed without running init again,
     // even if display setup or the first paced-loop start needs a retry.
     runtimeStarted = true;
+    syncAgentBridgeApp();
     gameRunning = true;
     renderPerformanceOverlay();
     issueRecorder.setSessionContext({ phase: "running" });
@@ -1196,6 +1233,7 @@ async function start() {
           protocol: agentBridge.protocol,
           endpoint: agentBridge.endpoint,
           sessionId: agentBridge.sessionId,
+          playMode: agentBridge.playMode,
         },
       });
     }
@@ -1324,6 +1362,7 @@ async function exitToDesktop() {
       overlay.hidden = true;
       overlay.classList.remove("is-running");
       runtimeStarted = false;
+      syncAgentBridgeApp();
       runtimeClosed = true;
       runtimeClosing = false;
       activeRpc = null;
@@ -2018,6 +2057,182 @@ function setShaderTier(tier, { reload = false } = {}) {
   };
 }
 
+let agentBridgeApp = null;
+
+function populateAgentBridgeForm(config) {
+  if (!agentBridgeApp) return;
+  agentBridgeApp.url.value = String(config?.url ?? "ws://127.0.0.1:18888/engine");
+  agentBridgeApp.token.value = String(config?.token ?? "");
+  agentBridgeApp.session.value = String(config?.sessionId ?? "game-1") || "game-1";
+  const mode = String(config?.playMode ?? "global");
+  agentBridgeApp.mode.value = mode === "camera" ? "camera" : "global";
+  agentBridgeApp.token.type = "password";
+  agentBridgeApp.reveal.textContent = "Show";
+  agentBridgeApp.reveal.setAttribute("aria-pressed", "false");
+}
+
+function agentBridgeStatusPresentation() {
+  const enabled = agentBridgeApp?.enabled.checked === true;
+  if (agentBridgeApp?.error) {
+    return {
+      state: "error",
+      title: "Configuration needs attention",
+      detail: "Correct the highlighted connection details, then apply again.",
+    };
+  }
+  if (!runtimeStarted) {
+    if (!enabled) {
+      return {
+        state: "disabled",
+        title: "Remote Agent is disabled",
+        detail: agentBridgeApp?.dirty
+          ? "Apply to keep the next launch free of agent bridge activity."
+          : "Enable it and apply a connection before launching the game.",
+      };
+    }
+    if (agentBridgeApp?.dirty || !agentBridgeConfiguration) {
+      return {
+        state: "ready",
+        title: "Connection details are not applied yet",
+        detail: "Apply this configuration before launching Zero Hour.",
+      };
+    }
+    return {
+      state: "ready",
+      title: "Ready for the next launch",
+      detail: `${publicAgentBridgeEndpoint(agentBridgeConfiguration.url)} · ${agentBridgeConfiguration.playMode} mode · ${agentBridgeConfiguration.sessionId}`,
+    };
+  }
+  if (!agentBridgeConfiguration) {
+    return {
+      state: "disabled",
+      title: "This game started without a remote agent",
+      detail: "No agent bridge module, socket, polling, or reconnect timer is active.",
+    };
+  }
+  const state = window.CnCPort?.getAgentBridgeState?.() ?? { phase: "disabled" };
+  if (state.phase === "connected" && state.connected === true) {
+    return {
+      state: "connected",
+      title: "Remote agent connected",
+      detail: `${state.endpoint ?? publicAgentBridgeEndpoint(agentBridgeConfiguration.url)} · ${state.playMode ?? agentBridgeConfiguration.playMode} mode · ${state.sessionId ?? agentBridgeConfiguration.sessionId}`,
+    };
+  }
+  if (state.phase === "reconnecting" || state.phase === "disconnected") {
+    return {
+      state: "error",
+      title: "Remote agent disconnected",
+      detail: "The browser is retrying. Check that the bridge process is running and its browser token matches.",
+    };
+  }
+  if (state.phase === "stopped") {
+    return {
+      state: "error",
+      title: "Remote agent connection stopped",
+      detail: "Reload the page before starting another connected game.",
+    };
+  }
+  const title = state.phase === "authenticating"
+    ? "Authenticating with the bridge"
+    : state.phase === "connecting"
+      ? "Connecting to the bridge"
+      : "Waiting for engine initialization";
+  return {
+    state: "connecting",
+    title,
+    detail: "The authenticated connection becomes available after the real engine frame loop starts.",
+  };
+}
+
+function syncAgentBridgeApp({ configurationChanged = false } = {}) {
+  if (!agentBridgeApp) return;
+  if (configurationChanged) {
+    agentBridgeApp.enabled.checked = Boolean(agentBridgeConfiguration);
+    populateAgentBridgeForm(agentBridgeConfiguration);
+    agentBridgeApp.dirty = false;
+    agentBridgeApp.error = "";
+  }
+  const enabled = agentBridgeApp.enabled.checked;
+  agentBridgeApp.enabled.disabled = runtimeStarted;
+  agentBridgeApp.fields.disabled = runtimeStarted || !enabled;
+  agentBridgeApp.apply.disabled = runtimeStarted;
+  agentBridgeApp.lock.hidden = !runtimeStarted;
+  agentBridgeApp.errorNode.hidden = !agentBridgeApp.error;
+  agentBridgeApp.errorNode.textContent = agentBridgeApp.error;
+  const presentation = agentBridgeStatusPresentation();
+  agentBridgeApp.status.dataset.state = presentation.state;
+  agentBridgeApp.status.querySelector("strong").textContent = presentation.title;
+  agentBridgeApp.status.querySelector("small").textContent = presentation.detail;
+  agentBridgeApp.form.dataset.configured = agentBridgeConfiguration ? "true" : "false";
+}
+
+function bindAgentBridgeApp() {
+  if (agentBridgeApp) return;
+  const form = document.querySelector("#agentBridgeForm");
+  if (!form) return;
+  agentBridgeApp = {
+    form,
+    enabled: document.querySelector("#agentBridgeEnabled"),
+    fields: document.querySelector("#agentBridgeFields"),
+    url: document.querySelector("#agentBridgeUrl"),
+    token: document.querySelector("#agentBridgeToken"),
+    reveal: document.querySelector("#agentBridgeTokenReveal"),
+    session: document.querySelector("#agentBridgeSession"),
+    mode: document.querySelector("#agentBridgeMode"),
+    errorNode: document.querySelector("#agentBridgeError"),
+    status: document.querySelector("#agentBridgeStatus"),
+    lock: document.querySelector("#agentBridgeLockNotice"),
+    apply: document.querySelector("#agentBridgeApply"),
+    dirty: false,
+    error: agentBridgeConfigurationError,
+  };
+  const initialDraft = agentBridgeConfiguration
+    ?? (hostAgentBridgeConfiguration && typeof hostAgentBridgeConfiguration === "object"
+      ? hostAgentBridgeConfiguration : null);
+  agentBridgeApp.enabled.checked = Boolean(initialDraft);
+  populateAgentBridgeForm(initialDraft);
+  const markDirty = () => {
+    if (runtimeStarted) return;
+    agentBridgeApp.dirty = true;
+    agentBridgeApp.error = "";
+    syncAgentBridgeApp();
+  };
+  agentBridgeApp.enabled.addEventListener("change", markDirty);
+  agentBridgeApp.fields.addEventListener("input", markDirty);
+  agentBridgeApp.fields.addEventListener("change", markDirty);
+  agentBridgeApp.reveal.addEventListener("click", () => {
+    const reveal = agentBridgeApp.token.type === "password";
+    agentBridgeApp.token.type = reveal ? "text" : "password";
+    agentBridgeApp.reveal.textContent = reveal ? "Hide" : "Show";
+    agentBridgeApp.reveal.setAttribute("aria-pressed", String(reveal));
+  });
+  agentBridgeApp.form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    agentBridgeApp.error = "";
+    try {
+      const enabled = agentBridgeApp.enabled.checked;
+      await configurePlay({
+        agentBridge: enabled ? {
+          url: agentBridgeApp.url.value.trim(),
+          token: agentBridgeApp.token.value,
+          sessionId: agentBridgeApp.session.value.trim(),
+          playMode: agentBridgeApp.mode.value,
+        } : null,
+      });
+      track("setting_changed", {
+        category: "agent_bridge",
+        setting: "enabled",
+        value: enabled ? agentBridgeApp.mode.value : "disabled",
+      });
+    } catch (error) {
+      agentBridgeApp.error = error?.message ?? String(error);
+      syncAgentBridgeApp();
+    }
+  });
+  window.addEventListener("cncport:agentbridge", () => syncAgentBridgeApp());
+  syncAgentBridgeApp();
+}
+
 function playConfiguration() {
   return {
     performanceOverlay: { ...performanceOverlayConfig },
@@ -2030,6 +2245,7 @@ function playConfiguration() {
       configured: true,
       url: publicAgentBridgeEndpoint(agentBridgeConfiguration.url),
       sessionId: agentBridgeConfiguration.sessionId || null,
+      playMode: agentBridgeConfiguration.playMode,
     } : { configured: false },
     consoleVisible: !consolePanel.classList.contains("hidden"),
     fullscreen: Boolean(fullscreenElement()),
@@ -2058,11 +2274,9 @@ async function configurePlay(options = {}) {
     }
     agentBridgeConfiguration = options.agentBridge == null
       ? null
-      : {
-          url: String(options.agentBridge.url ?? ""),
-          token: String(options.agentBridge.token ?? ""),
-          sessionId: String(options.agentBridge.sessionId ?? ""),
-        };
+      : normalizeAgentBridgeConfiguration(options.agentBridge);
+    agentBridgeConfigurationError = "";
+    syncAgentBridgeApp({ configurationChanged: true });
   }
   if (typeof options.consoleVisible === "boolean") {
     setConsoleVisible(options.consoleVisible);
@@ -2125,4 +2339,5 @@ if (window.CnCPortPlayConfig?.shaderTier === "ff"
 }
 initDisplayRuntime();
 bindDesktopGameSettings();
+bindAgentBridgeApp();
 installPlayHostApi();

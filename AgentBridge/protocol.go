@@ -5,6 +5,8 @@ import "encoding/json"
 const (
 	ProtocolVersion   = "cnc-agent/1"
 	WebSocketProtocol = "cnc-agent.v1"
+	PlayModeGlobal    = "global"
+	PlayModeCamera    = "camera"
 	maxMessageBytes   = 4 << 20
 )
 
@@ -13,6 +15,7 @@ type protocolMessage struct {
 	Protocol     string          `json:"protocol,omitempty"`
 	Token        string          `json:"token,omitempty"`
 	SessionID    string          `json:"sessionId,omitempty"`
+	PlayMode     string          `json:"playMode,omitempty"`
 	Capabilities []string        `json:"capabilities,omitempty"`
 	ID           string          `json:"id,omitempty"`
 	Op           string          `json:"op,omitempty"`

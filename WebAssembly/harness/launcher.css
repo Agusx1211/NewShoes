@@ -707,6 +707,59 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   .hardware-footer { flex-direction: column; gap: 3px; }
 }
 
+/* Remote Agent configuration is deliberately separate from normal game
+   settings: enabling it creates an authenticated automation boundary for the
+   next runtime, while leaving it disabled has no transport-side cost. */
+.agent-bridge-body { flex: 1; min-height: 0; overflow: auto; padding: 20px 23px; color: #314b5a; background: linear-gradient(#f8fbfd, #edf3f6); }
+.agent-bridge-heading { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; gap: 15px; padding-bottom: 15px; border-bottom: 1px solid #c7d5dd; }
+.agent-bridge-heading .eyebrow { margin: 0 0 2px; color: #2472a0; font-size: 8px; font-weight: 800; letter-spacing: .14em; }
+.agent-bridge-heading h1 { margin: 0 0 4px; color: #174d73; font: normal 21px "Trebuchet MS", Tahoma, sans-serif; }
+.agent-bridge-heading p:last-child { max-width: 540px; margin: 0; color: #667c89; font-size: 9px; line-height: 1.45; }
+.agent-bridge-mark { width: 54px; height: 54px; display: grid; place-items: center; border: 1px solid #7e9db1; border-radius: 7px; background: linear-gradient(#fff, #dbeaf2); box-shadow: inset 1px 1px #fff, 1px 2px 3px rgba(28,64,88,.16); }
+.agent-bridge-mark svg { width: 43px; height: 43px; }
+.agent-bridge-form { display: grid; gap: 11px; padding-top: 13px; }
+.agent-bridge-enable { min-height: 48px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 8px 11px; border: 1px solid #a9becb; border-radius: 3px; background: #fff; cursor: pointer; }
+.agent-bridge-enable > span, .agent-bridge-field > span:first-child { display: grid; gap: 3px; }
+.agent-bridge-enable strong, .agent-bridge-field strong { color: #315464; font-size: 10px; }
+.agent-bridge-enable small, .agent-bridge-field small { color: #788b96; font-size: 8px; line-height: 1.35; }
+.agent-bridge-enable input { position: absolute; opacity: 0; pointer-events: none; }
+.agent-bridge-enable i { position: relative; width: 38px; height: 19px; border: 1px solid #77909f; border-radius: 10px; background: #d8e0e4; box-shadow: inset 1px 1px 2px rgba(32,60,75,.18); transition: background .12s; }
+.agent-bridge-enable i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border: 1px solid #82939c; border-radius: 50%; background: linear-gradient(#fff, #dce4e7); transition: transform .12s; }
+.agent-bridge-enable input:checked + i { border-color: #2e6e48; background: #61a578; }
+.agent-bridge-enable input:checked + i::after { transform: translateX(18px); }
+.agent-bridge-enable input:focus-visible + i { outline: 2px solid #f0a128; outline-offset: 2px; }
+.agent-bridge-enable input:disabled + i { opacity: .55; }
+.agent-bridge-form fieldset { min-width: 0; display: grid; gap: 0; margin: 0; padding: 0 11px; border: 1px solid #bac9d1; border-radius: 3px; background: #fff; }
+.agent-bridge-form fieldset:disabled { opacity: .55; }
+.agent-bridge-field { min-width: 0; min-height: 55px; display: grid; grid-template-columns: minmax(180px, .9fr) minmax(230px, 1.1fr); align-items: center; gap: 16px; border-top: 1px solid #e0e7eb; }
+.agent-bridge-field:first-child { border-top: 0; }
+.agent-bridge-field > input, .agent-bridge-field select, .agent-bridge-secret input { width: 100%; min-width: 0; height: 29px; padding: 4px 7px; color: #2c4858; border: 1px solid #91a8b5; border-radius: 2px; background: #fff; font: 9px Tahoma, sans-serif; box-shadow: inset 1px 1px 2px rgba(34,68,84,.08); }
+.agent-bridge-field > input:focus, .agent-bridge-field select:focus, .agent-bridge-secret input:focus { border-color: #357eb2; outline: 1px solid #7db6dc; }
+.agent-bridge-secret { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.agent-bridge-secret input { border-radius: 2px 0 0 2px; }
+.agent-bridge-secret button { min-width: 49px; color: #244b71; border: 1px solid #7f9db9; border-left: 0; border-radius: 0 2px 2px 0; background: linear-gradient(#fff, #e5edf5); font-size: 8px; }
+.agent-bridge-error, .agent-bridge-lock { margin: 0; padding: 8px 10px; color: #8a3329; border: 1px solid #d69b93; background: #fff1ee; font-size: 8px; line-height: 1.4; }
+.agent-bridge-lock { color: #71501f; border-color: #d0af69; background: #fff8dc; }
+.agent-bridge-status { min-height: 44px; display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 11px; color: #526a77; border: 1px solid #b4c3cb; border-radius: 3px; background: #f7fafb; }
+.agent-bridge-status > span { width: 11px; height: 11px; border: 1px solid #788d98; border-radius: 50%; background: #aebbc1; box-shadow: inset 0 1px rgba(255,255,255,.55); }
+.agent-bridge-status > div { display: grid; gap: 2px; }.agent-bridge-status strong { font-size: 9px; }.agent-bridge-status small { color: #748792; font-size: 8px; line-height: 1.35; }
+.agent-bridge-status[data-state="ready"] { color: #2d5f77; border-color: #86afc6; background: #eef8fd; }.agent-bridge-status[data-state="ready"] > span { border-color: #2b6d91; background: #4a98c3; }
+.agent-bridge-status[data-state="connecting"] { color: #73551d; border-color: #ceb472; background: #fff9e2; }.agent-bridge-status[data-state="connecting"] > span { border-color: #9b731f; background: #dfac3b; }
+.agent-bridge-status[data-state="connected"] { color: #356347; border-color: #94bd9e; background: #eef9f0; }.agent-bridge-status[data-state="connected"] > span { border-color: #34714a; background: #50a66b; }
+.agent-bridge-status[data-state="error"] { color: #87382f; border-color: #d29d95; background: #fff1ef; }.agent-bridge-status[data-state="error"] > span { border-color: #913d32; background: #c95d4e; }
+.agent-bridge-actions { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.agent-bridge-actions p { max-width: 420px; margin: 0; color: #758893; font-size: 8px; line-height: 1.4; }
+.agent-bridge-actions .button { flex: 0 0 auto; }
+.agent-bridge-actions .button:disabled { opacity: .55; cursor: not-allowed; }
+
+@media (max-width: 760px) {
+  .agent-bridge-body { padding: 16px 13px; }
+  .agent-bridge-heading { grid-template-columns: 45px minmax(0, 1fr); }.agent-bridge-mark { width: 43px; height: 43px; }.agent-bridge-mark svg { width: 34px; height: 34px; }
+  .agent-bridge-heading h1 { font-size: 17px; }
+  .agent-bridge-field { grid-template-columns: 1fr; gap: 6px; padding: 9px 0; }
+  .agent-bridge-actions { align-items: stretch; flex-direction: column; }.agent-bridge-actions .button { align-self: flex-end; }
+}
+
 .managed-storage-set > summary { grid-template-columns: 32px minmax(0, 1fr) auto auto auto; }
 .about-resources { margin: -5px 0 16px; color: #718590; font-size: 8px; }
 .about-resources a { color: #176a9b; }

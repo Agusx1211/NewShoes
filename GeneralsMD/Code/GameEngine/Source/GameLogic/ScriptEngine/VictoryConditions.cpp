@@ -64,6 +64,14 @@ extern "C" void cnc_port_reset_llm_ai_terminal_outcomes(void);
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 #endif
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_agent_begin_match();
+extern "C" void cnc_port_agent_record_match_outcome(
+	UnsignedInt endFrame,
+	Bool localVictory,
+	Bool localDefeat);
+#endif
+
 //-------------------------------------------------------------------------------------------------
 #define ISSET(x) (m_victoryConditions & VICTORY_##x)
 
@@ -187,6 +195,12 @@ void VictoryConditions::update( void )
 		{
 			m_singleAllianceRemaining = true; // don't check again
 			m_endFrame = TheGameLogic->getFrame();
+#ifdef __EMSCRIPTEN__
+			cnc_port_agent_record_match_outcome(
+				m_endFrame,
+				isLocalAlliedVictory(),
+				isLocalAlliedDefeat());
+#endif
 			terminalStarted = true;
 		}
 	}
@@ -324,6 +338,10 @@ Bool VictoryConditions::hasSinglePlayerBeenDefeated(Player *player)
 //-------------------------------------------------------------------------------------------------
 void VictoryConditions::cachePlayerPtrs( void )
 {
+#ifdef __EMSCRIPTEN__
+	cnc_port_agent_begin_match();
+#endif
+
 	if (!TheRecorder->isMultiplayer())
 		return;
 
@@ -386,4 +404,3 @@ Bool VictoryConditions::isLocalDefeat( void )
 
 	return (m_localPlayerDefeated);
 }
-

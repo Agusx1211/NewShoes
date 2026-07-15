@@ -25,6 +25,7 @@ type response struct {
 // Session is one authenticated browser runtime connected to the bridge.
 type Session struct {
 	id           string
+	playMode     string
 	capabilities []string
 	connectedAt  time.Time
 	conn         *websocket.Conn
@@ -37,11 +38,13 @@ type Session struct {
 	closed  chan struct{}
 	once    sync.Once
 	nextID  atomic.Uint64
+	events  *eventManager
 }
 
 // SessionInfo is the public REST representation of a connected runtime.
 type SessionInfo struct {
 	ID           string    `json:"id"`
+	PlayMode     string    `json:"playMode"`
 	ConnectedAt  time.Time `json:"connectedAt"`
 	Capabilities []string  `json:"capabilities"`
 }
@@ -49,12 +52,15 @@ type SessionInfo struct {
 func newSession(
 	ctx context.Context,
 	id string,
+	playMode string,
 	capabilities []string,
 	conn *websocket.Conn,
+	eventsConfig eventRuntimeConfig,
 ) *Session {
 	readCtx, cancel := context.WithCancel(ctx)
-	return &Session{
+	session := &Session{
 		id:           id,
+		playMode:     playMode,
 		capabilities: append([]string(nil), capabilities...),
 		connectedAt:  time.Now().UTC(),
 		conn:         conn,
@@ -63,14 +69,26 @@ func newSession(
 		pending:      make(map[string]chan response),
 		closed:       make(chan struct{}),
 	}
+	session.events = newEventManager(session, eventsConfig)
+	return session
 }
 
 func (s *Session) info() SessionInfo {
 	return SessionInfo{
 		ID:           s.id,
+		PlayMode:     s.playMode,
 		ConnectedAt:  s.connectedAt,
 		Capabilities: append([]string(nil), s.capabilities...),
 	}
+}
+
+func (s *Session) supports(capability string) bool {
+	for _, candidate := range s.capabilities {
+		if candidate == capability {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Session) write(ctx context.Context, message protocolMessage) error {

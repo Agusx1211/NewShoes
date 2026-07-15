@@ -45,7 +45,7 @@ async function waitFor(label, operation, accept, timeoutMs = 120000) {
   throw new Error(`${label} timed out: ${JSON.stringify(last)?.slice(0, 1000)}`);
 }
 
-function startBridge({ port, engineToken, apiToken }) {
+function startBridge({ port, engineToken, apiToken, playMode }) {
   const executable = process.env.AGENT_BRIDGE_EXECUTABLE;
   const command = executable || "go";
   const args = [
@@ -54,6 +54,7 @@ function startBridge({ port, engineToken, apiToken }) {
     `-engine-url=ws://127.0.0.1:${port}/engine`,
     `-engine-token=${engineToken}`,
     `-api-token=${apiToken}`,
+    `-play-mode=${playMode}`,
   ];
   const child = spawn(command, args, {
     cwd: resolve(repoRoot, "AgentBridge"),
@@ -81,16 +82,21 @@ async function main() {
   const engineToken = process.env.AGENT_BRIDGE_ENGINE_TOKEN || randomUUID();
   const apiToken = process.env.AGENT_BRIDGE_API_TOKEN || randomUUID();
   const sessionId = process.env.AGENT_BRIDGE_SESSION_ID || `match-${randomUUID()}`;
+  const playMode = process.env.AGENT_BRIDGE_PLAY_MODE || "global";
   const bridgeBase = `http://127.0.0.1:${port}`;
-  const bridge = startBridge({ port, engineToken, apiToken });
+  const bridge = startBridge({ port, engineToken, apiToken, playMode });
   const staticServer = await startStaticServer({ root: wasmRoot, port: 0, host: "127.0.0.1" });
   const profileDir = resolve(wasmRoot, "artifacts/pw-profiles/agent-bridge-match-host");
   const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
+  const videoDir = process.env.AGENT_BRIDGE_VIDEO_DIR
+    ? resolve(process.env.AGENT_BRIDGE_VIDEO_DIR) : null;
   await rm(profileDir, { recursive: true, force: true });
   await mkdir(profileDir, { recursive: true });
   await mkdir(screenshotDir, { recursive: true });
+  if (videoDir) await mkdir(videoDir, { recursive: true });
 
   let browser;
+  let matchVideo;
   try {
     await waitFor("Go bridge health", () => fetch(`${bridgeBase}/healthz`),
       (response) => response.ok, 30000);
@@ -103,6 +109,9 @@ async function main() {
       ...(process.env.AGENT_BRIDGE_BROWSER_EXECUTABLE
         ? { executablePath: process.env.AGENT_BRIDGE_BROWSER_EXECUTABLE }
         : {}),
+      ...(videoDir ? {
+        recordVideo: { dir: videoDir, size: { width: 1280, height: 800 } },
+      } : {}),
       args: ["--autoplay-policy=no-user-gesture-required", ...browserArgs],
     });
     await browser.addInitScript((config) => {
@@ -112,9 +121,11 @@ async function main() {
         url: `ws://127.0.0.1:${port}/engine`,
         token: engineToken,
         sessionId,
+        playMode,
       },
     });
-    const page = await browser.newPage();
+    const page = browser.pages()[0] ?? await browser.newPage();
+    matchVideo = page.video();
     page.on("pageerror", (error) => process.stderr.write(`[match-host] page error: ${error}\n`));
     page.on("console", (message) => {
       if (message.type() === "error") process.stderr.write(`[match-host] console: ${message.text()}\n`);
@@ -151,6 +162,7 @@ async function main() {
       bridgeBase,
       apiToken,
       sessionId,
+      playMode,
       renderer,
       pageUrl: pageUrl.href,
     })}\n`);
@@ -158,12 +170,17 @@ async function main() {
     await new Promise((resolveStop) => {
       process.once("SIGINT", resolveStop);
       process.once("SIGTERM", resolveStop);
+      if (process.platform !== "win32") process.once("SIGHUP", resolveStop);
     });
     await page.screenshot({
       path: resolve(screenshotDir, "agent-bridge-match-host-final.png"),
     }).catch(() => {});
   } finally {
     if (browser) await browser.close();
+    if (matchVideo) {
+      const videoPath = await matchVideo.path().catch(() => null);
+      if (videoPath) process.stdout.write(`${JSON.stringify({ videoPath })}\n`);
+    }
     await staticServer.close();
     await stopBridge(bridge);
     await rm(profileDir, { recursive: true, force: true });

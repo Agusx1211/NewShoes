@@ -67,7 +67,10 @@ also routes selection, tactical orders, production, construction, upgrades,
 special powers, and camera movement through the original deterministic engine
 messages. The independent REST-only full-match acceptance reached an
 authoritative Easy-AI victory at frame 27,791 and is tracked under GitHub issue
-75. See
+75. The Go side can additionally turn compact snapshots into a resumable,
+bounded SSE stream with coalescing, severity and wake policy, replay/overflow
+semantics, and tactical filters. That agent-facing sugar is demand-driven and
+does not add an engine loop or any work when the bridge/stream is unused. See
 [`AgentBridge/README.md`](AgentBridge/README.md) for the wire boundary and local
 usage.
 

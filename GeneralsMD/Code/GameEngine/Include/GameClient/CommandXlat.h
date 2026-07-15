@@ -48,6 +48,13 @@ public:
 	GameMessage::Type evaluateForceAttack( Drawable *draw, const Coord3D *pos, CommandEvaluateType type );
 	GameMessage::Type evaluateContextCommand( Drawable *draw, const Coord3D *pos, CommandEvaluateType type );
 
+#ifdef __EMSCRIPTEN__
+	/// Data-layer selection updates the UI immediately, before its queued selection
+	/// message reaches this translator. Keep the translator's selection state in sync
+	/// before evaluating an agent-issued context command in that same call.
+	void agentSynchronizeSelection( void );
+#endif
+
 private:
 
 	Int m_objective;

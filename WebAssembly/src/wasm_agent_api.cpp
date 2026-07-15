@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -21,8 +22,12 @@
 #include "Common/Energy.h"
 #include "Common/MessageStream.h"
 #include "Common/Money.h"
+#include "Common/NameKeyGenerator.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
+#include "Common/PlayerTemplate.h"
+#include "Common/Radar.h"
+#include "Common/Science.h"
 #include "Common/ScoreKeeper.h"
 #include "Common/SpecialPower.h"
 #include "Common/Team.h"
@@ -30,6 +35,8 @@
 #include "Common/ThingTemplate.h"
 #include "Common/Upgrade.h"
 #include "GameClient/ControlBar.h"
+#include "GameClient/Color.h"
+#include "GameClient/DisplayString.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/InGameUI.h"
 #include "GameClient/TerrainVisual.h"
@@ -37,7 +44,13 @@
 #include "GameClient/Gadget.h"
 #include "GameClient/GadgetComboBox.h"
 #include "GameClient/GadgetListBox.h"
+#include "GameClient/GadgetPushButton.h"
+#include "GameClient/GadgetSlider.h"
+#include "GameClient/GadgetStaticText.h"
+#include "GameClient/GadgetTabControl.h"
 #include "GameClient/GadgetTextEntry.h"
+#include "GameClient/GUICallbacks.h"
+#include "GameClient/GameClient.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/View.h"
@@ -77,6 +90,7 @@ constexpr Int kMaxTerrainSamples = 16384;
 std::uint64_t g_snapshot_id = 0;
 std::uint64_t g_world_snapshot_id = 0;
 std::uint64_t g_terrain_query_id = 0;
+std::uint64_t g_minimap_snapshot_id = 0;
 std::unordered_map<ObjectID, std::uint64_t> g_public_object_ids;
 std::uint64_t g_next_public_object_id = 1;
 UnsignedInt g_last_world_frame = 0;
@@ -122,6 +136,38 @@ public:
 private:
 	Player *m_previous;
 };
+
+enum class RetainedMatchOutcome : Int {
+	NONE = 0,
+	VICTORY = 1,
+	DEFEAT = 2,
+	ENDED = 3,
+};
+
+UnsignedInt g_retained_match_end_frame = 0;
+RetainedMatchOutcome g_retained_match_outcome = RetainedMatchOutcome::NONE;
+
+struct RetainedPlayerScore {
+	Int index;
+	std::string name;
+	std::string side;
+	std::string type;
+	std::string relationship;
+	bool local;
+	bool observer;
+	std::string outcome;
+	Int score;
+	Int units_built;
+	Int units_lost;
+	Int units_destroyed;
+	Int buildings_built;
+	Int buildings_lost;
+	Int buildings_destroyed;
+	Int money_earned;
+	Int money_spent;
+};
+
+std::vector<RetainedPlayerScore> g_retained_scoreboard;
 
 void append_utf8_codepoint(std::string &out, std::uint32_t codepoint)
 {
@@ -250,11 +296,18 @@ void append_actions(std::string &json, UnsignedInt style, bool interactive)
 		append_json_string(json, name);
 	};
 	if (interactive) add("activate");
-	if (interactive && (style & GWS_ENTRY_FIELD) != 0) add("setText");
+	if (interactive && (style & GWS_ENTRY_FIELD) != 0) {
+		add("setText");
+		add("submit");
+	}
 	if (interactive && (style & (GWS_SCROLL_LISTBOX | GWS_COMBO_BOX)) != 0) {
 		add("selectIndex");
 		add("listItems");
 	}
+	if (interactive && (style & (GWS_VERT_SLIDER | GWS_HORZ_SLIDER)) != 0) {
+		add("setValue");
+	}
+	if (interactive && (style & GWS_TAB_CONTROL) != 0) add("selectTab");
 	json += "]";
 }
 
@@ -324,7 +377,9 @@ void append_window(std::string &json, GameWindow *window)
 	json += ",\"style\":" + std::to_string(style);
 
 	bool text_truncated = false;
-	const UnicodeString text = instance != nullptr
+	const UnicodeString text = (style & GWS_STATIC_TEXT) != 0
+		? GadgetStaticTextGetText(window)
+		: instance != nullptr
 		? instance->getText() : UnicodeString::TheEmptyString;
 	json += ",\"text\":";
 	append_json_string(json, unicode_to_utf8(text, &text_truncated));
@@ -337,6 +392,35 @@ void append_window(std::string &json, GameWindow *window)
 	if ((style & GWS_ENTRY_FIELD) != 0) {
 		json += ",\"value\":";
 		append_json_string(json, unicode_to_utf8(GadgetTextEntryGetText(window)));
+	}
+	if ((style & (GWS_CHECK_BOX | GWS_RADIO_BUTTON)) != 0) {
+		json += ",\"checked\":";
+		json += GadgetCheckLikeButtonIsChecked(window) ? "true" : "false";
+	}
+	if ((style & (GWS_VERT_SLIDER | GWS_HORZ_SLIDER)) != 0) {
+		Int minimum = 0;
+		Int maximum = 0;
+		GadgetSliderGetMinMax(window, &minimum, &maximum);
+		json += ",\"slider\":{\"min\":" + std::to_string(minimum);
+		json += ",\"max\":" + std::to_string(maximum);
+		json += ",\"value\":" + std::to_string(GadgetSliderGetPosition(window)) + "}";
+	}
+	if ((style & GWS_PROGRESS_BAR) != 0) {
+		const std::intptr_t progress = reinterpret_cast<std::intptr_t>(window->winGetUserData());
+		json += ",\"progress\":" + std::to_string(progress);
+	}
+	if ((style & GWS_TAB_CONTROL) != 0) {
+		TabControlData *tabs = static_cast<TabControlData *>(window->winGetUserData());
+		if (tabs != nullptr) {
+			json += ",\"tabs\":{\"count\":" + std::to_string(tabs->tabCount);
+			json += ",\"selectedIndex\":" + std::to_string(tabs->activeTab);
+			json += ",\"enabled\":[";
+			for (Int index = 0; index < tabs->tabCount; ++index) {
+				if (index != 0) json += ",";
+				json += tabs->subPaneDisabled[index] ? "false" : "true";
+			}
+			json += "]}";
+		}
 	}
 	if ((style & GWS_SCROLL_LISTBOX) != 0) {
 		const Int row_count = GadgetListBoxGetNumEntries(window);
@@ -657,6 +741,34 @@ Relationship relationship_to_local(const Player *player, const Player *local_pla
 	return local_player->getRelationship(player->getDefaultTeam());
 }
 
+enum class SourceCameraPolicy {
+	UNRESTRICTED,
+	VISIBLE,
+	VISIBLE_OR_SELECTED,
+};
+
+bool source_satisfies_camera_policy(Object *object, SourceCameraPolicy policy)
+{
+	if (policy == SourceCameraPolicy::UNRESTRICTED) return true;
+	if (point_in_camera(*object->getPosition())) return true;
+	return policy == SourceCameraPolicy::VISIBLE_OR_SELECTED
+		&& object->getDrawable()->isSelected();
+}
+
+std::vector<Object *> sorted_game_objects()
+{
+	std::vector<Object *> objects;
+	if (TheGameLogic == nullptr) return objects;
+	for (Object *object = TheGameLogic->getFirstObject(); object != nullptr;
+		object = object->getNextObject()) {
+		objects.push_back(object);
+	}
+	std::sort(objects.begin(), objects.end(), [](const Object *left, const Object *right) {
+		return left->getID() < right->getID();
+	});
+	return objects;
+}
+
 bool is_observable_object(
 	Object *object,
 	Player *perspective_player,
@@ -730,7 +842,8 @@ Object *resolve_public_object(Int public_id)
 bool parse_public_object_ids(
 	const char *encoded,
 	std::vector<Object *> &objects,
-	std::string &error)
+	std::string &error,
+	SourceCameraPolicy camera_policy)
 {
 	objects.clear();
 	if (encoded == nullptr || encoded[0] == '\0') {
@@ -764,6 +877,12 @@ bool parse_public_object_ids(
 		if (!controlled_by_agent_player(object) || !object->isSelectable()
 			|| object->getDrawable() == nullptr || object->getContainedBy() != nullptr) {
 			error = "every ordered object must be a visible, selectable, locally controlled world object";
+			return false;
+		}
+		if (!source_satisfies_camera_policy(object, camera_policy)) {
+			error = camera_policy == SourceCameraPolicy::VISIBLE
+				? "camera-bound selection requires every object to be inside the tactical view"
+				: "camera-bound actions require every source object to be inside the tactical view or already selected there";
 			return false;
 		}
 		objects.push_back(object);
@@ -833,9 +952,54 @@ void post_selection(const std::vector<Object *> &objects)
 		if (local_player) TheInGameUI->selectDrawable(object->getDrawable());
 		selection->appendObjectIDArgument(object->getID());
 	}
+	if (TheGameClient != nullptr) {
+		TheGameClient->agentSynchronizeCommandSelection();
+	}
 }
 
-Object *resolve_observable_target(Int public_id, Player *local_player, std::string &error)
+void clear_context_command_modes()
+{
+	TheInGameUI->setGUICommand(nullptr);
+	TheInGameUI->setWaypointMode(FALSE);
+	TheInGameUI->setForceMoveMode(FALSE);
+	TheInGameUI->setForceAttackMode(FALSE);
+	TheInGameUI->setPreferSelectionMode(FALSE);
+	TheInGameUI->clearAttackMoveToMode();
+}
+
+const char *context_message_name(GameMessage::Type type)
+{
+	switch (type) {
+		case GameMessage::MSG_DO_MOVETO: return "move";
+		case GameMessage::MSG_DO_ATTACKMOVETO: return "attackMove";
+		case GameMessage::MSG_DO_FORCEMOVETO: return "forceMove";
+		case GameMessage::MSG_DO_ATTACK_OBJECT: return "attack";
+		case GameMessage::MSG_DO_FORCE_ATTACK_OBJECT: return "forceAttackObject";
+		case GameMessage::MSG_DO_FORCE_ATTACK_GROUND: return "forceAttackGround";
+		case GameMessage::MSG_GET_REPAIRED: return "getRepaired";
+		case GameMessage::MSG_GET_HEALED: return "getHealed";
+		case GameMessage::MSG_DO_REPAIR: return "repair";
+		case GameMessage::MSG_RESUME_CONSTRUCTION: return "resumeConstruction";
+		case GameMessage::MSG_ENTER: return "enter";
+		case GameMessage::MSG_DOCK: return "dock";
+		case GameMessage::MSG_ADD_WAYPOINT: return "waypoint";
+		case GameMessage::MSG_DO_SPECIAL_POWER: return "specialPower";
+		case GameMessage::MSG_DO_SPECIAL_POWER_AT_LOCATION: return "specialPowerAtLocation";
+		case GameMessage::MSG_DO_SPECIAL_POWER_AT_OBJECT: return "specialPowerAtObject";
+		case GameMessage::MSG_DO_SPECIAL_POWER_OVERRIDE_DESTINATION: return "overrideSpecialPowerDestination";
+		case GameMessage::MSG_DO_SALVAGE: return "salvage";
+		case GameMessage::MSG_SET_RALLY_POINT: return "setRallyPoint";
+		case GameMessage::MSG_COMBATDROP_AT_LOCATION: return "combatDropAtLocation";
+		case GameMessage::MSG_COMBATDROP_AT_OBJECT: return "combatDropAtObject";
+		default: return "context";
+	}
+}
+
+Object *resolve_observable_target(
+	Int public_id,
+	Player *local_player,
+	std::string &error,
+	bool camera_bound)
 {
 	Object *target = resolve_public_object(public_id);
 	ObjectShroudStatus shroud = OBJECTSHROUD_INVALID;
@@ -844,6 +1008,10 @@ Object *resolve_observable_target(Int public_id, Player *local_player, std::stri
 	if (target == nullptr
 		|| !is_observable_object(target, local_player, shroud, screen, in_camera)) {
 		error = "targetId is stale or is not currently observable";
+		return nullptr;
+	}
+	if (camera_bound && !in_camera) {
+		error = "camera-bound actions require the target object to be inside the tactical view";
 		return nullptr;
 	}
 	return target;
@@ -976,12 +1144,43 @@ const char *command_type_name(GUICommandType type)
 		case GUI_COMMAND_TOGGLE_OVERCHARGE: return "toggleOvercharge";
 		case GUI_COMMAND_COMBATDROP: return "combatDrop";
 		case GUI_COMMAND_SWITCH_WEAPON: return "switchWeapon";
+		case GUICOMMANDMODE_HIJACK_VEHICLE: return "hijackVehicle";
+		case GUICOMMANDMODE_CONVERT_TO_CARBOMB: return "convertToCarBomb";
+		case GUICOMMANDMODE_SABOTAGE_BUILDING: return "sabotageBuilding";
+		case GUICOMMANDMODE_PLACE_BEACON: return "placeBeacon";
 		case GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT: return "shortcutSpecialPower";
 		case GUI_COMMAND_SPECIAL_POWER_CONSTRUCT: return "specialPowerConstruct";
 		case GUI_COMMAND_SPECIAL_POWER_CONSTRUCT_FROM_SHORTCUT: return "shortcutSpecialPowerConstruct";
 		case GUI_COMMAND_SELECT_ALL_UNITS_OF_TYPE: return "selectAllOfType";
 		case GUI_COMMAND_NONE:
 		default: return "unsupported";
+	}
+}
+
+const char *command_execution_name(GUICommandType type)
+{
+	switch (type) {
+		case GUI_COMMAND_ATTACK_MOVE:
+		case GUI_COMMAND_GUARD:
+		case GUI_COMMAND_GUARD_WITHOUT_PURSUIT:
+		case GUI_COMMAND_GUARD_FLYING_UNITS_ONLY:
+		case GUI_COMMAND_WAYPOINTS:
+			return "order";
+		case GUI_COMMAND_CANCEL_UNIT_BUILD:
+		case GUI_COMMAND_CANCEL_UPGRADE:
+			return "production";
+		case GUI_COMMAND_EXIT_CONTAINER:
+			return "container";
+		case GUI_COMMAND_PURCHASE_SCIENCE:
+		case GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT:
+		case GUI_COMMAND_SPECIAL_POWER_CONSTRUCT_FROM_SHORTCUT:
+		case GUI_COMMAND_SELECT_ALL_UNITS_OF_TYPE:
+			return "playerCommand";
+		case GUICOMMANDMODE_PLACE_BEACON:
+		case GUI_COMMAND_BEACON_DELETE:
+			return "beacon";
+		default:
+			return "command";
 	}
 }
 
@@ -997,6 +1196,50 @@ const char *can_make_name(CanMakeType type)
 		case CANMAKE_MAXED_OUT_FOR_PLAYER: return "playerLimit";
 		default: return "unavailable";
 	}
+}
+
+bool command_prerequisites_met(const CommandButton *command, Player *player)
+{
+	if (command == nullptr || player == nullptr) return false;
+	if (command->getCommandType() == GUI_COMMAND_PURCHASE_SCIENCE) return true;
+	const SpecialPowerTemplate *special = command->getSpecialPowerTemplate();
+	if (special != nullptr) {
+		if (!BitTest(command->getOptions(), NEED_SPECIAL_POWER_SCIENCE)) return true;
+		const ScienceType required = special->getRequiredScience();
+		return required == SCIENCE_INVALID || player->hasScience(required);
+	}
+	for (ScienceType science : command->getScienceVec()) {
+		if (!player->hasScience(science)) return false;
+	}
+	return true;
+}
+
+const char *upgrade_availability(const CommandButton *command, Object *source)
+{
+	const UpgradeTemplate *upgrade = command != nullptr
+		? command->getUpgradeTemplate() : nullptr;
+	Player *player = source != nullptr ? source->getControllingPlayer() : nullptr;
+	ProductionUpdateInterface *production = source != nullptr
+		? source->getProductionUpdateInterface() : nullptr;
+	if (upgrade == nullptr || player == nullptr || production == nullptr
+		|| TheUpgradeCenter == nullptr) {
+		return "producerDisabled";
+	}
+	if (!command_prerequisites_met(command, player)) return "missingPrerequisite";
+	if (upgrade->getUpgradeType() == UPGRADE_TYPE_PLAYER) {
+		if (player->hasUpgradeComplete(upgrade)) return "complete";
+		if (player->hasUpgradeInProduction(upgrade)) return "inProduction";
+	} else {
+		if (source->hasUpgrade(upgrade)) return "complete";
+		if (!source->affectedByUpgrade(upgrade)) return "unavailable";
+		if (production->isUpgradeInQueue(upgrade)) return "inProduction";
+	}
+	const CanMakeType can_queue = production->canQueueUpgrade(upgrade);
+	if (can_queue != CANMAKE_OK) return can_make_name(can_queue);
+	if (!TheUpgradeCenter->canAffordUpgrade(player, upgrade, FALSE)) {
+		return "insufficientFunds";
+	}
+	return "available";
 }
 
 Object *special_power_execution_source(
@@ -1016,6 +1259,64 @@ Object *special_power_execution_source(
 		: nullptr;
 }
 
+bool science_is_purchasable(Player *player, ScienceType science)
+{
+	return player != nullptr && TheScienceStore != nullptr && science != SCIENCE_INVALID
+		&& !player->hasScience(science) && !player->isScienceDisabled(science)
+		&& !player->isScienceHidden(science)
+		&& TheScienceStore->playerHasPrereqsForScience(player, science)
+		&& TheScienceStore->getSciencePurchaseCost(science)
+			<= player->getSciencePurchasePoints();
+}
+
+ScienceType first_purchasable_science(const CommandButton *command, Player *player)
+{
+	if (command == nullptr) return SCIENCE_INVALID;
+	for (ScienceType science : command->getScienceVec()) {
+		if (science_is_purchasable(player, science)) return science;
+	}
+	return SCIENCE_INVALID;
+}
+
+void append_science_definitions(
+	std::string &json,
+	const CommandButton *command,
+	Player *player,
+	bool include_state)
+{
+	json += ",\"sciences\":[";
+	bool first = true;
+	if (command != nullptr && TheScienceStore != nullptr) {
+		for (ScienceType science : command->getScienceVec()) {
+			if (!first) json += ",";
+			first = false;
+			json += "{\"name\":";
+			append_json_string(json,
+				TheScienceStore->getInternalNameForScience(science).str());
+			json += ",\"cost\":"
+				+ std::to_string(TheScienceStore->getSciencePurchaseCost(science));
+			if (include_state && player != nullptr) {
+				json += ",\"owned\":";
+				json += player->hasScience(science) ? "true" : "false";
+				json += ",\"prerequisitesMet\":";
+				json += TheScienceStore->playerHasPrereqsForScience(player, science)
+					? "true" : "false";
+				json += ",\"rootPrerequisitesMet\":";
+				json += TheScienceStore->playerHasRootPrereqsForScience(player, science)
+					? "true" : "false";
+				json += ",\"disabled\":";
+				json += player->isScienceDisabled(science) ? "true" : "false";
+				json += ",\"hidden\":";
+				json += player->isScienceHidden(science) ? "true" : "false";
+				json += ",\"available\":";
+				json += science_is_purchasable(player, science) ? "true" : "false";
+			}
+			json += "}";
+		}
+	}
+	json += "]";
+}
+
 void append_command(std::string &json, const CommandButton *command, Object *source, Int slot)
 {
 	const GUICommandType type = command->getCommandType();
@@ -1025,6 +1326,8 @@ void append_command(std::string &json, const CommandButton *command, Object *sou
 	json += ",\"slot\":" + std::to_string(slot);
 	json += ",\"type\":";
 	append_json_string(json, command_type_name(type));
+	json += ",\"execution\":";
+	append_json_string(json, command_execution_name(type));
 	json += ",\"options\":" + std::to_string(options);
 	json += ",\"needsPosition\":";
 	json += BitTest(options, NEED_TARGET_POS) ? "true" : "false";
@@ -1064,6 +1367,8 @@ void append_command(std::string &json, const CommandButton *command, Object *sou
 		json += ",\"complete\":";
 		json += (upgrade->getUpgradeType() == UPGRADE_TYPE_PLAYER
 			? player->hasUpgradeComplete(upgrade) : source->hasUpgrade(upgrade)) ? "true" : "false";
+		json += ",\"availability\":";
+		append_json_string(json, upgrade_availability(command, source));
 		json += "}";
 	}
 
@@ -1072,6 +1377,8 @@ void append_command(std::string &json, const CommandButton *command, Object *sou
 	if (special == nullptr) {
 		json += "null";
 	} else {
+		const bool prerequisites_met = command_prerequisites_met(
+			command, source->getControllingPlayer());
 		Object *power_source = special_power_execution_source(
 			command, source, source->getControllingPlayer());
 		SpecialPowerModuleInterface *module = power_source != nullptr
@@ -1081,8 +1388,11 @@ void append_command(std::string &json, const CommandButton *command, Object *sou
 		json += ",\"sourceId\":";
 		json += power_source != nullptr
 			? std::to_string(public_object_id(power_source)) : "null";
+		json += ",\"prerequisitesMet\":";
+		json += prerequisites_met ? "true" : "false";
 		json += ",\"ready\":";
 		json += module != nullptr && module->isReady() && command->isReady(power_source)
+			&& prerequisites_met
 			? "true" : "false";
 		json += ",\"percentReady\":";
 		if (module != nullptr) append_real(json, module->getPercentReady());
@@ -1090,6 +1400,9 @@ void append_command(std::string &json, const CommandButton *command, Object *sou
 		json += ",\"readyFrame\":";
 		json += module != nullptr ? std::to_string(module->getReadyFrame()) : "null";
 		json += "}";
+	}
+	if (!command->getScienceVec().empty()) {
+		append_science_definitions(json, command, source->getControllingPlayer(), true);
 	}
 	json += "}";
 }
@@ -1126,6 +1439,8 @@ void append_command_definition(
 	json += ",\"slot\":" + std::to_string(slot);
 	json += ",\"type\":";
 	append_json_string(json, command_type_name(type));
+	json += ",\"execution\":";
+	append_json_string(json, command_execution_name(type));
 	json += ",\"options\":" + std::to_string(options);
 	json += ",\"needsPosition\":";
 	json += BitTest(options, NEED_TARGET_POS) ? "true" : "false";
@@ -1164,6 +1479,9 @@ void append_command_definition(
 	json += ",\"specialPower\":";
 	if (special == nullptr) json += "null";
 	else append_json_string(json, special->getName().str());
+	if (!command->getScienceVec().empty()) {
+		append_science_definitions(json, command, player, false);
+	}
 	json += "}";
 }
 
@@ -1198,9 +1516,13 @@ void append_command_states(std::string &json, Object *object)
 				Player *player = object->getControllingPlayer();
 				json += (upgrade->getUpgradeType() == UPGRADE_TYPE_PLAYER
 					? player->hasUpgradeComplete(upgrade) : object->hasUpgrade(upgrade)) ? "true" : "false";
+				json += ",\"availability\":";
+				append_json_string(json, upgrade_availability(command, object));
 				first_state = false;
 			}
 			if (special != nullptr) {
+				const bool prerequisites_met = command_prerequisites_met(
+					command, object->getControllingPlayer());
 				Object *power_source = special_power_execution_source(
 					command, object, object->getControllingPlayer());
 				SpecialPowerModuleInterface *module = power_source != nullptr
@@ -1209,8 +1531,11 @@ void append_command_states(std::string &json, Object *object)
 				json += "\"sourceId\":";
 				json += power_source != nullptr
 					? std::to_string(public_object_id(power_source)) : "null";
+				json += ",\"prerequisitesMet\":";
+				json += prerequisites_met ? "true" : "false";
 				json += ",\"ready\":";
 				json += module != nullptr && module->isReady() && command->isReady(power_source)
+					&& prerequisites_met
 					? "true" : "false";
 				json += ",\"percentReady\":";
 				if (module != nullptr) append_real(json, module->getPercentReady());
@@ -1472,6 +1797,58 @@ const char *legal_build_name(LegalBuildCode code)
 	}
 }
 
+LegalBuildCode legal_build_location(
+	const Coord3D &position,
+	const ThingTemplate *product,
+	Real angle,
+	Object *source)
+{
+	const UnsignedInt options = BuildAssistant::USE_QUICK_PATHFIND
+		| BuildAssistant::TERRAIN_RESTRICTIONS | BuildAssistant::CLEAR_PATH
+		| BuildAssistant::NO_OBJECT_OVERLAP | BuildAssistant::SHROUD_REVEALED
+		| BuildAssistant::IGNORE_STEALTHED
+		| BuildAssistant::FAIL_STEALTHED_WITHOUT_FEEDBACK;
+	const LegalBuildCode result = TheBuildAssistant->isLocationLegalToBuild(
+		&position, product, angle, options, source, nullptr);
+	if (TheTerrainVisual != nullptr) TheTerrainVisual->removeAllBibs();
+	return result;
+}
+
+void post_special_power_message(
+	const SpecialPowerTemplate *special,
+	UnsignedInt options,
+	ObjectID source_id,
+	Object *target,
+	const Coord3D &position,
+	Real angle,
+	bool needs_target,
+	bool needs_position)
+{
+	if (needs_target) {
+		GameMessage *message = append_agent_message(
+			GameMessage::MSG_DO_SPECIAL_POWER_AT_OBJECT);
+		message->appendIntegerArgument(special->getID());
+		message->appendObjectIDArgument(target->getID());
+		message->appendIntegerArgument(options);
+		message->appendObjectIDArgument(source_id);
+	} else if (needs_position) {
+		GameMessage *message = append_agent_message(
+			GameMessage::MSG_DO_SPECIAL_POWER_AT_LOCATION);
+		message->appendIntegerArgument(special->getID());
+		message->appendLocationArgument(position);
+		message->appendRealArgument(angle);
+		message->appendObjectIDArgument(target != nullptr ? target->getID() : INVALID_ID);
+		message->appendIntegerArgument(options);
+		message->appendObjectIDArgument(source_id);
+	} else {
+		GameMessage *message = append_agent_message(
+			GameMessage::MSG_DO_SPECIAL_POWER);
+		message->appendIntegerArgument(special->getID());
+		message->appendIntegerArgument(options);
+		message->appendObjectIDArgument(source_id);
+	}
+}
+
 void finish_action_result(
 	std::string &json,
 	const char *action,
@@ -1600,6 +1977,86 @@ void append_player(std::string &json, Player *player, Player *local_player)
 			+ std::to_string(score->getTotalBuildingsDestroyed()) + "}";
 	}
 	json += "}";
+}
+
+void capture_retained_scoreboard()
+{
+	g_retained_scoreboard.clear();
+	if (ThePlayerList == nullptr || TheNameKeyGenerator == nullptr) return;
+	Player *local_player = ThePlayerList->getLocalPlayer();
+	for (Int slot = 0; slot < MAX_SLOTS; ++slot) {
+		AsciiString internal_name;
+		internal_name.format("player%d", slot);
+		Player *player = ThePlayerList->findPlayerWithNameKey(
+			TheNameKeyGenerator->nameToKey(internal_name));
+		if (player == nullptr) continue;
+		ScoreKeeper *score = player->getScoreKeeper();
+		if (score == nullptr) continue;
+		RetainedPlayerScore retained = {
+			player->getPlayerIndex(),
+			unicode_to_utf8(player->getPlayerDisplayName()),
+			player->getSide().str(),
+			player_type_name(player->getPlayerType()),
+			relationship_name(player == local_player
+				? ALLIES : relationship_to_local(player, local_player)),
+			player == local_player,
+			player->isPlayerObserver(),
+			TheVictoryConditions != nullptr && TheVictoryConditions->hasAchievedVictory(player)
+				? "victory"
+				: (TheVictoryConditions != nullptr && TheVictoryConditions->hasBeenDefeated(player)
+					? "defeat" : "ended"),
+			score->calculateScore(),
+			score->getTotalUnitsBuilt(),
+			score->getTotalUnitsLost(),
+			score->getTotalUnitsDestroyed(),
+			score->getTotalBuildingsBuilt(),
+			score->getTotalBuildingsLost(),
+			score->getTotalBuildingsDestroyed(),
+			score->getTotalMoneyEarned(),
+			score->getTotalMoneySpent(),
+		};
+		if (player == local_player) {
+			if (g_retained_match_outcome == RetainedMatchOutcome::VICTORY) {
+				retained.outcome = "victory";
+			} else if (g_retained_match_outcome == RetainedMatchOutcome::DEFEAT) {
+				retained.outcome = "defeat";
+			}
+		}
+		g_retained_scoreboard.push_back(retained);
+	}
+}
+
+void append_retained_scoreboard(std::string &json)
+{
+	json += "[";
+	for (std::size_t i = 0; i < g_retained_scoreboard.size(); ++i) {
+		if (i != 0) json += ",";
+		const RetainedPlayerScore &score = g_retained_scoreboard[i];
+		json += "{\"index\":" + std::to_string(score.index) + ",\"name\":";
+		append_json_string(json, score.name);
+		json += ",\"side\":";
+		append_json_string(json, score.side);
+		json += ",\"type\":";
+		append_json_string(json, score.type);
+		json += ",\"relationship\":";
+		append_json_string(json, score.relationship);
+		json += ",\"local\":";
+		json += score.local ? "true" : "false";
+		json += ",\"observer\":";
+		json += score.observer ? "true" : "false";
+		json += ",\"outcome\":";
+		append_json_string(json, score.outcome);
+		json += ",\"score\":" + std::to_string(score.score)
+			+ ",\"unitsBuilt\":" + std::to_string(score.units_built)
+			+ ",\"unitsLost\":" + std::to_string(score.units_lost)
+			+ ",\"unitsDestroyed\":" + std::to_string(score.units_destroyed)
+			+ ",\"buildingsBuilt\":" + std::to_string(score.buildings_built)
+			+ ",\"buildingsLost\":" + std::to_string(score.buildings_lost)
+			+ ",\"buildingsDestroyed\":" + std::to_string(score.buildings_destroyed)
+			+ ",\"moneyEarned\":" + std::to_string(score.money_earned)
+			+ ",\"moneySpent\":" + std::to_string(score.money_spent) + "}";
+	}
+	json += "]";
 }
 
 void append_object(std::string &json, Object *object, Player *local_player,
@@ -1796,6 +2253,164 @@ void append_command_set_catalog(std::string &json, const std::vector<Object *> &
 	json += "}";
 }
 
+std::vector<AsciiString> player_command_set_names(Player *player)
+{
+	std::vector<AsciiString> names;
+	const PlayerTemplate *player_template = player != nullptr
+		? player->getPlayerTemplate() : nullptr;
+	if (player_template == nullptr) return names;
+	const AsciiString candidates[] = {
+		player_template->getPurchaseScienceCommandSetRank1(),
+		player_template->getPurchaseScienceCommandSetRank3(),
+		player_template->getPurchaseScienceCommandSetRank8(),
+		player_template->getSpecialPowerShortcutCommandSet(),
+	};
+	for (const AsciiString &candidate : candidates) {
+		if (candidate.isEmpty()) continue;
+		bool duplicate = false;
+		for (const AsciiString &existing : names) {
+			if (existing == candidate) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate) names.push_back(candidate);
+	}
+	return names;
+}
+
+void append_player_command_set_catalog(std::string &json, Player *player)
+{
+	json += "{";
+	bool first_set = true;
+	for (const AsciiString &name : player_command_set_names(player)) {
+		const CommandSet *set = TheControlBar != nullptr
+			? TheControlBar->findCommandSet(name) : nullptr;
+		if (set == nullptr) continue;
+		if (!first_set) json += ",";
+		first_set = false;
+		append_json_string(json, name.str());
+		json += ":[";
+		bool first_command = true;
+		for (Int i = 0; i < MAX_COMMANDS_PER_SET; ++i) {
+			const CommandButton *command = set->getCommandButton(i);
+			if (command == nullptr || BitTest(command->getOptions(), SCRIPT_ONLY)) continue;
+			if (!first_command) json += ",";
+			first_command = false;
+			append_command_definition(json, command, player, i + 1);
+		}
+		json += "]";
+	}
+	json += "}";
+}
+
+void append_player_command_state(std::string &json, Player *player)
+{
+	json += "{";
+	bool first_set = true;
+	for (const AsciiString &name : player_command_set_names(player)) {
+		const CommandSet *set = TheControlBar != nullptr
+			? TheControlBar->findCommandSet(name) : nullptr;
+		if (set == nullptr) continue;
+		if (!first_set) json += ",";
+		first_set = false;
+		append_json_string(json, name.str());
+		json += ":{";
+		bool first_command = true;
+		for (Int i = 0; i < MAX_COMMANDS_PER_SET; ++i) {
+			const CommandButton *command = set->getCommandButton(i);
+			if (command == nullptr || BitTest(command->getOptions(), SCRIPT_ONLY)) continue;
+			if (!first_command) json += ",";
+			first_command = false;
+			append_json_string(json, command->getName().str());
+			json += ":{";
+			const GUICommandType type = command->getCommandType();
+			bool first_state = true;
+			if (type == GUI_COMMAND_PURCHASE_SCIENCE) {
+				json += "\"available\":";
+				json += first_purchasable_science(command, player) != SCIENCE_INVALID
+					? "true" : "false";
+				append_science_definitions(json, command, player, true);
+				first_state = false;
+			}
+			const SpecialPowerTemplate *special = command->getSpecialPowerTemplate();
+			if (special != nullptr) {
+				const bool prerequisites_met = command_prerequisites_met(command, player);
+				Object *source = special_power_execution_source(command, nullptr, player);
+				SpecialPowerModuleInterface *module = source != nullptr
+					? source->getSpecialPowerModule(special) : nullptr;
+				if (!first_state) json += ",";
+				json += "\"sourceId\":";
+				json += source != nullptr ? std::to_string(public_object_id(source)) : "null";
+				json += ",\"prerequisitesMet\":";
+				json += prerequisites_met ? "true" : "false";
+				json += ",\"ready\":";
+				json += module != nullptr && module->isReady() && command->isReady(source)
+					&& prerequisites_met
+					? "true" : "false";
+				json += ",\"percentReady\":";
+				if (module != nullptr) append_real(json, module->getPercentReady());
+				else json += "null";
+				json += ",\"readyFrame\":";
+				json += module != nullptr ? std::to_string(module->getReadyFrame()) : "null";
+				first_state = false;
+			}
+			const ThingTemplate *product = command->getThingTemplate();
+			if (product != nullptr && type != GUI_COMMAND_SELECT_ALL_UNITS_OF_TYPE) {
+				Object *source = special_power_execution_source(command, nullptr, player);
+				if (!first_state) json += ",";
+				json += "\"availability\":";
+				append_json_string(json, source != nullptr && TheBuildAssistant != nullptr
+					? can_make_name(TheBuildAssistant->canMakeUnit(source, product))
+					: "unavailable");
+				first_state = false;
+			}
+			json += "}";
+		}
+		json += "}";
+	}
+	json += "}";
+}
+
+const CommandButton *find_player_command(
+	Player *player,
+	const char *command_set_name,
+	const char *command_name,
+	std::string &error)
+{
+	if (player == nullptr || command_set_name == nullptr || command_set_name[0] == '\0'
+		|| command_name == nullptr || command_name[0] == '\0' || TheControlBar == nullptr) {
+		error = "commandSet and command must identify a local-player command";
+		return nullptr;
+	}
+	AsciiString requested_set(command_set_name);
+	bool allowed_set = false;
+	for (const AsciiString &name : player_command_set_names(player)) {
+		if (name == requested_set) {
+			allowed_set = true;
+			break;
+		}
+	}
+	if (!allowed_set) {
+		error = "commandSet is not owned by the local player";
+		return nullptr;
+	}
+	const CommandSet *set = TheControlBar->findCommandSet(requested_set);
+	if (set == nullptr) {
+		error = "local-player command set is unavailable";
+		return nullptr;
+	}
+	for (Int i = 0; i < MAX_COMMANDS_PER_SET; ++i) {
+		const CommandButton *command = set->getCommandButton(i);
+		if (command != nullptr && command->getName() == command_name
+			&& !BitTest(command->getOptions(), SCRIPT_ONLY)) {
+			return command;
+		}
+	}
+	error = "command is not present in the requested local-player command set";
+	return nullptr;
+}
+
 void append_capability_catalog(std::string &json, const std::vector<Object *> &objects)
 {
 	json += "{";
@@ -1954,6 +2569,26 @@ std::string encode_base64(const std::vector<std::uint8_t> &bytes)
 
 } // namespace
 
+extern "C" void cnc_port_agent_begin_match()
+{
+	g_retained_match_end_frame = 0;
+	g_retained_match_outcome = RetainedMatchOutcome::NONE;
+	g_retained_scoreboard.clear();
+}
+
+extern "C" void cnc_port_agent_record_match_outcome(
+	UnsignedInt end_frame,
+	Bool local_victory,
+	Bool local_defeat)
+{
+	if (g_retained_match_outcome != RetainedMatchOutcome::NONE) return;
+	g_retained_match_end_frame = end_frame;
+	g_retained_match_outcome = local_victory
+		? RetainedMatchOutcome::VICTORY
+		: (local_defeat ? RetainedMatchOutcome::DEFEAT : RetainedMatchOutcome::ENDED);
+	capture_retained_scoreboard();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_snapshot(Int include_hidden)
 {
 	static std::string json;
@@ -1994,6 +2629,169 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_snapshot(Int inclu
 	json += ",\"visitedCount\":" + std::to_string(visited);
 	json += ",\"truncated\":";
 	json += truncated ? "true" : "false";
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_hud_snapshot()
+{
+	static std::string json;
+	if (TheInGameUI == nullptr || TheGameLogic == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "in-game UI is not ready");
+		json += "}";
+		return json.c_str();
+	}
+
+	begin_result(json, true);
+	json += ",\"frame\":" + std::to_string(TheGameLogic->getFrame());
+	json += ",\"messagesVisible\":";
+	json += TheInGameUI->isMessagesOn() ? "true" : "false";
+	json += ",\"messages\":[";
+	const Int message_count = TheInGameUI->agentUIMessageCount();
+	for (Int index = 0; index < message_count; ++index) {
+		if (index != 0) json += ",";
+		json += "{\"text\":";
+		append_json_string(json, unicode_to_utf8(TheInGameUI->agentUIMessageText(index)));
+		json += ",\"frame\":" + std::to_string(TheInGameUI->agentUIMessageFrame(index));
+		json += ",\"color\":" + std::to_string(
+			static_cast<std::uint32_t>(TheInGameUI->agentUIMessageColor(index))) + "}";
+	}
+	json += "]";
+
+	PopupMessageData *popup = TheInGameUI->getPopupMessageData();
+	json += ",\"popup\":";
+	if (popup == nullptr) {
+		json += "null";
+	} else {
+		json += "{\"text\":";
+		append_json_string(json, unicode_to_utf8(popup->message));
+		json += ",\"x\":" + std::to_string(popup->x);
+		json += ",\"y\":" + std::to_string(popup->y);
+		json += ",\"width\":" + std::to_string(popup->width);
+		json += ",\"color\":" + std::to_string(static_cast<std::uint32_t>(popup->textColor));
+		json += ",\"pausesGame\":";
+		json += popup->pause ? "true" : "false";
+		json += ",\"pausesMusic\":";
+		json += popup->pauseMusic ? "true" : "false";
+		json += "}";
+	}
+
+	json += ",\"subtitle\":";
+	if (!TheInGameUI->debugMilitarySubtitleActive()) {
+		json += "null";
+	} else {
+		json += "{\"lines\":[";
+		const UnsignedInt line_count = TheInGameUI->debugMilitarySubtitleCurrentLineCount();
+		for (UnsignedInt line = 0; line < line_count; ++line) {
+			if (line != 0) json += ",";
+			append_json_string(json, unicode_to_utf8(
+				TheInGameUI->debugMilitarySubtitleLine(static_cast<Int>(line))));
+		}
+		json += "]}";
+	}
+
+	const bool timers_visible = TheInGameUI->agentNamedTimersVisible();
+	json += ",\"timersVisible\":";
+	json += timers_visible ? "true" : "false";
+	json += ",\"timers\":[";
+	bool first_timer = true;
+	if (timers_visible) {
+		const NamedTimerMap &timers = TheInGameUI->agentNamedTimers();
+		for (NamedTimerMap::const_iterator timer = timers.begin(); timer != timers.end(); ++timer) {
+			const NamedTimerInfo *info = timer->second;
+			if (info == nullptr || info->displayString == nullptr) continue;
+			if (!first_timer) json += ",";
+			first_timer = false;
+			json += "{\"name\":";
+			append_json_string(json, timer->first.str());
+			json += ",\"text\":";
+			append_json_string(json, unicode_to_utf8(info->displayString->getText()));
+			json += ",\"countdown\":";
+			json += info->isCountdown ? "true" : "false";
+			json += "}";
+		}
+	}
+	json += "]}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_chat_send(
+	const char *utf8_text,
+	const char *audience)
+{
+	static std::string json;
+	if (TheGameLogic == nullptr || !TheGameLogic->isInMultiplayerGame()
+		|| TheGameLogic->isInReplayGame() || ThePlayerList == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_available", "in-game chat requires an active multiplayer match");
+		json += "}";
+		return json.c_str();
+	}
+
+	std::string error;
+	std::vector<WideChar> decoded;
+	if (!decode_utf8(utf8_text, decoded, error)) {
+		begin_result(json, false);
+		append_error(json, "invalid_text", error);
+		json += "}";
+		return json.c_str();
+	}
+	const std::size_t code_units = decoded.empty() ? 0 : decoded.size() - 1;
+	if (code_units == 0 || code_units >= ENTRY_TEXT_LEN) {
+		begin_result(json, false);
+		append_error(json, "invalid_text", "chat text must contain 1 through 255 UTF-16 code units");
+		json += "}";
+		return json.c_str();
+	}
+	for (std::size_t index = 0; index < code_units; ++index) {
+		if (decoded[index] < static_cast<WideChar>(0x20)
+			|| decoded[index] == static_cast<WideChar>(0x7f)) {
+			begin_result(json, false);
+			append_error(json, "invalid_text", "chat text contains a control character");
+			json += "}";
+			return json.c_str();
+		}
+	}
+
+	const std::string requested = audience != nullptr ? audience : "";
+	InGameChatType chat_type = INGAME_CHAT_EVERYONE;
+	if (requested == "allies") {
+		Player *local_player = ThePlayerList->getLocalPlayer();
+		if (local_player == nullptr || !local_player->isPlayerActive()) {
+			begin_result(json, false);
+			append_error(json, "audience_unavailable", "observers cannot send allied chat");
+			json += "}";
+			return json.c_str();
+		}
+		chat_type = INGAME_CHAT_ALLIES;
+	} else if (requested != "everyone") {
+		begin_result(json, false);
+		append_error(json, "invalid_audience", "audience must be everyone or allies");
+		json += "}";
+		return json.c_str();
+	}
+
+	UnicodeString message(decoded.data());
+	message.trim();
+	if (message.isEmpty()) {
+		begin_result(json, false);
+		append_error(json, "invalid_text", "chat text must not be blank");
+		json += "}";
+		return json.c_str();
+	}
+	if (!SendInGameChatMessage(message, chat_type)) {
+		begin_result(json, false);
+		append_error(json, "send_failed", "the original in-game chat path rejected the message");
+		json += "}";
+		return json.c_str();
+	}
+
+	begin_result(json, true);
+	json += ",\"audience\":";
+	append_json_string(json, requested);
+	json += ",\"text\":";
+	append_json_string(json, unicode_to_utf8(message));
 	json += "}";
 	return json.c_str();
 }
@@ -2089,6 +2887,52 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_set_text(
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_submit(
+	Int window_id,
+	const char *expected_name)
+{
+	static std::string json;
+	std::string error;
+	GameWindow *window = resolve_window(window_id, expected_name, error);
+	if (window == nullptr) {
+		begin_result(json, false);
+		append_error(json, error == "window identity changed" ? "stale_window" : "not_found", error);
+		json += "}";
+		return json.c_str();
+	}
+	if (!window_is_interactive(window) || (window->winGetStyle() & GWS_ENTRY_FIELD) == 0) {
+		begin_result(json, false);
+		append_error(json, "not_text_entry", "window is not an interactive text entry");
+		json += "}";
+		return json.c_str();
+	}
+	GameWindow *owner = window->winGetOwner();
+	if (owner == nullptr) {
+		begin_result(json, false);
+		append_error(json, "no_owner", "text entry has no owner to receive submission");
+		json += "}";
+		return json.c_str();
+	}
+
+	TheWindowManager->winSetFocus(window);
+	const WindowMsgHandledType handled = TheWindowManager->winSendSystemMsg(
+		owner, GEM_EDIT_DONE, reinterpret_cast<WindowMsgData>(window), 0);
+	if (handled != MSG_HANDLED) {
+		begin_result(json, false);
+		append_error(json, "submit_unhandled",
+			"text entry owner did not handle the original submit message");
+		json += "}";
+		return json.c_str();
+	}
+
+	begin_result(json, true);
+	json += ",\"windowId\":" + std::to_string(window_id) + ",\"name\":";
+	append_json_string(json, window_name(window));
+	json += ",\"submitted\":true,\"handled\":"
+		+ std::to_string(static_cast<Int>(handled)) + "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_select_index(
 	Int window_id,
 	const char *expected_name,
@@ -2155,6 +2999,94 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_select_index(
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_set_value(
+	Int window_id,
+	const char *expected_name,
+	Int value)
+{
+	static std::string json;
+	std::string error;
+	GameWindow *window = resolve_window(window_id, expected_name, error);
+	if (window == nullptr) {
+		begin_result(json, false);
+		append_error(json, error == "window identity changed" ? "stale_window" : "not_found", error);
+		json += "}";
+		return json.c_str();
+	}
+	if (!window_is_interactive(window)
+		|| (window->winGetStyle() & (GWS_VERT_SLIDER | GWS_HORZ_SLIDER)) == 0) {
+		begin_result(json, false);
+		append_error(json, "not_slider", "window is not an interactive slider");
+		json += "}";
+		return json.c_str();
+	}
+
+	Int minimum = 0;
+	Int maximum = 0;
+	GadgetSliderGetMinMax(window, &minimum, &maximum);
+	if (value < minimum || value > maximum) {
+		begin_result(json, false);
+		append_error(json, "value_out_of_range", "slider value is outside its inclusive range");
+		json += "}";
+		return json.c_str();
+	}
+	GadgetSliderSetPosition(window, value);
+	if (window->winGetOwner() != nullptr) {
+		TheWindowManager->winSendSystemMsg(window->winGetOwner(), GSM_SLIDER_TRACK,
+			reinterpret_cast<WindowMsgData>(window), GadgetSliderGetPosition(window));
+		TheWindowManager->winSendSystemMsg(window->winGetOwner(), GSM_SLIDER_DONE,
+			reinterpret_cast<WindowMsgData>(window), GadgetSliderGetPosition(window));
+	}
+
+	begin_result(json, true);
+	json += ",\"windowId\":" + std::to_string(window_id) + ",\"name\":";
+	append_json_string(json, window_name(window));
+	json += ",\"value\":" + std::to_string(GadgetSliderGetPosition(window)) + "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_select_tab(
+	Int window_id,
+	const char *expected_name,
+	Int index)
+{
+	static std::string json;
+	std::string error;
+	GameWindow *window = resolve_window(window_id, expected_name, error);
+	if (window == nullptr) {
+		begin_result(json, false);
+		append_error(json, error == "window identity changed" ? "stale_window" : "not_found", error);
+		json += "}";
+		return json.c_str();
+	}
+	if (!window_is_interactive(window) || (window->winGetStyle() & GWS_TAB_CONTROL) == 0) {
+		begin_result(json, false);
+		append_error(json, "not_tab_control", "window is not an interactive tab control");
+		json += "}";
+		return json.c_str();
+	}
+	TabControlData *tabs = static_cast<TabControlData *>(window->winGetUserData());
+	if (tabs == nullptr || index < 0 || index >= tabs->tabCount) {
+		begin_result(json, false);
+		append_error(json, "index_out_of_range", "tab index is outside the available panes");
+		json += "}";
+		return json.c_str();
+	}
+	if (tabs->subPaneDisabled[index] || tabs->subPanes[index] == nullptr) {
+		begin_result(json, false);
+		append_error(json, "tab_disabled", "requested tab is disabled or unavailable");
+		json += "}";
+		return json.c_str();
+	}
+	GadgetTabControlShowSubPane(window, index);
+
+	begin_result(json, true);
+	json += ",\"windowId\":" + std::to_string(window_id) + ",\"name\":";
+	append_json_string(json, window_name(window));
+	json += ",\"selectedIndex\":" + std::to_string(tabs->activeTab) + "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_list_items(
 	Int window_id,
 	const char *expected_name,
@@ -2190,10 +3122,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_list_items(
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_select(
-	const char *object_ids)
+	const char *object_ids,
+	Int camera_bound)
 {
 	static std::string json;
 	std::string error;
+	if (camera_bound != 0 && camera_bound != 1) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "camera_bound must be 0 or 1");
+		json += "}";
+		return json.c_str();
+	}
 	if (!gameplay_actions_ready(error)) {
 		begin_result(json, false);
 		append_error(json, "not_ready", error);
@@ -2201,7 +3140,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_select(
 		return json.c_str();
 	}
 	std::vector<Object *> objects;
-	if (!parse_public_object_ids(object_ids, objects, error)) {
+	const SourceCameraPolicy camera_policy = camera_bound != 0
+		? SourceCameraPolicy::VISIBLE
+		: SourceCameraPolicy::UNRESTRICTED;
+	if (!parse_public_object_ids(object_ids, objects, error, camera_policy)) {
 		begin_result(json, false);
 		append_error(json, "invalid_objects", error);
 		json += "}";
@@ -2217,10 +3159,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 	const char *object_ids,
 	Int target_id,
 	Real x,
-	Real y)
+	Real y,
+	Int guard_mode,
+	Int camera_bound)
 {
 	static std::string json;
 	std::string error;
+	if (camera_bound != 0 && camera_bound != 1) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "camera_bound must be 0 or 1");
+		json += "}";
+		return json.c_str();
+	}
 	if (!gameplay_actions_ready(error)) {
 		begin_result(json, false);
 		append_error(json, "not_ready", error);
@@ -2228,7 +3178,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 		return json.c_str();
 	}
 	std::vector<Object *> objects;
-	if (!parse_public_object_ids(object_ids, objects, error)) {
+	const SourceCameraPolicy camera_policy = camera_bound != 0
+		? SourceCameraPolicy::VISIBLE_OR_SELECTED
+		: SourceCameraPolicy::UNRESTRICTED;
+	if (!parse_public_object_ids(object_ids, objects, error, camera_policy)) {
 		begin_result(json, false);
 		append_error(json, "invalid_objects", error);
 		json += "}";
@@ -2236,12 +3189,25 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 	}
 	const std::string requested = action != nullptr ? action : "";
 	const bool needs_position = requested == "move" || requested == "attackMove"
-		|| requested == "guardPosition";
-	const bool needs_target = requested == "attack" || requested == "guardObject";
-	if (!needs_position && !needs_target && requested != "stop" && requested != "scatter") {
+		|| requested == "forceMove" || requested == "forceAttackGround"
+		|| requested == "waypoint" || requested == "guardPosition";
+	const bool needs_target = requested == "attack" || requested == "forceAttackObject"
+		|| requested == "guardObject";
+	const bool guard_order = requested == "guardPosition" || requested == "guardObject";
+	if ((!guard_order && guard_mode != GUARDMODE_NORMAL)
+		|| guard_mode < GUARDMODE_NORMAL
+		|| guard_mode > GUARDMODE_GUARD_FLYING_UNITS_ONLY) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments",
+			"guard_mode must be normal, without-pursuit, or flying-only and is only used by guard orders");
+		json += "}";
+		return json.c_str();
+	}
+	if (!needs_position && !needs_target && requested != "stop" && requested != "scatter"
+		&& requested != "formation") {
 		begin_result(json, false);
 		append_error(json, "unsupported_order",
-			"order must be move, attackMove, attack, guardPosition, guardObject, stop, or scatter");
+			"unsupported tactical order");
 		json += "}";
 		return json.c_str();
 	}
@@ -2253,10 +3219,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 		json += "}";
 		return json.c_str();
 	}
+	if (needs_position && camera_bound != 0 && !point_in_camera(position)) {
+		begin_result(json, false);
+		append_error(json, "camera_bound", "camera-bound actions require the target position to be inside the tactical view");
+		json += "}";
+		return json.c_str();
+	}
 	Player *local_player = agent_perspective_player();
 	Object *target = nullptr;
 	if (needs_target) {
-		target = resolve_observable_target(target_id, local_player, error);
+		target = resolve_observable_target(target_id, local_player, error, camera_bound != 0);
 		if (target == nullptr) {
 			begin_result(json, false);
 			append_error(json, "invalid_target", error);
@@ -2270,6 +3242,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 			json += "}";
 			return json.c_str();
 		}
+		position = *target->getPosition();
+	}
+	if ((requested == "forceMove" || requested == "forceAttackGround"
+		|| requested == "forceAttackObject" || requested == "waypoint")
+		&& TheGameClient == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "game client is not ready");
+		json += "}";
+		return json.c_str();
 	}
 
 	post_selection(objects);
@@ -2279,23 +3260,160 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 	} else if (requested == "attackMove") {
 		GameMessage *message = append_agent_message(GameMessage::MSG_DO_ATTACKMOVETO);
 		message->appendLocationArgument(position);
+	} else if (requested == "forceMove" || requested == "waypoint") {
+		clear_context_command_modes();
+		TheInGameUI->setForceMoveMode(requested == "forceMove");
+		TheInGameUI->setWaypointMode(requested == "waypoint");
+		const GameMessage::Type evaluated = TheGameClient->evaluateContextCommand(
+			nullptr, &position, CommandTranslator::EVALUATE_ONLY);
+		const GameMessage::Type issued = evaluated != GameMessage::MSG_INVALID
+			? TheGameClient->evaluateContextCommand(
+				nullptr, &position, CommandTranslator::DO_COMMAND)
+			: GameMessage::MSG_INVALID;
+		clear_context_command_modes();
+		if (issued == GameMessage::MSG_INVALID) {
+			begin_result(json, false);
+			append_error(json, "order_unavailable",
+				"the selected objects cannot perform this order at the requested position");
+			json += "}";
+			return json.c_str();
+		}
+	} else if (requested == "forceAttackGround" || requested == "forceAttackObject") {
+		Drawable *target_drawable = target != nullptr ? target->getDrawable() : nullptr;
+		const GameMessage::Type evaluated = TheGameClient->agentEvaluateForceAttackCommand(
+			target_drawable, &position, CommandTranslator::EVALUATE_ONLY);
+		const GameMessage::Type issued = evaluated != GameMessage::MSG_INVALID
+			? TheGameClient->agentEvaluateForceAttackCommand(
+				target_drawable, &position, CommandTranslator::DO_COMMAND)
+			: GameMessage::MSG_INVALID;
+		if (issued == GameMessage::MSG_INVALID) {
+			begin_result(json, false);
+			append_error(json, "order_unavailable",
+				"none of the selected objects can force-attack the requested target");
+			json += "}";
+			return json.c_str();
+		}
 	} else if (requested == "attack") {
 		GameMessage *message = append_agent_message(GameMessage::MSG_DO_ATTACK_OBJECT);
 		message->appendObjectIDArgument(target->getID());
 	} else if (requested == "guardPosition") {
 		GameMessage *message = append_agent_message(GameMessage::MSG_DO_GUARD_POSITION);
 		message->appendLocationArgument(position);
-		message->appendIntegerArgument(GUARDMODE_NORMAL);
+		message->appendIntegerArgument(guard_mode);
 	} else if (requested == "guardObject") {
 		GameMessage *message = append_agent_message(GameMessage::MSG_DO_GUARD_OBJECT);
 		message->appendObjectIDArgument(target->getID());
-		message->appendIntegerArgument(GUARDMODE_NORMAL);
+		message->appendIntegerArgument(guard_mode);
 	} else if (requested == "stop") {
 		append_agent_message(GameMessage::MSG_DO_STOP);
-	} else {
+	} else if (requested == "scatter") {
 		append_agent_message(GameMessage::MSG_DO_SCATTER);
+	} else {
+		append_agent_message(GameMessage::MSG_CREATE_FORMATION);
 	}
 	finish_action_result(json, requested.c_str(), objects);
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_context(
+	const char *object_ids,
+	Int target_id,
+	Real x,
+	Real y,
+	Int has_position,
+	Int camera_bound)
+{
+	static std::string json;
+	std::string error;
+	if ((has_position != 0 && has_position != 1)
+		|| (camera_bound != 0 && camera_bound != 1)
+		|| ((target_id != 0) == (has_position != 0))) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments",
+			"provide exactly one targetId or position, and use boolean flags");
+		json += "}";
+		return json.c_str();
+	}
+	if (!gameplay_actions_ready(error) || TheGameClient == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready",
+			error.empty() ? "game client is not ready" : error);
+		json += "}";
+		return json.c_str();
+	}
+
+	std::vector<Object *> objects;
+	const SourceCameraPolicy camera_policy = camera_bound != 0
+		? SourceCameraPolicy::VISIBLE_OR_SELECTED
+		: SourceCameraPolicy::UNRESTRICTED;
+	if (!parse_public_object_ids(object_ids, objects, error, camera_policy)) {
+		begin_result(json, false);
+		append_error(json, "invalid_objects", error);
+		json += "}";
+		return json.c_str();
+	}
+
+	Player *local_player = agent_perspective_player();
+	Object *target = nullptr;
+	Coord3D position = {0.0f, 0.0f, 0.0f};
+	if (target_id != 0) {
+		target = resolve_observable_target(target_id, local_player, error, camera_bound != 0);
+		if (target == nullptr || target->getDrawable() == nullptr) {
+			begin_result(json, false);
+			append_error(json, "invalid_target",
+				error.empty() ? "target has no drawable" : error);
+			json += "}";
+			return json.c_str();
+		}
+		position = *target->getPosition();
+	} else {
+		if (!world_position(x, y, position, error)) {
+			begin_result(json, false);
+			append_error(json, "invalid_position", error);
+			json += "}";
+			return json.c_str();
+		}
+		if (camera_bound != 0 && !point_in_camera(position)) {
+			begin_result(json, false);
+			append_error(json, "camera_bound",
+				"camera-bound actions require the target position to be inside the tactical view");
+			json += "}";
+			return json.c_str();
+		}
+	}
+
+	post_selection(objects);
+	clear_context_command_modes();
+	Drawable *target_drawable = target != nullptr ? target->getDrawable() : nullptr;
+	const GameMessage::Type evaluated = TheGameClient->evaluateContextCommand(
+		target_drawable, &position, CommandTranslator::EVALUATE_ONLY);
+	if (evaluated == GameMessage::MSG_INVALID) {
+		begin_result(json, false);
+		append_error(json, "context_unavailable",
+			"the selected objects have no contextual action for this target");
+		json += "}";
+		return json.c_str();
+	}
+	const GameMessage::Type issued = TheGameClient->evaluateContextCommand(
+		target_drawable, &position, CommandTranslator::DO_COMMAND);
+	if (issued == GameMessage::MSG_INVALID) {
+		begin_result(json, false);
+		append_error(json, "context_changed",
+			"the contextual action became unavailable before it could be issued");
+		json += "}";
+		return json.c_str();
+	}
+
+	finish_action_result(json, context_message_name(issued), objects);
+	json.pop_back();
+	json += ",\"messageType\":" + std::to_string(static_cast<Int>(issued));
+	if (target != nullptr) {
+		json += ",\"targetId\":" + std::to_string(public_object_id(target));
+	} else {
+		json += ",\"position\":";
+		append_coord(json, position);
+	}
+	json += "}";
 	return json.c_str();
 }
 
@@ -2306,10 +3424,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 	Real x,
 	Real y,
 	Real angle,
-	Int has_position)
+	Int has_position,
+	Int camera_bound)
 {
 	static std::string json;
 	std::string error;
+	if (camera_bound != 0 && camera_bound != 1) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "camera_bound must be 0 or 1");
+		json += "}";
+		return json.c_str();
+	}
 	if (!gameplay_actions_ready(error)) {
 		begin_result(json, false);
 		append_error(json, "not_ready", error);
@@ -2330,10 +3455,31 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 		json += "}";
 		return json.c_str();
 	}
+	Player *local_player = ThePlayerList->getLocalPlayer();
+	if (!command_prerequisites_met(command, local_player)) {
+		begin_result(json, false);
+		append_error(json, "command_unavailable", "missingPrerequisite");
+		json += "}";
+		return json.c_str();
+	}
+	if (!source_satisfies_camera_policy(source, camera_bound != 0
+		? SourceCameraPolicy::VISIBLE_OR_SELECTED
+		: SourceCameraPolicy::UNRESTRICTED)) {
+		begin_result(json, false);
+		append_error(json, "camera_bound", "camera-bound actions require the source object to be inside the tactical view or already selected there");
+		json += "}";
+		return json.c_str();
+	}
 	Coord3D position = {0.0f, 0.0f, 0.0f};
 	if (has_position != 0 && !world_position(x, y, position, error)) {
 		begin_result(json, false);
 		append_error(json, "invalid_position", error);
+		json += "}";
+		return json.c_str();
+	}
+	if (has_position != 0 && camera_bound != 0 && !point_in_camera(position)) {
+		begin_result(json, false);
+		append_error(json, "camera_bound", "camera-bound actions require the target position to be inside the tactical view");
 		json += "}";
 		return json.c_str();
 	}
@@ -2343,16 +3489,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 		json += "}";
 		return json.c_str();
 	}
-	Player *local_player = agent_perspective_player();
 	Object *target = nullptr;
 	if (target_id != 0) {
-		target = resolve_observable_target(target_id, local_player, error);
+		target = resolve_observable_target(target_id, local_player, error, camera_bound != 0);
 		if (target == nullptr) {
 			begin_result(json, false);
 			append_error(json, "invalid_target", error);
 			json += "}";
 			return json.c_str();
 		}
+		if (has_position == 0) position = *target->getPosition();
 	}
 
 	const GUICommandType type = command->getCommandType();
@@ -2374,7 +3520,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 
 	std::vector<Object *> selection = {source};
 	const ThingTemplate *product = command->getThingTemplate();
-	if (type == GUI_COMMAND_UNIT_BUILD || type == GUI_COMMAND_DOZER_CONSTRUCT) {
+	if (type == GUI_COMMAND_UNIT_BUILD || type == GUI_COMMAND_DOZER_CONSTRUCT
+		|| type == GUI_COMMAND_SPECIAL_POWER_CONSTRUCT) {
 		if (product == nullptr || TheBuildAssistant == nullptr) {
 			begin_result(json, false);
 			append_error(json, "invalid_command", "build command has no product template");
@@ -2402,26 +3549,35 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 		GameMessage *message = append_agent_message(GameMessage::MSG_QUEUE_UNIT_CREATE);
 		message->appendIntegerArgument(product->getTemplateID());
 		message->appendIntegerArgument(production->requestUniqueUnitID());
-	} else if (type == GUI_COMMAND_DOZER_CONSTRUCT) {
+	} else if (type == GUI_COMMAND_DOZER_CONSTRUCT
+		|| type == GUI_COMMAND_SPECIAL_POWER_CONSTRUCT) {
 		if (has_position == 0) {
 			begin_result(json, false);
 			append_error(json, "invalid_position", "construction requires a target position");
 			json += "}";
 			return json.c_str();
 		}
-		const UnsignedInt build_options = BuildAssistant::USE_QUICK_PATHFIND
-			| BuildAssistant::TERRAIN_RESTRICTIONS | BuildAssistant::CLEAR_PATH
-			| BuildAssistant::NO_OBJECT_OVERLAP | BuildAssistant::SHROUD_REVEALED
-			| BuildAssistant::IGNORE_STEALTHED
-			| BuildAssistant::FAIL_STEALTHED_WITHOUT_FEEDBACK;
-		const LegalBuildCode legal = TheBuildAssistant->isLocationLegalToBuild(
-			&position, product, angle, build_options, source, nullptr);
-		if (TheTerrainVisual != nullptr) TheTerrainVisual->removeAllBibs();
+		const LegalBuildCode legal = legal_build_location(position, product, angle, source);
 		if (legal != LBC_OK) {
 			begin_result(json, false);
 			append_error(json, "illegal_build_location", legal_build_name(legal));
 			json += "}";
 			return json.c_str();
+		}
+		if (type == GUI_COMMAND_SPECIAL_POWER_CONSTRUCT) {
+			ProductionUpdateInterface *production = source->getProductionUpdateInterface();
+			const SpecialPowerTemplate *special = command->getSpecialPowerTemplate();
+			SpecialPowerModuleInterface *module = special != nullptr
+				? source->getSpecialPowerModule(special) : nullptr;
+			if (production == nullptr || module == nullptr || !module->isReady()
+				|| !command->isReady(source)) {
+				begin_result(json, false);
+				append_error(json, "command_unavailable",
+					"special-power construction is not ready");
+				json += "}";
+				return json.c_str();
+			}
+			production->setSpecialPowerConstructionCommandButton(command);
 		}
 		post_selection(selection);
 		GameMessage *message = append_agent_message(GameMessage::MSG_DOZER_CONSTRUCT);
@@ -2430,15 +3586,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 		message->appendRealArgument(angle);
 	} else if (type == GUI_COMMAND_PLAYER_UPGRADE || type == GUI_COMMAND_OBJECT_UPGRADE) {
 		const UpgradeTemplate *upgrade = command->getUpgradeTemplate();
-		ProductionUpdateInterface *production = source->getProductionUpdateInterface();
-		if (upgrade == nullptr || TheUpgradeCenter == nullptr
-			|| !TheUpgradeCenter->canAffordUpgrade(local_player, upgrade, TRUE)
-			|| (production != nullptr && production->canQueueUpgrade(upgrade) != CANMAKE_OK)
-			|| (type == GUI_COMMAND_PLAYER_UPGRADE && local_player->hasUpgradeComplete(upgrade))
-			|| (type == GUI_COMMAND_OBJECT_UPGRADE
-				&& (source->hasUpgrade(upgrade) || !source->affectedByUpgrade(upgrade)))) {
+		const char *availability = upgrade_availability(command, source);
+		if (upgrade == nullptr || std::strcmp(availability, "available") != 0) {
 			begin_result(json, false);
-			append_error(json, "command_unavailable", "upgrade is not currently available");
+			append_error(json, "command_unavailable", availability);
 			json += "}";
 			return json.c_str();
 		}
@@ -2449,7 +3600,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 	} else if (type == GUI_COMMAND_SELL || type == GUI_COMMAND_STOP
 		|| type == GUI_COMMAND_HACK_INTERNET || type == GUI_COMMAND_TOGGLE_OVERCHARGE
 		|| type == GUI_COMMAND_EVACUATE || type == GUI_COMMAND_SWITCH_WEAPON
-		|| type == GUI_COMMAND_FIRE_WEAPON) {
+		|| type == GUI_COMMAND_EXECUTE_RAILED_TRANSPORT
+		|| type == GUI_COMMAND_DOZER_CONSTRUCT_CANCEL
+		|| (type == GUI_COMMAND_FIRE_WEAPON && !needs_target && !needs_position)) {
 		post_selection(selection);
 		if (type == GUI_COMMAND_SELL) {
 			append_agent_message(GameMessage::MSG_SELL);
@@ -2465,10 +3618,81 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 		} else if (type == GUI_COMMAND_SWITCH_WEAPON) {
 			GameMessage *message = append_agent_message(GameMessage::MSG_SWITCH_WEAPONS);
 			message->appendIntegerArgument(command->getWeaponSlot());
+		} else if (type == GUI_COMMAND_EXECUTE_RAILED_TRANSPORT) {
+			append_agent_message(GameMessage::MSG_EXECUTE_RAILED_TRANSPORT);
+		} else if (type == GUI_COMMAND_DOZER_CONSTRUCT_CANCEL) {
+			append_agent_message(GameMessage::MSG_DOZER_CANCEL_CONSTRUCT);
 		} else {
 			GameMessage *message = append_agent_message(GameMessage::MSG_DO_WEAPON);
 			message->appendIntegerArgument(command->getWeaponSlot());
 			message->appendIntegerArgument(command->getMaxShotsToFire());
+		}
+	} else if (type == GUI_COMMAND_FIRE_WEAPON) {
+		if (!command->isValidToUseOn(source, target,
+				needs_position ? &position : nullptr, CMD_FROM_PLAYER)) {
+			begin_result(json, false);
+			append_error(json, "command_unavailable", "weapon target is invalid");
+			json += "}";
+			return json.c_str();
+		}
+		post_selection(selection);
+		if (needs_target && !BitTest(options, ATTACK_OBJECTS_POSITION)) {
+			GameMessage *message = append_agent_message(
+				GameMessage::MSG_DO_WEAPON_AT_OBJECT);
+			message->appendIntegerArgument(command->getWeaponSlot());
+			message->appendObjectIDArgument(target->getID());
+			message->appendIntegerArgument(command->getMaxShotsToFire());
+		} else {
+			GameMessage *message = append_agent_message(
+				GameMessage::MSG_DO_WEAPON_AT_LOCATION);
+			message->appendIntegerArgument(command->getWeaponSlot());
+			message->appendLocationArgument(position);
+			message->appendIntegerArgument(command->getMaxShotsToFire());
+			message->appendObjectIDArgument(target != nullptr ? target->getID() : INVALID_ID);
+		}
+	} else if (type == GUI_COMMAND_COMBATDROP) {
+		if (needs_target
+			&& !command->isValidObjectTarget(source->getDrawable(), target->getDrawable())) {
+			begin_result(json, false);
+			append_error(json, "command_unavailable", "combat-drop target is invalid");
+			json += "}";
+			return json.c_str();
+		}
+		post_selection(selection);
+		if (needs_target) {
+			GameMessage *message = append_agent_message(
+				GameMessage::MSG_COMBATDROP_AT_OBJECT);
+			message->appendObjectIDArgument(target->getID());
+		} else {
+			GameMessage *message = append_agent_message(
+				GameMessage::MSG_COMBATDROP_AT_LOCATION);
+			message->appendLocationArgument(position);
+		}
+	} else if (type == GUICOMMANDMODE_HIJACK_VEHICLE
+		|| type == GUICOMMANDMODE_CONVERT_TO_CARBOMB
+		|| type == GUICOMMANDMODE_SABOTAGE_BUILDING) {
+		if (TheGameClient == nullptr || target == nullptr || target->getDrawable() == nullptr) {
+			begin_result(json, false);
+			append_error(json, "invalid_target", "context command requires an object target");
+			json += "}";
+			return json.c_str();
+		}
+		post_selection(selection);
+		clear_context_command_modes();
+		TheInGameUI->setGUICommand(command);
+		const GameMessage::Type evaluated = TheGameClient->evaluateContextCommand(
+			target->getDrawable(), &position, CommandTranslator::EVALUATE_ONLY);
+		const GameMessage::Type issued = evaluated != GameMessage::MSG_INVALID
+			? TheGameClient->evaluateContextCommand(
+				target->getDrawable(), &position, CommandTranslator::DO_COMMAND)
+			: GameMessage::MSG_INVALID;
+		clear_context_command_modes();
+		if (issued == GameMessage::MSG_INVALID) {
+			begin_result(json, false);
+			append_error(json, "command_unavailable",
+				"the selected object cannot perform this context command on the target");
+			json += "}";
+			return json.c_str();
 		}
 	} else if (type == GUI_COMMAND_SET_RALLY_POINT) {
 		if (has_position == 0) {
@@ -2499,28 +3723,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 		const bool shortcut = type == GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT;
 		if (!shortcut) post_selection(selection);
 		const ObjectID specific_source = shortcut ? power_source->getID() : INVALID_ID;
-		if (needs_target) {
-			GameMessage *message = append_agent_message(
-				GameMessage::MSG_DO_SPECIAL_POWER_AT_OBJECT);
-			message->appendIntegerArgument(special->getID());
-			message->appendObjectIDArgument(target->getID());
-			message->appendIntegerArgument(options);
-			message->appendObjectIDArgument(specific_source);
-		} else if (needs_position) {
-			GameMessage *message = append_agent_message(
-				GameMessage::MSG_DO_SPECIAL_POWER_AT_LOCATION);
-			message->appendIntegerArgument(special->getID());
-			message->appendLocationArgument(position);
-			message->appendRealArgument(angle);
-			message->appendObjectIDArgument(target != nullptr ? target->getID() : INVALID_ID);
-			message->appendIntegerArgument(options);
-			message->appendObjectIDArgument(specific_source);
-		} else {
-			GameMessage *message = append_agent_message(GameMessage::MSG_DO_SPECIAL_POWER);
-			message->appendIntegerArgument(special->getID());
-			message->appendIntegerArgument(options);
-			message->appendObjectIDArgument(specific_source);
-		}
+		post_special_power_message(special, options, specific_source, target,
+			position, angle, needs_target, needs_position);
 		if (shortcut) selection = {power_source};
 	} else {
 		begin_result(json, false);
@@ -2531,6 +3735,411 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 	}
 
 	finish_action_result(json, command->getName().str(), selection);
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_player_command(
+	const char *command_set_name,
+	const char *command_name,
+	Int target_id,
+	Real x,
+	Real y,
+	Real angle,
+	Int has_position,
+	Int camera_bound)
+{
+	static std::string json;
+	std::string error;
+	if ((has_position != 0 && has_position != 1)
+		|| (camera_bound != 0 && camera_bound != 1) || !std::isfinite(angle)) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments",
+			"has_position and camera_bound must be boolean and angle must be finite");
+		json += "}";
+		return json.c_str();
+	}
+	if (!gameplay_actions_ready(error)) {
+		begin_result(json, false);
+		append_error(json, "not_ready", error);
+		json += "}";
+		return json.c_str();
+	}
+	Player *player = ThePlayerList->getLocalPlayer();
+	const CommandButton *command = find_player_command(
+		player, command_set_name, command_name, error);
+	if (command == nullptr) {
+		begin_result(json, false);
+		append_error(json, "invalid_command", error);
+		json += "}";
+		return json.c_str();
+	}
+	if (!command_prerequisites_met(command, player)) {
+		begin_result(json, false);
+		append_error(json, "command_unavailable", "missingPrerequisite");
+		json += "}";
+		return json.c_str();
+	}
+
+	Coord3D position = {0.0f, 0.0f, 0.0f};
+	if (has_position != 0 && !world_position(x, y, position, error)) {
+		begin_result(json, false);
+		append_error(json, "invalid_position", error);
+		json += "}";
+		return json.c_str();
+	}
+	if (has_position != 0 && camera_bound != 0 && !point_in_camera(position)) {
+		begin_result(json, false);
+		append_error(json, "camera_bound",
+			"camera-bound actions require the target position to be inside the tactical view");
+		json += "}";
+		return json.c_str();
+	}
+	Object *target = nullptr;
+	if (target_id != 0) {
+		target = resolve_observable_target(target_id, player, error, camera_bound != 0);
+		if (target == nullptr) {
+			begin_result(json, false);
+			append_error(json, "invalid_target", error);
+			json += "}";
+			return json.c_str();
+		}
+		if (has_position == 0) position = *target->getPosition();
+	}
+	const GUICommandType type = command->getCommandType();
+	const UnsignedInt options = command->getOptions();
+	const bool needs_position = BitTest(options, NEED_TARGET_POS)
+		|| type == GUI_COMMAND_SPECIAL_POWER_CONSTRUCT_FROM_SHORTCUT;
+	const bool needs_target = BitTest(options, COMMAND_OPTION_NEED_OBJECT_TARGET);
+	if (needs_position && has_position == 0) {
+		begin_result(json, false);
+		append_error(json, "invalid_position", "command requires a target position");
+		json += "}";
+		return json.c_str();
+	}
+	if (needs_target && target == nullptr) {
+		begin_result(json, false);
+		append_error(json, "invalid_target", "command requires an observable target object");
+		json += "}";
+		return json.c_str();
+	}
+
+	std::vector<Object *> affected;
+	if (type == GUI_COMMAND_PURCHASE_SCIENCE) {
+		const ScienceType science = first_purchasable_science(command, player);
+		if (science == SCIENCE_INVALID) {
+			begin_result(json, false);
+			append_error(json, "command_unavailable",
+				"no science on this command is currently purchasable");
+			json += "}";
+			return json.c_str();
+		}
+		GameMessage *message = TheMessageStream->appendMessage(
+			GameMessage::MSG_PURCHASE_SCIENCE);
+		message->appendIntegerArgument(science);
+	} else if (type == GUI_COMMAND_SELECT_ALL_UNITS_OF_TYPE) {
+		const ThingTemplate *thing = command->getThingTemplate();
+		if (thing == nullptr) {
+			begin_result(json, false);
+			append_error(json, "invalid_command", "selection command has no unit template");
+			json += "}";
+			return json.c_str();
+		}
+		for (Object *object : sorted_game_objects()) {
+			if (object->getControllingPlayer() == player && object->getTemplate() == thing
+				&& object->isSelectable() && object->getDrawable() != nullptr
+				&& object->getContainedBy() == nullptr) {
+				affected.push_back(object);
+			}
+		}
+		if (affected.empty()) {
+			begin_result(json, false);
+			append_error(json, "command_unavailable", "no selectable units of this type exist");
+			json += "}";
+			return json.c_str();
+		}
+		post_selection(affected);
+	} else if (type == GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT
+		|| type == GUI_COMMAND_SPECIAL_POWER_CONSTRUCT_FROM_SHORTCUT) {
+		const SpecialPowerTemplate *special = command->getSpecialPowerTemplate();
+		Object *source = special_power_execution_source(command, nullptr, player);
+		SpecialPowerModuleInterface *module = special != nullptr && source != nullptr
+			? source->getSpecialPowerModule(special) : nullptr;
+		if (special == nullptr || source == nullptr || module == nullptr
+			|| !module->isReady() || !command->isReady(source)) {
+			begin_result(json, false);
+			append_error(json, "command_unavailable", "special power is not ready");
+			json += "}";
+			return json.c_str();
+		}
+		affected.push_back(source);
+		if (type == GUI_COMMAND_SPECIAL_POWER_CONSTRUCT_FROM_SHORTCUT) {
+			const ThingTemplate *product = command->getThingTemplate();
+			ProductionUpdateInterface *production = source->getProductionUpdateInterface();
+			if (product == nullptr || production == nullptr || TheBuildAssistant == nullptr) {
+				begin_result(json, false);
+				append_error(json, "invalid_command",
+					"special-power construction has no producer or product");
+				json += "}";
+				return json.c_str();
+			}
+			const CanMakeType can_make = TheBuildAssistant->canMakeUnit(source, product);
+			if (can_make != CANMAKE_OK) {
+				begin_result(json, false);
+				append_error(json, "command_unavailable", can_make_name(can_make));
+				json += "}";
+				return json.c_str();
+			}
+			const LegalBuildCode legal = legal_build_location(position, product, angle, source);
+			if (legal != LBC_OK) {
+				begin_result(json, false);
+				append_error(json, "illegal_build_location", legal_build_name(legal));
+				json += "}";
+				return json.c_str();
+			}
+			post_selection(affected);
+			production->setSpecialPowerConstructionCommandButton(command);
+			GameMessage *message = TheMessageStream->appendMessage(
+				GameMessage::MSG_DOZER_CONSTRUCT);
+			message->appendIntegerArgument(product->getTemplateID());
+			message->appendLocationArgument(position);
+			message->appendRealArgument(angle);
+		} else {
+			if (!command->isValidToUseOn(source, target,
+					needs_position ? &position : nullptr, CMD_FROM_PLAYER)) {
+				begin_result(json, false);
+				append_error(json, "command_unavailable", "special-power target is invalid");
+				json += "}";
+				return json.c_str();
+			}
+			post_special_power_message(special, options, source->getID(), target,
+				position, angle, needs_target, needs_position);
+		}
+	} else {
+		begin_result(json, false);
+		append_error(json, "unsupported_command",
+			"command is not executable through the local-player command surface");
+		json += "}";
+		return json.c_str();
+	}
+
+	finish_action_result(json, command->getName().str(), affected);
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_cancel_production(
+	Int source_id,
+	Int production_id,
+	const char *upgrade_name,
+	Int camera_bound)
+{
+	static std::string json;
+	std::string error;
+	if (camera_bound != 0 && camera_bound != 1) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "camera_bound must be 0 or 1");
+		json += "}";
+		return json.c_str();
+	}
+	if (!gameplay_actions_ready(error)) {
+		begin_result(json, false);
+		append_error(json, "not_ready", error);
+		json += "}";
+		return json.c_str();
+	}
+	Object *source = resolve_public_object(source_id);
+	if (source == nullptr || !source->isLocallyControlled()
+		|| source->getDrawable() == nullptr || source->getContainedBy() != nullptr) {
+		begin_result(json, false);
+		append_error(json, "invalid_source", "sourceId must identify a local producer");
+		json += "}";
+		return json.c_str();
+	}
+	if (!source_satisfies_camera_policy(source, camera_bound != 0
+		? SourceCameraPolicy::VISIBLE_OR_SELECTED : SourceCameraPolicy::UNRESTRICTED)) {
+		begin_result(json, false);
+		append_error(json, "camera_bound",
+			"camera-bound actions require the producer to be visible or selected");
+		json += "}";
+		return json.c_str();
+	}
+	ProductionUpdateInterface *production = source->getProductionUpdateInterface();
+	const ProductionEntry *match = nullptr;
+	for (const ProductionEntry *entry = production != nullptr
+			? production->firstProduction() : nullptr;
+		entry != nullptr; entry = production->nextProduction(entry)) {
+		const UpgradeTemplate *upgrade = entry->getProductionUpgrade();
+		if ((production_id > 0 && entry->getProductionID() == production_id)
+			|| (upgrade_name != nullptr && upgrade_name[0] != '\0' && upgrade != nullptr
+				&& upgrade->getUpgradeName() == upgrade_name)) {
+			match = entry;
+			break;
+		}
+	}
+	if (match == nullptr) {
+		begin_result(json, false);
+		append_error(json, "stale_production", "production entry is no longer queued");
+		json += "}";
+		return json.c_str();
+	}
+	std::vector<Object *> selection = {source};
+	post_selection(selection);
+	if (match->getProductionObject() != nullptr) {
+		GameMessage *message = TheMessageStream->appendMessage(
+			GameMessage::MSG_CANCEL_UNIT_CREATE);
+		message->appendIntegerArgument(match->getProductionID());
+	} else {
+		const UpgradeTemplate *upgrade = match->getProductionUpgrade();
+		if (upgrade == nullptr) {
+			begin_result(json, false);
+			append_error(json, "invalid_production", "queued entry has no product");
+			json += "}";
+			return json.c_str();
+		}
+		GameMessage *message = TheMessageStream->appendMessage(GameMessage::MSG_CANCEL_UPGRADE);
+		message->appendIntegerArgument(upgrade->getUpgradeNameKey());
+	}
+	finish_action_result(json, "cancelProduction", selection);
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_exit_container(
+	Int container_id,
+	Int passenger_id,
+	Int camera_bound)
+{
+	static std::string json;
+	std::string error;
+	if (camera_bound != 0 && camera_bound != 1) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "camera_bound must be 0 or 1");
+		json += "}";
+		return json.c_str();
+	}
+	if (!gameplay_actions_ready(error)) {
+		begin_result(json, false);
+		append_error(json, "not_ready", error);
+		json += "}";
+		return json.c_str();
+	}
+	Object *container = resolve_public_object(container_id);
+	Object *passenger = resolve_public_object(passenger_id);
+	if (container == nullptr || passenger == nullptr || !container->isLocallyControlled()
+		|| !passenger->isLocallyControlled() || passenger->getContainedBy() != container
+		|| container->getDrawable() == nullptr) {
+		begin_result(json, false);
+		append_error(json, "invalid_container",
+			"passengerId must identify a local object currently inside containerId");
+		json += "}";
+		return json.c_str();
+	}
+	if (!source_satisfies_camera_policy(container, camera_bound != 0
+		? SourceCameraPolicy::VISIBLE_OR_SELECTED : SourceCameraPolicy::UNRESTRICTED)) {
+		begin_result(json, false);
+		append_error(json, "camera_bound",
+			"camera-bound actions require the container to be visible or selected");
+		json += "}";
+		return json.c_str();
+	}
+	std::vector<Object *> selection = {container};
+	post_selection(selection);
+	GameMessage *message = TheMessageStream->appendMessage(GameMessage::MSG_EXIT);
+	message->appendObjectIDArgument(passenger->getID());
+	finish_action_result(json, "exitContainer", selection);
+	json.pop_back();
+	json += ",\"passengerId\":" + std::to_string(public_object_id(passenger)) + "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_beacon(
+	const char *action,
+	Int beacon_id,
+	Real x,
+	Real y,
+	const char *utf8_text,
+	Int camera_bound)
+{
+	static std::string json;
+	std::string error;
+	if (camera_bound != 0 && camera_bound != 1) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "camera_bound must be 0 or 1");
+		json += "}";
+		return json.c_str();
+	}
+	if (!gameplay_actions_ready(error) || !TheGameLogic->isInMultiplayerGame()) {
+		begin_result(json, false);
+		append_error(json, "not_available", error.empty()
+			? "beacons are only available in multiplayer matches" : error);
+		json += "}";
+		return json.c_str();
+	}
+	const std::string requested = action != nullptr ? action : "";
+	Player *player = ThePlayerList->getLocalPlayer();
+	std::vector<Object *> affected;
+	if (requested == "place") {
+		Coord3D position;
+		if (!world_position(x, y, position, error)) {
+			begin_result(json, false);
+			append_error(json, "invalid_position", error);
+			json += "}";
+			return json.c_str();
+		}
+		if (camera_bound != 0 && !point_in_camera(position)) {
+			begin_result(json, false);
+			append_error(json, "camera_bound",
+				"camera-bound beacon placement must be inside the tactical view");
+			json += "}";
+			return json.c_str();
+		}
+		GameMessage *message = TheMessageStream->appendMessage(GameMessage::MSG_PLACE_BEACON);
+		message->appendLocationArgument(position);
+	} else if (requested == "remove" || requested == "setText") {
+		Object *beacon = resolve_public_object(beacon_id);
+		const ThingTemplate *beacon_template = player != nullptr && player->getPlayerTemplate() != nullptr
+			&& TheThingFactory != nullptr
+			? TheThingFactory->findTemplate(player->getPlayerTemplate()->getBeaconTemplate())
+			: nullptr;
+		if (beacon == nullptr || !beacon->isLocallyControlled()
+			|| beacon->getDrawable() == nullptr || beacon_template == nullptr
+			|| !beacon_template->isEquivalentTo(beacon->getTemplate())) {
+			begin_result(json, false);
+			append_error(json, "invalid_beacon", "beaconId must identify a local beacon");
+			json += "}";
+			return json.c_str();
+		}
+		if (!source_satisfies_camera_policy(beacon, camera_bound != 0
+			? SourceCameraPolicy::VISIBLE_OR_SELECTED : SourceCameraPolicy::UNRESTRICTED)) {
+			begin_result(json, false);
+			append_error(json, "camera_bound",
+				"camera-bound beacon actions require the beacon to be visible or selected");
+			json += "}";
+			return json.c_str();
+		}
+		std::vector<WideChar> decoded;
+		if (requested == "setText"
+			&& (!decode_utf8(utf8_text, decoded, error) || decoded.size() > 256)) {
+			begin_result(json, false);
+			append_error(json, "invalid_text", error.empty()
+				? "beacon text must not exceed 255 UTF-16 code units" : error);
+			json += "}";
+			return json.c_str();
+		}
+		affected.push_back(beacon);
+		post_selection(affected);
+		if (requested == "remove") {
+			TheMessageStream->appendMessage(GameMessage::MSG_REMOVE_BEACON);
+		} else {
+			GameMessage *message = TheMessageStream->appendMessage(
+				GameMessage::MSG_SET_BEACON_TEXT);
+			for (WideChar character : decoded) message->appendWideCharArgument(character);
+		}
+	} else {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "beacon action must be place, remove, or setText");
+		json += "}";
+		return json.c_str();
+	}
+	finish_action_result(json, requested.c_str(), affected);
 	return json.c_str();
 }
 
@@ -2555,6 +4164,226 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_camera_look_at(Real x
 	begin_result(json, true);
 	json += ",\"lookAt\":";
 	append_coord(json, position);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_camera_set_view(
+	Real angle,
+	Real pitch,
+	Real zoom,
+	Int set_angle,
+	Int set_pitch,
+	Int set_zoom)
+{
+	static std::string json;
+	std::string error;
+	if (!gameplay_actions_ready(error) || TheTacticalView == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", error.empty() ? "tactical view is not ready" : error);
+		json += "}";
+		return json.c_str();
+	}
+	if ((set_angle != 0 && set_angle != 1)
+		|| (set_pitch != 0 && set_pitch != 1)
+		|| (set_zoom != 0 && set_zoom != 1)
+		|| (set_angle == 0 && set_pitch == 0 && set_zoom == 0)
+		|| (set_angle != 0 && !std::isfinite(angle))
+		|| (set_pitch != 0 && !std::isfinite(pitch))
+		|| (set_zoom != 0 && !std::isfinite(zoom))) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments",
+			"provide at least one finite angle, pitch, or zoom with boolean flags");
+		json += "}";
+		return json.c_str();
+	}
+
+	if (set_angle != 0) TheTacticalView->setAngle(angle);
+	if (set_pitch != 0) TheTacticalView->setPitch(pitch);
+	if (set_zoom != 0) {
+		const Real current_zoom = TheTacticalView->getZoom();
+		const Real terrain_height = TheTacticalView->getTerrainHeightUnderCamera();
+		const Real height_above_ground = TheTacticalView->getHeightAboveGround();
+		const Real camera_offset_z = current_zoom != 0.0f
+			? (terrain_height + height_above_ground) / current_zoom : 0.0f;
+		if (std::isfinite(camera_offset_z) && camera_offset_z > 0.0f) {
+			TheTacticalView->setHeightAboveGround(
+				zoom * camera_offset_z - terrain_height);
+			zoom = (terrain_height + TheTacticalView->getHeightAboveGround())
+				/ camera_offset_z;
+		}
+		TheTacticalView->setZoom(zoom);
+	}
+	begin_result(json, true);
+	json += ",\"angle\":";
+	append_real(json, TheTacticalView->getAngle());
+	json += ",\"pitch\":";
+	append_real(json, TheTacticalView->getPitch());
+	json += ",\"zoom\":";
+	append_real(json, TheTacticalView->getZoom());
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_minimap_snapshot(
+	Int columns,
+	Int rows)
+{
+	static std::string json;
+	if (columns < 1 || columns > RADAR_CELL_WIDTH
+		|| rows < 1 || rows > RADAR_CELL_HEIGHT
+		|| columns * rows > kMaxTerrainSamples) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments",
+			"minimap rows and columns must be 1 through 128 with at most 16384 cells");
+		json += "}";
+		return json.c_str();
+	}
+	if (TheGameLogic == nullptr || TheTerrainLogic == nullptr || ThePartitionManager == nullptr
+		|| ThePlayerList == nullptr || TheRadar == nullptr || TheTacticalView == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "minimap observation subsystems are not ready");
+		json += "}";
+		return json.c_str();
+	}
+	Player *local_player = ThePlayerList->getLocalPlayer();
+	if (local_player == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "local player is not ready");
+		json += "}";
+		return json.c_str();
+	}
+
+	const bool forced = TheRadar->isRadarForced();
+	const bool hidden = TheRadar->isRadarHidden();
+	const bool has_radar = local_player->hasRadar();
+	const bool available = forced || (!hidden && has_radar);
+	begin_result(json, true);
+	json += ",\"snapshotId\":" + std::to_string(++g_minimap_snapshot_id);
+	json += ",\"frame\":" + std::to_string(TheGameLogic->getFrame());
+	json += ",\"available\":";
+	json += available ? "true" : "false";
+	json += ",\"forced\":";
+	json += forced ? "true" : "false";
+	json += ",\"hidden\":";
+	json += hidden ? "true" : "false";
+	json += ",\"hasRadar\":";
+	json += has_radar ? "true" : "false";
+	if (!available) {
+		json += ",\"reason\":";
+		append_json_string(json, hidden ? "hidden" : "radarUnavailable");
+		json += "}";
+		return json.c_str();
+	}
+
+	Region3D extent;
+	TheTerrainLogic->getExtent(&extent);
+	json += ",\"bounds\":{\"minX\":";
+	append_real(json, extent.lo.x);
+	json += ",\"minY\":";
+	append_real(json, extent.lo.y);
+	json += ",\"maxX\":";
+	append_real(json, extent.hi.x);
+	json += ",\"maxY\":";
+	append_real(json, extent.hi.y);
+	json += "},\"columns\":" + std::to_string(columns)
+		+ ",\"rows\":" + std::to_string(rows);
+
+	std::vector<std::uint8_t> knowledge(static_cast<std::size_t>(columns * rows), 0);
+	const Real step_x = extent.width() / static_cast<Real>(columns);
+	const Real step_y = extent.height() / static_cast<Real>(rows);
+	Int known_count = 0;
+	Int visible_count = 0;
+	for (Int row = 0; row < rows; ++row) {
+		for (Int column = 0; column < columns; ++column) {
+			Coord3D position = {
+				extent.lo.x + (static_cast<Real>(column) + 0.5f) * step_x,
+				extent.lo.y + (static_cast<Real>(row) + 0.5f) * step_y,
+				0.0f,
+			};
+			const CellShroudStatus shroud = ThePartitionManager->getShroudStatusForPlayer(
+				local_player->getPlayerIndex(), &position);
+			std::uint8_t value = 0;
+			if (shroud != CELLSHROUD_SHROUDED) {
+				value = shroud == CELLSHROUD_CLEAR ? 2 : 1;
+				++known_count;
+				if (value == 2) ++visible_count;
+			}
+			knowledge[static_cast<std::size_t>(row * columns + column)] = value;
+		}
+	}
+	json += ",\"knowledge\":{\"encoding\":\"uint8-base64\",\"layout\":";
+	append_json_string(json, "row-major values: 0 shrouded, 1 explored/fogged, 2 visible");
+	json += ",\"data\":";
+	append_json_string(json, encode_base64(knowledge));
+	json += "},\"knownCount\":" + std::to_string(known_count)
+		+ ",\"visibleCount\":" + std::to_string(visible_count);
+
+	Coord3D corners[4];
+	TheTacticalView->getScreenCornerWorldPointsAtZ(
+		&corners[0], &corners[1], &corners[2], &corners[3], 0.0f);
+	json += ",\"camera\":[";
+	for (Int i = 0; i < 4; ++i) {
+		ICoord2D radar = {0, 0};
+		TheRadar->worldToRadar(&corners[i], &radar);
+		const Int column = (std::min)(columns - 1, radar.x * columns / RADAR_CELL_WIDTH);
+		const Int row = (std::min)(rows - 1, radar.y * rows / RADAR_CELL_HEIGHT);
+		if (i != 0) json += ",";
+		json += "[" + std::to_string(column) + "," + std::to_string(row) + "]";
+	}
+	json += "]";
+
+	const std::vector<Object *> objects = sorted_game_objects();
+	json += ",\"contactFields\":[\"column\",\"row\",\"relationship\",\"priority\",\"color\"]";
+	json += ",\"relationships\":[\"neutral\",\"allies\",\"enemies\"]";
+	json += ",\"priorities\":[\"structure\",\"unit\",\"localUnitOnly\"]";
+	json += ",\"contacts\":[";
+	bool first_contact = true;
+	Int contact_count = 0;
+	bool truncated = false;
+	for (Object *object : objects) {
+		RadarObject *radar_object = object->friend_getRadarData();
+		Drawable *drawable = object->getDrawable();
+		const RadarPriorityType priority = object->getRadarPriority();
+		if (radar_object == nullptr || drawable == nullptr || !TheRadar->isPriorityVisible(priority)
+			|| radar_object->isTemporarilyHidden()
+			|| object->getShroudedStatus(local_player->getPlayerIndex()) > OBJECTSHROUD_PARTIAL_CLEAR) {
+			continue;
+		}
+		if (priority == RADAR_PRIORITY_LOCAL_UNIT_ONLY
+			&& object->getControllingPlayer() != local_player && local_player->isPlayerActive()) {
+			continue;
+		}
+		if (object->testStatus(OBJECT_STATUS_STEALTHED)
+			&& local_player->getRelationship(object->getTeam()) == ENEMIES
+			&& !object->testStatus(OBJECT_STATUS_DETECTED)
+			&& !object->testStatus(OBJECT_STATUS_DISGUISED)) {
+			continue;
+		}
+		if (contact_count >= kMaxWorldObjects) {
+			truncated = true;
+			break;
+		}
+		ICoord2D radar = {0, 0};
+		TheRadar->worldToRadar(object->getPosition(), &radar);
+		const Int column = (std::min)(columns - 1, radar.x * columns / RADAR_CELL_WIDTH);
+		const Int row = (std::min)(rows - 1, radar.y * rows / RADAR_CELL_HEIGHT);
+		bool disguised = false;
+		Player *owner = perceived_owner(object, local_player, disguised);
+		const Relationship relationship = relationship_to_local(owner, local_player);
+		const Int relationship_index = relationship == ALLIES ? 1 : relationship == ENEMIES ? 2 : 0;
+		const Int priority_index = priority == RADAR_PRIORITY_STRUCTURE ? 0
+			: priority == RADAR_PRIORITY_LOCAL_UNIT_ONLY ? 2 : 1;
+		if (!first_contact) json += ",";
+		first_contact = false;
+		json += "[" + std::to_string(column) + "," + std::to_string(row)
+			+ "," + std::to_string(relationship_index)
+			+ "," + std::to_string(priority_index)
+			+ "," + std::to_string(static_cast<UnsignedInt>(radar_object->getColor())) + "]";
+		++contact_count;
+	}
+	json += "],\"contactCount\":" + std::to_string(contact_count) + ",\"truncated\":";
+	json += truncated ? "true" : "false";
 	json += "}";
 	return json.c_str();
 }
@@ -2602,8 +4431,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 		|| game_mode == GAME_SKIRMISH || game_mode == GAME_INTERNET;
 	const UnsignedInt frame = TheGameLogic->getFrame();
 	begin_world_identity_scope(frame, playable);
-	const UnsignedInt end_frame = TheVictoryConditions != nullptr
+	const UnsignedInt live_end_frame = TheVictoryConditions != nullptr
 		? TheVictoryConditions->getEndFrame() : 0;
+	const bool retained_outcome = live_end_frame == 0
+		&& g_retained_match_outcome != RetainedMatchOutcome::NONE;
+	const UnsignedInt end_frame = retained_outcome
+		? g_retained_match_end_frame : live_end_frame;
 
 	begin_result(json, true);
 	json += ",\"snapshotId\":" + std::to_string(++g_world_snapshot_id);
@@ -2618,7 +4451,22 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 	json += playable ? "true" : "false";
 	json += ",\"endFrame\":" + std::to_string(end_frame);
 	json += ",\"outcome\":";
-	if (!playable || end_frame == 0 || TheVictoryConditions == nullptr) {
+	if (retained_outcome) {
+		switch (g_retained_match_outcome) {
+			case RetainedMatchOutcome::VICTORY:
+				append_json_string(json, "victory");
+				break;
+			case RetainedMatchOutcome::DEFEAT:
+				append_json_string(json, "defeat");
+				break;
+			case RetainedMatchOutcome::ENDED:
+				append_json_string(json, "ended");
+				break;
+			case RetainedMatchOutcome::NONE:
+				json += "null";
+				break;
+		}
+	} else if (!playable || end_frame == 0 || TheVictoryConditions == nullptr) {
 		json += "null";
 	} else if (TheVictoryConditions->hasAchievedVictory(local_player)) {
 		append_json_string(json, "victory");
@@ -2627,7 +4475,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 	} else {
 		append_json_string(json, "ended");
 	}
+	json += ",\"outcomeRetained\":";
+	json += retained_outcome ? "true" : "false";
+	json += ",\"scoreboardRetained\":";
+	json += retained_outcome && !g_retained_scoreboard.empty() ? "true" : "false";
 	json += "}";
+	json += ",\"scoreboard\":";
+	append_retained_scoreboard(json);
 
 	Coord3D look_at;
 	TheTacticalView->getPosition(&look_at);
@@ -2676,14 +4530,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 	}
 	json += "]";
 
-	std::vector<Object *> objects;
-	for (Object *object = TheGameLogic->getFirstObject();
-		object != nullptr; object = object->getNextObject()) {
-		objects.push_back(object);
-	}
-	std::sort(objects.begin(), objects.end(), [](const Object *left, const Object *right) {
-		return left->getID() < right->getID();
-	});
+	const std::vector<Object *> objects = sorted_game_objects();
 
 	std::vector<Object *> observed_objects;
 	observed_objects.reserve(std::min(static_cast<std::size_t>(kMaxWorldObjects), objects.size()));
@@ -2726,6 +4573,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 		append_template_catalog(json, observed_objects);
 		json += ",\"commandSets\":";
 		append_command_set_catalog(json, observed_objects);
+		json += ",\"playerCommandSets\":";
+		append_player_command_set_catalog(json, local_player);
+		json += ",\"playerCommandState\":";
+		append_player_command_state(json, local_player);
 		json += ",\"objectCapabilities\":";
 		append_capability_catalog(json, observed_objects);
 		json += ",\"engineServices\":";
@@ -3031,7 +4882,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_game_order(
 	Player *player = resolve_llm_ai_player(player_index, error);
 	if (player == nullptr) return finish_llm_error(json, "invalid_player", error);
 	ScopedAgentPerspective perspective(player);
-	return cnc_port_agent_game_order(action, object_ids, target_id, x, y);
+	return cnc_port_agent_game_order(action, object_ids, target_id, x, y, 0, 0);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_game_command(
@@ -3050,7 +4901,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_game_command(
 	if (player == nullptr) return finish_llm_error(json, "invalid_player", error);
 	ScopedAgentPerspective perspective(player);
 	return cnc_port_agent_game_command(
-		source_id, command_name, target_id, x, y, angle, has_position);
+		source_id, command_name, target_id, x, y, angle, has_position, 0);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_engine_request(

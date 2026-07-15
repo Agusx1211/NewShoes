@@ -2209,6 +2209,25 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "agentHudSnapshot": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_hud_snapshot", "string", [], []);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentChatSend": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_chat_send", "string", ["string", "string"],
+          [String(payload.text ?? ""), String(payload.audience ?? "everyone")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "agentWorldSnapshot": {
       try {
         const result = await threadedEngine.engineCall(
@@ -2242,11 +2261,21 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "agentMinimapSnapshot": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_minimap_snapshot", "string", ["number", "number"],
+          [Number(payload.columns), Number(payload.rows)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "agentGameSelect": {
       try {
         const result = await threadedEngine.engineCall(
-          "cnc_port_agent_game_select", "string", ["string"],
-          [String(payload.objectIds ?? "")]);
+          "cnc_port_agent_game_select", "string", ["string", "number"],
+          [String(payload.objectIds ?? ""), payload.cameraBound === true ? 1 : 0]);
         return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
@@ -2256,10 +2285,28 @@ async function threadedRpc(command, payload = {}) {
       try {
         const result = await threadedEngine.engineCall(
           "cnc_port_agent_game_order", "string",
-          ["string", "string", "number", "number", "number"],
+          ["string", "string", "number", "number", "number", "number", "number"],
           [
             String(payload.action ?? ""), String(payload.objectIds ?? ""),
             Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+            Number(payload.guardMode ?? 0),
+            payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameContext": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_context", "string",
+          ["string", "number", "number", "number", "number", "number"],
+          [
+            String(payload.objectIds ?? ""), Number(payload.targetId ?? 0),
+            Number(payload.x ?? 0), Number(payload.y ?? 0),
+            payload.hasPosition === true ? 1 : 0,
+            payload.cameraBound === true ? 1 : 0,
           ]);
         return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
@@ -2270,11 +2317,71 @@ async function threadedRpc(command, payload = {}) {
       try {
         const result = await threadedEngine.engineCall(
           "cnc_port_agent_game_command", "string",
-          ["number", "string", "number", "number", "number", "number", "number"],
+          ["number", "string", "number", "number", "number", "number", "number", "number"],
           [
             Number(payload.sourceId), String(payload.command ?? ""),
             Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
             Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+            payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGamePlayerCommand": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_player_command", "string",
+          ["string", "string", "number", "number", "number", "number", "number", "number"],
+          [
+            String(payload.commandSet ?? ""), String(payload.command ?? ""),
+            Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+            Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+            payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameProduction": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_cancel_production", "string",
+          ["number", "number", "string", "number"],
+          [
+            Number(payload.sourceId), Number(payload.productionId ?? 0),
+            String(payload.upgrade ?? ""), payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameContainer": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_exit_container", "string",
+          ["number", "number", "number"],
+          [
+            Number(payload.containerId), Number(payload.passengerId),
+            payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameBeacon": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_beacon", "string",
+          ["string", "number", "number", "number", "string", "number"],
+          [
+            String(payload.action ?? ""), Number(payload.beaconId ?? 0),
+            Number(payload.x ?? 0), Number(payload.y ?? 0), String(payload.text ?? ""),
+            payload.cameraBound === true ? 1 : 0,
           ]);
         return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
@@ -2376,6 +2483,22 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "agentCameraSetView": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_camera_set_view", "string",
+          ["number", "number", "number", "number", "number", "number"],
+          [
+            Number(payload.angle ?? 0), Number(payload.pitch ?? 0), Number(payload.zoom ?? 0),
+            payload.setAngle === true ? 1 : 0,
+            payload.setPitch === true ? 1 : 0,
+            payload.setZoom === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "agentUiActivate": {
       try {
         const result = await threadedEngine.engineCall(
@@ -2396,10 +2519,40 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "agentUiSubmit": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_submit", "string", ["number", "string"],
+          [Number(payload.windowId), String(payload.name ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "agentUiSelectIndex": {
       try {
         const result = await threadedEngine.engineCall(
           "cnc_port_agent_ui_select_index", "string", ["number", "string", "number"],
+          [Number(payload.windowId), String(payload.name ?? ""), Number(payload.index)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiSetValue": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_set_value", "string", ["number", "string", "number"],
+          [Number(payload.windowId), String(payload.name ?? ""), Number(payload.value)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiSelectTab": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_select_tab", "string", ["number", "string", "number"],
           [Number(payload.windowId), String(payload.name ?? ""), Number(payload.index)]);
         return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
@@ -6145,6 +6298,16 @@ async function loadWasmModule() {
         "string",
         ["number"],
       ),
+      agentHudSnapshot: module.cwrap(
+        "cnc_port_agent_hud_snapshot",
+        "string",
+        [],
+      ),
+      agentChatSend: module.cwrap(
+        "cnc_port_agent_chat_send",
+        "string",
+        ["string", "string"],
+      ),
       agentWorldSnapshot: module.cwrap(
         "cnc_port_agent_world_snapshot",
         "string",
@@ -6155,20 +6318,50 @@ async function loadWasmModule() {
         "string",
         ["number", "number", "number", "number", "number", "number", "number"],
       ),
+      agentMinimapSnapshot: module.cwrap(
+        "cnc_port_agent_minimap_snapshot",
+        "string",
+        ["number", "number"],
+      ),
       agentGameSelect: module.cwrap(
         "cnc_port_agent_game_select",
         "string",
-        ["string"],
+        ["string", "number"],
       ),
       agentGameOrder: module.cwrap(
         "cnc_port_agent_game_order",
         "string",
-        ["string", "string", "number", "number", "number"],
+        ["string", "string", "number", "number", "number", "number", "number"],
+      ),
+      agentGameContext: module.cwrap(
+        "cnc_port_agent_game_context",
+        "string",
+        ["string", "number", "number", "number", "number", "number"],
       ),
       agentGameCommand: module.cwrap(
         "cnc_port_agent_game_command",
         "string",
-        ["number", "string", "number", "number", "number", "number", "number"],
+        ["number", "string", "number", "number", "number", "number", "number", "number"],
+      ),
+      agentGamePlayerCommand: module.cwrap(
+        "cnc_port_agent_game_player_command",
+        "string",
+        ["string", "string", "number", "number", "number", "number", "number", "number"],
+      ),
+      agentGameProduction: module.cwrap(
+        "cnc_port_agent_game_cancel_production",
+        "string",
+        ["number", "number", "string", "number"],
+      ),
+      agentGameContainer: module.cwrap(
+        "cnc_port_agent_game_exit_container",
+        "string",
+        ["number", "number", "number"],
+      ),
+      agentGameBeacon: module.cwrap(
+        "cnc_port_agent_game_beacon",
+        "string",
+        ["string", "number", "number", "number", "string", "number"],
       ),
       llmAiWorldSnapshot: module.cwrap(
         "cnc_port_llm_ai_world_snapshot",
@@ -6205,6 +6398,11 @@ async function loadWasmModule() {
         "string",
         ["number", "number"],
       ),
+      agentCameraSetView: module.cwrap(
+        "cnc_port_agent_camera_set_view",
+        "string",
+        ["number", "number", "number", "number", "number", "number"],
+      ),
       agentUiActivate: module.cwrap(
         "cnc_port_agent_ui_activate",
         "string",
@@ -6215,8 +6413,23 @@ async function loadWasmModule() {
         "string",
         ["number", "string", "string"],
       ),
+      agentUiSubmit: module.cwrap(
+        "cnc_port_agent_ui_submit",
+        "string",
+        ["number", "string"],
+      ),
       agentUiSelectIndex: module.cwrap(
         "cnc_port_agent_ui_select_index",
+        "string",
+        ["number", "string", "number"],
+      ),
+      agentUiSetValue: module.cwrap(
+        "cnc_port_agent_ui_set_value",
+        "string",
+        ["number", "string", "number"],
+      ),
+      agentUiSelectTab: module.cwrap(
+        "cnc_port_agent_ui_select_tab",
         "string",
         ["number", "string", "number"],
       ),
@@ -13209,15 +13422,27 @@ async function rpc(command, payload = {}) {
         };
       }
     case "agentUiSnapshot":
+    case "agentHudSnapshot":
+    case "agentChatSend":
     case "agentWorldSnapshot":
     case "agentTerrainQuery":
+    case "agentMinimapSnapshot":
     case "agentGameSelect":
     case "agentGameOrder":
+    case "agentGameContext":
     case "agentGameCommand":
+    case "agentGamePlayerCommand":
+    case "agentGameProduction":
+    case "agentGameContainer":
+    case "agentGameBeacon":
     case "agentCameraLookAt":
+    case "agentCameraSetView":
     case "agentUiActivate":
     case "agentUiSetText":
+    case "agentUiSubmit":
     case "agentUiSelectIndex":
+    case "agentUiSetValue":
+    case "agentUiSelectTab":
     case "agentUiListItems":
       {
         const moduleResult = await getWasmModuleForArchives(command);
@@ -13230,6 +13455,11 @@ async function rpc(command, payload = {}) {
           let raw = null;
           if (command === "agentUiSnapshot") {
             raw = module.agentUiSnapshot(payload.includeHidden === true ? 1 : 0);
+          } else if (command === "agentHudSnapshot") {
+            raw = module.agentHudSnapshot();
+          } else if (command === "agentChatSend") {
+            raw = module.agentChatSend(
+              String(payload.text ?? ""), String(payload.audience ?? "everyone"));
           } else if (command === "agentWorldSnapshot") {
             raw = module.agentWorldSnapshot(
               payload.mode === "camera" ? 1 : 0,
@@ -13242,26 +13472,71 @@ async function rpc(command, payload = {}) {
               Number(payload.minX), Number(payload.minY),
               Number(payload.maxX), Number(payload.maxY),
               Number(payload.columns), Number(payload.rows));
+          } else if (command === "agentMinimapSnapshot") {
+            raw = module.agentMinimapSnapshot(Number(payload.columns), Number(payload.rows));
           } else if (command === "agentGameSelect") {
-            raw = module.agentGameSelect(String(payload.objectIds ?? ""));
+            raw = module.agentGameSelect(
+              String(payload.objectIds ?? ""), payload.cameraBound === true ? 1 : 0);
           } else if (command === "agentGameOrder") {
             raw = module.agentGameOrder(
               String(payload.action ?? ""), String(payload.objectIds ?? ""),
-              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0));
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+              Number(payload.guardMode ?? 0),
+              payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGameContext") {
+            raw = module.agentGameContext(
+              String(payload.objectIds ?? ""), Number(payload.targetId ?? 0),
+              Number(payload.x ?? 0), Number(payload.y ?? 0),
+              payload.hasPosition === true ? 1 : 0,
+              payload.cameraBound === true ? 1 : 0);
           } else if (command === "agentGameCommand") {
             raw = module.agentGameCommand(
               Number(payload.sourceId), String(payload.command ?? ""),
               Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
-              Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0);
+              Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+              payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGamePlayerCommand") {
+            raw = module.agentGamePlayerCommand(
+              String(payload.commandSet ?? ""), String(payload.command ?? ""),
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+              Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+              payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGameProduction") {
+            raw = module.agentGameProduction(
+              Number(payload.sourceId), Number(payload.productionId ?? 0),
+              String(payload.upgrade ?? ""), payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGameContainer") {
+            raw = module.agentGameContainer(
+              Number(payload.containerId), Number(payload.passengerId),
+              payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGameBeacon") {
+            raw = module.agentGameBeacon(
+              String(payload.action ?? ""), Number(payload.beaconId ?? 0),
+              Number(payload.x ?? 0), Number(payload.y ?? 0), String(payload.text ?? ""),
+              payload.cameraBound === true ? 1 : 0);
           } else if (command === "agentCameraLookAt") {
             raw = module.agentCameraLookAt(Number(payload.x), Number(payload.y));
+          } else if (command === "agentCameraSetView") {
+            raw = module.agentCameraSetView(
+              Number(payload.angle ?? 0), Number(payload.pitch ?? 0), Number(payload.zoom ?? 0),
+              payload.setAngle === true ? 1 : 0,
+              payload.setPitch === true ? 1 : 0,
+              payload.setZoom === true ? 1 : 0);
           } else if (command === "agentUiActivate") {
             raw = module.agentUiActivate(Number(payload.windowId), String(payload.name ?? ""));
           } else if (command === "agentUiSetText") {
             raw = module.agentUiSetText(
               Number(payload.windowId), String(payload.name ?? ""), String(payload.text ?? ""));
+          } else if (command === "agentUiSubmit") {
+            raw = module.agentUiSubmit(Number(payload.windowId), String(payload.name ?? ""));
           } else if (command === "agentUiSelectIndex") {
             raw = module.agentUiSelectIndex(
+              Number(payload.windowId), String(payload.name ?? ""), Number(payload.index));
+          } else if (command === "agentUiSetValue") {
+            raw = module.agentUiSetValue(
+              Number(payload.windowId), String(payload.name ?? ""), Number(payload.value));
+          } else if (command === "agentUiSelectTab") {
+            raw = module.agentUiSelectTab(
               Number(payload.windowId), String(payload.name ?? ""), Number(payload.index));
           } else {
             raw = module.agentUiListItems(

@@ -78,19 +78,32 @@ test("authenticates and maps raw UI requests to engine-thread RPC", async () => 
     protocol: AGENT_PROTOCOL,
     token: "engine-token",
     sessionId: "match-alpha",
+    playMode: "global",
     capabilities: [
       "protocol.describe",
       "input.pointerMove",
       "camera.lookAt",
+      "camera.setView",
       "game.select",
       "game.order",
+      "game.context",
       "game.command",
+      "game.playerCommand",
+      "game.production",
+      "game.container",
+      "game.beacon",
       "world.snapshot",
       "terrain.query",
+      "minimap.snapshot",
+      "hud.snapshot",
+      "chat.send",
       "ui.snapshot",
       "ui.activate",
       "ui.setText",
+      "ui.submit",
       "ui.selectIndex",
+      "ui.setValue",
+      "ui.selectTab",
       "ui.listItems",
     ],
   });
@@ -99,6 +112,7 @@ test("authenticates and maps raw UI requests to engine-thread RPC", async () => 
     ok: true,
     protocol: AGENT_PROTOCOL,
     sessionId: "match-alpha",
+    playMode: "global",
   });
   socket.receive({
     type: "request",
@@ -143,11 +157,80 @@ test("authenticates and maps raw UI requests to engine-thread RPC", async () => 
   controller.stop();
 });
 
+test("maps HUD and advanced UI controls to engine-thread RPC", async () => {
+  FakeWebSocket.instances.length = 0;
+  const calls = [];
+  const controller = createAgentBridgeConnection({
+    config: { url: "ws://localhost/engine", token: "token", sessionId: "controls" },
+    rpc: async (command, payload) => {
+      calls.push({ command, payload });
+      return { ok: true, result: { ok: true } };
+    },
+    WebSocketImpl: FakeWebSocket,
+    cryptoImpl: { randomUUID: () => "unused" },
+  });
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  socket.receive({
+    type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "controls", playMode: "global",
+  });
+  socket.receive({
+    type: "request",
+    id: "value-1",
+    op: "ui.setValue",
+    args: { windowId: 17, name: "Options.wnd:VolumeSlider", value: 73 },
+  });
+  socket.receive({
+    type: "request",
+    id: "tab-1",
+    op: "ui.selectTab",
+    args: { windowId: 19, name: "Options.wnd:Tabs", index: 2 },
+  });
+  socket.receive({
+    type: "request",
+    id: "submit-1",
+    op: "ui.submit",
+    args: { windowId: 23, name: "LanLobbyMenu.wnd:TextEntryChat" },
+  });
+  socket.receive({ type: "request", id: "hud-1", op: "hud.snapshot", args: {} });
+  socket.receive({
+    type: "request",
+    id: "chat-1",
+    op: "chat.send",
+    args: { text: "  Attack now  ", audience: "allies" },
+  });
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+
+  assert.deepEqual(calls, [
+    {
+      command: "agentUiSetValue",
+      payload: { windowId: 17, name: "Options.wnd:VolumeSlider", value: 73 },
+    },
+    {
+      command: "agentUiSelectTab",
+      payload: { windowId: 19, name: "Options.wnd:Tabs", index: 2 },
+    },
+    {
+      command: "agentUiSubmit",
+      payload: { windowId: 23, name: "LanLobbyMenu.wnd:TextEntryChat" },
+    },
+    { command: "agentHudSnapshot", payload: {} },
+    { command: "agentChatSend", payload: { text: "Attack now", audience: "allies" } },
+  ]);
+  controller.stop();
+});
+
 test("maps bounded world and terrain observations to engine RPC", async () => {
   FakeWebSocket.instances.length = 0;
   const calls = [];
   const controller = createAgentBridgeConnection({
-    config: { url: "ws://localhost/engine", token: "token", sessionId: "world" },
+    config: {
+      url: "ws://localhost/engine", token: "token", sessionId: "world", playMode: "camera",
+    },
     rpc: async (command, payload) => {
       calls.push({ command, payload });
       return { ok: true, result: { ok: true, command } };
@@ -157,7 +240,9 @@ test("maps bounded world and terrain observations to engine RPC", async () => {
   });
   const socket = FakeWebSocket.instances[0];
   socket.open();
-  socket.receive({ type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "world" });
+  socket.receive({
+    type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "world", playMode: "camera",
+  });
   socket.receive({
     type: "request",
     id: "world-1",
@@ -178,6 +263,10 @@ test("maps bounded world and terrain observations to engine RPC", async () => {
       rows: 32,
     },
   });
+  socket.receive({
+    type: "request", id: "minimap-1", op: "minimap.snapshot", args: { columns: 48, rows: 24 },
+  });
+  await flush();
   await flush();
   await flush();
 
@@ -189,7 +278,7 @@ test("maps bounded world and terrain observations to engine RPC", async () => {
     {
       command: "agentTerrainQuery",
       payload: {
-        mode: "unrestricted",
+        mode: "camera",
         minX: 0,
         minY: 10,
         maxX: 1000,
@@ -198,11 +287,14 @@ test("maps bounded world and terrain observations to engine RPC", async () => {
         rows: 32,
       },
     },
+    { command: "agentMinimapSnapshot", payload: { columns: 48, rows: 24 } },
   ]);
   assert.equal(socket.sent[1].id, "world-1");
   assert.equal(socket.sent[1].ok, true);
   assert.equal(socket.sent[2].id, "terrain-1");
   assert.equal(socket.sent[2].ok, true);
+  assert.equal(socket.sent[3].id, "minimap-1");
+  assert.equal(socket.sent[3].ok, true);
   controller.stop();
 });
 
@@ -210,7 +302,9 @@ test("maps semantic gameplay actions to bounded engine RPC", async () => {
   FakeWebSocket.instances.length = 0;
   const calls = [];
   const controller = createAgentBridgeConnection({
-    config: { url: "ws://localhost/engine", token: "token", sessionId: "actions" },
+    config: {
+      url: "ws://localhost/engine", token: "token", sessionId: "actions", playMode: "camera",
+    },
     rpc: async (command, payload) => {
       calls.push({ command, payload });
       return { ok: true, result: { ok: true, accepted: true } };
@@ -220,13 +314,19 @@ test("maps semantic gameplay actions to bounded engine RPC", async () => {
   });
   const socket = FakeWebSocket.instances[0];
   socket.open();
-  socket.receive({ type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "actions" });
+  socket.receive({
+    type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "actions", playMode: "camera",
+  });
   socket.receive({
     type: "request", id: "select", op: "game.select", args: { objectIds: [3, 7] },
   });
   socket.receive({
     type: "request", id: "order", op: "game.order",
     args: { action: "attackMove", objectIds: [3, 7], position: { x: 500, y: 750 } },
+  });
+  socket.receive({
+    type: "request", id: "context", op: "game.context",
+    args: { objectIds: [3, 7], targetId: 11 },
   });
   socket.receive({
     type: "request", id: "command", op: "game.command",
@@ -238,18 +338,55 @@ test("maps semantic gameplay actions to bounded engine RPC", async () => {
     },
   });
   socket.receive({
+    type: "request", id: "player-command", op: "game.playerCommand",
+    args: {
+      commandSet: "AmericaScienceCommandSetRank1",
+      command: "Command_PurchaseSciencePaladinTank",
+    },
+  });
+  socket.receive({
+    type: "request", id: "production", op: "game.production",
+    args: { sourceId: 9, action: "cancel", productionId: 41 },
+  });
+  socket.receive({
+    type: "request", id: "container", op: "game.container",
+    args: { containerId: 17, action: "exit", passengerId: 18 },
+  });
+  socket.receive({
+    type: "request", id: "beacon", op: "game.beacon",
+    args: { action: "place", position: { x: 610, y: 820 } },
+  });
+  socket.receive({
     type: "request", id: "camera", op: "camera.lookAt", args: { x: 400, y: 300 },
   });
+  socket.receive({
+    type: "request", id: "camera-view", op: "camera.setView", args: { angle: 0.5, zoom: 0.8 },
+  });
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+  await flush();
+  await flush();
   await flush();
   await flush();
   await flush();
   await flush();
 
   assert.deepEqual(calls, [
-    { command: "agentGameSelect", payload: { objectIds: "3,7" } },
+    { command: "agentGameSelect", payload: { objectIds: "3,7", cameraBound: true } },
     {
       command: "agentGameOrder",
-      payload: { action: "attackMove", objectIds: "3,7", targetId: 0, x: 500, y: 750 },
+      payload: {
+        action: "attackMove", objectIds: "3,7", targetId: 0, x: 500, y: 750,
+        guardMode: 0, cameraBound: true,
+      },
+    },
+    {
+      command: "agentGameContext",
+      payload: {
+        objectIds: "3,7", targetId: 11, x: 0, y: 0, hasPosition: false, cameraBound: true,
+      },
     },
     {
       command: "agentGameCommand",
@@ -261,9 +398,45 @@ test("maps semantic gameplay actions to bounded engine RPC", async () => {
         y: 240,
         angle: 1.25,
         hasPosition: true,
+        cameraBound: true,
+      },
+    },
+    {
+      command: "agentGamePlayerCommand",
+      payload: {
+        commandSet: "AmericaScienceCommandSetRank1",
+        command: "Command_PurchaseSciencePaladinTank",
+        targetId: 0,
+        x: 0,
+        y: 0,
+        angle: 0,
+        hasPosition: false,
+        cameraBound: true,
+      },
+    },
+    {
+      command: "agentGameProduction",
+      payload: {
+        sourceId: 9, action: "cancel", productionId: 41, upgrade: "", cameraBound: true,
+      },
+    },
+    {
+      command: "agentGameContainer",
+      payload: { containerId: 17, action: "exit", passengerId: 18, cameraBound: true },
+    },
+    {
+      command: "agentGameBeacon",
+      payload: {
+        action: "place", beaconId: 0, x: 610, y: 820, text: "", cameraBound: true,
       },
     },
     { command: "agentCameraLookAt", payload: { x: 400, y: 300 } },
+    {
+      command: "agentCameraSetView",
+      payload: {
+        angle: 0.5, pitch: 0, zoom: 0.8, setAngle: true, setPitch: false, setZoom: true,
+      },
+    },
   ]);
   assert.equal(socket.sent.at(-1).ok, true);
   controller.stop();
@@ -280,7 +453,9 @@ test("rejects invalid gameplay object IDs without touching the engine", async ()
   });
   const socket = FakeWebSocket.instances[0];
   socket.open();
-  socket.receive({ type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "bad-actions" });
+  socket.receive({
+    type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "bad-actions", playMode: "global",
+  });
   socket.receive({
     type: "request", id: "duplicates", op: "game.order",
     args: { action: "move", objectIds: [2, 2], position: { x: 1, y: 2 } },
@@ -291,18 +466,23 @@ test("rejects invalid gameplay object IDs without touching the engine", async ()
   controller.stop();
 });
 
-test("rejects invalid observation modes and oversized terrain grids", async () => {
+test("fixes observation mode at launch and rejects oversized terrain grids", async () => {
   FakeWebSocket.instances.length = 0;
-  let calls = 0;
+  const calls = [];
   const controller = createAgentBridgeConnection({
     config: { url: "ws://localhost/engine", token: "token", sessionId: "bounds" },
-    rpc: async () => { calls += 1; },
+    rpc: async (command, payload) => {
+      calls.push({ command, payload });
+      return { ok: true, result: { ok: true } };
+    },
     WebSocketImpl: FakeWebSocket,
     cryptoImpl: { randomUUID: () => "unused" },
   });
   const socket = FakeWebSocket.instances[0];
   socket.open();
-  socket.receive({ type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "bounds" });
+  socket.receive({
+    type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "bounds", playMode: "global",
+  });
   socket.receive({
     type: "request",
     id: "bad-mode",
@@ -325,8 +505,11 @@ test("rejects invalid observation modes and oversized terrain grids", async () =
   await flush();
   await flush();
 
-  assert.equal(calls, 0);
-  assert.equal(socket.sent[1].error.code, "invalid_arguments");
+  assert.deepEqual(calls, [{
+    command: "agentWorldSnapshot",
+    payload: { mode: "unrestricted", detail: "full", includeCapabilities: false },
+  }]);
+  assert.equal(socket.sent[1].ok, true);
   assert.equal(socket.sent[2].error.code, "invalid_arguments");
   assert.equal(socket.sent[3].error.code, "invalid_arguments");
   controller.stop();
@@ -343,7 +526,9 @@ test("rejects unsupported operations without touching the engine", async () => {
   });
   const socket = FakeWebSocket.instances[0];
   socket.open();
-  socket.receive({ type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "session" });
+  socket.receive({
+    type: "hello", ok: true, protocol: AGENT_PROTOCOL, sessionId: "session", playMode: "global",
+  });
   socket.receive({ type: "request", id: "bad-op", op: "game.winNow", args: {} });
   await flush();
 
