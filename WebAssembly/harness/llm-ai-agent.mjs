@@ -10,9 +10,6 @@ import { boundLlmPayload } from "./llm-ai-strategy.mjs";
 const INFORMATIONAL_TOOLS = new Set([
   "set_priorities", "query_buildable_options", "inspect_entities", "inspect_job", "query_map_region", "wait_for_tick",
 ]);
-const RECOVERY_DETAIL_TOOLS = new Set([
-  "query_buildable_options", "inspect_entities", "inspect_job", "query_map_region",
-]);
 const ACTIVE_JOB_STATES = new Set(["queued", "assembling", "moving", "engaged"]);
 const PROVIDER_CONTRACT_ERRORS = new Set([
   "invalid_action", "invalid_arguments", "invalid_json", "invalid_stream", "invalid_tool_call",
@@ -99,7 +96,7 @@ export class LlmAiAgentRuntime {
     this.failedToolSignatures = new Map();
     this.actionFailureStreak = 0;
     this.nonActionStreak = 0;
-    this.recoveryBlockedTool = null;
+    this.lastFailedActionTool = null;
     this.observedOutcome = null;
     this.authoritativeOutcome = null;
   }
@@ -241,12 +238,34 @@ export class LlmAiAgentRuntime {
     this.nonActionStreak = 0;
     if (ok) {
       this.actionFailureStreak = 0;
-      this.recoveryBlockedTool = null;
+      this.lastFailedActionTool = null;
       this.failedToolSignatures.clear();
       return;
     }
     this.actionFailureStreak += 1;
-    this.recoveryBlockedTool = name;
+    this.lastFailedActionTool = name;
+  }
+
+  toolFailureStateKey() {
+    const observation = this.lastObservation || {};
+    return JSON.stringify({
+      catalogRevision: observation.catalogRevision ?? null,
+      money: observation.economy?.money ?? null,
+      powerSufficient: observation.economy?.powerSufficient ?? null,
+      forces: (observation.forces || []).map((force) => [
+        force.handle, force.count, force.missionHandle,
+      ]),
+      objectives: (observation.objectives || []).map((objective) => [
+        objective.handle, objective.health,
+      ]),
+      commands: (observation.commands || []).map((command) => [
+        command.sourceId, command.command, command.ready,
+      ]),
+      production: (observation.production || []).map((facility) => [
+        facility.facility,
+        (facility.queue || []).map((entry) => [entry.name, entry.progress]),
+      ]),
+    });
   }
 
   recoveryToolSet() {
@@ -264,13 +283,10 @@ export class LlmAiAgentRuntime {
         reason: "find-remaining-objective",
       };
     }
-    const recoveryTools = this.tools.filter((tool) => !INFORMATIONAL_TOOLS.has(tool.name)
-      || RECOVERY_DETAIL_TOOLS.has(tool.name));
-    const alternatives = this.actionFailureStreak >= RECOVERY_THRESHOLD
-      ? recoveryTools.filter((tool) => tool.name !== this.recoveryBlockedTool)
-      : recoveryTools;
+    const recoveryTools = this.tools.filter((tool) =>
+      !["set_priorities", "wait_for_tick"].includes(tool.name));
     return {
-      tools: alternatives.length > 0 ? alternatives : recoveryTools,
+      tools: recoveryTools,
       recoveryRequired: true,
       reason: "require-gameplay-action",
     };
@@ -281,7 +297,7 @@ export class LlmAiAgentRuntime {
       reason,
       actionFailureStreak: this.actionFailureStreak,
       nonActionStreak: this.nonActionStreak,
-      excludedFailedTool: this.recoveryBlockedTool,
+      lastFailedTool: this.lastFailedActionTool,
       toolsAvailableThisTurn: tools.map((tool) => tool.name),
       catalogRevision: this.lastObservation?.catalogRevision ?? null,
       activeMissions: (this.lastObservation?.missions ?? [])
@@ -291,7 +307,7 @@ export class LlmAiAgentRuntime {
       role: "user",
       content: `ENVIRONMENT RECOVERY REQUIRED\n${boundedJson(recovery, this.profile.routineObservationTokens, this.tokenizer)}\n${reason === "find-remaining-objective"
         ? "The match is non-terminal with no visible threat. Do not wait. Use an allowed detail query or send a surviving squad to scout a distinct map region, then attack any discovered structure objective."
-        : "Issue a materially different gameplay action now. Use an available detail query first when a current stable handle is missing; do not guess identifiers or repeat rejected arguments."}\nOnly toolsAvailableThisTurn are currently permitted. Detail queries do not clear this restriction; include a successful gameplay action.`,
+        : "Issue a materially different gameplay action now. Use an available detail query first when a current stable handle is missing; do not guess identifiers or repeat rejected arguments. The failed action type remains available with changed arguments or after relevant world state changes."}\nOnly toolsAvailableThisTurn are currently permitted. Detail queries do not clear this restriction; include a successful gameplay action.`,
     });
     await this.event("agent.recovery_required", recovery);
   }
@@ -321,6 +337,11 @@ export class LlmAiAgentRuntime {
       arguments: call.arguments,
     });
     const signature = JSON.stringify([call.name, call.arguments]);
+    const failureStateKey = this.toolFailureStateKey();
+    const previousFailure = this.failedToolSignatures.get(signature);
+    if (previousFailure && previousFailure.stateKey !== failureStateKey) {
+      this.failedToolSignatures.delete(signature);
+    }
     const allowed = allowedTools.some((candidate) => candidate.name === call.name);
     let result;
     let eventExtra = {};
@@ -334,16 +355,16 @@ export class LlmAiAgentRuntime {
       };
       eventExtra = { recoveryRestriction: true };
     } else if (this.failedToolSignatures.has(signature)) {
-      const previousFailure = this.failedToolSignatures.get(signature);
-      previousFailure.repetitions += 1;
+      const repeatedFailure = this.failedToolSignatures.get(signature);
+      repeatedFailure.repetitions += 1;
       result = {
         ok: false,
         error: {
           code: "repeated_invalid_action",
-          message: `This exact call already failed with ${previousFailure.code}. Change the tool or arguments; query a current stable handle instead of guessing.`,
+          message: `This exact call already failed with ${repeatedFailure.code} in the current observed state. Change the arguments, query current state, or wait for a relevant state change.`,
         },
       };
-      eventExtra = { blockedRepeat: previousFailure.repetitions };
+      eventExtra = { blockedRepeat: repeatedFailure.repetitions };
     } else {
       try {
         if (typeof tool.validate === "function") tool.validate(call.arguments);
@@ -353,8 +374,13 @@ export class LlmAiAgentRuntime {
         });
       } catch (error) {
         result = { ok: false, error: { code: error?.code || "tool_error", message: error?.message || String(error) } };
-        this.failedToolSignatures.set(signature, { code: result.error.code, repetitions: 1 });
       }
+    }
+    const rawOk = result?.ok !== false && !result?.error;
+    if (!rawOk && !eventExtra.recoveryRestriction && !eventExtra.blockedRepeat) {
+      this.failedToolSignatures.set(signature, {
+        code: result?.error?.code || "tool_error", repetitions: 1, stateKey: failureStateKey,
+      });
     }
     const bounded = boundLlmPayload(result, this.profile.toolResultTokens, {
       tokenizer: this.tokenizer, handle: `tool-result:${call.id || this.session.toolCalls + 1}`,

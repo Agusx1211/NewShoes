@@ -990,8 +990,8 @@ const tool = {
     && event.data.rejectedResponse.code === "missing_tool_call"));
 }
 
-// Recovery keeps the provider's native schema stable and leaves bounded detail
-// queries available so the model can resolve a current handle before acting.
+// Recovery keeps the provider's native schema stable and leaves failed action
+// types available with changed arguments or changed observed state.
 {
   let now = 1_750;
   const memory = new MemoryLlmAiStore();
@@ -1024,9 +1024,38 @@ const tool = {
     && event.data.name === informational.name && event.data.ok === true));
 
   runtime.actionFailureStreak = 2;
-  runtime.recoveryBlockedTool = tool.name;
+  runtime.lastFailedActionTool = tool.name;
   assert.deepEqual(runtime.recoveryToolSet().tools.map((candidate) => candidate.name),
-    [informational.name], "a failed action is withheld without hiding handle lookup");
+    [tool.name, informational.name], "recovery does not blacklist a whole action type");
+}
+
+// Exact failures are blocked only while the relevant observed state is unchanged.
+{
+  let executions = 0;
+  const memory = new MemoryLlmAiStore();
+  const saved = await memory.saveProfile(profile, { cryptoImpl, now: () => 1_850 });
+  const failing = { ...tool, execute: async () => {
+    executions += 1;
+    return { ok: false, error: { code: "command_unavailable", message: "insufficientFunds" } };
+  } };
+  const runtime = new LlmAiAgentRuntime({
+    profile: saved, tools: [failing],
+    observe: async () => ({ game: { outcome: "playing" } }),
+    store: memory, cryptoImpl, now: () => 1_850,
+  });
+  await runtime.start();
+  runtime.lastObservation = { economy: { money: 100, powerSufficient: true },
+    forces: [], objectives: [], commands: [], catalogRevision: "catalog:1" };
+  const call = { id: "failed-call-1", name: failing.name, arguments: { x: 1, y: 2 } };
+  const first = await runtime.executeTool(call, "native");
+  const repeated = await runtime.executeTool({ ...call, id: "failed-call-2" }, "native");
+  assert.equal(first.error.code, "command_unavailable");
+  assert.equal(repeated.error.code, "repeated_invalid_action");
+  assert.equal(executions, 1);
+  runtime.lastObservation.economy.money = 500;
+  const changed = await runtime.executeTool({ ...call, id: "failed-call-3" }, "native");
+  assert.equal(changed.error.code, "command_unavailable");
+  assert.equal(executions, 2, "a relevant state change permits a fresh engine attempt");
 }
 
 // Once visible threats disappear, recovery permits bounded reconnaissance but
