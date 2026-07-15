@@ -127,6 +127,37 @@ bool exercise_misc()
 	return expect(!cMiscUtil::File_Exists(path), "Remove_File failed");
 }
 
+bool exercise_windows_file_paths()
+{
+	const char *directory = "wwutil_platform_smoke";
+	const char *save_directory = "wwutil_platform_smoke\\Save";
+	const char *posix_path = "wwutil_platform_smoke/Save/delete-me.sav";
+	const char *win32_path = "wwutil_platform_smoke\\Save\\delete-me.sav";
+
+	if (!expect(CreateDirectory(directory, nullptr) == TRUE,
+			"CreateDirectory root setup failed") ||
+		!expect(CreateDirectory(save_directory, nullptr) == TRUE,
+			"CreateDirectory should normalize Win32 separators")) {
+		return false;
+	}
+
+	RawFileClass file(posix_path);
+	if (!expect(file.Open(FileClass::WRITE), "DeleteFile fixture open failed")) {
+		return false;
+	}
+	const char payload[] = "save";
+	const bool wrote = file.Write(payload, sizeof(payload)) == sizeof(payload);
+	file.Close();
+	if (!expect(wrote, "DeleteFile fixture write failed")) {
+		return false;
+	}
+
+	const bool deleted = DeleteFile(win32_path) == TRUE;
+	rmdir("wwutil_platform_smoke/Save");
+	rmdir(directory);
+	return expect(deleted, "DeleteFile should normalize Win32 separators");
+}
+
 bool exercise_math()
 {
 	double dx = 0.0;
@@ -174,7 +205,7 @@ bool exercise_math()
 int main()
 {
 	WWMath::Init();
-	const bool ok = exercise_misc() && exercise_math();
+	const bool ok = exercise_misc() && exercise_windows_file_paths() && exercise_math();
 	WWMath::Shutdown();
 	if (!ok) {
 		return 1;

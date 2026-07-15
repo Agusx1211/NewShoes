@@ -1,4 +1,4 @@
-name: Deploy pull request preview
+name: Deploy Cloudflare previews
 
 on:
   workflow_run:
@@ -12,33 +12,63 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: pr-preview-${{ github.event.workflow_run.head_branch }}
+  group: cloudflare-preview-${{ github.event.workflow_run.event == 'pull_request' && 'pr' || 'branch' }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 jobs:
   deploy:
-    name: Publish trusted PR artifact
+    name: Publish trusted artifact
     if: >-
-      github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (
+        github.event.workflow_run.event == 'pull_request' ||
+        (
+          (
+            github.event.workflow_run.event == 'push' ||
+            github.event.workflow_run.event == 'workflow_dispatch'
+          ) &&
+          github.event.workflow_run.head_branch == 'dev'
+        )
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
       name: cloudflare-pages
 
     env:
+      RUN_EVENT: ${{ github.event.workflow_run.event }}
       HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
       TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
       CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
 
     steps:
-      - name: Resolve the current pull request
-        id: pull_request
+      - name: Resolve the current deployment target
+        id: target
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          if [[ "${RUN_EVENT}" != "pull_request" ]]; then
+            current_sha="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/dev" \
+              --jq '.object.sha')"
+            if [[ "${current_sha}" != "${HEAD_SHA}" ]]; then
+              echo "The dev branch has advanced from ${HEAD_SHA} to ${current_sha}; skipping stale handoff."
+              echo "deploy=false" >>"${GITHUB_OUTPUT}"
+              exit 0
+            fi
+            {
+              echo "deploy=true"
+              echo "branch=dev"
+              echo "environment=cloudflare-pages-dev"
+              echo "url=https://dev.newshoes.gg/"
+              echo "transient=false"
+              echo "description=Cloudflare Pages dev branch"
+            } >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
           pulls="$(gh api \
             -H "Accept: application/vnd.github+json" \
             "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/pulls")"
@@ -51,7 +81,7 @@ jobs:
               .head.repo.full_name == $repo and
               .head.sha == $sha and
               .base.repo.full_name == $repo and
-              .base.ref == $base
+              (.base.ref == $base or .base.ref == "dev")
             )] | if length == 1 then .[0] else empty end' \
             <<<"${pulls}")"
           if [[ -z "${match}" ]]; then
@@ -60,13 +90,17 @@ jobs:
             exit 0
           fi
           pr_number="$(jq -r '.number' <<<"${match}")"
-          preview_url="https://pr-${pr_number}.${CLOUDFLARE_PAGES_PROJECT}.pages.dev"
-          echo "deploy=true" >>"${GITHUB_OUTPUT}"
-          echo "number=${pr_number}" >>"${GITHUB_OUTPUT}"
-          echo "url=${preview_url}" >>"${GITHUB_OUTPUT}"
+          {
+            echo "deploy=true"
+            echo "branch=pr-${pr_number}"
+            echo "environment=pr-${pr_number}"
+            echo "url=https://pr-${pr_number}.${CLOUDFLARE_PAGES_PROJECT}.pages.dev"
+            echo "transient=true"
+            echo "description=Cloudflare Pages pull request preview"
+          } >>"${GITHUB_OUTPUT}"
 
       - name: Validate deployment configuration
-        if: steps.pull_request.outputs.deploy == 'true'
+        if: steps.target.outputs.deploy == 'true'
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -76,7 +110,7 @@ jobs:
           test -n "${CLOUDFLARE_PAGES_PROJECT}" || { echo "CLOUDFLARE_PAGES_PROJECT is not configured"; exit 1; }
 
       - name: Download audited preview artifact
-        if: steps.pull_request.outputs.deploy == 'true'
+        if: steps.target.outputs.deploy == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: cloudflare-preview-site
@@ -85,34 +119,38 @@ jobs:
           run-id: ${{ env.TRIGGER_RUN_ID }}
 
       - name: Set up Node 22
-        if: steps.pull_request.outputs.deploy == 'true'
+        if: steps.target.outputs.deploy == 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
 
       - name: Install pinned deployment client
-        if: steps.pull_request.outputs.deploy == 'true'
+        if: steps.target.outputs.deploy == 'true'
         run: npm install --global --ignore-scripts wrangler@4.110.0
 
       - name: Create GitHub deployment
-        if: steps.pull_request.outputs.deploy == 'true'
+        if: steps.target.outputs.deploy == 'true'
         id: deployment
         env:
+          DEPLOYMENT_DESCRIPTION: ${{ steps.target.outputs.description }}
+          DEPLOYMENT_ENVIRONMENT: ${{ steps.target.outputs.environment }}
+          DEPLOYMENT_TRANSIENT: ${{ steps.target.outputs.transient }}
+          DEPLOYMENT_URL: ${{ steps.target.outputs.url }}
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ steps.pull_request.outputs.number }}
-          PREVIEW_URL: ${{ steps.pull_request.outputs.url }}
         run: |
           deployment_id="$(jq -n \
             --arg ref "${HEAD_SHA}" \
-            --arg environment "pr-${PR_NUMBER}" \
+            --arg environment "${DEPLOYMENT_ENVIRONMENT}" \
+            --arg description "${DEPLOYMENT_DESCRIPTION}" \
+            --argjson transient "${DEPLOYMENT_TRANSIENT}" \
             '{
               ref: $ref,
               environment: $environment,
               auto_merge: false,
               required_contexts: [],
-              transient_environment: true,
+              transient_environment: $transient,
               production_environment: false,
-              description: "Cloudflare Pages pull request preview"
+              description: $description
             }' | gh api \
               --method POST \
               "repos/${GITHUB_REPOSITORY}/deployments" \
@@ -120,7 +158,7 @@ jobs:
               --jq '.id')"
           jq -n \
             --arg state "in_progress" \
-            --arg url "${PREVIEW_URL}" \
+            --arg url "${DEPLOYMENT_URL}" \
             --arg log_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             '{state: $state, environment_url: $url, log_url: $log_url}' | gh api \
               --method POST \
@@ -128,29 +166,29 @@ jobs:
               --input - >/dev/null
           echo "id=${deployment_id}" >>"${GITHUB_OUTPUT}"
 
-      - name: Deploy stable Cloudflare preview
-        if: steps.pull_request.outputs.deploy == 'true'
+      - name: Deploy stable Cloudflare branch
+        if: steps.target.outputs.deploy == 'true'
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          PR_NUMBER: ${{ steps.pull_request.outputs.number }}
+          DEPLOYMENT_BRANCH: ${{ steps.target.outputs.branch }}
         run: >-
           wrangler pages deploy cloudflare-dist
           --project-name="${CLOUDFLARE_PAGES_PROJECT}"
-          --branch="pr-${PR_NUMBER}"
+          --branch="${DEPLOYMENT_BRANCH}"
           --commit-hash="${HEAD_SHA}"
           --commit-dirty=false
 
       - name: Mark GitHub deployment successful
-        if: steps.pull_request.outputs.deploy == 'true' && success()
+        if: steps.target.outputs.deploy == 'true' && success()
         env:
           DEPLOYMENT_ID: ${{ steps.deployment.outputs.id }}
+          DEPLOYMENT_URL: ${{ steps.target.outputs.url }}
           GH_TOKEN: ${{ github.token }}
-          PREVIEW_URL: ${{ steps.pull_request.outputs.url }}
         run: |
           jq -n \
             --arg state "success" \
-            --arg url "${PREVIEW_URL}" \
+            --arg url "${DEPLOYMENT_URL}" \
             --arg log_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             '{state: $state, environment_url: $url, log_url: $log_url, auto_inactive: true}' | gh api \
               --method POST \
@@ -161,12 +199,12 @@ jobs:
         if: failure() && steps.deployment.outputs.id != ''
         env:
           DEPLOYMENT_ID: ${{ steps.deployment.outputs.id }}
+          DEPLOYMENT_URL: ${{ steps.target.outputs.url }}
           GH_TOKEN: ${{ github.token }}
-          PREVIEW_URL: ${{ steps.pull_request.outputs.url }}
         run: |
           jq -n \
             --arg state "failure" \
-            --arg url "${PREVIEW_URL}" \
+            --arg url "${DEPLOYMENT_URL}" \
             --arg log_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             '{state: $state, environment_url: $url, log_url: $log_url}' | gh api \
               --method POST \

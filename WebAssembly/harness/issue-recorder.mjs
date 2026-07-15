@@ -12,6 +12,8 @@ const SUMMARY_INTERVAL_FRAMES = 60;
 const STORAGE_DB = "cnc_issue_dumps";
 const STORAGE_VERSION = 1;
 const STORAGE_STORE = "dumps";
+const DEFAULT_JSON_CHUNK_CHARS = 256 * 1024;
+const OMIT_JSON_VALUE = Symbol("omit-json-value");
 
 const POINTER_MESSAGES = new Map([
   [0, { down: 0x0201, up: 0x0202, doubleClick: 0x0203 }],
@@ -42,6 +44,170 @@ function safeJsonSize(value) {
   } catch {
     return null;
   }
+}
+
+class JsonPartWriter {
+  constructor(chunkChars) {
+    if (!Number.isSafeInteger(chunkChars) || chunkChars <= 0) {
+      throw new RangeError("chunkChars must be a positive safe integer");
+    }
+    this.chunkChars = chunkChars;
+    this.parts = [];
+    this.pending = "";
+  }
+
+  write(text) {
+    let offset = 0;
+    while (offset < text.length) {
+      const available = this.chunkChars - this.pending.length;
+      const length = Math.min(available, text.length - offset);
+      this.pending += text.slice(offset, offset + length);
+      offset += length;
+      if (this.pending.length === this.chunkChars) {
+        this.parts.push(this.pending);
+        this.pending = "";
+      }
+    }
+  }
+
+  finish() {
+    if (this.pending.length > 0) {
+      this.parts.push(this.pending);
+      this.pending = "";
+    }
+    return this.parts;
+  }
+}
+
+function jsonIndent(space) {
+  if (typeof space === "number") {
+    return " ".repeat(Math.min(10, Math.max(0, Math.trunc(space))));
+  }
+  if (typeof space === "string") {
+    return space.slice(0, 10);
+  }
+  return "";
+}
+
+function prepareJsonValue(value, key) {
+  if ((value != null && typeof value === "object") || typeof value === "bigint") {
+    const toJSON = value.toJSON;
+    if (typeof toJSON === "function") {
+      value = toJSON.call(value, key);
+    }
+  }
+
+  if (value instanceof Number || value instanceof String || value instanceof Boolean) {
+    value = value.valueOf();
+  }
+
+  const type = typeof value;
+  if (type === "undefined" || type === "function" || type === "symbol") {
+    return OMIT_JSON_VALUE;
+  }
+  if (type === "bigint") {
+    throw new TypeError("Do not know how to serialize a BigInt");
+  }
+  return value;
+}
+
+function writeJsonString(writer, value) {
+  writer.write("\"");
+  const sliceChars = Math.min(writer.chunkChars, 64 * 1024);
+  for (let offset = 0; offset < value.length;) {
+    let end = Math.min(value.length, offset + sliceChars);
+    const lastCodeUnit = value.charCodeAt(end - 1);
+    const nextCodeUnit = value.charCodeAt(end);
+    if (end - offset > 1 && end < value.length
+        && lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff
+        && nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+      end -= 1;
+    }
+    const quotedSlice = JSON.stringify(value.slice(offset, end));
+    writer.write(quotedSlice.slice(1, -1));
+    offset = end;
+  }
+  writer.write("\"");
+}
+
+function writePreparedJson(writer, value, gap, depth, ancestors) {
+  if (value === null) {
+    writer.write("null");
+    return;
+  }
+
+  const type = typeof value;
+  if (type === "string") {
+    writeJsonString(writer, value);
+    return;
+  }
+  if (type === "boolean") {
+    writer.write(value ? "true" : "false");
+    return;
+  }
+  if (type === "number") {
+    writer.write(Number.isFinite(value) ? JSON.stringify(value) : "null");
+    return;
+  }
+
+  if (ancestors.has(value)) {
+    throw new TypeError("Converting circular structure to JSON");
+  }
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      writer.write("[");
+      const length = value.length;
+      for (let index = 0; index < length; index += 1) {
+        if (index > 0) writer.write(",");
+        if (gap) writer.write(`\n${gap.repeat(depth + 1)}`);
+        const entry = prepareJsonValue(value[index], String(index));
+        if (entry === OMIT_JSON_VALUE) {
+          writer.write("null");
+        } else {
+          writePreparedJson(writer, entry, gap, depth + 1, ancestors);
+        }
+      }
+      if (length > 0 && gap) writer.write(`\n${gap.repeat(depth)}`);
+      writer.write("]");
+      return;
+    }
+
+    writer.write("{");
+    let wroteProperty = false;
+    for (const key of Object.keys(value)) {
+      const entry = prepareJsonValue(value[key], key);
+      if (entry === OMIT_JSON_VALUE) continue;
+      if (wroteProperty) writer.write(",");
+      if (gap) writer.write(`\n${gap.repeat(depth + 1)}`);
+      writeJsonString(writer, key);
+      writer.write(gap ? ": " : ":");
+      writePreparedJson(writer, entry, gap, depth + 1, ancestors);
+      wroteProperty = true;
+    }
+    if (wroteProperty && gap) writer.write(`\n${gap.repeat(depth)}`);
+    writer.write("}");
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+export function jsonStringifyParts(value, { space = 0, chunkChars = DEFAULT_JSON_CHUNK_CHARS } = {}) {
+  const prepared = prepareJsonValue(value, "");
+  if (prepared === OMIT_JSON_VALUE) {
+    return undefined;
+  }
+  const writer = new JsonPartWriter(chunkChars);
+  writePreparedJson(writer, prepared, jsonIndent(space), 0, new Set());
+  return writer.finish();
+}
+
+export function jsonBlobFromValue(value, options = {}) {
+  const parts = jsonStringifyParts(value, options);
+  if (!parts) {
+    throw new TypeError("Issue dump root is not JSON serializable");
+  }
+  return new Blob(parts, { type: "application/json" });
 }
 
 function truncateString(value, max = 512) {
@@ -424,27 +590,29 @@ async function queryAssetMetadata(url) {
   }
 }
 
-async function queryServerBuildInfo() {
-  try {
-    const response = await fetch(new URL("/__cnc_build_info", window.location.href), {
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      return {
+async function queryBuildInfo() {
+  const candidates = [
+    new URL("./build-info.json", import.meta.url),
+    new URL("/__cnc_build_info", window.location.href),
+  ];
+  let failure = null;
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) {
+        failure = { ok: false, status: response.status, url: String(url) };
+        continue;
+      }
+      return { ok: true, ...(await response.json()) };
+    } catch (error) {
+      failure = {
         ok: false,
-        status: response.status,
+        url: String(url),
+        error: error instanceof Error ? error.message : String(error),
       };
     }
-    return {
-      ok: true,
-      ...(await response.json()),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
   }
+  return failure || { ok: false, error: "build information is unavailable" };
 }
 
 async function collectBuildAssets() {
@@ -461,7 +629,7 @@ async function collectBuildAssets() {
   ].map((path) => new URL(path, base).href);
   const [assets, server] = await Promise.all([
     Promise.all(urls.map(queryAssetMetadata)),
-    queryServerBuildInfo(),
+    queryBuildInfo(),
   ]);
   const latestMs = assets.reduce((latest, asset) => {
     const ms = asset.lastModified ? Date.parse(asset.lastModified) : 0;
@@ -1520,13 +1688,13 @@ class IssueRecorder {
     this.setStatus("building dump");
     try {
       const bundle = await this.buildBundle(reason);
-      const text = JSON.stringify(bundle, null, 2);
+      const blob = jsonBlobFromValue(bundle, { space: 2 });
       const filename = `${sanitizeDumpFileName(`${this.id}-${reason}`)}.cncdump.json`;
-      downloadBlob(new Blob([text], { type: "application/json" }), filename);
+      downloadBlob(blob, filename);
       this.record("dump.download", {
         reason,
         filename,
-        bytes: text.length,
+        bytes: blob.size,
       }, { force: true });
       await this.persistDraft("download");
       this.setStatus(`downloaded ${filename}`);
@@ -1539,7 +1707,7 @@ class IssueRecorder {
   async uploadDump(reason = "manual") {
     this.setStatus("uploading dump");
     const bundle = await this.buildBundle(reason);
-    const text = JSON.stringify(bundle, null, 2);
+    const blob = jsonBlobFromValue(bundle, { space: 2 });
     const filename = `${sanitizeDumpFileName(`${this.id}-${reason}`)}.cncdump.json`;
     try {
       const response = await fetch("/__cnc_issue_dump", {
@@ -1548,7 +1716,7 @@ class IssueRecorder {
           "content-type": "application/json",
           "x-cnc-dump-name": filename,
         },
-        body: text,
+        body: blob,
       });
       const result = await response.json().catch(() => ({ ok: response.ok }));
       this.record("dump.upload", {

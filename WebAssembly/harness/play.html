@@ -1,17 +1,19 @@
 <!doctype html>
-<html lang="en" data-cnc-play-page>
+<html lang="en" data-cnc-play-page data-bink-video-sidecars="auto">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#111513">
-    <meta name="description" content="Project New Shoes runs the original Generals and Zero Hour engine in your browser with game data you own.">
     <title>Project New Shoes: Browser Command Center</title>
+<!-- __PUBLIC_PROJECT_DISCOVERY__ -->
     <link rel="icon" href="./assets/brand/project-new-shoes.ico" sizes="any">
     <link rel="apple-touch-icon" href="./assets/brand/project-new-shoes-apple-touch.png">
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="preload" href="./assets/zeroh-command-desert.webp" as="image" type="image/webp">
     <link rel="stylesheet" href="./harness.css">
     <link rel="stylesheet" href="./launcher.css">
+    <link rel="stylesheet" href="./launcher-games.css">
+    <link rel="stylesheet" href="./llm-ai-manager.css">
     <link rel="stylesheet" href="./launcher-runtime.css">
   </head>
   <body>
@@ -25,12 +27,15 @@
       <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.3" fill="#d7e5ee"/><path d="M12 2.7a9.3 9.3 0 0 1 8.8 6.3L14 11a2.6 2.6 0 0 0-1-1.3L12 2.7Z" fill="#eef7fa"/><path d="m4.5 17.5 5.7-4.1a2.6 2.6 0 0 0 1.7 1.2l2.4 6.3a9.3 9.3 0 0 1-9.8-3.4Z" fill="#b9d0df"/><circle cx="12" cy="12" r="2.4" fill="#6289a3"/><circle cx="12" cy="12" r=".9" fill="#d9eef6"/></symbol>
       <symbol id="i-box" viewBox="0 0 24 24"><path d="m3 7 9-4.4L21 7v10l-9 4.4L3 17V7Z" fill="#ca8b42"/><path d="m3 7 9 4.4L21 7l-9-4.4L3 7Z" fill="#edb969"/><path d="m12 11.4 9-4.4v10l-9 4.4v-10Z" fill="#a96831"/><path d="m7.4 4.8 9 4.4v3.3l-1.8-.5-1.4 1.9v-3.4L4.8 6.4l2.6-1.6Z" fill="#ffd895"/></symbol>
       <symbol id="i-apps" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5" fill="#4d91cf"/><rect x="13" y="3" width="8" height="8" rx="1.5" fill="#dc8446"/><rect x="3" y="13" width="8" height="8" rx="1.5" fill="#79a952"/><rect x="13" y="13" width="8" height="8" rx="1.5" fill="#e0ba3f"/></symbol>
+      <symbol id="i-mod" viewBox="0 0 24 24"><path d="M4.2 4.2h4.1a3.7 3.7 0 1 1 7.4 0h4.1v4.1a3.7 3.7 0 1 1 0 7.4v4.1h-4.1a3.7 3.7 0 1 1-7.4 0H4.2v-4.1a3.7 3.7 0 1 1 0-7.4V4.2Z" fill="#7457ad"/><path d="M12 2.3c-1 0-1.8.8-1.8 1.9 0 .7.4 1.3 1 1.6H6v5.4a1.9 1.9 0 1 0 0 3.6V18h5.2a1.9 1.9 0 1 1 3.6 0H18v-5.2a1.9 1.9 0 1 0 0-3.6V6h-5.2c.7-.3 1-1 1-1.8 0-1-.8-1.9-1.8-1.9Z" fill="#9d83cf"/><path d="M6 11.2a1.9 1.9 0 1 0 0 3.6" fill="none" stroke="#eadfff" stroke-width="1.1"/></symbol>
+      <symbol id="i-llm-ai" viewBox="0 0 48 48"><defs><linearGradient id="g-llm-ai" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#54a5cf"/><stop offset="1" stop-color="#3b4b8d"/></linearGradient></defs><path d="M12 8h24a6 6 0 0 1 6 6v20a6 6 0 0 1-6 6H12a6 6 0 0 1-6-6V14a6 6 0 0 1 6-6Z" fill="url(#g-llm-ai)" stroke="#d8f1ff" stroke-width="2"/><path d="M24 2v6M18 2h12" stroke="#d8f1ff" stroke-width="2" stroke-linecap="round"/><circle cx="17" cy="22" r="3" fill="#9ce7c5"/><circle cx="31" cy="22" r="3" fill="#9ce7c5"/><path d="M15 31c5 4 13 4 18 0M2 20h4M42 20h4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/><path d="m35 7 2-4 2 4 4 2-4 2-2 4-2-4-4-2 4-2Z" fill="#f3cf68"/></symbol>
       <symbol id="i-gear" viewBox="0 0 24 24"><path d="M9.8 2.6h4.4l.7 2.3c.5.2 1 .5 1.4.8l2.3-.5 2.2 3.7-1.6 1.8v1.7l1.6 1.8-2.2 3.7-2.3-.5c-.4.3-.9.6-1.4.8l-.7 2.3H9.8l-.7-2.3c-.5-.2-1-.5-1.4-.8l-2.3.5-2.2-3.7 1.6-1.8v-1.7L3.2 8.9l2.2-3.7 2.3.5c.4-.3.9-.6 1.4-.8l.7-2.3Z" fill="#7893a5"/><circle cx="12" cy="11.7" r="3.4" fill="#e8f1f5"/><circle cx="12" cy="11.7" r="1.6" fill="#65849a"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="#5b9dd3"/><circle cx="12" cy="7.2" r="1.3" fill="#fff"/><path d="M10.7 10.2h2.5v7.1h-2.5z" fill="#fff"/></symbol>
       <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2.2 8 3v5.9c0 5.2-3.3 8.7-8 10.7-4.7-2-8-5.5-8-10.7V5.2l8-3Z" fill="#5d9e72"/><path d="m8.2 11.8 2.3 2.3 5.4-5.5" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-game" viewBox="0 0 24 24"><path d="M5.6 7.2h12.8c2 0 3.1 1.7 3.5 4.2l.7 4.6c.4 2.5-2.3 3.8-3.9 2l-2.2-2.5h-9L5.3 18c-1.6 1.8-4.3.5-3.9-2l.7-4.6c.4-2.5 1.5-4.2 3.5-4.2Z" fill="#496d85"/><path d="M6.8 10v4M4.8 12h4" stroke="#eaf5f8" stroke-width="1.7" stroke-linecap="round"/><circle cx="16.3" cy="10.8" r="1.1" fill="#f3bd3c"/><circle cx="18.5" cy="13" r="1.1" fill="#e88a55"/></symbol>
       <symbol id="i-save" viewBox="0 0 24 24"><path d="M4 2.8h13l3 3v15.4H4V2.8Z" fill="#5d91c2"/><path d="M7 2.8h8v6H7z" fill="#e9f3f7"/><path d="M7 13h10v8.2H7z" fill="#d5e5ed"/><path d="M9.3 15.3h5.4" stroke="#7895a6" stroke-width="1.4"/></symbol>
       <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.3" fill="#4e8fc4"/><path d="M3 12h18M12 2.7c2.2 2.5 3.3 5.6 3.3 9.3S14.2 18.8 12 21.3C9.8 18.8 8.7 15.7 8.7 12S9.8 5.2 12 2.7Z" fill="none" stroke="#dcecf4" stroke-width="1.2"/><path d="M5.1 6.8h13.8M5.1 17.2h13.8" stroke="#dcecf4" stroke-width="1.2"/></symbol>
+      <symbol id="i-agent" viewBox="0 0 24 24"><path d="M7 5.5h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3Z" fill="#446f8d" stroke="#d8edf7" stroke-width="1"/><path d="M12 5.5V3m-1.5 0h3" stroke="#d8edf7" stroke-width="1.4" stroke-linecap="round"/><circle cx="9" cy="11" r="1.4" fill="#81d894"/><circle cx="15" cy="11" r="1.4" fill="#81d894"/><path d="M8.2 15h7.6M2.5 10.5v3M21.5 10.5v3" stroke="#d8edf7" stroke-width="1.4" stroke-linecap="round"/></symbol>
       <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2.5v9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M7.1 5.6a8.2 8.2 0 1 0 9.8 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
       <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14.5v4.2A1.3 1.3 0 0 0 5.3 20h13.4a1.3 1.3 0 0 0 1.3-1.3v-4.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12m0 0 4.5-4.5M12 16l-4.5-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 18.5V20h16v-1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
@@ -42,7 +47,17 @@
       <!-- Primer Octicons mark-github-24, copyright GitHub Inc., MIT license.
            See assets/README.md and vendor/primer-octicons-LICENSE.txt. -->
       <symbol id="i-github" viewBox="0 0 24 24"><path d="M10.226 17.284c-2.965-.36-5.054-2.493-5.054-5.256 0-1.123.404-2.336 1.078-3.144-.292-.741-.247-2.314.09-2.965.898-.112 2.111.36 2.83 1.01.853-.269 1.752-.404 2.853-.404 1.1 0 1.999.135 2.807.382.696-.629 1.932-1.1 2.83-.988.315.606.36 2.179.067 2.942.72.854 1.101 2 1.101 3.167 0 2.763-2.089 4.852-5.098 5.234.763.494 1.28 1.572 1.28 2.807v2.336c0 .674.561 1.056 1.235.786 4.066-1.55 7.255-5.615 7.255-10.646C23.5 6.188 18.334 1 11.978 1 5.62 1 .5 6.188.5 12.545c0 4.986 3.167 9.12 7.435 10.669.606.225 1.19-.18 1.19-.786V20.63a2.9 2.9 0 0 1-1.078.224c-1.483 0-2.359-.808-2.987-2.313-.247-.607-.517-.966-1.034-1.033-.27-.023-.359-.135-.359-.27 0-.27.45-.471.898-.471.652 0 1.213.404 1.797 1.235.45.651.921.943 1.483.943.561 0 .92-.202 1.437-.719.382-.381.674-.718.944-.943"/></symbol>
-      <symbol id="i-arcade" viewBox="0 0 48 48"><path d="M8 11h32l4 30H4l4-30Z" fill="#314f62" stroke="#aac4d2" stroke-width="2"/><path d="M12 16h24v14H12z" fill="#142d31" stroke="#68a39b"/><path d="m20 18 7 5-7 5v-10Z" fill="#e2b64f"/><path d="M13 35h8M17 31v8" stroke="#e9f1ed" stroke-width="2"/><circle cx="33" cy="34" r="2.5" fill="#d9693c"/><circle cx="38" cy="38" r="2.5" fill="#e4b84e"/></symbol>
+      <symbol id="i-games" viewBox="0 0 48 48"><path d="M4 14h16l4 4h20v23H4V14Z" fill="#e8a927" stroke="#fff0a8"/><path d="M4 18V9h15l5 5h18v4H4Z" fill="#ffd66b"/><rect x="14" y="21" width="16" height="20" rx="2" transform="rotate(-10 14 21)" fill="#f8f5e7" stroke="#843b32"/><rect x="22" y="20" width="16" height="21" rx="2" transform="rotate(8 22 20)" fill="#f8f5e7" stroke="#263d62"/><path d="m30 25 3 4-3 4-3-4 3-4Z" fill="#263d62"/></symbol>
+      <symbol id="i-solitaire" viewBox="0 0 48 48"><rect x="9" y="5" width="30" height="38" rx="4" fill="#f7f3df" stroke="#6d342d" stroke-width="2"/><path d="M17 15c3-5 11-5 14 0-2 1-4 4-4 7h-6c0-3-2-6-4-7Zm7 7v11" fill="#b34737" stroke="#b34737" stroke-width="2"/><path d="m18 31 6 7 6-7" fill="none" stroke="#394c36" stroke-width="2"/></symbol>
+      <symbol id="i-spider" viewBox="0 0 48 48"><rect x="8" y="5" width="32" height="38" rx="4" fill="#f5f1de" stroke="#313e49" stroke-width="2"/><path d="M24 9v30M12 24h24M15 14l18 20M33 14 15 34" stroke="#9aa5a5"/><circle cx="24" cy="25" r="6" fill="#303d3d"/><path d="m19 20-5-4m5 7-7-1m7 5-7 2m7 1-5 5m15-15 5-4m-5 7 7-1m-7 5 7 2m-7 1 5 5" stroke="#303d3d" stroke-width="2"/></symbol>
+      <symbol id="i-freecell" viewBox="0 0 48 48"><rect x="5" y="7" width="38" height="34" rx="3" fill="#274f40" stroke="#b9d5b4"/><path d="M10 12h7v9h-7zm11 0h7v9h-7zm11 0h7v9h-7z" fill="#ecdfbd" stroke="#84514a"/><rect x="10" y="25" width="11" height="13" rx="2" fill="#f7f3df"/><path d="m15.5 28 3 4-3 4-3-4 3-4Z" fill="#b23e35"/></symbol>
+      <symbol id="i-hearts" viewBox="0 0 48 48"><path d="M24 41S7 31 7 18C7 8 19 5 24 14 29 5 41 8 41 18c0 13-17 23-17 23Z" fill="#be493d" stroke="#ffd1bc" stroke-width="2"/><path d="m26 10-5 11 7 5-6 12" fill="none" stroke="#f8ead5" stroke-width="2.5"/></symbol>
+      <symbol id="i-minesweeper" viewBox="0 0 48 48"><circle cx="24" cy="27" r="13" fill="#343d39" stroke="#b6c4ba" stroke-width="2"/><path d="M24 4v9M8 11l7 7M40 11l-7 7M5 28h7m24 0h7M12 42l5-6m19 6-5-6" stroke="#343d39" stroke-width="3"/><path d="M22 8c8-3 12 2 12 2" fill="none" stroke="#d9993a" stroke-width="3"/><circle cx="20" cy="23" r="3" fill="#ecb94f"/></symbol>
+      <symbol id="i-backgammon" viewBox="0 0 48 48"><rect x="5" y="6" width="38" height="36" rx="3" fill="#b47a43" stroke="#f1d18d" stroke-width="2"/><path d="m8 9 7 14L22 9m4 0 7 14L40 9M8 39l7-14 7 14m4 0 7-14 7 14" fill="#e9d6a7"/><circle cx="15" cy="17" r="4" fill="#39494a"/><circle cx="33" cy="31" r="4" fill="#e7e0ca" stroke="#755036"/></symbol>
+      <symbol id="i-checkers" viewBox="0 0 48 48"><rect x="6" y="6" width="36" height="36" fill="#d9c79a" stroke="#604a35" stroke-width="2"/><path d="M6 6h9v9H6zm18 0h9v9h-9zm-9 9h9v9h-9zm18 0h9v9h-9zM6 24h9v9H6zm18 0h9v9h-9zm-9 9h9v9h-9zm18 0h9v9h-9z" fill="#59634f"/><circle cx="19.5" cy="19.5" r="6" fill="#bd4c3e" stroke="#ffd0a1"/><circle cx="28.5" cy="28.5" r="6" fill="#303a3c" stroke="#bac8bf"/></symbol>
+      <symbol id="i-internet-hearts" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#397dac" stroke="#d8f1ff" stroke-width="2"/><path d="M5 24h38M24 4c6 6 9 13 9 20s-3 14-9 20c-6-6-9-13-9-20S18 10 24 4Z" fill="none" stroke="#cde8f1"/><path d="M24 36S13 30 13 21c0-6 8-8 11-2 3-6 11-4 11 2 0 9-11 15-11 15Z" fill="#c3473c"/></symbol>
+      <symbol id="i-reversi" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#2c7754" stroke="#b9dfc7" stroke-width="2"/><path d="M4 24h40M24 4c6 6 9 13 9 20s-3 14-9 20c-6-6-9-13-9-20S18 10 24 4Z" fill="none" stroke="#72aa8a"/><circle cx="19" cy="24" r="8" fill="#252b2c"/><circle cx="29" cy="24" r="8" fill="#f1edda"/></symbol>
+      <symbol id="i-spades" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#416f99" stroke="#d8efff" stroke-width="2"/><path d="M5 24h38M24 4c6 6 9 13 9 20s-3 14-9 20c-6-6-9-13-9-20S18 10 24 4Z" fill="none" stroke="#b8d5e7"/><path d="M24 10C20 17 12 21 12 28c0 7 8 8 12 3-1 6-3 8-7 9h14c-4-1-6-3-7-9 4 5 12 4 12-3 0-7-8-11-12-18Z" fill="#26333c"/></symbol>
       <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 2.5h10l4 4v15H5v-19Z" fill="#fffce5" stroke="#8996a0"/><path d="M15 2.5v4h4" fill="#dbe5e9"/><path d="M8 10h8M8 13h8M8 16h6" stroke="#64809a" stroke-width="1.2"/></symbol>
       <symbol id="i-replay" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#687eaa"/><path d="m10 7 7 5-7 5V7Z" fill="#fff"/><path d="M6 5v5h5" fill="none" stroke="#f0c45d" stroke-width="1.5"/></symbol>
       <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1" fill="#70a3c4"/><circle cx="16.5" cy="8.5" r="2" fill="#ffe17c"/><path d="m4.5 18 5-6 3.5 3 2.5-2 4 5H4.5Z" fill="#4e7c55"/></symbol>
@@ -63,6 +78,18 @@
         <button class="desktop-icon" type="button" data-open="explorer" aria-label="Open Save Files">
           <span class="desktop-icon-art"><svg><use href="#i-folder"/></svg></span><span>My Files</span>
         </button>
+        <button class="desktop-icon" type="button" data-open="mods" aria-label="Open Mod Manager">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-mod"/></svg></span><span>Mod Manager</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="llmAi" aria-label="Open LLM AI Manager">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-llm-ai"/></svg></span><span>LLM AI Manager</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="gameData" aria-label="Open Save and Replay Manager">
+          <span class="desktop-icon-art"><svg><use href="#i-save"/></svg></span><span>Save &amp; Replay Manager</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="agentBridge" aria-label="Open Remote Agent configuration">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-agent"/></svg></span><span>Remote Agent</span>
+        </button>
         <button class="desktop-icon" type="button" data-open="browser" aria-label="Open Project New Shoes Browser">
           <span class="desktop-icon-art app-art"><svg><use href="#i-browser"/></svg></span><span>Project New Shoes Browser</span>
         </button>
@@ -72,8 +99,8 @@
         <button class="desktop-icon" type="button" data-open="notepad" aria-label="Open Notepad">
           <span class="desktop-icon-art app-art"><svg><use href="#i-note"/></svg></span><span>Notepad</span>
         </button>
-        <button class="desktop-icon" type="button" data-open="arcade" aria-label="Open Project New Shoes Arcade">
-          <span class="desktop-icon-art app-art"><svg><use href="#i-arcade"/></svg></span><span>Arcade</span>
+        <button class="desktop-icon" type="button" data-open="games" aria-label="Open Games folder">
+          <span class="desktop-icon-art"><svg><use href="#i-games"/></svg></span><span>Games</span>
         </button>
         <button class="desktop-icon" type="button" data-open="programs" aria-label="Open Game Library">
           <span class="desktop-icon-art"><svg><use href="#i-apps"/></svg></span><span>Game Library</span>
@@ -231,15 +258,15 @@
                   </label>
                 </fieldset>
 
-                <label class="optional-content-choice" id="includeVideosChoice">
-                  <input id="includeVideosToggle" type="checkbox">
+                <label class="optional-content-choice is-disabled" id="includeVideosChoice">
+                  <input id="includeVideosToggle" type="checkbox" disabled>
                   <span class="optional-content-check" aria-hidden="true">✓</span>
                   <span class="optional-content-copy">
                     <strong>Include original videos <span class="option-badge">Optional</span></strong>
-                    <small>Install and play the EA intro and in-game cinematics.</small>
+                    <small id="includeVideosDescription">Checking video playback support…</small>
                   </span>
                   <span class="option-tooltip" tabindex="0" aria-describedby="includeVideosTooltip">i</span>
-                  <span id="includeVideosTooltip" class="option-tooltip-popover" role="tooltip">The English retail movie set uses about 0.9 GB extra: roughly 0.59 GB of original Bink files plus 0.29 GB of browser-compatible copies. Preparation also takes longer. Leave this off for the smallest, fastest installation; you can reinstall later to add them.</span>
+                  <span id="includeVideosTooltip" class="option-tooltip-popover" role="tooltip">Checking whether this build has the browser-compatible video runtime.</span>
                 </label>
 
                 <div class="space-warning" id="spaceWarning" hidden>
@@ -295,6 +322,90 @@
                 </div>
               </section>
             </div>
+          </div>
+        </article>
+
+        <article id="modsWindow" class="window mods-window" data-app="mods" style="--x: 52%; --y: 45%; --w: 860px; --h: 620px;" aria-label="Mod Manager">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-mod"/></svg></span><span>Zero Hour Mod Manager</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="mod-manager-body">
+            <header class="manager-heading"><div><p class="eyebrow">BROWSER MOD LIBRARY</p><h1>Zero Hour Mod Manager</h1><p>Import a ModDB download, installer, BIG file, or unpacked folder. Enabled mods load in the order shown.</p></div><div id="activeModBadge" class="active-context-badge">Vanilla Zero Hour</div></header>
+            <section class="mod-import-panel" aria-labelledby="modImportTitle">
+              <div><h2 id="modImportTitle">Import a mod</h2><p>ZIP, 7z, RAR, NSIS/EXE, BIG, and loose engine folders are inspected locally. Native Windows DLL/EXE code is reported and ignored.</p></div>
+              <label>Name <input id="modImportName" maxlength="120" placeholder="Optional display name"></label>
+              <label>Version <input id="modImportVersion" maxlength="80" placeholder="Auto-detect"></label>
+              <div class="mod-import-actions"><button id="modImportPackageButton" type="button" class="button primary small">Import package…</button><button id="modImportFolderButton" type="button" class="button secondary small">Import folder…</button></div>
+              <input id="modImportPackageInput" type="file" accept=".big,.zip,.7z,.rar,.exe,.001" hidden>
+              <input id="modImportFolderInput" type="file" webkitdirectory directory multiple hidden>
+              <div id="modImportProgress" class="mod-import-progress" role="status">Ready to import. Files remain on this device.</div>
+            </section>
+            <section class="installed-mods-panel"><header><div><h2>Launch configuration</h2><p id="modConfigurationSummary">No mods enabled.</p></div><div><button id="modUseVanillaButton" type="button" class="button secondary small">Use vanilla</button><button id="modApplyButton" type="button" class="button primary small">Apply &amp; reload</button></div></header><div id="installedModList" class="installed-mod-list"></div><div id="installedModEmpty" class="manager-empty"><svg><use href="#i-mod"/></svg><strong>No mods installed</strong><span>Import a downloaded package or an unpacked mod folder.</span></div></section>
+          </div>
+        </article>
+
+        <article id="llmAiWindow" class="window llm-ai-window" data-app="llmAi" style="--x: 53%; --y: 45%; --w: 940px; --h: 650px;" aria-label="LLM AI Manager">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-llm-ai"/></svg></span><span>Zero Hour LLM AI Manager</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="llm-ai-manager-body">
+            <header class="llm-ai-heading">
+              <div><p class="eyebrow">AUTONOMOUS COMMANDERS</p><h1>LLM AI Manager</h1><p>Configure OpenAI-compatible commanders and inspect every locally recorded match session.</p></div>
+              <button id="llmAiNewProfile" type="button" class="button primary small">New commander</button>
+            </header>
+            <nav class="llm-ai-tabs" aria-label="LLM AI manager sections"><button type="button" class="is-selected" data-llm-ai-view="profiles">Commanders</button><button type="button" data-llm-ai-view="sessions">Sessions</button></nav>
+            <section id="llmAiProfilesView" class="llm-ai-view llm-ai-profile-view">
+              <aside><div id="llmAiProfileList" class="llm-ai-profile-list"></div><div id="llmAiProfileEmpty" class="llm-ai-empty"><svg><use href="#i-llm-ai"/></svg><strong>No LLM commanders yet</strong><span>Create one to make it available to Zero Hour.</span></div></aside>
+              <form id="llmAiProfileForm" class="llm-ai-form" autocomplete="off">
+                <input id="llmAiProfileId" type="hidden">
+                <div class="llm-ai-form-heading"><div><h2 id="llmAiFormTitle">New commander</h2><p>Credentials remain in this browser and are excluded from exports.</p></div><span id="llmAiSavedBadge" hidden>Saved</span></div>
+                <div class="llm-ai-fields two-column">
+                  <label>Name<input id="llmAiName" maxlength="64" required placeholder="Strategist Alpha"></label>
+                  <label>Model <span id="llmAiModelHint" class="llm-ai-optional">Enter an endpoint to discover models</span><span class="llm-ai-inline-control"><input id="llmAiModel" list="llmAiModelOptions" maxlength="256" required placeholder="qwen3.6-35b-a3b-mtp@q8_k_xl"><button id="llmAiDiscoverModels" type="button" class="button secondary small">Load models</button></span><datalist id="llmAiModelOptions"></datalist></label>
+                </div>
+                <label>OpenAI-compatible endpoint <span class="llm-ai-optional">HTTPS, localhost, or browser-approved local network</span><input id="llmAiEndpoint" type="url" maxlength="2048" required placeholder="http://127.0.0.1:1234"></label>
+                <label>API key <span class="llm-ai-optional">optional · stored locally</span><input id="llmAiApiKey" type="password" maxlength="4096" spellcheck="false" placeholder="Not required by local endpoints"></label>
+                <div class="llm-ai-fields three-column">
+                  <label>Thinking effort<select id="llmAiThinking"><option>provider-default</option><option>none</option><option>minimal</option><option>low</option><option selected>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
+                  <label>Context tokens <span id="llmAiContextHint" class="llm-ai-optional">Manual until reported by the provider</span><span class="llm-ai-inline-control"><input id="llmAiContext" type="number" min="4096" max="2097152" step="1024" value="262144"><button id="llmAiApplyContext" type="button" class="button secondary small" hidden>Use detected</button></span></label>
+                  <label>Tool adapter<select id="llmAiToolProtocol"><option value="native" selected>Native streaming tools</option><option value="structured">Structured action adapter</option></select></label>
+                </div>
+                <div class="llm-ai-fields three-column">
+                  <label>Routine observation budget <input id="llmAiObservationTokens" type="number" min="512" max="65536" step="256" value="8192"> tokens</label>
+                  <label>Tool result budget <input id="llmAiToolResultTokens" type="number" min="256" max="65536" step="256" value="4096"> tokens</label>
+                  <label>Recent context suffix <input id="llmAiRecentContextTokens" type="number" min="1024" max="131072" step="1024" value="20000"> tokens</label>
+                </div>
+                <label>Mandate<textarea id="llmAiMandate" maxlength="8192" rows="4">Play to the best of your capability and win the game.</textarea></label>
+                <div class="llm-ai-runtime-policy"><label><input id="llmAiClassicFallback" type="checkbox" checked> Transfer the strategy lease to classic AI after the failure limit</label><label>Planning interval <input id="llmAiPlanningInterval" type="number" min="250" max="60000" step="250" value="2000"> ms</label></div>
+                <section id="llmAiDiagnostics" class="llm-ai-diagnostics" aria-label="Endpoint diagnostics" hidden><header><strong>Endpoint diagnostics</strong><span id="llmAiDiagnosticsSummary"></span></header><ul id="llmAiDiagnosticChecks"></ul></section>
+                <div id="llmAiFormStatus" class="llm-ai-status" role="status">Profiles and session traces stay in this browser.</div>
+                <div class="llm-ai-form-actions"><button id="llmAiDeleteProfile" type="button" class="button secondary small" disabled>Delete</button><button id="llmAiDuplicateProfile" type="button" class="button secondary small" disabled>Duplicate</button><span></span><button id="llmAiTestEndpoint" type="button" class="button secondary small">Run diagnostics</button><button type="submit" class="button primary small">Save commander</button></div>
+              </form>
+            </section>
+            <section id="llmAiSessionsView" class="llm-ai-view llm-ai-session-view" hidden>
+              <aside><div id="llmAiSessionList" class="llm-ai-session-list"></div><div id="llmAiSessionEmpty" class="llm-ai-empty"><svg><use href="#i-replay"/></svg><strong>No recorded sessions</strong><span>Matches will appear here turn by turn.</span></div></aside>
+              <div class="llm-ai-session-detail"><header><div><h2 id="llmAiSessionTitle">Select a session</h2><p id="llmAiSessionSummary">Model turns, tools, errors, timing, and outcome are recorded locally.</p></div><div><button id="llmAiExportSession" type="button" class="button secondary small" disabled>Export JSON</button><button id="llmAiDeleteSession" type="button" class="button secondary small" disabled>Delete</button></div></header><div id="llmAiSessionMetrics" class="llm-ai-session-metrics"></div><ol id="llmAiSessionEvents" class="llm-ai-session-events"></ol></div>
+            </section>
+          </div>
+        </article>
+
+        <article id="gameDataWindow" class="window game-data-window" data-app="gameData" style="--x: 54%; --y: 46%; --w: 900px; --h: 620px;" aria-label="Save and Replay Manager">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-save"/></svg></span><span>Save &amp; Replay Manager</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="game-data-manager-body">
+            <header class="manager-heading"><div><p class="eyebrow">ISOLATED GAME DATA</p><h1>Save &amp; Replay Manager</h1><p>Saves and replays are isolated by exact mod configuration. Compatibility copies require an explicit override.</p></div><div class="game-data-actions"><button id="importSaveButton" type="button" class="button secondary small">Import save</button><button id="importReplayDataButton" type="button" class="button secondary small">Import replay</button><button id="refreshGameDataButton" type="button" class="button primary small">Refresh</button></div><input id="importSaveInput" type="file" accept=".sav" hidden><input id="importReplayDataInput" type="file" accept=".rep" hidden></header>
+            <section id="compatibilityOverridePanel" class="compatibility-override-panel" hidden>
+              <div><strong>Compatibility override</strong><span id="compatibilityOverrideSource"></span></div>
+              <label>Copy into <select id="compatibilityOverrideTarget"></select></label>
+              <label class="compatibility-risk"><input id="compatibilityOverrideRisk" type="checkbox"> I understand this file was created by a different configuration and may fail to load, crash, or desync.</label>
+              <div><button id="compatibilityOverrideCancel" type="button" class="button secondary small">Cancel</button><button id="compatibilityOverrideCopy" type="button" class="button primary small" disabled>Override &amp; copy</button></div>
+            </section>
+            <div id="gameDataStatus" class="game-data-status" role="status">Loading isolated game data…</div>
+            <div id="gameDataContextList" class="game-data-context-list"></div>
           </div>
         </article>
 
@@ -364,20 +475,10 @@
         <article id="browserWindow" class="window browser-window" data-app="browser" style="--x: 52%; --y: 44%; --w: 900px; --h: 600px;" aria-label="Project New Shoes Browser">
           <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-browser"/></svg></span><span>Project New Shoes Browser</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
           <div class="browser-toolbar"><button id="browserBack" type="button" title="Back">‹</button><button id="browserForward" type="button" title="Forward">›</button><button id="browserHome" type="button" title="Home">⌂</button><button id="browserReload" type="button" title="Reload">↻</button><form id="browserAddressForm"><span>Address</span><input id="browserAddress" value="newshoes://start" autocomplete="off" spellcheck="false"><button type="submit">Go</button></form><button id="browserExternal" type="button" title="Open this address in a real browser tab">↗</button></div>
-          <div class="browser-favorites"><span>Links</span><button type="button" data-browser-page="newshoes://start">Command Net</button><button type="button" data-browser-page="newshoes://manual">Field Manual</button><button type="button" data-browser-page="newshoes://status">System Status</button><button type="button" data-browser-page="newshoes://arcade">Arcade</button></div>
+          <div class="browser-favorites"><span>Links</span><button type="button" data-browser-page="newshoes://start">Command Net</button><button type="button" data-browser-page="newshoes://manual">Field Manual</button><button type="button" data-browser-page="newshoes://status">System Status</button><button type="button" data-browser-page="newshoes://games">Games</button></div>
           <div id="browserPage" class="browser-page"></div>
           <iframe id="browserFrame" class="browser-frame" title="External website" sandbox="allow-forms allow-scripts allow-same-origin allow-popups" hidden></iframe>
           <footer class="browser-status"><span id="browserStatus">Local intranet</span><span>Internet zone</span></footer>
-        </article>
-
-        <article id="arcadeWindow" class="window arcade-window" data-app="arcade" style="--x: 56%; --y: 45%; --w: 720px; --h: 570px;" aria-label="Project New Shoes Arcade">
-          <header class="titlebar"><div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-arcade"/></svg></span><span>Project New Shoes Arcade</span></div><div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div></header>
-          <div class="arcade-shell">
-            <header class="arcade-header"><div><svg><use href="#i-system"/></svg><span>PROJECT NEW SHOES</span><strong>FIELD ARCADE</strong></div><p>AUTHORIZED DOWNTIME PROTOCOL</p></header>
-            <nav class="arcade-tabs" role="tablist" aria-label="Arcade games"><button id="minefieldTab" type="button" role="tab" aria-controls="minefieldPanel" aria-selected="true" class="is-selected" data-arcade-tab="minefield">Minefield</button><button id="signalsTab" type="button" role="tab" aria-controls="signalsPanel" aria-selected="false" tabindex="-1" data-arcade-tab="signals">Signal Match</button></nav>
-            <section id="minefieldPanel" class="arcade-panel is-visible" role="tabpanel" aria-labelledby="minefieldTab" data-arcade-panel="minefield"><div class="game-instructions"><div><strong>TACTICAL MINEFIELD</strong><span>Clear the sector. Right-click to flag a suspected mine.</span></div><div class="game-counters"><span>MINES <b id="mineCount">10</b></span><button id="mineReset" type="button" aria-label="Reset minefield">🙂</button><span>TIME <b id="mineTimer">000</b></span></div></div><div id="mineGrid" class="mine-grid" aria-label="Minefield game board"></div></section>
-            <section id="signalsPanel" class="arcade-panel" role="tabpanel" aria-labelledby="signalsTab" data-arcade-panel="signals"><div class="game-instructions"><div><strong>SIGNAL MATCH</strong><span>Pair encrypted signals before your memory gives out.</span></div><div class="game-counters"><span>MOVES <b id="memoryMoves">0</b></span><button id="memoryReset" type="button">New grid</button><span>PAIRS <b id="memoryPairs">0/8</b></span></div></div><div id="memoryGrid" class="memory-grid" aria-label="Signal matching game board"></div></section>
-          </div>
         </article>
 
         <article id="programsWindow" class="window programs-window" data-app="programs" style="--x: 53%; --y: 46%; --w: 760px; --h: 515px;" aria-label="Game Library">
@@ -391,6 +492,94 @@
               <article class="library-row"><span class="library-game-art zero"><img data-retail-icon alt="" hidden><span>ZH</span></span><div class="library-details"><strong>Zero Hour</strong><span>Current WebAssembly target</span><small><i></i><b class="library-state-label">Original files required</b></small></div><div class="library-size">Runtime<span>Local source</span></div><button type="button" class="row-launch accent" data-launch-game="Zero Hour">Launch</button><button type="button" class="more-button" data-open-settings="game" aria-label="Open Game and Display settings" title="Game &amp; Display settings">⚙</button></article>
             </div>
             <section class="storage-overview"><div class="storage-donut"><span><b id="storageUsedValue">0</b><small>GB used</small></span></div><div class="storage-copy"><strong>Browser storage</strong><p id="storageCopyText">No game assets are stored in this browser yet.</p><div class="storage-legend"><span><i class="game-data"></i>Game data</span><span><i class="saves"></i>Saves</span><span><i class="available"></i>Available</span></div></div><button type="button" class="button secondary small" id="forgetLibraryButton">Forget library</button></section>
+          </div>
+        </article>
+
+        <article id="transferWindow" class="window transfer-window" data-app="transfer" style="--x: 55%; --y: 45%; --w: 720px; --h: 560px;" aria-label="Transfer game files">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-globe"/></svg></span><span>Game File Transfer</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="transfer-body">
+            <section class="transfer-screen" data-transfer-screen="choose">
+              <div class="transfer-heading"><p class="eyebrow">DEVICE TRANSFER</p><h1>Move your installation</h1><p>Copy your own Zero Hour installation directly to another device you control.</p></div>
+              <div class="transfer-choice-grid">
+                <button id="transferChooseSend" type="button"><span><svg><use href="#i-upload"/></svg></span><strong>Send files</strong><small>This device has Zero Hour installed</small></button>
+                <button id="transferChooseReceive" type="button"><span><svg><use href="#i-download"/></svg></span><strong>Receive files</strong><small>Install from another device</small></button>
+              </div>
+              <p class="transfer-local-note"><svg><use href="#i-shield"/></svg> Files travel over an encrypted peer-to-peer connection. The discovery relay never carries game data.</p>
+            </section>
+
+            <section class="transfer-screen" data-transfer-screen="send-consent" hidden>
+              <div class="transfer-heading"><p class="eyebrow">SEND YOUR COPY</p><h1>Confirm ownership</h1><p>You may only transfer these files to another device you control. Transferring game files to third parties is not allowed.</p></div>
+              <div id="transferInstallStatus" class="transfer-install-status" role="status">Checking the installed library…</div>
+              <label class="transfer-legal-check"><input id="transferSendOwnership" type="checkbox"><span>✓</span><strong>I confirm that I legally own these game files and will only transfer them to a device I control.</strong></label>
+              <fieldset class="transfer-options"><legend>Also include</legend><label><input id="transferIncludeMods" type="checkbox"><svg><use href="#i-mod"/></svg><span><strong>Installed mods</strong><small>Copy packages and the active load order</small></span></label><label><input id="transferIncludeSaves" type="checkbox"><svg><use href="#i-save"/></svg><span><strong>Saved games</strong><small>Copy personal campaign and skirmish saves</small></span></label><label><input id="transferIncludeReplays" type="checkbox"><svg><use href="#i-replay"/></svg><span><strong>Replays</strong><small>Copy recorded matches</small></span></label></fieldset>
+              <footer class="transfer-actions"><button type="button" class="button secondary" data-transfer-back="choose">Back</button><button id="transferStartSend" type="button" class="button primary" disabled>Generate transfer code</button></footer>
+            </section>
+
+            <section class="transfer-screen" data-transfer-screen="send-live" hidden>
+              <div class="transfer-heading"><p class="eyebrow">SENDER ACTIVE</p><h1>Enter this code on your other device</h1><p>Keep this window open. The code is temporary and disappears when this page is refreshed or the transfer is stopped.</p></div>
+              <output id="transferSenderPin" class="transfer-pin" aria-label="12-digit transfer code">•••• •••• ••••</output>
+              <div class="transfer-secure-line"><svg><use href="#i-shield"/></svg><span><strong>PIN-encrypted WebRTC</strong><small id="transferSenderStatus">Opening a secure connection…</small></span></div>
+              <div class="transfer-progress" aria-live="polite"><div><strong id="transferSenderProgressLabel">Waiting for a receiving device</strong><span id="transferSenderMetrics">0 B · 0 B/s</span></div><div class="transfer-progress-track" role="progressbar" aria-label="Combined send progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="transferSenderProgressFill"></span></div></div>
+              <div id="transferReceiverList" class="transfer-peer-list"><p>No receiving devices connected yet.</p></div>
+              <footer class="transfer-actions"><button id="transferStopSend" type="button" class="button secondary">Stop sharing</button></footer>
+            </section>
+
+            <section class="transfer-screen" data-transfer-screen="receive-consent" hidden>
+              <div class="transfer-heading"><p class="eyebrow">RECEIVE YOUR COPY</p><h1>Confirm ownership</h1><p>Only receive game files that you legally own, from another device that you control.</p></div>
+              <label class="transfer-legal-check"><input id="transferReceiveOwnership" type="checkbox"><span>✓</span><strong>I confirm that I legally own the copy being received and that the sending device is under my control.</strong></label>
+              <div class="transfer-replace-note"><svg><use href="#i-drive"/></svg><p><strong>Your current files stay safe during transfer.</strong> If this browser already has an installation, it is replaced only after the complete incoming copy is verified.</p></div>
+              <footer class="transfer-actions"><button type="button" class="button secondary" data-transfer-back="choose">Back</button><button id="transferReceiveNext" type="button" class="button primary" disabled>Enter transfer code</button></footer>
+            </section>
+
+            <section class="transfer-screen" data-transfer-screen="receive-code" hidden>
+              <div class="transfer-heading"><p class="eyebrow">SECURE CONNECTION</p><h1>Enter the 12-digit code</h1><p>Find the temporary code on the sending device. You cannot choose or reuse a transfer code.</p></div>
+              <label class="transfer-pin-entry" for="transferPinInput"><span>Transfer code</span><input id="transferPinInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="14" placeholder="0000 0000 0000" aria-describedby="transferPinHelp"><small id="transferPinHelp">Three groups of four digits</small></label>
+              <p id="transferReceiveError" class="transfer-error" role="alert" hidden></p>
+              <footer class="transfer-actions"><button type="button" class="button secondary" data-transfer-back="receive-consent">Back</button><button id="transferConnect" type="button" class="button primary" disabled>Connect</button></footer>
+            </section>
+
+            <section class="transfer-screen" data-transfer-screen="receive-live" hidden>
+              <div class="transfer-heading"><p class="eyebrow">RECEIVING FILES</p><h1 id="transferReceiveTitle">Connecting to your device…</h1><p id="transferReceiveDetail">Waiting for the sender to approve this encrypted connection.</p></div>
+              <div class="transfer-secure-line"><svg><use href="#i-shield"/></svg><span><strong>PIN-encrypted WebRTC</strong><small>Game data is traveling directly between your devices</small></span></div>
+              <div class="transfer-progress large" aria-live="polite"><div><strong id="transferReceiverProgressLabel">Preparing browser storage…</strong><span id="transferReceiverMetrics">0 B · 0 B/s</span></div><div class="transfer-progress-track" role="progressbar" aria-label="Receive progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="transferReceiverProgressFill"></span></div></div>
+              <p id="transferReceiverFile" class="transfer-current-file">Waiting for manifest…</p>
+              <p id="transferLiveError" class="transfer-error" role="alert" hidden></p>
+              <footer class="transfer-actions"><button id="transferCancelReceive" type="button" class="button secondary">Cancel transfer</button></footer>
+            </section>
+
+            <section class="transfer-screen transfer-complete" data-transfer-screen="complete" hidden>
+              <span class="transfer-complete-icon">✓</span><p class="eyebrow">TRANSFER COMPLETE</p><h1>Zero Hour is installed</h1><p id="transferCompleteSummary">Your game files are ready on this device.</p><button id="transferDone" type="button" class="button primary">Done</button>
+            </section>
+          </div>
+        </article>
+
+        <article id="agentBridgeWindow" class="window agent-bridge-window" data-app="agentBridge" style="--x: 54%; --y: 45%; --w: 720px; --h: 590px;" aria-label="Remote Agent configuration">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-agent"/></svg></span><span>Remote Agent</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="agent-bridge-body">
+            <header class="agent-bridge-heading">
+              <span class="agent-bridge-mark"><svg><use href="#i-agent"/></svg></span>
+              <div><p class="eyebrow">DIRECT CONTROL</p><h1>Connect a remote playing agent</h1><p>Run the New Shoes agent bridge separately, then copy its browser connection details here before launching Zero Hour.</p></div>
+            </header>
+            <form id="agentBridgeForm" class="agent-bridge-form" autocomplete="off" novalidate>
+              <label class="agent-bridge-enable"><span><strong>Enable Remote Agent</strong><small>No bridge code, socket, polling, or timers run while this is off.</small></span><input id="agentBridgeEnabled" type="checkbox" role="switch"><i aria-hidden="true"></i></label>
+              <fieldset id="agentBridgeFields">
+                <legend class="sr-only">Remote Agent connection details</legend>
+                <label class="agent-bridge-field" for="agentBridgeUrl"><span><strong>Bridge WebSocket URL</strong><small>Use the browser URL printed by the Go bridge.</small></span><input id="agentBridgeUrl" type="url" inputmode="url" spellcheck="false" maxlength="4096" placeholder="ws://127.0.0.1:18888/engine"></label>
+                <label class="agent-bridge-field" for="agentBridgeToken"><span><strong>Browser token</strong><small>Kept only in memory until this page closes.</small></span><span class="agent-bridge-secret"><input id="agentBridgeToken" type="password" autocomplete="off" data-1p-ignore maxlength="4096" placeholder="Token printed by the bridge"><button id="agentBridgeTokenReveal" type="button" aria-pressed="false">Show</button></span></label>
+                <label class="agent-bridge-field" for="agentBridgeSession"><span><strong>Session ID</strong><small>The REST client uses this name to address the match.</small></span><input id="agentBridgeSession" type="text" spellcheck="false" maxlength="128" value="game-1" pattern="[A-Za-z0-9._-]+"></label>
+                <label class="agent-bridge-field" for="agentBridgeMode"><span><strong>Play mode</strong><small>Global exposes all human-accessible map information; Camera limits observation to the tactical view.</small></span><select id="agentBridgeMode"><option value="global">Global</option><option value="camera">Camera</option></select></label>
+              </fieldset>
+              <p id="agentBridgeError" class="agent-bridge-error" role="alert" hidden></p>
+              <div id="agentBridgeStatus" class="agent-bridge-status" data-state="disabled" role="status" aria-live="polite"><span aria-hidden="true"></span><div><strong>Remote Agent is disabled</strong><small>Enable it and apply a connection before launching the game.</small></div></div>
+              <p id="agentBridgeLockNotice" class="agent-bridge-lock" hidden>Configuration is locked for this running game. Reload or shut down the runtime to change it.</p>
+              <footer class="agent-bridge-actions"><p>The bridge process remains outside the browser. The connection opens after engine initialization.</p><button id="agentBridgeApply" type="submit" class="button primary">Apply for next launch</button></footer>
+            </form>
           </div>
         </article>
 
@@ -421,6 +610,8 @@
               <div id="customResolutionRow" class="setting-block game-custom-resolution" hidden><div><strong>Custom resolution</strong><span>640 × 480 through 7680 × 4320.</span></div><div><input id="customResolutionWidth" type="number" min="640" max="7680" placeholder="width"><span>×</span><input id="customResolutionHeight" type="number" min="480" max="4320" placeholder="height"><button id="customResolutionApply" type="button">Apply</button></div></div>
               <div class="setting-block"><div><strong>Fullscreen</strong><span>Fullscreen the Project New Shoes desktop and game runtime.</span></div><button id="fullscreenButton" type="button" class="identity-lab-button">Enter fullscreen</button></div>
               <label class="setting-block"><div><strong>Shaders</strong><span>Enhanced ps.1.1 is the default and applies on the next game boot.</span></div><select id="shaderTierSelect"><option value="ps11" selected>Enhanced (pixel shaders)</option><option value="ff">Classic (fixed function)</option></select></label>
+              <label class="setting-block"><div><strong>Camera zoom</strong><span>Maximum zoom-out height. The original 310 setting is fastest; changes apply on the next game boot.</span></div><div class="camera-zoom-control"><input id="cameraZoomHeight" type="range" min="310" max="500" step="10" value="310"><output id="cameraZoomHeightValue" for="cameraZoomHeight">310</output></div></label>
+              <label class="setting-block toggle-setting"><div><strong>Original game cursors</strong><span>Use Zero Hour&rsquo;s cursor artwork and animations from your own game files. Turn off to use the browser&rsquo;s system pointer.</span></div><input id="gameCursorToggle" type="checkbox" checked><span class="toggle"></span></label>
               <label class="setting-block toggle-setting"><div><strong>Performance overlay</strong><span>Top-left FPS, frame times, percentiles, and graph. Off by default.</span></div><input id="performanceOverlayToggle" type="checkbox"><span class="toggle"></span></label>
               <div class="setting-block game-performance-options"><div><strong>Graph window</strong><span>History length and vertical frame-time scale.</span></div><div><select id="performanceHistorySelect" aria-label="Performance graph history"><option value="3">3 seconds</option><option value="5" selected>5 seconds</option><option value="10">10 seconds</option></select><select id="performanceGraphMaxSelect" aria-label="Performance graph maximum"><option value="33.33">33 ms</option><option value="50" selected>50 ms</option><option value="100">100 ms</option></select></div></div>
               <label class="setting-block"><div><strong>Graphics diagnostics</strong><span>Lite is for play; full captures expensive per-draw evidence.</span></div><select id="diagnosticsSelect"><option value="lite">Lite</option><option value="full">Full</option></select></label>
@@ -463,28 +654,40 @@
           </div>
         </article>
 
-        <article id="aboutWindow" class="window about-window" data-app="about" style="--x: 57%; --y: 43%; --w: 560px; --h: 420px;" aria-label="About Project New Shoes">
+        <article id="aboutWindow" class="window about-window" data-app="about" style="--x: 57%; --y: 43%; --w: 620px; --h: 570px;" aria-label="About Project New Shoes">
           <header class="titlebar">
             <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-info"/></svg></span><span>About Project New Shoes</span></div>
             <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
           </header>
-          <div class="about-body"><div class="about-brand"><span class="launcher-logo-slot about-launcher-logo"><img data-launcher-logo-image alt="Project New Shoes launcher mark" width="512" height="512"></span><div><small>Independent browser runtime</small><h1>NEW <span>SHOES</span></h1><p>Project New Shoes</p></div></div><div class="about-card"><svg><use href="#i-globe"/></svg><div><strong>The original game engine, running on the web</strong><p>Project New Shoes launches the original Generals and Zero Hour engine with user-owned assets. Media stays local; the desktop, filesystem, and game runtime execute in your browser.</p></div></div><dl class="about-facts"><div><dt>Runtime</dt><dd>WebAssembly + WebGL2</dd></div><div><dt>Storage</dt><dd>OPFS browser disk</dd></div><div><dt>Current target</dt><dd>Zero Hour</dd></div></dl><p class="about-legal">EA has not endorsed and does not support this product. Original game data is never bundled; you must supply files from a copy you own.</p></div>
+          <div class="about-body">
+            <div class="about-brand"><span class="launcher-logo-slot about-launcher-logo"><img data-launcher-logo-image alt="Project New Shoes launcher mark" width="512" height="512"></span><div><small>Independent browser runtime</small><h1>NEW <span>SHOES</span></h1><p>Project New Shoes</p></div></div>
+            <div class="about-card"><svg><use href="#i-globe"/></svg><div><strong>The original game engine, running on the web</strong><p>Project New Shoes launches the original Generals and Zero Hour engine with user-owned assets. Media stays local; the desktop, filesystem, and game runtime execute in your browser.</p></div></div>
+            <dl class="about-facts"><div><dt>Runtime</dt><dd>WebAssembly + WebGL2</dd></div><div><dt>Storage</dt><dd>OPFS browser disk</dd></div><div><dt>Current target</dt><dd>Zero Hour</dd></div></dl>
+            <dl class="about-build" aria-label="Build information"><div><dt>Version</dt><dd id="aboutVersion">Loading…</dd></div><div><dt>Build commit</dt><dd><a id="aboutBuildCommit" target="_blank" rel="noopener noreferrer">Loading…</a></dd></div></dl>
+            <p class="about-resources"><a data-agent-guide href="../project.md" target="_blank" rel="noopener noreferrer">Project guide</a><span aria-hidden="true"> · </span><a href="../llms.txt" target="_blank" rel="noopener noreferrer">LLM text index</a><span aria-hidden="true"> · </span><a href="https://github.com/Agusx1211/NewShoes" target="_blank" rel="noopener noreferrer">Source</a></p>
+            <section class="about-changelog" aria-labelledby="aboutChangelogTitle"><header><h2 id="aboutChangelogTitle">What&rsquo;s new</h2><a href="https://github.com/Agusx1211/NewShoes/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Full changelog</a></header><div id="aboutChangelog" aria-live="polite"><p>Loading release notes…</p></div></section>
+            <p class="about-legal">EA has not endorsed and does not support this product. Original game data is never bundled; you must supply files from a copy you own.</p>
+          </div>
         </article>
       </section>
 
       <section id="startMenu" class="start-menu" aria-label="Project New Shoes menu" hidden>
-        <header><span class="user-avatar">C</span><div><strong>Commander</strong><span>Local browser session</span></div></header>
+        <header><span class="user-avatar">C</span><div><strong>Commander</strong><span id="startMenuVersion">Loading build information…</span></div></header>
         <div class="start-content">
           <div class="start-primary">
             <button type="button" data-open="setup"><span class="start-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><div><strong>Project New Shoes Game Launcher</strong><small>Add files and start a game</small></div></button>
             <button type="button" data-open="explorer"><span class="start-icon"><svg><use href="#i-folder"/></svg></span><div><strong>My Files</strong><small>Browse folders and local files</small></div></button>
+            <button type="button" data-open="mods"><span class="start-icon"><svg><use href="#i-mod"/></svg></span><div><strong>Mod Manager</strong><small>Import and choose launch mods</small></div></button>
+            <button type="button" data-open="gameData"><span class="start-icon"><svg><use href="#i-save"/></svg></span><div><strong>Save &amp; Replay Manager</strong><small>Browse isolated game data</small></div></button>
+            <button type="button" data-open="agentBridge"><span class="start-icon"><svg><use href="#i-agent"/></svg></span><div><strong>Remote Agent</strong><small>Configure direct agent control</small></div></button>
             <button type="button" data-open="browser"><span class="start-icon"><svg><use href="#i-browser"/></svg></span><div><strong>Project New Shoes Browser</strong><small>Command Net and the open web</small></div></button>
             <button type="button" data-open="notepad"><span class="start-icon"><svg><use href="#i-note"/></svg></span><div><strong>Notepad</strong><small>Write notes to your virtual drive</small></div></button>
-            <button type="button" data-open="arcade"><span class="start-icon"><svg><use href="#i-arcade"/></svg></span><div><strong>Project New Shoes Arcade</strong><small>Minefield and Signal Match</small></div></button>
+            <button type="button" data-open="games"><span class="start-icon"><svg><use href="#i-games"/></svg></span><div><strong>Games</strong><small>Classic XP games, command-approved</small></div></button>
             <button type="button" data-open="programs"><span class="start-icon"><svg><use href="#i-apps"/></svg></span><div><strong>Game Library</strong><small>Manage installed games</small></div></button>
           </div>
           <div class="start-secondary">
             <button type="button" data-open-settings="game"><svg><use href="#i-game"/></svg> Game &amp; Display</button>
+            <button type="button" data-open="transfer"><svg><use href="#i-globe"/></svg> Transfer game files</button>
             <button type="button" data-open="settings"><svg><use href="#i-gear"/></svg> Settings</button>
             <button type="button" data-open="about"><svg><use href="#i-info"/></svg> About Project New Shoes</button>
             <div class="start-storage"><span>Browser storage</span><strong data-storage-free>Calculating…</strong><i><span></span></i></div>
@@ -537,6 +740,12 @@
             <div id="captureOverlayStats" class="captureOverlayStats">0:00 · 0 events · 0 packets</div>
             <div id="captureOverlayStatus" class="captureOverlayStatus">ready</div>
             <div class="captureOverlayActions"><button id="captureOverlayToggle" type="button">Pause</button><button id="captureOverlayIssue" type="button">Report issue</button><button id="captureOverlayDownload" type="button" class="captureOverlayPrimary">Save dump</button></div>
+          </aside>
+          <aside id="binkPreparationOverlay" class="binkPreparationOverlay" aria-labelledby="binkPreparationTitle" aria-live="polite" hidden>
+            <div><strong id="binkPreparationTitle">Preparing original movie</strong><span id="binkPreparationName"></span></div>
+            <div id="binkPreparationProgress" class="binkPreparationProgress" role="progressbar" aria-label="Movie preparation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="binkPreparationFill"></span></div>
+            <p id="binkPreparationDetail">Loading the local video runtime…</p>
+            <button id="binkPreparationCancel" type="button">Skip movie</button>
           </aside>
         </main>
       </section>

@@ -1232,6 +1232,10 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	player_template_store.init();
 	seed_skirmish_map_cache(map_cache);
 	function_lexicon.init();
+	ClearLlmAiProfileCatalog();
+	ok = expect(AddLlmAiProfileToCatalog(
+			AsciiString("browser-general"), UnicodeString(L"Browser General")),
+		"focused LLM AI catalog did not accept the browser commander") && ok;
 
 	ok = expect(archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask),
 		"Win32BIGFileSystem did not load WindowZH.big for original Shell::showShell") && ok;
@@ -1743,9 +1747,12 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:ButtonMapStartPosition0")));
 				GameWindow *back_button = TheWindowManager->winGetWindowFromId(skirmish_parent,
 					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:ButtonBack")));
+				GameWindow *player_one_combo = TheWindowManager->winGetWindowFromId(skirmish_parent,
+					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:ComboBoxPlayer1")));
 				ok = expect(starting_cash_combo != nullptr && map_window != nullptr
 						&& game_speed_slider != nullptr && game_speed_text != nullptr
-						&& start_position_button != nullptr && back_button != nullptr,
+						&& start_position_button != nullptr && back_button != nullptr
+						&& player_one_combo != nullptr,
 					"SkirmishGameOptionsMenuInit did not resolve the expected option gadgets") && ok;
 				if (starting_cash_combo != nullptr) {
 					ok = expect(GadgetComboBoxGetLength(starting_cash_combo) >= 1,
@@ -1763,6 +1770,36 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 				if (start_position_button != nullptr) {
 					ok = expect(BitTest(start_position_button->winGetStatus(), WIN_STATUS_HIDDEN) == FALSE,
 						"original SkirmishGameOptionsMenuInit did not show the first map start-position control") && ok;
+				}
+				if (player_one_combo != nullptr && skirmish_parent != nullptr && TheSkirmishGameInfo != nullptr) {
+					const Int llm_entry = 5;
+					ok = expect(GadgetComboBoxGetLength(player_one_combo) == 6
+							&& (Int)GadgetComboBoxGetItemData(player_one_combo, llm_entry)
+								== LlmAiComboDataFromProfileIndex(0),
+						"Skirmish player combo did not append the browser LLM commander") && ok;
+					GadgetComboBoxSetSelectedPos(player_one_combo, llm_entry);
+					ok = expect(skirmish_parent->winGetSystemFunc()(skirmish_parent, GCM_SELECTED,
+							reinterpret_cast<WindowMsgData>(player_one_combo), 0) == MSG_HANDLED,
+						"SkirmishGameOptionsMenuSystem did not handle LLM commander selection") && ok;
+					const GameSlot *llm_slot = TheSkirmishGameInfo->getConstSlot(1);
+					ok = expect(llm_slot != nullptr
+							&& llm_slot->getState() == SLOT_MED_AI
+							&& llm_slot->isLlmAi()
+							&& llm_slot->getLlmAiProfileId() == AsciiString("browser-general")
+							&& llm_slot->getName() == UnicodeString(L"Browser General"),
+						"LLM commander selection did not decorate a real Medium AI slot") && ok;
+					Int selected_player_entry = -1;
+					GadgetComboBoxGetSelectedPos(player_one_combo, &selected_player_entry);
+					ok = expect(selected_player_entry == llm_entry,
+						"slot refresh did not preserve the selected LLM commander entry") && ok;
+					const AsciiString legacy_options = GameInfoToAsciiString(TheSkirmishGameInfo);
+					ok = expect(ParseAsciiStringToGameInfo(TheSkirmishGameInfo, legacy_options),
+						"legacy game-options round trip rejected an LLM-decorated AI slot") && ok;
+					llm_slot = TheSkirmishGameInfo->getConstSlot(1);
+					ok = expect(llm_slot != nullptr
+							&& llm_slot->isLlmAi()
+							&& llm_slot->getLlmAiProfileId() == AsciiString("browser-general"),
+						"legacy LAN-compatible options round trip discarded the host's LLM controller identity") && ok;
 				}
 				if (shell.top() == skirmish_layout && back_button != nullptr) {
 					const WindowMsgData packed_skirmish_back_click = center_click_data(back_button);
@@ -1920,6 +1957,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 				"original CreditsMenuShutdown did not release the CreditsManager") && ok;
 		}
 	TheShell = old_shell;
+	ClearLlmAiProfileCatalog();
 	window_manager.update();
 	std::remove("Skirmish.ini");
 	ok = expect(window_manager.winGetWindowList() == nullptr,

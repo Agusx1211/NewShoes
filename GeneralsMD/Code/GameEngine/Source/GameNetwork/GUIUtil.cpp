@@ -453,8 +453,29 @@ void UpdateSlotList( GameInfo *myGame, GameWindow *comboPlayer[],
 				}
 			}
 			else
-			{				
-				GadgetComboBoxSetSelectedPos(comboPlayer[i], slot->getState(), TRUE);
+			{
+				Int wantedData = slot->getState();
+				if (slot->isLlmAi())
+				{
+					Int profileIndex = FindLlmAiProfile(slot->getLlmAiProfileId());
+					if (profileIndex >= 0)
+						wantedData = LlmAiComboDataFromProfileIndex(profileIndex);
+				}
+				Int selectedIndex = -1;
+				if (comboPlayer[i] != NULL)
+				{
+					Int playerEntryCount = GadgetComboBoxGetLength(comboPlayer[i]);
+					for (Int playerEntry = 0; playerEntry < playerEntryCount; ++playerEntry)
+					{
+						if ((Int)GadgetComboBoxGetItemData(comboPlayer[i], playerEntry) == wantedData)
+						{
+							selectedIndex = playerEntry;
+							break;
+						}
+					}
+				}
+				GadgetComboBoxSetSelectedPos(comboPlayer[i],
+					selectedIndex >= 0 ? selectedIndex : slot->getState(), TRUE);
         if( buttonAccept &&  buttonAccept[i] )
 				  buttonAccept[i]->winHide(TRUE);
 			}

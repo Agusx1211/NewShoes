@@ -200,12 +200,17 @@ function syntheticPeIcon() {
 }
 
 {
-  const [html, presentationSource, launcherSource] = await Promise.all([
+  const [html, presentationSource, launcherSource, buildInfoSource, entrySource] = await Promise.all([
     readFile(new URL("./play.html", import.meta.url), "utf8"),
     readFile(new URL("./launcher-retail-presentation.mjs", import.meta.url), "utf8"),
     readFile(new URL("./launcher.js", import.meta.url), "utf8"),
+    readFile(new URL("./launcher-build-info.js", import.meta.url), "utf8"),
+    readFile(new URL("./launcher-entry.mjs", import.meta.url), "utf8"),
   ]);
   assert.match(html, /data-open-settings="game"/);
+  assert.match(html, /data-bink-video-sidecars="auto"/);
+  assert.match(html, /id="includeVideosToggle"[^>]*disabled/);
+  assert.match(html, /id="includeVideosDescription">Checking video playback support/);
   assert.match(html, /I purchased and installed it online/);
   assert.match(html, /I own the original discs/);
   assert.match(html, /id="pickFolderFallbackButton"/);
@@ -217,6 +222,15 @@ function syntheticPeIcon() {
   assert.match(html, /data-github-shortcut[^>]*href="https:\/\/github\.com\/Agusx1211\/NewShoes"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
   assert.match(html, /data-github-shortcut[^>]*data-single-activation-shortcut/);
   assert.match(html, /id="i-github"/);
+  assert.match(html, /id="aboutVersion"/);
+  assert.match(html, /id="aboutBuildCommit"/);
+  assert.match(html, /id="aboutChangelog"/);
+  assert.match(entrySource, /import "\.\/launcher-build-info\.js"/);
+  assert.match(buildInfoSource, /new URL\("\.\/build-info\.json", import\.meta\.url\)/);
+  assert.match(buildInfoSource, /PROJECT_URL = "https:\/\/github\.com\/Agusx1211\/NewShoes"/);
+  assert.match(buildInfoSource, /\$\{PROJECT_URL\}\/commit\/\$\{commit\}/);
+  assert.match(launcherSource, /probeBinkVideoSupport/);
+  assert.match(launcherSource, /Zero Hour will launch without movies/);
   assert.match(html, /data-retail-banner/);
   assert.match(html, /data-retail-icon/);
   assert.doesNotMatch(html, /data-retail-presentation(?:\s|=)/);

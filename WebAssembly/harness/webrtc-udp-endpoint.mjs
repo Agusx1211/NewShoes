@@ -9,7 +9,7 @@ const TRYSTERO_APP_ID = "project-new-shoes-lan-v1";
 const TRANSPORT_VERSION = 1;
 const DATA_CHANNEL_LABEL = "cnc-udp-v1";
 const DATA_CHANNEL_PROTOCOL = "cnc-generals-udp-v1";
-const PROJECT_NOSTR_RELAY = "wss://relay.newshoes.gg/nostr";
+export const PROJECT_NOSTR_RELAY = "wss://relay.newshoes.gg/nostr";
 function normalizedBytes(value) {
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);

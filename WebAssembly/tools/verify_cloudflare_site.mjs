@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 
 import { lstat, readFile, readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, extname, relative, resolve } from "node:path";
 import { CLOUDFLARE_OUTPUT_FILES } from "./cloudflare_site_manifest.mjs";
+import { validateBuildInfo } from "./release_metadata.mjs";
 
 const root = resolve(process.argv[2] || "cloudflare-dist");
 const expectedFiles = new Set(CLOUDFLARE_OUTPUT_FILES);
 const expectedDirectories = new Set([""]);
 const forbiddenExtensions = new Set([".big", ".bin", ".cab", ".cer", ".cncdump", ".crt", ".cue", ".iso", ".key", ".pem", ".pfx"]);
 const forbiddenSegments = new Set([".certs", ".wrangler", "artifacts", "build", "node_modules", "profiles"]);
-const textExtensions = new Set([".css", ".html", ".js", ".json", ".md", ".mjs", ".txt", ".webmanifest", ""]);
+const textExtensions = new Set([".css", ".html", ".js", ".json", ".md", ".mjs", ".txt", ".webmanifest", ".xml", ""]);
 const findings = [];
 const inventory = [];
 let totalBytes = 0;
@@ -74,9 +76,33 @@ function moduleReferences(text, extension) {
   return references;
 }
 
+async function verifyVideoRuntime() {
+  try {
+    const runtimeRoot = resolve(root, "video-runtime");
+    const manifest = JSON.parse(await readFile(resolve(runtimeRoot, "bink-decoder-manifest.json"), "utf8"));
+    if (manifest.schema !== "cnc-zh-bink-decoder-runtime/v1"
+        || manifest.abiVersion !== 1
+        || manifest.wasmFile !== "bink-decoder.wasm"
+        || !(manifest.wasmBytes > 0) || manifest.wasmBytes > 128 * 1024
+        || manifest.maxWasmBytes !== 128 * 1024
+        || !/^[a-f0-9]{64}$/.test(String(manifest.wasmSha256))) {
+      findings.push("video-runtime: decoder manifest contract is invalid");
+      return;
+    }
+    const bytes = await readFile(resolve(runtimeRoot, manifest.wasmFile));
+    if (bytes.byteLength !== manifest.wasmBytes
+        || createHash("sha256").update(bytes).digest("hex") !== manifest.wasmSha256) {
+      findings.push("video-runtime: decoder failed integrity validation");
+    }
+  } catch (error) {
+    findings.push(`video-runtime: decoder packaging is unreadable (${error?.message ?? String(error)})`);
+  }
+}
+
 await walk(root);
 const actualFiles = new Set(inventory.map(({ name }) => name));
 for (const name of expectedFiles) if (!actualFiles.has(name)) findings.push(`${name}: allowlisted file is missing`);
+await verifyVideoRuntime();
 
 for (const { name } of inventory) {
   const extension = extname(name).toLowerCase();
@@ -94,7 +120,7 @@ for (const { name } of inventory) {
   }
 }
 
-const [index, headers, redirects, license, legal, manifestText, analytics, retirementWorker, retirementBootstrap] = await Promise.all([
+const [index, headers, redirects, license, legal, manifestText, analytics, retirementWorker, retirementBootstrap, buildInfoText, modPackageWorker] = await Promise.all([
   readFile(resolve(root, "index.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "_headers"), "utf8").catch(() => ""),
   readFile(resolve(root, "_redirects"), "utf8").catch(() => ""),
@@ -104,7 +130,14 @@ const [index, headers, redirects, license, legal, manifestText, analytics, retir
   readFile(resolve(root, "harness/analytics.mjs"), "utf8").catch(() => ""),
   readFile(resolve(root, "coi-serviceworker.js"), "utf8").catch(() => ""),
   readFile(resolve(root, "retire-service-worker.js"), "utf8").catch(() => ""),
+  readFile(resolve(root, "harness/build-info.json"), "utf8").catch(() => ""),
+  readFile(resolve(root, "harness/mod-package-worker.mjs"), "utf8").catch(() => ""),
 ]);
+
+if (modPackageWorker.includes("../node_modules/7z-wasm/")
+    || !modPackageWorker.includes("./vendor/7z-wasm/")) {
+  findings.push("harness/mod-package-worker.mjs: production 7z-wasm paths are unresolved");
+}
 
 for (const contract of [
   "Cross-Origin-Opener-Policy: same-origin",
@@ -117,6 +150,11 @@ for (const contract of ["/launcher.html / 302", "/harness/play.html / 302"]) {
 if (!index.includes('<base href="./harness/">')
     || !index.includes('rel="canonical" href="../"')
     || !index.includes("data-cnc-play-page")
+    || !index.includes('data-bink-video-sidecars="direct"')
+    || !index.includes('rel="help" type="text/plain" href="../llms.txt"')
+    || !index.includes('rel="alternate" type="text/markdown" href="../project.md"')
+    || !index.includes('type="application/ld+json"')
+    || !index.includes("data-agent-guide")
     || !index.includes('id="publicLegalNotice"')) {
   findings.push("index.html: direct root launcher contract is incomplete");
 }
@@ -137,9 +175,15 @@ if (!retirementBootstrap.includes("navigator.serviceWorker.controller")
   findings.push("retire-service-worker.js: controlled-client update trigger is invalid");
 }
 if (!license.includes("ADDITIONAL TERMS per GNU GPL Section 7") || !license.includes("Disclaimer of Warranty")) findings.push("LICENSE.md: complete license is missing");
-if (!legal.includes("absolutely no warranty") || !legal.includes("Corresponding source") || legal.includes("__PAGES_SOURCE_URL__")) findings.push("legal.html: resolved legal/source notice is missing");
+if (!legal.includes("absolutely no warranty") || !legal.includes("Corresponding source")
+    || !legal.includes("bink-decoder-SOURCE.txt") || legal.includes("__PAGES_SOURCE_URL__")) findings.push("legal.html: resolved legal/source notice is missing");
 if (analytics.includes("__GA_MEASUREMENT_ID__")) findings.push("harness/analytics.mjs: unresolved analytics marker");
 for (const match of analytics.matchAll(/\bG-[A-Z0-9]+\b/g)) if (!/^G-[A-Z0-9]+$/.test(match[0])) findings.push("harness/analytics.mjs: invalid generated measurement ID");
+try {
+  validateBuildInfo(JSON.parse(buildInfoText));
+} catch {
+  findings.push("harness/build-info.json: version, commit, or changelog metadata is invalid");
+}
 try {
   const manifest = JSON.parse(manifestText);
   if (manifest.start_url !== "./" || manifest.scope !== "./") findings.push("manifest.webmanifest: root start URL or scope is invalid");

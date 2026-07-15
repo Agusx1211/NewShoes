@@ -1455,6 +1455,13 @@ CommandTranslator::~CommandTranslator()
 {
 }
 
+#ifdef __EMSCRIPTEN__
+void CommandTranslator::agentSynchronizeSelection( void )
+{
+	m_teamExists = TheInGameUI != NULL && TheInGameUI->getSelectCount() > 0;
+}
+#endif
+
 
 
 //-------------------------------------------------------------------------------------------------

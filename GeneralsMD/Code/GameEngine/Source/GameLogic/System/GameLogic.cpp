@@ -1918,6 +1918,23 @@ Bool GameLogic::runNextLoadStep( void )
 	ThePlayerList->newGame();
 	CNC_PORT_NOTE_GAME_LOGIC_STEP("GameLogic.startNewGame.playerListNewGame.after");
 
+	// LLM slots retain a legacy computer SlotState on the wire, but the slot's
+	// explicit strategy lease must be active before the first player update.
+	GameInfo *game = s->game;
+	if (game != NULL && TheNameKeyGenerator != NULL) {
+		for (Int slot_num = 0; slot_num < MAX_SLOTS; ++slot_num) {
+			const GameSlot *slot = game->getConstSlot(slot_num);
+			if (slot == NULL || !slot->isOccupied()) continue;
+			AsciiString player_name;
+			player_name.format("player%d", slot_num);
+			Player *player = ThePlayerList->findPlayerWithNameKey(
+				TheNameKeyGenerator->nameToKey(player_name));
+			if (player != NULL && player->getPlayerType() == PLAYER_COMPUTER) {
+				player->setExternalAIStrategyController(slot->isLlmAi());
+			}
+		}
+	}
+
 	// update the loadscreen
 	updateLoadProgress(LOAD_PROGRESS_POST_PLAYER_LIST_RESET);
 

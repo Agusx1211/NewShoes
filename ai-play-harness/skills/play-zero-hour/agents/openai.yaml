@@ -1,0 +1,4 @@
+interface:
+  display_name: "Play Zero Hour"
+  short_description: "Direct-control game mechanics and cadence"
+  default_prompt: "Use $play-zero-hour to control this Zero Hour match through completion while choosing the strategy from live state."

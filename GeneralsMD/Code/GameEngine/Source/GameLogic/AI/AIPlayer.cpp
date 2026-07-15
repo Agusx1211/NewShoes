@@ -89,7 +89,11 @@ m_dozerQueuedForRepair(false),
 m_supplySourceAttackCheckFrame(0),
 m_attackedSupplyCenter(INVALID_ID),
 m_teamSeconds(10),
-m_curWarehouseID(INVALID_ID)
+m_curWarehouseID(INVALID_ID),
+m_externalStrategyController(false),
+m_classicStrategyUpdateCount(0),
+m_controllerNeutralUpdateCount(0),
+m_strategyControllerTransitionCount(0)
 {
 	m_frameLastBuildingBuilt = TheGameLogic->getFrame();
 	p->setCanBuildUnits(false); // turn off ai production by default.
@@ -103,6 +107,14 @@ m_curWarehouseID(INVALID_ID)
 	m_baseCenterSet = false;
 	m_difficulty = TheScriptEngine->getGlobalDifficulty(); 
 	m_teamSeconds = TheAI->getAiData()->m_teamSeconds;
+}
+
+// ------------------------------------------------------------------------------------------------
+void AIPlayer::setExternalStrategyController(Bool enabled)
+{
+	if (m_externalStrategyController == enabled) return;
+	m_externalStrategyController = enabled;
+	++m_strategyControllerTransitionCount;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -2916,7 +2928,7 @@ void AIPlayer::doTeamBuilding( void )
 		m_teamDelay--;
 		if (m_teamDelay<1) {
 			queueUnits(); // update the queues.
-			if (m_readyToBuildTeam) {
+			if (m_readyToBuildTeam && !m_externalStrategyController) {
 				processTeamBuilding();
 			}
 			m_teamDelay = 5*LOGICFRAMES_PER_SECOND; // check again in 5 seconds.
@@ -3012,17 +3024,27 @@ void AIPlayer::update( void )
 {
 	//USE_PERF_TIMER(AIPlayer_update)
 
-	doBaseBuilding();		// See if it's time to build another building.
+	// Base and team maintenance also advances explicit controller requests. The
+	// skirmish implementation suppresses automatic selection while the external
+	// strategy lease is active.
+	doBaseBuilding();
 
+	// These operations only advance work already selected by a strategic
+	// controller. They remain active under an external strategy lease.
 	checkReadyTeams(); // See if any teams are ready to start.
 
 	checkQueuedTeams(); // See if any teams are complete.
 
-	doTeamBuilding(); // See if it's time to start another team.
+	doTeamBuilding();
 
-	doUpgradesAndSkills(); // See if it's time to build an upgrade or buy a skill.
+	if (!m_externalStrategyController) {
+		// Classic strategic policy is exclusive with an external controller.
+		doUpgradesAndSkills(); // See if it's time to build an upgrade or buy a skill.
+		++m_classicStrategyUpdateCount;
+	}
 
 	updateBridgeRepair(); // Handle any bridge repairs.
+	++m_controllerNeutralUpdateCount;
 
 }
 
@@ -3297,15 +3319,23 @@ void AIPlayer::crc( Xfer *xfer )
 	* 2: added m_teamSeconds delay.
 	* 3: Added m_curWarehouseID.
 	* 1: Reset back to 1 with major save file changes.
+	* 2: Added external strategy controller ownership and diagnostic counters.
 */
 // ------------------------------------------------------------------------------------------------
 void AIPlayer::xfer( Xfer *xfer )
 {
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
+	if (version >= 2)
+	{
+		xfer->xferBool( &m_externalStrategyController );
+		xfer->xferUnsignedInt( &m_classicStrategyUpdateCount );
+		xfer->xferUnsignedInt( &m_controllerNeutralUpdateCount );
+		xfer->xferUnsignedInt( &m_strategyControllerTransitionCount );
+	}
 
 	// team build queue count
 	UnsignedShort teamBuildQueueCount = 0;

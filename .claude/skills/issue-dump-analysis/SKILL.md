@@ -69,6 +69,8 @@ Top-level fields:
   usually `deepSnapshot`.
 - `timeline`: bounded flight-recorder events: input, RPC, frame samples,
   UI actions, storage, uploads, errors.
+- `crash`: fatal kind/stage/message, error stack, related failures, and bounded
+  dump-time diagnostics when the report came from the crash dialog.
 - `frameSamples`: compact frame/RPC summaries from the live loop.
 - `logs`: tail of engine/harness logs.
 - `networkDiagnostics`: optional opt-in packet flight recorder containing raw

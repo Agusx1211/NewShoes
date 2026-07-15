@@ -6,6 +6,7 @@ import { createServer as createHttpsServer } from "node:https";
 import { hostname as osHostname, networkInterfaces } from "node:os";
 import { basename, extname, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { createBuildInfo, readReleaseMetadata } from "../tools/release_metadata.mjs";
 
 const execFileAsync = promisify(execFile);
 const serverStartedAt = new Date().toISOString();
@@ -31,6 +32,7 @@ const contentTypes = new Map([
   [".wasm", "application/wasm"],
   [".webm", "video/webm"],
   [".webmanifest", "application/manifest+json; charset=utf-8"],
+  [".webp", "image/webp"],
 ]);
 
 const maxDumpUploadBytes = 256 * 1024 * 1024;
@@ -88,18 +90,31 @@ async function gitOutput(root, args) {
 }
 
 async function collectBuildInfo(root) {
-  const [commit, branch, describe, statusText] = await Promise.all([
+  const [commit, branch, describe, statusText, repoRoot] = await Promise.all([
     gitOutput(root, ["rev-parse", "HEAD"]),
     gitOutput(root, ["branch", "--show-current"]),
     gitOutput(root, ["describe", "--always", "--dirty", "--tags"]),
     gitOutput(root, ["status", "--short"]),
+    gitOutput(root, ["rev-parse", "--show-toplevel"]),
   ]);
   const status = statusText == null || statusText === ""
     ? []
     : statusText.split("\n").slice(0, 200);
-  return {
-    schema: "cnc.harness-build-info.v1",
-    generatedAt: new Date().toISOString(),
+  let release = null;
+  if (repoRoot) {
+    try {
+      release = await readReleaseMetadata(repoRoot);
+    } catch (error) {
+      release = { error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  return createBuildInfo({
+    release,
+    commit,
+    branch,
+    describe,
+    dirty: statusText == null ? null : status.length > 0,
+    status,
     server: {
       startedAt: serverStartedAt,
       node: process.version,
@@ -107,16 +122,7 @@ async function collectBuildInfo(root) {
       arch: process.arch,
       pid: process.pid,
     },
-    git: {
-      available: commit != null,
-      commit,
-      shortCommit: commit ? commit.slice(0, 12) : null,
-      branch: branch || null,
-      describe: describe || null,
-      dirty: statusText == null ? null : status.length > 0,
-      status,
-    },
-  };
+  });
 }
 
 function sanitizeUploadName(name) {
@@ -282,7 +288,8 @@ export async function startStaticServer({
       const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
       const pathname = decodeURIComponent(requestUrl.pathname);
 
-      if (request.method === "GET" && pathname === "/__cnc_build_info") {
+      if (request.method === "GET"
+          && (pathname === "/__cnc_build_info" || pathname === "/harness/build-info.json")) {
         sendJson(response, 200, await collectBuildInfo(staticRoot));
         return;
       }

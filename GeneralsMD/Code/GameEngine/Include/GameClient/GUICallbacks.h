@@ -345,6 +345,7 @@ extern void ShowInGameChat( Bool immediate = TRUE );
 void ResetInGameChat( void );
 void SetInGameChatType( InGameChatType chatType );
 Bool IsInGameChatActive();
+Bool SendInGameChatMessage( UnicodeString text, InGameChatType chatType );
 
 
 // Diplomacy Controls --------------------------------------------------------------------------------
@@ -389,4 +390,3 @@ extern WindowMsgHandledType QuitMessageBoxSystem( GameWindow *window, UnsignedIn
 
 
 #endif // __GUICALLBACKS_H_
-

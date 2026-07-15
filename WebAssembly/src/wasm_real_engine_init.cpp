@@ -16,6 +16,7 @@
 
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -42,11 +43,13 @@
 #include "Common/PlayerList.h"
 #include "Common/PlayerTemplate.h"
 #include "Common/Radar.h"
+#include "Common/Recorder.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/GameLOD.h"
 #include "GameClient/ControlBar.h"
 #include "GameClient/ControlBarScheme.h"
 #include "GameClient/Gadget.h"
+#include "GameClient/GadgetListBox.h"
 #include "GameClient/GadgetPushButton.h"
 #include "GameClient/GadgetTextEntry.h"
 #include "WW3D2/assetmgr.h"
@@ -79,6 +82,7 @@
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
 #include "GameNetwork/GameInfo.h"
+#include "GameNetwork/GameSpy/ThreadUtils.h"
 #include "wasm_browser_mouse.h"
 #include "GameLogic/AI.h"
 #include "GameLogic/Module/AIUpdate.h"
@@ -88,6 +92,7 @@
 #include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/TerrainLogic.h"
+#include "GameLogic/VictoryConditions.h"
 #include "GameLogic/Weapon.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/Module/BodyModule.h"
@@ -309,6 +314,105 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_commander_n
 	json = g_browser_commander_name.empty()
 		? "{\"ok\":false,\"error\":\"emptyCommanderName\"}"
 		: "{\"ok\":true}";
+	return json.c_str();
+}
+
+static bool decode_llm_ai_catalog_component(const std::string &encoded, std::string &decoded)
+{
+	decoded.clear();
+	decoded.reserve(encoded.size());
+	for (std::size_t i = 0; i < encoded.size(); ++i) {
+		unsigned char c = static_cast<unsigned char>(encoded[i]);
+		if (c != '%') {
+			decoded.push_back(static_cast<char>(c));
+			continue;
+		}
+		if (i + 2 >= encoded.size()
+			|| !std::isxdigit(static_cast<unsigned char>(encoded[i + 1]))
+			|| !std::isxdigit(static_cast<unsigned char>(encoded[i + 2]))) {
+			return false;
+		}
+		auto hex_value = [](char value) -> unsigned char {
+			if (value >= '0' && value <= '9') return static_cast<unsigned char>(value - '0');
+			if (value >= 'a' && value <= 'f') return static_cast<unsigned char>(value - 'a' + 10);
+			return static_cast<unsigned char>(value - 'A' + 10);
+		};
+		decoded.push_back(static_cast<char>((hex_value(encoded[i + 1]) << 4)
+			| hex_value(encoded[i + 2])));
+		i += 2;
+	}
+	return true;
+}
+
+static bool valid_llm_ai_profile_id(const std::string &id)
+{
+	if (id.empty() || id.size() > 128) return false;
+	for (unsigned char c : id) {
+		if (!std::isalnum(c) && c != '.' && c != '_' && c != '-') return false;
+	}
+	return true;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_llm_ai_profiles(const char *catalog)
+{
+	static std::string json;
+	std::vector<std::pair<std::string, std::string> > parsed;
+	std::string packed = catalog != NULL ? catalog : "";
+	std::size_t start = 0;
+	std::string error;
+	while (start < packed.size()) {
+		std::size_t end = packed.find('&', start);
+		if (end == std::string::npos) end = packed.size();
+		std::string row = packed.substr(start, end - start);
+		std::size_t separator = row.find('=');
+		std::string id;
+		std::string name;
+		if (separator == std::string::npos
+			|| !decode_llm_ai_catalog_component(row.substr(0, separator), id)
+			|| !decode_llm_ai_catalog_component(row.substr(separator + 1), name)) {
+			error = "invalidEncoding";
+			break;
+		}
+		if (!valid_llm_ai_profile_id(id) || name.empty() || name.size() > 256) {
+			error = "invalidProfile";
+			break;
+		}
+		bool duplicate = false;
+		for (const auto &entry : parsed) {
+			if (entry.first == id) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (duplicate) {
+			error = "duplicateProfile";
+			break;
+		}
+		parsed.push_back(std::make_pair(id, name));
+		if (parsed.size() > MAX_LLM_AI_PROFILES) {
+			error = "tooManyProfiles";
+			break;
+		}
+		start = end + 1;
+	}
+
+	if (!error.empty()) {
+		json = "{\"ok\":false,\"error\":\"" + error + "\"}";
+		return json.c_str();
+	}
+
+	ClearLlmAiProfileCatalog();
+	for (const auto &entry : parsed) {
+		UnicodeString name;
+		name.set(MultiByteToWideCharSingleLine(entry.second.c_str()).c_str());
+		if (!AddLlmAiProfileToCatalog(AsciiString(entry.first.c_str()), name)) {
+			ClearLlmAiProfileCatalog();
+			json = "{\"ok\":false,\"error\":\"catalogRejected\"}";
+			return json.c_str();
+		}
+	}
+	json = "{\"ok\":true,\"profileCount\":"
+		+ std::to_string(static_cast<long long>(GetLlmAiProfileCount())) + "}";
 	return json.c_str();
 }
 static unsigned int g_frame_texture_apply_count = 0;
@@ -821,6 +925,36 @@ std::string g_state_json;
 // Opt-in only: default boots stay -noshellmap so harness expectations hold;
 // the human play page can request the original ShellMapMD menu background.
 static bool g_use_shell_map = false;
+static std::string g_mod_directory;
+static std::string g_user_data_home = "/home/web_user";
+static std::vector<std::string> g_engine_argument_storage;
+static std::vector<char *> g_engine_argv;
+static std::string g_engine_command_line;
+
+void build_engine_arguments()
+{
+	g_engine_argument_storage.clear();
+	g_engine_argv.clear();
+	g_engine_argument_storage.reserve(5);
+	g_engine_argument_storage.push_back("CnCGeneralsZH");
+	if (!g_use_shell_map) {
+		g_engine_argument_storage.push_back("-noshellmap");
+	}
+	g_engine_argument_storage.push_back("-win");
+	if (!g_mod_directory.empty()) {
+		g_engine_argument_storage.push_back("-mod");
+		g_engine_argument_storage.push_back(g_mod_directory);
+	}
+	g_engine_argv.reserve(g_engine_argument_storage.size());
+	for (std::string &argument : g_engine_argument_storage) {
+		g_engine_argv.push_back(&argument[0]);
+	}
+	g_engine_command_line.clear();
+	for (size_t i = 1; i < g_engine_argument_storage.size(); ++i) {
+		if (!g_engine_command_line.empty()) g_engine_command_line += " ";
+		g_engine_command_line += g_engine_argument_storage[i];
+	}
+}
 
 std::string json_escape(const std::string &value)
 {
@@ -916,9 +1050,10 @@ const char *build_state_json()
 	json += ",\"source\":\"GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp::init\"";
 	json += ",\"factory\":\"GeneralsMD/Code/Main/WinMain.cpp::CreateGameEngine\"";
 	json += ",\"commandLine\":\"";
-	json += g_use_shell_map ? "-win" : "-noshellmap -win";
+	json += json_escape(g_engine_command_line);
 	json += "\"";
 	json += ",\"runDirectory\":\"" + json_escape(g_state.run_directory) + "\"";
+	json += ",\"userDataHome\":\"" + json_escape(g_user_data_home) + "\"";
 	json += ",\"initReturned\":";
 	json += g_state.init_returned ? "true" : "false";
 	json += ",\"quittingAfterInit\":";
@@ -944,6 +1079,14 @@ const char *build_state_json()
 		json += ",\"inFlightSubsystem\":\"" + json_escape(g_state.in_flight) + "\"";
 	}
 	json += ",\"lastGameLogicStep\":\"" + json_escape(g_last_game_logic_step) + "\"";
+	if (TheGlobalData != NULL) {
+		char camera_height[64];
+		std::snprintf(camera_height, sizeof(camera_height), ",\"maxCameraHeight\":%.1f",
+			TheGlobalData->m_maxCameraHeight);
+		json += camera_height;
+	} else {
+		json += ",\"maxCameraHeight\":null";
+	}
 	json += "}";
 	g_state_json = json;
 	return g_state_json.c_str();
@@ -3670,6 +3813,9 @@ void append_game_slot_json(std::string &json, const char *field_name, const Game
 		json += slot->isHuman() ? "true" : "false";
 		json += ",\"ai\":";
 		json += slot->isAI() ? "true" : "false";
+		json += ",\"llmAi\":";
+		json += slot->isLlmAi() ? "true" : "false";
+		json += ",\"llmAiProfileId\":\"" + json_escape(slot->getLlmAiProfileId().str()) + "\"";
 		json += ",\"occupied\":";
 		json += slot->isOccupied() ? "true" : "false";
 		json += ",\"color\":" + std::to_string(static_cast<long long>(slot->getColor()));
@@ -3727,6 +3873,9 @@ void append_game_info_json(std::string &json, const char *field_name, const Game
 			json += slot->isHuman() ? "true" : "false";
 			json += ",\"ai\":";
 			json += slot->isAI() ? "true" : "false";
+			json += ",\"llmAi\":";
+			json += slot->isLlmAi() ? "true" : "false";
+			json += ",\"llmAiProfileId\":\"" + json_escape(slot->getLlmAiProfileId().str()) + "\"";
 			json += ",\"color\":" + std::to_string(static_cast<long long>(slot->getColor()));
 			json += ",\"startPos\":" + std::to_string(static_cast<long long>(slot->getStartPos()));
 			json += ",\"teamNumber\":" + std::to_string(static_cast<long long>(slot->getTeamNumber()));
@@ -4630,6 +4779,53 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 	json += enabled ? "true" : "false";
 	json += ",\"clickable\":";
 	json += (!manager_hidden && enabled && (status & WIN_STATUS_NO_INPUT) == 0) ? "true" : "false";
+	if ((style & GWS_SCROLL_LISTBOX) != 0) {
+		const Int entry_count = GadgetListBoxGetNumEntries(window);
+		const Int column_count = GadgetListBoxGetNumColumns(window);
+		const ListboxData *list_data = static_cast<const ListboxData *>(window->winGetUserData());
+		const Int title_height = inst_data != NULL && inst_data->getTextLength() != 0
+			? TheWindowManager->winFontHeight(inst_data->getFont()) + 1
+			: 0;
+		Int selected = -1;
+		GadgetListBoxGetSelected(window, &selected);
+		json += ",\"listBox\":{";
+		json += "\"entryCount\":" + std::to_string(entry_count);
+		json += ",\"columnCount\":" + std::to_string(column_count);
+		json += ",\"selected\":" + std::to_string(selected);
+		json += ",\"topVisibleEntry\":"
+			+ std::to_string(GadgetListBoxGetTopVisibleEntry(window));
+		json += ",\"bottomVisibleEntry\":"
+			+ std::to_string(GadgetListBoxGetBottomVisibleEntry(window));
+		json += ",\"rows\":[";
+		for (Int row = 0; row < entry_count; ++row) {
+			if (row != 0) {
+				json += ",";
+			}
+			const Int cumulative_top = row > 0 && list_data != NULL
+				? list_data->listData[row - 1].listHeight
+				: 0;
+			const Int cumulative_bottom = list_data != NULL
+				? list_data->listData[row].listHeight
+				: 0;
+			const Int display_pos = list_data != NULL ? list_data->displayPos : 0;
+			json += "{\"top\":" + std::to_string(y + title_height + cumulative_top - display_pos);
+			json += ",\"bottom\":" + std::to_string(y + title_height + cumulative_bottom - display_pos);
+			json += ",\"cells\":[";
+			for (Int column = 0; column < column_count; ++column) {
+				if (column != 0) {
+					json += ",";
+				}
+				json += "\"" + json_escape(unicode_to_debug_ascii(
+					GadgetListBoxGetText(window, row, column))) + "\"";
+			}
+			json += "]}";
+		}
+		json += "]}";
+	}
+	if ((style & GWS_ENTRY_FIELD) != 0) {
+		json += ",\"entryText\":\"" + json_escape(unicode_to_debug_ascii(
+			GadgetTextEntryGetText(window))) + "\"";
+	}
 	if (inst_data != NULL) {
 		UnicodeString text = inst_data->getText();
 		json += ",\"text\":\"" + json_escape(unicode_to_debug_ascii(text)) + "\"";
@@ -4936,6 +5132,21 @@ void append_real_engine_client_state(std::string &json)
 			"\"loadingSave\":null,\"clearingGameData\":null,\"gamePaused\":null,"
 		"\"logicFrame\":null,\"objectCount\":0,\"progressComplete\":null";
 	}
+	json += ",\"recorder\":{";
+	json += "\"ready\":";
+	json += TheRecorder != NULL ? "true" : "false";
+	if (TheRecorder != NULL) {
+		json += ",\"mode\":" + std::to_string(static_cast<Int>(TheRecorder->getMode()));
+		json += ",\"recording\":";
+		json += TheRecorder->isRecording() ? "true" : "false";
+		json += ",\"playback\":";
+		json += TheRecorder->isPlayingBack() ? "true" : "false";
+		json += ",\"currentReplay\":\"" + json_escape(
+			TheRecorder->getCurrentReplayFilename().str()) + "\"";
+	} else {
+		json += ",\"mode\":null,\"recording\":false,\"playback\":false,\"currentReplay\":null";
+	}
+	json += "}";
 	json += ",\"lifecycleDebug\":{";
 	json += "\"newGameCount\":" + std::to_string(cnc_port_logic_dispatch_new_game_count());
 	json += ",\"lastNewGameMode\":" + std::to_string(cnc_port_logic_dispatch_last_new_game_mode());
@@ -5254,6 +5465,7 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonChallenge", "MainMenu.wnd:ButtonChallenge");
 	append_window_probe(json, "buttonSkirmish", "MainMenu.wnd:ButtonSkirmish");
 	append_window_probe(json, "buttonLoadReplay", "MainMenu.wnd:ButtonLoadReplay");
+	append_window_probe(json, "buttonReplay", "MainMenu.wnd:ButtonReplay");
 	append_window_probe(json, "buttonOptions", "MainMenu.wnd:ButtonOptions");
 	append_window_probe(json, "buttonCredits", "MainMenu.wnd:ButtonCredits");
 	append_window_probe(json, "buttonExit", "MainMenu.wnd:ButtonExit");
@@ -5266,6 +5478,37 @@ void append_real_engine_client_state(std::string &json)
 	append_window_under_probe_center(json, "underButtonNetworkCenter", "MainMenu.wnd:ButtonNetwork");
 	append_window_under_probe_center(json, "underButtonUSACenter", "MainMenu.wnd:ButtonUSA");
 	append_window_under_probe_center(json, "underButtonEasyCenter", "MainMenu.wnd:ButtonEasy");
+	json += "}";
+
+	json += ",\"replayMenu\":{\"queried\":true";
+	append_window_probe(json, "parent", "ReplayMenu.wnd:ParentReplayMenu");
+	append_window_probe(json, "buttonLoad", "ReplayMenu.wnd:ButtonLoadReplay");
+	append_window_probe(json, "buttonBack", "ReplayMenu.wnd:ButtonBack");
+	append_window_probe(json, "buttonDelete", "ReplayMenu.wnd:ButtonDeleteReplay");
+	append_window_probe(json, "buttonCopy", "ReplayMenu.wnd:ButtonCopyReplay");
+	GameWindow *replay_list = find_window_by_name("ReplayMenu.wnd:ListboxReplayFiles");
+	json += ",\"listbox\":";
+	append_window_json(json, replay_list, "ReplayMenu.wnd:ListboxReplayFiles");
+	json += ",\"entryCount\":";
+	json += replay_list != NULL ? std::to_string(GadgetListBoxGetNumEntries(replay_list)) : "0";
+	json += ",\"selectedName\":";
+	if (replay_list != NULL && GadgetListBoxGetNumEntries(replay_list) > 0) {
+		Int selected = -1;
+		GadgetListBoxGetSelected(replay_list, &selected);
+		json += selected >= 0 ? "\"" + json_escape(unicode_to_debug_ascii(
+			GadgetListBoxGetText(replay_list, selected))) + "\"" : "null";
+	} else {
+		json += "null";
+	}
+	json += "}";
+
+	json += ",\"scoreScreen\":{\"queried\":true";
+	append_window_probe(json, "parent", "ScoreScreen.wnd:ParentScoreScreen");
+	append_window_probe(json, "buttonOk", "ScoreScreen.wnd:ButtonOk");
+	append_window_probe(json, "buttonSaveReplay", "ScoreScreen.wnd:ButtonSaveReplay");
+	append_window_probe(json, "popupParent", "PopupReplay.wnd:PopupReplayMenu");
+	append_window_probe(json, "popupButtonSave", "PopupReplay.wnd:ButtonSave");
+	append_window_probe(json, "popupTextEntry", "PopupReplay.wnd:TextEntryReplayName");
 	json += "}";
 
 	json += ",\"lanLobby\":{\"queried\":true";
@@ -5465,6 +5708,13 @@ void run_real_engine_frames(int frame_count)
 	reset_frame_texture_diagnostics();
 	if (g_state.attempted && g_state.init_returned && TheGameEngine != NULL) {
 		for (int frame = 0; frame < frame_count; ++frame) {
+			// GameEngine::execute() owns the native lifetime contract: once an
+			// original UI callback sets m_quitting, it returns without another
+			// update. The browser drives update() one frame at a time, so preserve
+			// that guard here instead of drawing an empty post-quit world forever.
+			if (TheGameEngine->getQuitting() != FALSE) {
+				break;
+			}
 			++g_frame_state.frames_attempted;
 			const double frame_started_at = emscripten_get_now();
 			reset_engine_frame_profile();
@@ -6052,6 +6302,29 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_load_steppi
 // ---------------------------------------------------------------------------
 static int g_boot_resolution_width = 0;
 static int g_boot_resolution_height = 0;
+static float g_boot_max_camera_height = 0.0f;
+
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_max_camera_height(float height)
+{
+	if (!std::isfinite(height) || height < 310.0f || height > 500.0f) {
+		return 0;
+	}
+	g_boot_max_camera_height = height;
+	std::printf("cnc-port: max-camera-height requested=%.1f\n", height);
+	std::fflush(stdout);
+	return 1;
+}
+
+extern "C" int cnc_port_boot_max_camera_height(float *height)
+{
+	if (g_boot_max_camera_height < 310.0f || g_boot_max_camera_height > 500.0f) {
+		return 0;
+	}
+	if (height != NULL) {
+		*height = g_boot_max_camera_height;
+	}
+	return 1;
+}
 
 extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_boot_resolution(int width, int height)
 {
@@ -6200,6 +6473,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int
 	json += (TheGameLogic != NULL && TheGameLogic->isLoadSessionActive()) ? "true" : "false";
 	json += ",\"loadProgress\":" + std::to_string(
 		TheGameLogic != NULL ? (long long)TheGameLogic->getLoadSessionProgress() : -1);
+	json += ",\"browserCursor\":{\"cursorSet\":";
+	json += WasmWin32Input::current_cursor != NULL ? "true" : "false";
+	json += ",\"cursorFile\":";
+	if (WasmWin32Input::current_cursor_file != NULL) {
+		json += "\"" + json_escape(WasmWin32Input::current_cursor_file) + "\"";
+	} else {
+		json += "null";
+	}
+	json += "}";
 	// W3D animation clock (drives every HAnim/particle/muzzle-flash timeline).
 	// If w3dSyncTimeMs stops advancing while clientFrame does, animations are
 	// frozen — the exact owner-reported symptom class (units move, nothing
@@ -7914,6 +8196,19 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_click_window_by_name(const 
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_window_by_name(const char *window_name)
+{
+	static std::string json;
+	json.clear();
+	append_window_json(
+		json,
+		TheWindowManager != NULL && window_name != NULL && window_name[0] != '\0'
+			? find_window_by_name(window_name)
+			: NULL,
+		window_name != NULL ? window_name : "");
+	return json.c_str();
+}
+
 // Diagnostic for the shell-map path: GameEngine::init silently clears
 // m_shellMapOn when the shell map misses TheMapCache, so expose the cache
 // size, the lookup result, and a few shell-ish keys.
@@ -8056,10 +8351,14 @@ void append_lan_runtime_json(std::string &json)
 	json += "\"ready\":";
 	json += TheNetwork != NULL ? "true" : "false";
 	if (TheNetwork != NULL) {
+		// getExecutionFrame() raises m_lastExecutionFrame. Calling it from this
+		// observer during pregame would schedule peers on different timelines.
+		const Int diagnostic_execution_frame =
+			TheNetwork->getBrowserDiagnosticExecutionFrame();
 		json += ",\"localPlayerId\":"
 			+ std::to_string(static_cast<unsigned long long>(TheNetwork->getLocalPlayerID()));
 		json += ",\"numPlayers\":" + std::to_string(TheNetwork->getNumPlayers());
-		json += ",\"executionFrame\":" + std::to_string(TheNetwork->getExecutionFrame());
+		json += ",\"executionFrame\":" + std::to_string(diagnostic_execution_frame);
 		json += ",\"frameDataReady\":";
 		json += TheNetwork->isFrameDataReady() ? "true" : "false";
 		json += ",\"runAhead\":"
@@ -8107,10 +8406,10 @@ void append_lan_runtime_json(std::string &json)
 				+ std::to_string(TheNetwork->getBrowserDiagnosticConnectionQueue(slot));
 			json += ",\"frameCommands\":"
 				+ std::to_string(TheNetwork->getBrowserDiagnosticFrameCommands(
-					slot, static_cast<UnsignedInt>(TheNetwork->getExecutionFrame())));
+					slot, static_cast<UnsignedInt>(diagnostic_execution_frame)));
 			json += ",\"expectedFrameCommands\":"
 				+ std::to_string(TheNetwork->getBrowserDiagnosticExpectedFrameCommands(
-					slot, static_cast<UnsignedInt>(TheNetwork->getExecutionFrame())));
+					slot, static_cast<UnsignedInt>(diagnostic_execution_frame)));
 			json += "}";
 		}
 		json += "]";
@@ -8126,6 +8425,282 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_lan_state()
 	json = "{";
 	append_lan_runtime_json(json);
 	json += "}";
+	return json.c_str();
+}
+
+namespace {
+
+struct LlmAiTerminalSlotOutcome {
+	Int slot;
+	Int player_index;
+	std::string profile_id;
+	std::string outcome;
+	std::string strategy_controller;
+	UnsignedInt classic_strategy_updates;
+	UnsignedInt controller_neutral_updates;
+	UnsignedInt strategy_transitions;
+};
+
+struct LlmAiTerminalOutcomeLatch {
+	bool authoritative = false;
+	UnsignedInt end_frame = 0;
+	Int game_id = 0;
+	UnsignedInt seed = 0;
+	std::string map;
+	std::vector<LlmAiTerminalSlotOutcome> slots;
+};
+
+LlmAiTerminalOutcomeLatch g_llm_ai_terminal_outcome;
+
+const LlmAiTerminalSlotOutcome *find_latched_llm_outcome(
+	Int slot,
+	const std::string &profile_id)
+{
+	for (const LlmAiTerminalSlotOutcome &entry : g_llm_ai_terminal_outcome.slots) {
+		if (entry.slot == slot && entry.profile_id == profile_id) return &entry;
+	}
+	return NULL;
+}
+
+Player *find_llm_ai_slot_player(Int slot_num)
+{
+	AsciiString player_name;
+	player_name.format("player%d", slot_num);
+	return ThePlayerList != NULL && TheNameKeyGenerator != NULL
+		? ThePlayerList->findPlayerWithNameKey(
+			TheNameKeyGenerator->nameToKey(player_name)) : NULL;
+}
+
+LlmAiTerminalSlotOutcome make_llm_ai_slot_outcome(
+	Int slot_num,
+	const GameSlot *slot,
+	Player *player,
+	const char *outcome)
+{
+	return {
+		slot_num,
+		player != NULL ? player->getPlayerIndex() : -1,
+		slot->getLlmAiProfileId().str(),
+		outcome,
+		player != NULL && player->hasExternalAIStrategyController() ? "llm" : "classic",
+		player != NULL ? player->getClassicAIStrategyUpdateCount() : 0,
+		player != NULL ? player->getControllerNeutralAIUpdateCount() : 0,
+		player != NULL ? player->getAIStrategyControllerTransitionCount() : 0,
+	};
+}
+
+void remember_llm_ai_slot_outcome(const LlmAiTerminalSlotOutcome &outcome)
+{
+	for (LlmAiTerminalSlotOutcome &entry : g_llm_ai_terminal_outcome.slots) {
+		if (entry.slot == outcome.slot && entry.profile_id == outcome.profile_id) {
+			entry = outcome;
+			return;
+		}
+	}
+	g_llm_ai_terminal_outcome.slots.push_back(outcome);
+}
+
+void remember_llm_ai_match_identity(const GameInfo *game)
+{
+	if (game == NULL) return;
+	g_llm_ai_terminal_outcome.authoritative = true;
+	g_llm_ai_terminal_outcome.game_id = game->getGameID();
+	g_llm_ai_terminal_outcome.seed = game->getSeed();
+	g_llm_ai_terminal_outcome.map = game->getMap().str();
+}
+
+}
+
+extern "C" void cnc_port_reset_llm_ai_terminal_outcomes(void)
+{
+	g_llm_ai_terminal_outcome = LlmAiTerminalOutcomeLatch();
+}
+
+extern "C" void cnc_port_capture_llm_ai_player_defeat(Int slot_num)
+{
+	const Int game_mode = TheGameLogic != NULL ? TheGameLogic->getGameMode() : GAME_NONE;
+	const GameInfo *game = TheGameInfo != NULL ? TheGameInfo : TheSkirmishGameInfo;
+	const bool authoritative = game_mode == GAME_SKIRMISH
+		|| (game_mode == GAME_LAN && game != NULL && game->amIHost());
+	const GameSlot *slot = game != NULL ? game->getConstSlot(slot_num) : NULL;
+	if (!authoritative || slot == NULL || !slot->isLlmAi()) return;
+
+	remember_llm_ai_match_identity(game);
+	remember_llm_ai_slot_outcome(make_llm_ai_slot_outcome(
+		slot_num, slot, find_llm_ai_slot_player(slot_num), "defeat"));
+}
+
+extern "C" void cnc_port_capture_llm_ai_terminal_outcomes(void)
+{
+	const Int game_mode = TheGameLogic != NULL ? TheGameLogic->getGameMode() : GAME_NONE;
+	const GameInfo *game = TheGameInfo != NULL ? TheGameInfo : TheSkirmishGameInfo;
+	const bool authoritative = game_mode == GAME_SKIRMISH
+		|| (game_mode == GAME_LAN && game != NULL && game->amIHost());
+	const UnsignedInt end_frame = TheVictoryConditions != NULL
+		? TheVictoryConditions->getEndFrame() : 0;
+	if (!authoritative || game == NULL || end_frame == 0) return;
+
+	LlmAiTerminalOutcomeLatch captured;
+	captured.authoritative = true;
+	captured.end_frame = end_frame;
+	captured.game_id = game->getGameID();
+	captured.seed = game->getSeed();
+	captured.map = game->getMap().str();
+	for (Int slot_num = 0; slot_num < MAX_SLOTS; ++slot_num) {
+		const GameSlot *slot = game->getConstSlot(slot_num);
+		if (slot == NULL || !slot->isLlmAi()) continue;
+		Player *player = find_llm_ai_slot_player(slot_num);
+		bool victory = player != NULL && TheVictoryConditions != NULL
+			&& TheVictoryConditions->hasAchievedVictory(player);
+		if (player == NULL) {
+			victory = slot->lastFrameInGame() == 0;
+			const Int team = slot->getTeamNumber();
+			if (!victory && team >= 0) {
+				for (Int ally_slot_num = 0; ally_slot_num < MAX_SLOTS; ++ally_slot_num) {
+					const GameSlot *ally = game->getConstSlot(ally_slot_num);
+					if (ally != NULL && ally->isOccupied() && ally->getTeamNumber() == team
+						&& ally->lastFrameInGame() == 0) {
+						victory = true;
+						break;
+					}
+				}
+			}
+		}
+		const LlmAiTerminalSlotOutcome *prior = find_latched_llm_outcome(
+			slot_num, slot->getLlmAiProfileId().str());
+		if (!victory && prior != NULL) captured.slots.push_back(*prior);
+		else captured.slots.push_back(make_llm_ai_slot_outcome(
+			slot_num, slot, player, victory ? "victory" : "defeat"));
+	}
+	g_llm_ai_terminal_outcome = captured;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_llm_ai_assignments()
+{
+	static std::string json;
+	const Int game_mode = TheGameLogic != NULL ? TheGameLogic->getGameMode() : GAME_NONE;
+	const GameInfo *game = TheGameInfo;
+	if (game == NULL && TheSkirmishGameInfo != NULL) game = TheSkirmishGameInfo;
+	const UnsignedInt current_end_frame = TheVictoryConditions != NULL
+		? TheVictoryConditions->getEndFrame() : 0;
+	const UnsignedInt end_frame = g_llm_ai_terminal_outcome.authoritative
+		? g_llm_ai_terminal_outcome.end_frame : current_end_frame;
+	const bool completed_skirmish = game_mode == GAME_NONE && end_frame != 0
+		&& game != NULL && game == TheSkirmishGameInfo;
+	const bool supported_mode = game_mode == GAME_SKIRMISH || game_mode == GAME_LAN
+		|| completed_skirmish || g_llm_ai_terminal_outcome.authoritative;
+	const bool authoritative = game_mode == GAME_SKIRMISH || completed_skirmish
+		|| g_llm_ai_terminal_outcome.authoritative
+		|| (game_mode == GAME_LAN && game != NULL && game->amIHost());
+	const bool playable = supported_mode && TheGameLogic != NULL && TheGameLogic->isInGame()
+		&& ThePlayerList != NULL && game != NULL && game->isGameInProgress();
+	const bool outcome_authoritative = g_llm_ai_terminal_outcome.authoritative
+		|| (authoritative && game != NULL && end_frame != 0);
+
+	json = "{\"ok\":true";
+	json += ",\"supportedMode\":";
+	json += supported_mode ? "true" : "false";
+	json += ",\"authoritative\":";
+	json += authoritative ? "true" : "false";
+	json += ",\"playable\":";
+	json += playable ? "true" : "false";
+	json += ",\"endFrame\":" + std::to_string(end_frame);
+	json += ",\"outcomeAuthoritative\":";
+	json += outcome_authoritative ? "true" : "false";
+	json += ",\"gameMode\":" + std::to_string(game_mode);
+	json += ",\"frame\":"
+		+ std::to_string(TheGameLogic != NULL ? TheGameLogic->getFrame() : 0);
+	json += ",\"gameId\":" + std::to_string(g_llm_ai_terminal_outcome.authoritative
+		? g_llm_ai_terminal_outcome.game_id : game != NULL ? game->getGameID() : 0);
+	json += ",\"map\":\"" + json_escape(g_llm_ai_terminal_outcome.authoritative
+		? g_llm_ai_terminal_outcome.map : game != NULL ? game->getMap().str() : "") + "\"";
+	json += ",\"seed\":" + std::to_string(g_llm_ai_terminal_outcome.authoritative
+		? g_llm_ai_terminal_outcome.seed : game != NULL ? game->getSeed() : 0);
+	json += ",\"assignments\":[";
+	bool first = true;
+	if (game != NULL) {
+		for (Int slot_num = 0; slot_num < MAX_SLOTS; ++slot_num) {
+			const GameSlot *slot = game->getConstSlot(slot_num);
+			if (slot == NULL || !slot->isLlmAi()) continue;
+			AsciiString player_name;
+			player_name.format("player%d", slot_num);
+			Player *player = ThePlayerList != NULL && TheNameKeyGenerator != NULL
+				? ThePlayerList->findPlayerWithNameKey(
+					TheNameKeyGenerator->nameToKey(player_name)) : NULL;
+			if (!first) json += ",";
+			first = false;
+			json += "{\"slot\":" + std::to_string(slot_num);
+			json += ",\"profileId\":\""
+				+ json_escape(slot->getLlmAiProfileId().str()) + "\"";
+			json += ",\"displayName\":\""
+				+ json_escape(unicode_to_debug_ascii(slot->getName())) + "\"";
+			json += ",\"playerIndex\":";
+			json += player != NULL ? std::to_string(player->getPlayerIndex()) : "null";
+			json += ",\"playerActive\":";
+			json += player != NULL && player->isPlayerActive() ? "true" : "false";
+			json += ",\"computerPlayer\":";
+			json += player != NULL && player->getPlayerType() == PLAYER_COMPUTER
+				&& player->isSkirmishAIPlayer() ? "true" : "false";
+			const LlmAiTerminalSlotOutcome *latched = find_latched_llm_outcome(
+				slot_num, slot->getLlmAiProfileId().str());
+			json += ",\"outcome\":";
+			if (latched != NULL) {
+				json += "\"" + latched->outcome + "\"";
+			} else if (!outcome_authoritative) {
+				json += "null";
+			} else if (player != NULL && TheVictoryConditions != NULL
+				&& TheVictoryConditions->hasAchievedVictory(player)) {
+				json += "\"victory\"";
+			} else if (player != NULL && TheVictoryConditions != NULL
+				&& TheVictoryConditions->hasBeenDefeated(player)) {
+				json += "\"defeat\"";
+			} else {
+				bool allied_survivor = slot->lastFrameInGame() == 0;
+				const Int team = slot->getTeamNumber();
+				if (!allied_survivor && team >= 0) {
+					for (Int ally_slot_num = 0; ally_slot_num < MAX_SLOTS; ++ally_slot_num) {
+						const GameSlot *ally = game->getConstSlot(ally_slot_num);
+						if (ally != NULL && ally->isOccupied() && ally->getTeamNumber() == team
+							&& ally->lastFrameInGame() == 0) {
+							allied_survivor = true;
+							break;
+						}
+					}
+				}
+				json += allied_survivor ? "\"victory\"" : "\"defeat\"";
+			}
+			json += ",\"strategyController\":";
+			json += player != NULL && player->hasExternalAIStrategyController()
+				? "\"llm\"" : "\"classic\"";
+			json += ",\"classicStrategyUpdates\":"
+				+ std::to_string(player != NULL
+					? player->getClassicAIStrategyUpdateCount() : 0);
+			json += ",\"controllerNeutralUpdates\":"
+				+ std::to_string(player != NULL
+					? player->getControllerNeutralAIUpdateCount() : 0);
+			json += ",\"strategyTransitions\":"
+				+ std::to_string(player != NULL
+					? player->getAIStrategyControllerTransitionCount() : 0);
+			json += "}";
+		}
+	}
+	json += "],\"terminalOutcomes\":[";
+	for (std::size_t i = 0; i < g_llm_ai_terminal_outcome.slots.size(); ++i) {
+		const LlmAiTerminalSlotOutcome &entry = g_llm_ai_terminal_outcome.slots[i];
+		if (i != 0) json += ",";
+		json += "{\"slot\":" + std::to_string(entry.slot);
+		json += ",\"profileId\":\"" + json_escape(entry.profile_id) + "\"";
+		json += ",\"playerIndex\":" + std::to_string(entry.player_index);
+		json += ",\"outcome\":\"" + entry.outcome + "\"";
+		json += ",\"strategyController\":\"" + entry.strategy_controller + "\"";
+		json += ",\"classicStrategyUpdates\":"
+			+ std::to_string(entry.classic_strategy_updates);
+		json += ",\"controllerNeutralUpdates\":"
+			+ std::to_string(entry.controller_neutral_updates);
+		json += ",\"strategyTransitions\":" + std::to_string(entry.strategy_transitions);
+		json += "}";
+	}
+	json += "]}";
 	return json.c_str();
 }
 
@@ -8346,6 +8921,43 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frontier()
 	return build_state_json();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_mod_directory(const char *mod_directory)
+{
+	if (g_state.attempted) return 0;
+	const std::string requested = mod_directory != NULL ? mod_directory : "";
+	if (!requested.empty() && requested != "/assets/cnc-mods-active") {
+		return 0;
+	}
+	g_mod_directory = requested;
+	return 1;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_user_data_home(const char *user_data_home)
+{
+	if (g_state.attempted || user_data_home == NULL) return 0;
+	const std::string requested = user_data_home;
+	const std::string vanilla_home = "/home/web_user";
+	const std::string mod_prefix = vanilla_home
+		+ "/Command and Conquer Generals Zero Hour Data/ModData/";
+	const std::string mod_suffix = "/Home";
+	bool valid = requested == vanilla_home;
+	if (!valid && requested.size() == mod_prefix.size() + 64 + mod_suffix.size()
+		&& requested.compare(0, mod_prefix.size(), mod_prefix) == 0
+		&& requested.compare(requested.size() - mod_suffix.size(), mod_suffix.size(), mod_suffix) == 0) {
+		valid = true;
+		for (size_t index = mod_prefix.size(); index < mod_prefix.size() + 64; ++index) {
+			const char value = requested[index];
+			if (!((value >= '0' && value <= '9') || (value >= 'a' && value <= 'f'))) {
+				valid = false;
+				break;
+			}
+		}
+	}
+	if (!valid || ::setenv("HOME", requested.c_str(), 1) != 0) return 0;
+	g_user_data_home = requested;
+	return 1;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char *run_directory, int use_shell_map)
 {
 	if (g_state.attempted) {
@@ -8370,14 +8982,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init(const char
 	ensure_real_engine_input_window();
 	cnc_port_terrain_probe_set_shroud_enabled(true);
 
-	static const char *argv_storage[] = {"CnCGeneralsZH", "-noshellmap", "-win"};
-	static const char *argv_shellmap_storage[] = {"CnCGeneralsZH", "-win"};
-	const int argc = g_use_shell_map ? 2 : 3;
-	char **argv = const_cast<char **>(g_use_shell_map ? argv_shellmap_storage : argv_storage);
+	build_engine_arguments();
+	const int argc = static_cast<int>(g_engine_argv.size());
+	char **argv = g_engine_argv.data();
 
 	std::printf("cnc-port: real-init begin dir=%s argv=%s\n",
 		g_state.run_directory.c_str(),
-		g_use_shell_map ? "-win" : "-noshellmap -win");
+		g_engine_command_line.c_str());
 	std::fflush(stdout);
 
 	const double started_at = emscripten_get_now();
@@ -8441,14 +9052,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_init_begin(cons
 	ensure_real_engine_input_window();
 	cnc_port_terrain_probe_set_shroud_enabled(true);
 
-	static const char *argv_storage[] = {"CnCGeneralsZH", "-noshellmap", "-win"};
-	static const char *argv_shellmap_storage[] = {"CnCGeneralsZH", "-win"};
-	const int argc = g_use_shell_map ? 2 : 3;
-	char **argv = const_cast<char **>(g_use_shell_map ? argv_shellmap_storage : argv_storage);
+	build_engine_arguments();
+	const int argc = static_cast<int>(g_engine_argv.size());
+	char **argv = g_engine_argv.data();
 
 	std::printf("cnc-port: real-init-begin (stepped) dir=%s argv=%s\n",
 		g_state.run_directory.c_str(),
-		g_use_shell_map ? "-win" : "-noshellmap -win");
+		g_engine_command_line.c_str());
 	std::fflush(stdout);
 
 	static std::string json;

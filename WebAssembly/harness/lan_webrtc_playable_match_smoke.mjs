@@ -17,8 +17,10 @@ const captureNetworkDiagnostics = process.env.CNC_NETWORK_DIAGNOSTICS === "1";
 const soakMs = Number.parseInt(process.env.CNC_MATCH_SOAK_MS ?? "0", 10);
 const minimumLogicFps = Number.parseFloat(process.env.CNC_MIN_LOGIC_FPS ?? "0");
 const maximumLogicStallMs = Number.parseInt(process.env.CNC_MAX_LOGIC_STALL_MS ?? "0", 10);
-const maxAllowedLogicFrameSkew = threadedTest ? Math.max(6, playerCount - 1) : playerCount - 1;
-const maxAllowedFinalLogicFrameSkew = threadedTest ? 10 : maxAllowedLogicFrameSkew;
+// Autonomous threaded clients may use the stock 30-frame network run-ahead
+// while their render loops start at slightly different times.
+const maxAllowedLogicFrameSkew = threadedTest ? Math.max(30, playerCount - 1) : playerCount - 1;
+const maxAllowedFinalLogicFrameSkew = maxAllowedLogicFrameSkew;
 const activeSampleInterval = threadedTest ? 5 : 30;
 const publicDiscovery = process.env.CNC_TRYSTERO_PUBLIC === "1";
 const configuredRelayUrls = String(process.env.CNC_TRYSTERO_RELAYS ?? "")
@@ -230,6 +232,7 @@ async function createClient(browserOrContext, serverUrl, relayUrls, room, label,
   if (threadedTest) {
     pageUrl.searchParams.set("threads", "1");
     pageUrl.searchParams.set("dist", process.env.CNC_THREADED_DIST ?? "dist-threaded-release");
+    pageUrl.searchParams.set("diag", "lite");
   }
   await page.goto(pageUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
@@ -436,6 +439,10 @@ try {
   }, (states) => states.every((state) => state.network?.ready === true
       && state.network?.numPlayers === playerCount), 45000);
   console.error(`[lan-webrtc] all ${playerCount} original Network instances started`);
+  const pregameNetworks = [start.result.state, ...guestNetworks].map((state) => state.network);
+  expect(pregameNetworks.every((network) => network.executionFrame === network.runAhead - 1),
+    "LAN observer changed the pregame execution frame",
+    pregameNetworks);
 
   const clearedLobbyDatagrams = await Promise.all(clients.map((client) =>
     rpc(client, "browserWebRtcEndpointClearDatagrams")));
@@ -511,6 +518,9 @@ try {
       const objectCounts = frames.map((clientFrame) => clientFrame.gameplay?.objectCount);
       const playerIds = states.map((state) => state.network?.localPlayerId);
       const logicFrameSkew = Math.max(...logicFrames) - Math.min(...logicFrames);
+      expect(states.every((state) => state.network?.crcMismatch === false),
+        "multiplayer CRC mismatch while waiting for active play",
+        states.map((state) => state.network));
       if (frames.every((clientFrame) => clientFrame.gameplay?.gameMode === GAME_LAN
           && clientFrame.gameplay?.inGame === true
           && clientFrame.gameplay?.loadingMap === false

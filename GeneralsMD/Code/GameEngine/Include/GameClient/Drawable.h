@@ -327,6 +327,7 @@ public:
 	// can spontaneously hide via stealth. (srj)
 	//
 	inline Bool isDrawableEffectivelyHidden() const { return m_hidden || m_hiddenByStealth; }
+	inline Bool isDrawableExplicitlyHidden() const { return m_hidden; }
 
 	void setSelectable( Bool selectable );												///< Changes the drawables selectability	
 	Bool isSelectable( void ) const;

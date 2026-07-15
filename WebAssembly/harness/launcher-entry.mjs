@@ -1,5 +1,11 @@
 import "./analytics.mjs";
 import "./launcher-asset-manager.mjs";
+import "./launcher-games.mjs";
 import "./launcher.js";
+import "./llm-ai-manager-ui.mjs";
+import "./llm-ai-game-runtime.mjs";
+import "./launcher-device-transfer.mjs";
 import "./launcher-desktop-apps.js";
 import "./launcher-hardware-info.js";
+import "./launcher-build-info.js";
+import "./mod-manager-ui.mjs";

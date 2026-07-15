@@ -196,6 +196,11 @@ public:
 	/// Difficulty level for this player.
 	GameDifficulty getAIDifficulty(void) const;
 	void setAIDifficulty(GameDifficulty difficulty) {m_difficulty = difficulty;}
+	void setExternalStrategyController(Bool enabled);
+	Bool hasExternalStrategyController(void) const { return m_externalStrategyController; }
+	UnsignedInt getClassicStrategyUpdateCount(void) const { return m_classicStrategyUpdateCount; }
+	UnsignedInt getControllerNeutralUpdateCount(void) const { return m_controllerNeutralUpdateCount; }
+	UnsignedInt getStrategyControllerTransitionCount(void) const { return m_strategyControllerTransitionCount; }
 	void buildBySupplies(Int minimumCash, const AsciiString &thingName ); ///< Builds a building by supplies.
 	void buildSpecificBuildingNearestTeam( const AsciiString &thingName, const Team *team );
 	void buildUpgrade(const AsciiString &upgrade ); ///< Builds an upgrade.
@@ -296,9 +301,15 @@ protected:
 	ObjectID m_attackedSupplyCenter;
 
 	ObjectID m_curWarehouseID;
+
+	// Strategy ownership is deliberately separate from the controller-neutral
+	// work-order, ready-team, pathfinding, and object-AI execution substrate.
+	Bool m_externalStrategyController;
+	UnsignedInt m_classicStrategyUpdateCount;
+	UnsignedInt m_controllerNeutralUpdateCount;
+	UnsignedInt m_strategyControllerTransitionCount;
 };
 
 #endif // _AI_PLAYER_H_
-
 
 

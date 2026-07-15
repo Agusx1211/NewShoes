@@ -585,6 +585,12 @@ public:
   void triggerDoubleClickAttackMoveGuardHint( void );
 
 #if defined(__EMSCRIPTEN__)
+	Int agentUIMessageCount( void ) const;
+	UnicodeString agentUIMessageText( Int index ) const;
+	UnsignedInt agentUIMessageFrame( Int index ) const;
+	Color agentUIMessageColor( Int index ) const;
+	const NamedTimerMap& agentNamedTimers( void ) const { return m_namedTimers; }
+	Bool agentNamedTimersVisible( void ) const { return m_showNamedTimers; }
 	Bool debugMilitarySubtitleActive( void ) const;
 	UnsignedInt debugMilitarySubtitleIndex( void ) const;
 	UnsignedInt debugMilitarySubtitleLength( void ) const;

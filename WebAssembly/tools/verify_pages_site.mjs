@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 
 import { lstat, readFile, readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, extname, relative, resolve } from "node:path";
 import { PAGES_OUTPUT_FILES } from "./pages_site_manifest.mjs";
+import { loadPublicProjectContent, renderGeneratedProjectFiles } from "./public_project_content.mjs";
+import { validateBuildInfo } from "./release_metadata.mjs";
 
 const root = resolve(process.argv[2] || "pages-dist");
 const forbiddenExtensions = new Set([
   ".big", ".bin", ".cab", ".cer", ".cncdump", ".crt", ".cue", ".iso", ".key", ".pem", ".pfx",
 ]);
 const forbiddenSegments = new Set([".certs", "artifacts", "build", "node_modules", "profiles"]);
-const textExtensions = new Set([".css", ".html", ".js", ".json", ".md", ".mjs", ".txt", ".webmanifest"]);
+const textExtensions = new Set([".css", ".html", ".js", ".json", ".md", ".mjs", ".txt", ".webmanifest", ".xml"]);
 const expectedFiles = new Set(PAGES_OUTPUT_FILES);
 const expectedDirectories = new Set([""]);
 for (const name of expectedFiles) {
@@ -99,15 +102,42 @@ async function verifyStaticModuleReferences() {
   }
 }
 
+async function verifyVideoRuntime() {
+  try {
+    const runtimeRoot = resolve(root, "video-runtime");
+    const manifest = JSON.parse(await readFile(resolve(runtimeRoot, "bink-decoder-manifest.json"), "utf8"));
+    if (manifest.schema !== "cnc-zh-bink-decoder-runtime/v1"
+        || manifest.abiVersion !== 1
+        || manifest.wasmFile !== "bink-decoder.wasm"
+        || !(manifest.wasmBytes > 0) || manifest.wasmBytes > 128 * 1024
+        || manifest.maxWasmBytes !== 128 * 1024
+        || !/^[a-f0-9]{64}$/.test(String(manifest.wasmSha256))) {
+      findings.push("video-runtime: decoder manifest contract is invalid");
+      return;
+    }
+    const bytes = await readFile(resolve(runtimeRoot, manifest.wasmFile));
+    if (bytes.byteLength !== manifest.wasmBytes
+        || createHash("sha256").update(bytes).digest("hex") !== manifest.wasmSha256) {
+      findings.push("video-runtime: decoder failed integrity validation");
+    }
+  } catch (error) {
+    findings.push(`video-runtime: decoder packaging is unreadable (${error?.message ?? String(error)})`);
+  }
+}
+
 await walk(root);
 const actualFiles = new Set(inventory.map(({ name }) => name));
 for (const name of expectedFiles) {
   if (!actualFiles.has(name)) findings.push(`${name}: allowlisted file is missing`);
 }
 await verifyStaticModuleReferences();
+await verifyVideoRuntime();
 if (totalBytes > 250 * 1024 * 1024) findings.push(`artifact is unexpectedly large: ${totalBytes} bytes`);
 
-const [license, index, legal, launcher, play, manifestText, bootstrap, serviceWorker] = await Promise.all([
+const [
+  license, index, legal, launcher, play, manifestText, bootstrap, serviceWorker, buildInfoText,
+  llms, projectGuide, projectInfoText, robots, sitemap,
+] = await Promise.all([
   readFile(resolve(root, "LICENSE.md"), "utf8").catch(() => ""),
   readFile(resolve(root, "index.html"), "utf8").catch(() => ""),
   readFile(resolve(root, "legal.html"), "utf8").catch(() => ""),
@@ -116,8 +146,21 @@ const [license, index, legal, launcher, play, manifestText, bootstrap, serviceWo
   readFile(resolve(root, "manifest.webmanifest"), "utf8").catch(() => ""),
   readFile(resolve(root, "coi-bootstrap.js"), "utf8").catch(() => ""),
   readFile(resolve(root, "coi-serviceworker.js"), "utf8").catch(() => ""),
+  readFile(resolve(root, "harness/build-info.json"), "utf8").catch(() => ""),
+  readFile(resolve(root, "llms.txt"), "utf8").catch(() => ""),
+  readFile(resolve(root, "project.md"), "utf8").catch(() => ""),
+  readFile(resolve(root, "project-info.json"), "utf8").catch(() => ""),
+  readFile(resolve(root, "robots.txt"), "utf8").catch(() => ""),
+  readFile(resolve(root, "sitemap.xml"), "utf8").catch(() => ""),
 ]);
-const analytics = await readFile(resolve(root, "harness/analytics.mjs"), "utf8").catch(() => "");
+const [analytics, modPackageWorker] = await Promise.all([
+  readFile(resolve(root, "harness/analytics.mjs"), "utf8").catch(() => ""),
+  readFile(resolve(root, "harness/mod-package-worker.mjs"), "utf8").catch(() => ""),
+]);
+if (modPackageWorker.includes("../node_modules/7z-wasm/")
+    || !modPackageWorker.includes("./vendor/7z-wasm/")) {
+  findings.push("harness/mod-package-worker.mjs: production 7z-wasm paths are unresolved");
+}
 if (analytics.includes("__GA_MEASUREMENT_ID__")) findings.push("harness/analytics.mjs: unresolved analytics configuration marker");
 for (const match of analytics.matchAll(/\bG-[A-Z0-9]+\b/g)) {
   if (!/^G-[A-Z0-9]+$/.test(match[0])) findings.push("harness/analytics.mjs: invalid generated measurement ID");
@@ -126,23 +169,135 @@ if (!license.includes("ADDITIONAL TERMS per GNU GPL Section 7") || !license.incl
   findings.push("LICENSE.md: complete GPLv3 license and additional terms are missing");
 }
 if (!index.includes("No warranty") || !index.includes("./legal.html")
-    || !index.includes('rel="canonical" href="./"') || !index.includes('data-coi-target="./"')) {
+    || !index.includes('rel="canonical" href="./"') || !index.includes('data-coi-target="./"')
+    || !index.includes('rel="help" type="text/plain" href="./llms.txt"')
+    || !index.includes('rel="alternate" type="text/markdown" href="./project.md"')
+    || !index.includes('rel="alternate" type="application/json" href="./project-info.json"')
+    || !index.includes('type="application/ld+json"')) {
   findings.push("index.html: root canonical, launcher target, or visible legal notice is missing");
 }
-if (!legal.includes("absolutely no warranty") || !legal.includes("Corresponding source") || legal.includes("__PAGES_SOURCE_URL__")) {
+if (!legal.includes("absolutely no warranty") || !legal.includes("Corresponding source")
+    || !legal.includes("bink-decoder-SOURCE.txt") || legal.includes("__PAGES_SOURCE_URL__")) {
   findings.push("legal.html: no-warranty, source, or resolved legal notice is missing");
 }
 if (!launcher.includes('<base href="./harness/">')
     || !launcher.includes('rel="canonical" href="../"')
     || !launcher.includes("data-cnc-play-page")
+    || !launcher.includes('data-bink-video-sidecars="direct"')
     || !launcher.includes('src="../coi-direct.js"')
     || !launcher.includes('href="../manifest.webmanifest"')
+    || !launcher.includes('id="aboutVersion"')
+    || !launcher.includes('id="aboutBuildCommit"')
+    || !launcher.includes('id="aboutChangelog"')
+    || !launcher.includes('rel="help" type="text/plain" href="../llms.txt"')
+    || !launcher.includes('rel="alternate" type="text/markdown" href="../project.md"')
+    || !launcher.includes('rel="alternate" type="application/json" href="../project-info.json"')
+    || !launcher.includes("data-agent-guide")
+    || !launcher.includes('type="application/ld+json"')
     || !launcher.includes('id="publicLegalNotice"')) {
   findings.push("launcher.html: canonical root launcher contract is missing");
 }
 if (!play.includes('rel="canonical" href="../"')
+    || !play.includes('data-bink-video-sidecars="direct"')
+    || !play.includes('rel="help" type="text/plain" href="../llms.txt"')
+    || !play.includes('rel="alternate" type="text/markdown" href="../project.md"')
+    || !play.includes('rel="alternate" type="application/json" href="../project-info.json"')
+    || !play.includes("data-agent-guide")
     || !play.includes('id="publicLegalNotice"') || !play.includes("Corresponding source")) {
   findings.push("harness/play.html: launcher About legal notice is missing");
+}
+if (!llms.startsWith("# Project New Shoes\n")
+    || !llms.includes("> Project New Shoes runs the original")
+    || !llms.includes("## Start and understand")
+    || !llms.includes("https://newshoes.gg/project.md")
+    || !llms.includes("https://newshoes.gg/harness/build-info.json")
+    || !llms.includes("https://github.com/Agusx1211/NewShoes/issues")
+    || !llms.includes("cannot choose local files")
+    || llms.length > 12 * 1024) {
+  findings.push("llms.txt: concise project discovery, agent boundary, or canonical links are invalid");
+}
+for (const section of [
+  "## What a player can do",
+  "## Requirements",
+  "## First-time setup",
+  "## Local data, privacy, and security",
+  "## Important limitations",
+  "## Troubleshooting",
+  "## Architecture",
+  "## Stable public resources",
+  "## Guidance for web agents",
+]) {
+  if (!projectGuide.includes(section)) findings.push(`project.md: missing required section ${section}`);
+}
+if (projectGuide.length < 10 * 1024
+    || !projectGuide.includes("does not include retail game archives")
+    || !projectGuide.includes("cannot play the canvas")
+    || !projectGuide.includes("https://newshoes.gg/harness/build-info.json")) {
+  findings.push("project.md: complete project, asset, agent-boundary, or deployed-build guidance is missing");
+}
+try {
+  const projectInfo = JSON.parse(projectInfoText);
+  if (projectInfo.schema !== "project-new-shoes/public-project/v1"
+      || projectInfo.site?.canonicalUrl !== "https://newshoes.gg/"
+      || !Array.isArray(projectInfo.capabilities)
+      || projectInfo.capabilities.some(({ status, reviewedAt, evidence }) => !status
+        || !reviewedAt
+        || !Array.isArray(evidence)
+        || evidence.length === 0)
+      || projectInfo.publication?.deployedBuild !== "https://newshoes.gg/harness/build-info.json") {
+    throw new Error("required canonical project fields are missing");
+  }
+} catch (error) {
+  findings.push(`project-info.json: machine-readable project facts are invalid (${error?.message ?? String(error)})`);
+}
+try {
+  const expectedGenerated = renderGeneratedProjectFiles(await loadPublicProjectContent());
+  const actualGenerated = {
+    "llms.txt": llms,
+    "project-info.json": projectInfoText,
+    "project.md": projectGuide,
+    "robots.txt": robots,
+    "sitemap.xml": sitemap,
+  };
+  for (const [name, expected] of Object.entries(expectedGenerated)) {
+    if (actualGenerated[name] !== expected) findings.push(`${name}: does not match the canonical generated project content`);
+  }
+} catch (error) {
+  findings.push(`public project source: validation failed (${error?.message ?? String(error)})`);
+}
+if (!/^User-agent: \*\nAllow: \/\n/m.test(robots)
+    || !robots.includes("Sitemap: https://newshoes.gg/sitemap.xml")
+    || robots.includes("Disallow:")) {
+  findings.push("robots.txt: open crawl policy or canonical sitemap declaration is invalid");
+}
+for (const url of [
+  "https://newshoes.gg/",
+  "https://newshoes.gg/project.md",
+  "https://newshoes.gg/project-info.json",
+  "https://newshoes.gg/llms.txt",
+  "https://newshoes.gg/legal.html",
+]) {
+  if (!sitemap.includes(`<loc>${url}</loc>`)) findings.push(`sitemap.xml: missing canonical URL ${url}`);
+}
+for (const [name, document] of [["launcher.html", launcher], ["harness/play.html", play]]) {
+  try {
+    const json = document.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1];
+    const metadata = JSON.parse(json || "");
+    if (metadata?.name !== "Project New Shoes"
+        || metadata?.url !== "https://newshoes.gg/"
+        || !metadata?.["@type"]?.includes("VideoGame")
+        || metadata?.softwareHelp !== "https://newshoes.gg/project.md"
+        || !metadata?.dateModified) {
+      throw new Error("required SoftwareApplication fields are missing");
+    }
+  } catch (error) {
+    findings.push(`${name}: structured project metadata is invalid (${error?.message ?? String(error)})`);
+  }
+}
+try {
+  validateBuildInfo(JSON.parse(buildInfoText));
+} catch {
+  findings.push("harness/build-info.json: version, commit, or changelog metadata is invalid");
 }
 if (!bootstrap.includes('const workerVersion = "project-new-shoes.pages-root.v1"')
     || !bootstrap.includes("await installCurrentWorker()")

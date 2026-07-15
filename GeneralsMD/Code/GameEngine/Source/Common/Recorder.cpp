@@ -56,13 +56,49 @@ Int REPLAY_CRC_INTERVAL = 100;
 const char *replayExtention = ".rep";
 const char *lastReplayFileName = "00000000";	// a name the user is unlikely to ever type, but won't cause panic & confusion
 
+// Retail Generals and Zero Hour are 32-bit Windows programs. Their replay
+// format stores time_t as a signed 32-bit value and text as UTF-16LE, even on
+// hosts where time_t and wchar_t are wider (including Emscripten). Keep these
+// on-disk widths explicit so browser-created files remain retail-compatible
+// and uploaded retail replays can be read.
+typedef Int ReplayTime;
+typedef UnsignedShort ReplayWideChar;
+static_assert(sizeof(ReplayTime) == 4, "Replay timestamps must remain 32-bit");
+static_assert(sizeof(ReplayWideChar) == 2, "Replay text units must remain UTF-16");
+
+static void deleteCRCInfo(CRCInfo *info);
+
 static time_t startTime;
 static const UnsignedInt startTimeOffset = 6;
-static const UnsignedInt endTimeOffset = startTimeOffset + sizeof(time_t);
-static const UnsignedInt framesOffset = endTimeOffset + sizeof(time_t);
+static const UnsignedInt endTimeOffset = startTimeOffset + sizeof(ReplayTime);
+static const UnsignedInt framesOffset = endTimeOffset + sizeof(ReplayTime);
 static const UnsignedInt desyncOffset = framesOffset + sizeof(UnsignedInt);
 static const UnsignedInt quitEarlyOffset = desyncOffset + sizeof(Bool);
 static const UnsignedInt disconOffset = quitEarlyOffset + sizeof(Bool);
+
+static void writeReplayUnicodeString(FILE *file, const UnicodeString &value)
+{
+	const WideChar *cursor = value.str();
+	while (*cursor != 0)
+	{
+		const UnsignedInt codePoint = static_cast<UnsignedInt>(*cursor++);
+		if (codePoint <= 0xFFFF)
+		{
+			const ReplayWideChar unit = static_cast<ReplayWideChar>(codePoint);
+			fwrite(&unit, sizeof(unit), 1, file);
+		}
+		else
+		{
+			const UnsignedInt supplementary = codePoint - 0x10000;
+			const ReplayWideChar high = static_cast<ReplayWideChar>(0xD800 + (supplementary >> 10));
+			const ReplayWideChar low = static_cast<ReplayWideChar>(0xDC00 + (supplementary & 0x3FF));
+			fwrite(&high, sizeof(high), 1, file);
+			fwrite(&low, sizeof(low), 1, file);
+		}
+	}
+	const ReplayWideChar terminator = 0;
+	fwrite(&terminator, sizeof(terminator), 1, file);
+}
 
 void RecorderClass::logGameStart(AsciiString options)
 {
@@ -70,12 +106,13 @@ void RecorderClass::logGameStart(AsciiString options)
 		return;
 
 	time(&startTime);
+	const ReplayTime replayStartTime = static_cast<ReplayTime>(startTime);
 	UnsignedInt fileSize = ftell(m_file);
 	// move to appropriate offset
 	if (!fseek(m_file, startTimeOffset, SEEK_SET))
 	{
 		// save off start time
-		fwrite(&startTime, sizeof(time_t), 1, m_file);
+		fwrite(&replayStartTime, sizeof(replayStartTime), 1, m_file);
 	}
 	// move back to end of stream
 #ifdef DEBUG_CRASHING
@@ -223,13 +260,14 @@ void RecorderClass::logGameEnd( void )
 
 	time_t t;
 	time(&t);
+	const ReplayTime replayEndTime = static_cast<ReplayTime>(t);
 	UnsignedInt duration = TheGameLogic->getFrame();
 	UnsignedInt fileSize = ftell(m_file);
 	// move to appropriate offset
 	if (!fseek(m_file, endTimeOffset, SEEK_SET))
 	{
 		// save off end time
-		fwrite(&t, sizeof(time_t), 1, m_file);
+		fwrite(&replayEndTime, sizeof(replayEndTime), 1, m_file);
 	}
 	// move to appropriate offset
 	if (!fseek(m_file, framesOffset, SEEK_SET))
@@ -373,6 +411,7 @@ RecorderClass::RecorderClass()
 	m_doingAnalysis = FALSE;
 	m_nextFrame = 0;
 	m_wasDesync = FALSE;
+	m_crcInfo = NULL;
 	//
 
 	init(); // just for the heck of it.
@@ -382,6 +421,14 @@ RecorderClass::RecorderClass()
  * Destructor
  */
 RecorderClass::~RecorderClass() {
+	if (m_file != NULL) {
+		fclose(m_file);
+		m_file = NULL;
+	}
+	if (m_crcInfo != NULL) {
+		deleteCRCInfo(m_crcInfo);
+		m_crcInfo = NULL;
+	}
 }
 
 /**
@@ -417,6 +464,10 @@ void RecorderClass::reset() {
 		m_file = NULL;
 	}
 	m_fileName.clear();
+	if (m_crcInfo != NULL) {
+		deleteCRCInfo(m_crcInfo);
+		m_crcInfo = NULL;
+	}
 
 	init();
 }
@@ -557,9 +608,9 @@ void RecorderClass::startRecording(GameDifficulty diff, Int originalGameMode, In
 	//
 	// **** if this changes, change the LAN code above ****
 	//
-	time_t t = 0;
-	fwrite(&t, sizeof(time_t), 1, m_file);	// reserve space for start time
-	fwrite(&t, sizeof(time_t), 1, m_file);	// reserve space for end time
+	ReplayTime replayTime = 0;
+	fwrite(&replayTime, sizeof(replayTime), 1, m_file);	// reserve space for start time
+	fwrite(&replayTime, sizeof(replayTime), 1, m_file);	// reserve space for end time
 
 	UnsignedInt frames = 0;
 	fwrite(&frames, sizeof(UnsignedInt), 1, m_file);	// reserve space for duration in frames
@@ -575,8 +626,7 @@ void RecorderClass::startRecording(GameDifficulty diff, Int originalGameMode, In
 	// Print out the name of the replay.
 	UnicodeString replayName;
 	replayName = TheGameText->fetch("GUI:LastReplay");
-	fwprintf(m_file, L"%ws", replayName.str());
-	fputwc(0, m_file);
+	writeReplayUnicodeString(m_file, replayName);
 
 	// Date and Time
 	SYSTEMTIME systemTime;
@@ -587,10 +637,8 @@ void RecorderClass::startRecording(GameDifficulty diff, Int originalGameMode, In
 	UnicodeString versionString = TheVersion->getUnicodeVersion();
 	UnicodeString versionTimeString = TheVersion->getUnicodeBuildTime();
 	UnsignedInt versionNumber = TheVersion->getVersionNumber();
-	fwprintf(m_file, L"%ws", versionString.str());
-	fputwc(0, m_file);
-	fwprintf(m_file, L"%ws", versionTimeString.str());
-	fputwc(0, m_file);
+	writeReplayUnicodeString(m_file, versionString);
+	writeReplayUnicodeString(m_file, versionTimeString);
 	fwrite(&versionNumber, sizeof(UnsignedInt), 1, m_file);
 	fwrite(&(TheGlobalData->m_exeCRC), sizeof(UnsignedInt), 1, m_file);
 	fwrite(&(TheGlobalData->m_iniCRC), sizeof(UnsignedInt), 1, m_file);
@@ -805,7 +853,8 @@ void RecorderClass::writeArgument(GameMessageArgumentDataType type, const GameMe
 	} else if (type == ARGUMENTDATATYPE_TIMESTAMP) {
 		fwrite(&(arg.timestamp), sizeof(arg.timestamp), 1, m_file);
 	} else if (type == ARGUMENTDATATYPE_WIDECHAR) {
-		fwrite(&(arg.wChar), sizeof(arg.wChar), 1, m_file);
+		const ReplayWideChar replayChar = static_cast<ReplayWideChar>(arg.wChar);
+		fwrite(&replayChar, sizeof(replayChar), 1, m_file);
 	}
 }
 
@@ -825,8 +874,12 @@ Bool RecorderClass::readReplayHeader(ReplayHeader& header)
 	}
 
 	// Read the GENREP header.
-	char genrep[7];
-	fread(&genrep, sizeof(char), 6, m_file);
+	char genrep[7] = { 0 };
+	if (fread(&genrep, sizeof(char), 6, m_file) != 6) {
+		fclose(m_file);
+		m_file = NULL;
+		return FALSE;
+	}
 	genrep[6] = 0;
 	if (strncmp(genrep, "GENREP", 6)) {
 		DEBUG_LOG(("RecorderClass::readReplayHeader - replay file did not have GENREP at the start.\n"));
@@ -836,8 +889,21 @@ Bool RecorderClass::readReplayHeader(ReplayHeader& header)
 	}
 
 	// read in some stats
-	fread(&header.startTime, sizeof(time_t), 1, m_file);
-	fread(&header.endTime, sizeof(time_t), 1, m_file);
+	ReplayTime replayTime = 0;
+	if (fread(&replayTime, sizeof(replayTime), 1, m_file) != 1)
+	{
+		fclose(m_file);
+		m_file = NULL;
+		return FALSE;
+	}
+	header.startTime = static_cast<time_t>(replayTime);
+	if (fread(&replayTime, sizeof(replayTime), 1, m_file) != 1)
+	{
+		fclose(m_file);
+		m_file = NULL;
+		return FALSE;
+	}
+	header.endTime = static_cast<time_t>(replayTime);
 
 	fread(&header.frameDuration, sizeof(UnsignedInt), 1, m_file);
 
@@ -945,6 +1011,11 @@ protected:
 	UnsignedInt m_localPlayer;
 };
 
+static void deleteCRCInfo(CRCInfo *info)
+{
+	delete info;
+}
+
 CRCInfo::CRCInfo()
 {
 	m_localPlayer = ~0;
@@ -1023,12 +1094,15 @@ void RecorderClass::handleCRCMessage(UnsignedInt newCRC, Int playerIndex, Bool f
 Bool RecorderClass::testVersionPlayback(AsciiString filename)
 {
 
-	ReplayHeader header;
-	header.forPlayback = TRUE;
+	ReplayHeader header = {};
+	// This is metadata inspection only. Closing here avoids leaking the probe
+	// handle before playbackFile opens the same replay for actual playback.
+	header.forPlayback = FALSE;
 	header.filename = filename;
 	Bool success = readReplayHeader( header );
 	if (!success)
 	{
+		m_mode = RECORDERMODETYPE_NONE;
 		return FALSE;
 	}
 	Bool versionStringDiff = header.versionString != TheVersion->getUnicodeVersion();
@@ -1062,12 +1136,13 @@ Bool RecorderClass::playbackFile(AsciiString filename)
 
 	m_mode = RECORDERMODETYPE_PLAYBACK;
 
-	ReplayHeader header;
+	ReplayHeader header = {};
 	header.forPlayback = TRUE;
 	header.filename = filename;
 	Bool success = readReplayHeader( header );
 	if (!success)
 	{
+		m_mode = RECORDERMODETYPE_NONE;
 		return FALSE;
 	}
 #ifdef DEBUG_LOGGING
@@ -1124,6 +1199,7 @@ Bool RecorderClass::playbackFile(AsciiString filename)
 	}
 #endif
 
+	deleteCRCInfo(m_crcInfo);
 	m_crcInfo = NEW CRCInfo;
 	m_crcInfo->setLocalPlayer(header.localPlayerIndex);
 	REPLAY_CRC_INTERVAL = m_gameInfo.getCRCInterval();
@@ -1168,20 +1244,25 @@ UnicodeString RecorderClass::readUnicodeString() {
 	WideChar str[1024] = { 0 };
 	Int index = 0;
 
-	Int c = fgetwc(m_file);
-	if (c == EOF) {
-		str[index] = 0;
-	}
-	str[index] = c;
-
-	while (index < 1024 && str[index] != 0) {
-		++index;
-		Int c = fgetwc(m_file);
-		if (c == EOF) {
-			str[index] = 0;
+	while (index < 1023) {
+		ReplayWideChar unit = 0;
+		if (fread(&unit, sizeof(unit), 1, m_file) != 1 || unit == 0) {
 			break;
 		}
-		str[index] = c;
+
+		UnsignedInt codePoint = unit;
+		if (sizeof(WideChar) > sizeof(ReplayWideChar) && unit >= 0xD800 && unit <= 0xDBFF) {
+			ReplayWideChar low = 0;
+			if (fread(&low, sizeof(low), 1, m_file) != 1) {
+				break;
+			}
+			if (low >= 0xDC00 && low <= 0xDFFF) {
+				codePoint = 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
+			} else {
+				codePoint = '?';
+			}
+		}
+		str[index++] = static_cast<WideChar>(codePoint);
 	}
 	str[1023] = L'\0';
 
@@ -1198,7 +1279,7 @@ AsciiString RecorderClass::readAsciiString() {
 
 	Int c = fgetc(m_file);
 	if (c == EOF) {
-		str[index] = 0;
+		return AsciiString(str);
 	}
 	str[index] = c;
 
@@ -1442,8 +1523,9 @@ void RecorderClass::readArgument(GameMessageArgumentDataType type, GameMessage *
 		}
 #endif
 	} else if (type == ARGUMENTDATATYPE_WIDECHAR) {
-		WideChar theid;
-		fread(&theid, sizeof(theid), 1, m_file);
+		ReplayWideChar replayChar = 0;
+		fread(&replayChar, sizeof(replayChar), 1, m_file);
+		WideChar theid = static_cast<WideChar>(replayChar);
 		msg->appendWideCharArgument(theid);
 #ifdef DEBUG_LOGGING
 		if (m_doingAnalysis)

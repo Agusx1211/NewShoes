@@ -144,6 +144,10 @@ public:
 
   Bool isGrantedBySpecialPower( void ) { return getStealthUpdateModuleData()->m_grantedBySpecialPower; }
 	Bool isTemporaryGrant() { return m_framesGranted > 0; }
+	StealthLookType getStealthLookForPlayer(const Object *obj, const Player *player)
+	{
+		return calcStealthedStatusForPlayer(obj, player);
+	}
   
 protected:
 

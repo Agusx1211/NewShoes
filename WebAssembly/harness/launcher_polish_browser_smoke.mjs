@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium } from "playwright";
 
 const baseUrl = process.env.LAUNCHER_POLISH_URL || "https://127.0.0.1:8457/harness/play.html";
+const realCursorCabUrl = process.env.LAUNCHER_POLISH_CURSOR_CAB_URL || "";
 const executablePath = process.env.LAUNCHER_POLISH_BROWSER
   || "/home/agusx1211/.cache/ms-playwright/chromium-1228/chrome-linux/chrome";
 const shotDir = process.env.LAUNCHER_POLISH_SHOTS || "/tmp/cnc-launcher-polish";
+const expectedVersion = (await readFile(new URL("../../VERSION", import.meta.url), "utf8")).trim();
 await mkdir(shotDir, { recursive: true });
 
 async function assertTaskbarInVisibleViewport(page, label) {
@@ -35,14 +37,48 @@ async function assertTaskbarInVisibleViewport(page, label) {
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--ignore-certificate-errors"] });
 try {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1365, height: 768 } });
+  await context.route("**/artifacts/browser-video/bink/bink-browser-video-manifest.json", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      ok: true,
+      payloads: [{
+        sourceFile: "EA_LOGO.BIK",
+        outputFile: "EA_LOGO.webm",
+        frames: 96,
+        width: 640,
+        height: 480,
+        outputDurationSeconds: 3.2,
+      }],
+    }),
+  }));
   const localRequests = [];
   const page = await context.newPage();
   page.on("request", (request) => localRequests.push(request.url()));
   await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("#setupWindow.is-open");
+  await page.waitForFunction(() => window.ZeroHDesktop?.videoSupport?.available === true);
   assert.equal(await page.locator("[data-retail-presentation]:visible").count(), 0);
   const fallbackShot = join(shotDir, "launcher-fallback-art.png");
   await page.screenshot({ path: fallbackShot });
+
+  await page.locator('.desktop-icon[data-open="about"]').click();
+  await page.waitForFunction((version) => document.querySelector("#aboutVersion")?.textContent === version,
+    expectedVersion);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.waitForTimeout(200);
+  const aboutInfo = await page.evaluate(() => ({
+    version: document.querySelector("#aboutVersion")?.textContent || "",
+    build: document.querySelector("#aboutBuildCommit")?.textContent || "",
+    buildHref: document.querySelector("#aboutBuildCommit")?.href || "",
+    changelogEntries: document.querySelectorAll("#aboutChangelog li").length,
+  }));
+  assert.equal(aboutInfo.version, expectedVersion);
+  assert.match(aboutInfo.build, /^[a-f0-9]{12}(?: \+ local changes)?$/i);
+  assert.match(aboutInfo.buildHref, /\/Agusx1211\/NewShoes\/commit\/[a-f0-9]{40}$/i);
+  assert.ok(aboutInfo.changelogEntries > 0, "the About window must show linked changelog entries");
+  const aboutBuildShot = join(shotDir, "about-build-and-changelog.png");
+  await page.screenshot({ path: aboutBuildShot });
+  await page.locator('#aboutWindow [data-window-action="close"]').click();
 
   const compatibilityChooserPromise = page.waitForEvent("filechooser");
   await page.locator("#pickFolderFallbackButton").click();
@@ -50,7 +86,7 @@ try {
   assert.equal(compatibilityChooser.isMultiple(), true,
     "the compatibility action must open the recursive folder input");
 
-  const steamFolderScan = await page.evaluate(async () => {
+  const steamFolderScan = await page.evaluate(async ({ realCursorCabUrl }) => {
     function writeU32be(bytes, offset, value) {
       bytes[offset] = value >>> 24;
       bytes[offset + 1] = value >>> 16;
@@ -83,6 +119,45 @@ try {
       Object.defineProperty(file, "relativePath", { value: path });
       return file;
     }
+    function chunk(id, payload) {
+      const bytes = new Uint8Array(8 + payload.byteLength + (payload.byteLength & 1));
+      bytes.set(new TextEncoder().encode(id));
+      new DataView(bytes.buffer).setUint32(4, payload.byteLength, true);
+      bytes.set(payload, 8);
+      return bytes;
+    }
+    function concat(...parts) {
+      const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0));
+      let offset = 0;
+      for (const part of parts) {
+        bytes.set(part, offset);
+        offset += part.byteLength;
+      }
+      return bytes;
+    }
+    function syntheticAni(seed) {
+      const cur = new Uint8Array(22);
+      const curView = new DataView(cur.buffer);
+      curView.setUint16(2, 2, true);
+      curView.setUint16(4, 1, true);
+      cur[6] = 1;
+      cur[7] = 1;
+      cur[21] = seed;
+      const header = new Uint8Array(36);
+      const headerView = new DataView(header.buffer);
+      headerView.setUint32(0, 36, true);
+      headerView.setUint32(4, 1, true);
+      headerView.setUint32(8, 1, true);
+      headerView.setUint32(28, 4, true);
+      const frameList = concat(new TextEncoder().encode("fram"), chunk("icon", cur));
+      const body = concat(new TextEncoder().encode("ACON"), chunk("anih", header),
+        chunk("LIST", frameList));
+      const bytes = new Uint8Array(8 + body.byteLength);
+      bytes.set(new TextEncoder().encode("RIFF"));
+      new DataView(bytes.buffer).setUint32(4, body.byteLength, true);
+      bytes.set(body, 8);
+      return bytes;
+    }
     const root = "Command & Conquer Generals - Zero Hour";
     const baseRoot = `${root}/ZH_Generals`;
     const files = [];
@@ -98,6 +173,14 @@ try {
     for (const name of ["SkirmishScripts.scb", "MultiplayerScripts.scb", "Scripts.ini"]) {
       files.push(sourceFile(`${root}/Data/Scripts/${name}`, new Uint8Array([1, 2, 3, 4])));
     }
+    if (realCursorCabUrl) {
+      const response = await fetch(realCursorCabUrl);
+      if (!response.ok) throw new Error(`cursor CAB fetch failed (${response.status})`);
+      files.push(sourceFile(`${root}/Data1.cab`, await response.arrayBuffer()));
+    } else {
+      files.push(sourceFile(`${root}/Data/Cursors/SCCPointer.ani`, syntheticAni(7)));
+      files.push(sourceFile(`${root}/Data/Cursors/SCCAttack.ani`, syntheticAni(11)));
+    }
     const bink = new Uint8Array(64);
     bink.set(new TextEncoder().encode("BIKi"));
     files.push(sourceFile(`${root}/Data/English/Movies/EA_LOGO.BIK`, bink));
@@ -105,6 +188,7 @@ try {
     const result = await window.ZeroHAssetLibrary.scan(files);
     window.ZeroHAssetLibrary.includeVideos = true;
     const prepared = await window.ZeroHAssetLibrary.prepare("once");
+    const cursorManifest = await window.ZeroHAssetLibrary.originalCursorManifestForLaunch();
     return {
       ok: result.ok,
       missing: result.missing,
@@ -114,17 +198,58 @@ try {
       videoCount: result.videoCount,
       videoBytes: result.videoBytes,
       preparedVideos: prepared.videos,
+      cursorCount: result.cursorCount,
+      cursorMissing: result.cursorMissing,
+      cursorAsset: prepared.cursorAsset,
+      cursorManifest: {
+        source: cursorManifest?.source,
+        names: Object.keys(cursorManifest?.cursors ?? {}),
+        pointerFrame: cursorManifest?.cursors?.sccpointer?.frames?.[0],
+      },
+      realCursorCab: Boolean(realCursorCabUrl),
     };
-  });
+  }, { realCursorCabUrl });
   assert.equal(steamFolderScan.ok, true);
   assert.deepEqual(steamFolderScan.missing, []);
   assert.deepEqual(steamFolderScan.errors, []);
   assert.match(steamFolderScan.gensec?.source || "", /ZH_Generals\/gensec\.big$/);
   assert.equal(steamFolderScan.scripts?.sourceName, "loose installer scripts");
-  assert.equal(steamFolderScan.videoCount, 1);
-  assert.equal(steamFolderScan.videoBytes, 64);
-  assert.equal(steamFolderScan.preparedVideos?.length, 1);
-  assert.match(steamFolderScan.preparedVideos?.[0]?.opfsPath || "", /\/movies\/EA_LOGO\.BIK$/);
+  assert.ok(steamFolderScan.videoCount >= 1);
+  assert.ok(steamFolderScan.videoBytes >= 64);
+  assert.equal(steamFolderScan.preparedVideos?.length, steamFolderScan.videoCount);
+  assert.ok(steamFolderScan.preparedVideos?.some((video) =>
+    /\/movies\/EA_LOGO\.BIK$/i.test(video.opfsPath || "")));
+  assert.ok(steamFolderScan.cursorCount >= 2);
+  assert.deepEqual(steamFolderScan.cursorMissing, []);
+  assert.equal(steamFolderScan.cursorAsset?.name, "OriginalCursors.big");
+  assert.equal(steamFolderScan.cursorAsset?.entryCount, steamFolderScan.cursorCount);
+  assert.equal(steamFolderScan.cursorManifest.source, "browser_library_cursor_pack");
+  assert.ok(steamFolderScan.cursorManifest.names.includes("sccattack"));
+  assert.ok(steamFolderScan.cursorManifest.names.includes("sccpointer"));
+  assert.match(steamFolderScan.cursorManifest.pointerFrame, /^blob:/);
+  await page.evaluate(() => {
+    window.CnCPort.state.browserInput = {
+      cursorSet: true,
+      cursorFile: "data\\cursors\\SCCAttack.ANI",
+    };
+    window.dispatchEvent(new CustomEvent("cncport:cursorassetschange"));
+  });
+  await page.waitForFunction(() =>
+    window.CnCPort.state.browserCursor?.source === "game_ani_cursor_css"
+      && window.CnCPort.state.browserCursor?.assetSource === "browser_library_cursor_pack");
+  const browserCursor = await page.evaluate(async () => {
+    const state = window.CnCPort.state.browserCursor;
+    const response = await fetch(state.frameUrl);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return {
+      ...state,
+      frameFetched: response.ok,
+      frameIsCur: bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 2 && bytes[3] === 0,
+    };
+  });
+  assert.equal(browserCursor.cursorFile, "data\\cursors\\SCCAttack.ANI");
+  assert.equal(browserCursor.frameFetched, true);
+  assert.equal(browserCursor.frameIsCur, true);
   await page.evaluate(() => {
     document.querySelectorAll("[data-wizard-page]").forEach((wizardPage) => {
       const visible = wizardPage.dataset.wizardPage === "2";
@@ -161,6 +286,15 @@ try {
   await page.waitForSelector("#settingsWindow.is-open #gamePanel:not([hidden])");
   assert.equal(await page.locator("#gameTab").getAttribute("aria-selected"), "true");
   assert.equal(await page.locator("#appearancePanel").isHidden(), true);
+  const gameCursorToggle = page.locator("#gameCursorToggle");
+  assert.equal(await gameCursorToggle.isChecked(), true);
+  await gameCursorToggle.uncheck();
+  assert.equal(await page.evaluate(() => localStorage.getItem("cncPortCursorStyle.v1")), "system");
+  assert.equal(await page.evaluate(() => window.CnCPort.state.browserCursor?.source),
+    "system_cursor_setting");
+  await gameCursorToggle.check();
+  await page.waitForFunction(() =>
+    window.CnCPort.state.browserCursor?.source === "game_ani_cursor_css");
   const settingsShot = join(shotDir, "game-display-deep-link.png");
   await page.screenshot({ path: settingsShot });
 
@@ -292,6 +426,11 @@ try {
       iconSource: document.documentElement.dataset.retailIconSource || null,
     };
   });
+  await page.waitForFunction(() =>
+    window.CnCPort.state.browserCursor?.source !== "game_ani_cursor_css_loading");
+  assert.notEqual(await page.evaluate(() => window.CnCPort.state.browserCursor?.assetSource),
+    "browser_library_cursor_pack",
+    "forgetting the library must retire its cursor object URLs");
   assert.deepEqual(reset, { visibleIcons: 0, visibleBanners: 0, decoratedSurfaces: 0, iconSource: null });
   await context.close();
 
@@ -418,6 +557,7 @@ try {
     ok: true,
     screenshots: {
       fallbackShot,
+      aboutBuildShot,
       videoOptionShot,
       settingsShot,
       derivedShot,

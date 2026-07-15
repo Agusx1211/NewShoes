@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Zero Hour Agent Match"
+  short_description: "Set up, record, and clean up agent matches"
+  default_prompt: "Use $run-zero-hour-agent-match to set up and run a recorded Zero Hour agent match."

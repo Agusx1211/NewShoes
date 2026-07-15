@@ -46,6 +46,30 @@ enum SlotState
 	SLOT_PLAYER
 };
 
+// LLM commanders decorate a normal computer slot instead of adding a new
+// wire-visible SlotState. This keeps the original AI as the execution and
+// fallback substrate while preserving legacy state values.
+struct LlmAiProfileInfo
+{
+	AsciiString m_id;
+	UnicodeString m_name;
+};
+
+enum
+{
+	MAX_LLM_AI_PROFILES = 64,
+	LLM_AI_COMBO_DATA_BASE = 0x1000
+};
+
+void ClearLlmAiProfileCatalog( void );
+Bool AddLlmAiProfileToCatalog( AsciiString id, UnicodeString name );
+Int GetLlmAiProfileCount( void );
+const LlmAiProfileInfo *GetLlmAiProfile( Int index );
+Int FindLlmAiProfile( AsciiString id );
+Bool IsLlmAiComboData( Int data );
+Int LlmAiProfileIndexFromComboData( Int data );
+Int LlmAiComboDataFromProfileIndex( Int index );
+
 enum
 {
 	PLAYERTEMPLATE_RANDOM = -1,
@@ -73,7 +97,11 @@ public:
 	void setState( SlotState state,
 		UnicodeString name = UnicodeString::TheEmptyString,
 		UnsignedInt IP = 0);														///< Set the slot's state (human, AI, open, etc)
+	void setLlmAi( AsciiString profileId, UnicodeString name,
+		SlotState fallbackState = SLOT_MED_AI );				///< Attach an LLM controller to a classic computer slot
 	SlotState getState( void ) const { return m_state; }		///< Get the slot state
+	Bool isLlmAi( void ) const;
+	inline AsciiString getLlmAiProfileId( void ) const { return m_llmAiProfileId; }
 
 	void setColor( Int color ) { m_color = color; }
 	Int getColor( void ) const { return m_color; }
@@ -140,7 +168,8 @@ protected:
 	Int m_origColor;																			///< color, or -1 for random
 	Int m_origStartPos;																		///< start position, or -1 for random
 	Int m_origPlayerTemplate;															///< PlayerTemplate
-	UnicodeString m_name;															///< Only valid for human players
+	UnicodeString m_name;															///< Human name or LLM controller display name
+	AsciiString m_llmAiProfileId;								///< Local browser profile identity; never contains credentials
 	UnsignedInt m_IP;																	///< Only valid for human players in LAN/WOL
 	UnsignedShort m_port;															///< Only valid for human players in LAN/WOL
 	FirewallHelperClass::FirewallBehaviorType m_NATBehavior;	///< The NAT behavior for this slot's player.

@@ -313,6 +313,25 @@ def issue_summary(issue: dict[str, Any], paths: dict[str, Any] | None = None) ->
     return summary
 
 
+def crash_summary(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    primary = value.get("primary") if isinstance(value.get("primary"), dict) else {}
+    diagnostics = value.get("diagnostics") if isinstance(value.get("diagnostics"), dict) else None
+    return {
+        "schema": value.get("schema"),
+        "id": value.get("id"),
+        "capturedAt": value.get("capturedAt"),
+        "markerFrame": value.get("markerFrame"),
+        "kind": primary.get("kind"),
+        "stage": primary.get("stage"),
+        "message": primary.get("message"),
+        "error": primary.get("error"),
+        "relatedFailures": len(value.get("related") or []),
+        "diagnosticKeys": sorted(diagnostics.keys()) if diagnostics else [],
+    }
+
+
 def summarize_dump(
     dump: dict[str, Any],
     issue_filter: str | None = None,
@@ -398,6 +417,7 @@ def summarize_dump(
             "engine": range_summary(frame_values),
             "logic": range_summary(logic_values),
         },
+        "crash": crash_summary(dump.get("crash")),
         "issues": [
             issue_summary(issue, (extracted_paths or {}).get(str(issue.get("id"))))
             for issue in issues
@@ -487,6 +507,9 @@ def extract_dump(
     logs = dump.get("logs") if isinstance(dump.get("logs"), list) else []
     (out_dir / "logs.txt").write_text("\n".join(log_line(entry) for entry in logs) + ("\n" if logs else ""), encoding="utf-8")
     write_json(out_dir / "timeline.event-counts.json", event_type_counts(timeline))
+
+    if isinstance(dump.get("crash"), dict):
+        write_json(out_dir / "crash.redacted.json", redact_data_urls(dump["crash"]))
 
     paths_by_issue: dict[str, dict[str, Any]] = {}
     issues = dump.get("issues") if isinstance(dump.get("issues"), list) else []

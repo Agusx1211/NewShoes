@@ -5,6 +5,12 @@ import {
   retailPresentationKey,
   retailPresentationSource,
 } from "./launcher-retail-presentation.mjs";
+import {
+  createOriginalCursorManifest,
+  ORIGINAL_CURSOR_PACK_NAME,
+} from "./original-cursor-assets.mjs";
+import { DEVICE_TRANSFER_VERSION } from "./device-transfer-protocol.mjs";
+import { parseBrowserBinkHeader } from "./bink_decoder.mjs";
 
 const INSTALLED_KEY = "zeroh-installed-library.v5";
 const OLD_INSTALLED_KEYS = ["zeroh-installed-library.v4", "zeroh-installed-library.v3", "zeroh-installed-library.v2", "zeroh-installed-library.v1"];
@@ -17,6 +23,40 @@ const INSTALL_ROOT = "cnc-library";
 const RUNTIME_LOCK_PREFIX = "cnc-port-opfs-ns:";
 const INSTALL_LOCK_PREFIX = "cnc-port-opfs-install:";
 const REQUIRED_ARCHIVE_NAMES = window.ZeroHArchiveSpecs.map((archive) => archive.name);
+
+function transferredLibraryFiles(value) {
+  if (value?.version !== DEVICE_TRANSFER_VERSION || value?.game !== "zeroHour"
+      || !Array.isArray(value.files)) {
+    throw new Error("Transferred Zero Hour library manifest is invalid");
+  }
+  const files = value.files.map((file) => ({
+    id: String(file?.id ?? ""),
+    kind: String(file?.kind ?? ""),
+    name: String(file?.name ?? ""),
+    bytes: Number(file?.bytes),
+    ...(["archive", "cursor"].includes(file?.kind)
+      ? { entryCount: Number(file?.entryCount) } : {}),
+  }));
+  const archives = files.filter((file) => file.kind === "archive");
+  const videos = files.filter((file) => file.kind === "video");
+  const cursors = files.filter((file) => file.kind === "cursor");
+  const archiveNames = new Set(archives.map((file) => file.name));
+  const ids = new Set(files.map((file) => file.id));
+  if (files.length !== archives.length + videos.length + cursors.length
+      || files.some((file) => !file.id || !Number.isSafeInteger(file.bytes) || file.bytes <= 16)
+      || ids.size !== files.length
+      || archives.length !== REQUIRED_ARCHIVE_NAMES.length
+      || archiveNames.size !== REQUIRED_ARCHIVE_NAMES.length
+      || REQUIRED_ARCHIVE_NAMES.some((name) => !archiveNames.has(name))
+      || archives.some((file) => !Number.isSafeInteger(file.entryCount) || file.entryCount <= 0)
+      || cursors.length > 1
+      || cursors.some((file) => file.name !== ORIGINAL_CURSOR_PACK_NAME
+        || !Number.isSafeInteger(file.entryCount) || file.entryCount < 2)
+      || videos.some((file) => !/^[A-Za-z0-9_.-]+\.bik$/i.test(file.name) || file.bytes <= 48)) {
+    throw new Error("Transferred Zero Hour library file list is invalid");
+  }
+  return files;
+}
 
 function storageGet(key) {
   try { return localStorage.getItem(key); } catch { return null; }
@@ -35,6 +75,32 @@ function formatBytes(bytes) {
   if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GB`;
   if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(0)} MB`;
   return `${(value / 1024).toFixed(0)} KB`;
+}
+
+function normalizeCursorAsset(value, root) {
+  if (value == null) return null;
+  if (value.name !== ORIGINAL_CURSOR_PACK_NAME
+      || value.opfsPath !== `${root}/${ORIGINAL_CURSOR_PACK_NAME}`
+      || !Number.isSafeInteger(value.bytes) || value.bytes <= 16
+      || !Number.isSafeInteger(value.entryCount) || value.entryCount < 2) {
+    return undefined;
+  }
+  return {
+    name: ORIGINAL_CURSOR_PACK_NAME,
+    bytes: value.bytes,
+    entryCount: value.entryCount,
+    opfsPath: value.opfsPath,
+  };
+}
+
+async function opfsFile(path) {
+  const parts = String(path).split("/").filter(Boolean);
+  const name = parts.pop();
+  let directory = await navigator.storage.getDirectory();
+  for (const part of parts) {
+    directory = await directory.getDirectoryHandle(part, { create: false });
+  }
+  return (await directory.getFileHandle(name, { create: false })).getFile();
 }
 
 async function directorySummary(directory, prefix = "") {
@@ -165,9 +231,14 @@ class AssetLibrary {
     this.presentationIconCandidate = null;
     this.preparedArchives = null;
     this.preparedVideos = [];
+    this.preparedCursorAsset = null;
+    this.cursorLibrary = null;
+    this.cursorLibraryPromise = null;
+    this.cursorLibraryKey = null;
     this.includeVideos = false;
     this.queue = Promise.resolve();
     this.rememberedHandlesPromise = readHandles().catch(() => []);
+    this.incomingTransfer = null;
     this.createWorker();
   }
 
@@ -270,6 +341,51 @@ class AssetLibrary {
     this.sourceHandles = [];
     this.scanResult = null;
     this.presentationIconCandidate = null;
+  }
+
+  resetCursorLibrary() {
+    this.cursorLibrary?.dispose();
+    this.cursorLibrary = null;
+    this.cursorLibraryPromise = null;
+    this.cursorLibraryKey = null;
+    window.dispatchEvent(new CustomEvent("cncport:cursorassetschange"));
+  }
+
+  setPreparedCursorAsset(cursorAsset) {
+    this.preparedCursorAsset = cursorAsset ? { ...cursorAsset } : null;
+    this.resetCursorLibrary();
+  }
+
+  async originalCursorManifestForLaunch() {
+    const cursorAsset = this.preparedCursorAsset ?? this.installedLibrary()?.cursorAsset ?? null;
+    if (!cursorAsset) return null;
+    const key = `${cursorAsset.opfsPath}:${cursorAsset.bytes}`;
+    if (this.cursorLibrary && this.cursorLibraryKey === key) return this.cursorLibrary.manifest;
+    if (this.cursorLibraryPromise && this.cursorLibraryKey === key) return this.cursorLibraryPromise;
+
+    this.cursorLibrary?.dispose();
+    this.cursorLibrary = null;
+    this.cursorLibraryKey = key;
+    this.cursorLibraryPromise = (async () => {
+      const file = await opfsFile(cursorAsset.opfsPath);
+      if (file.size !== cursorAsset.bytes) throw new Error(`${ORIGINAL_CURSOR_PACK_NAME} size changed`);
+      const library = createOriginalCursorManifest(await file.arrayBuffer());
+      if (this.cursorLibraryKey !== key) {
+        library.dispose();
+        return null;
+      }
+      this.cursorLibrary = library;
+      return library.manifest;
+    })();
+    try {
+      return await this.cursorLibraryPromise;
+    } catch (error) {
+      if (this.cursorLibraryKey === key) {
+        this.cursorLibraryPromise = null;
+        this.cursorLibraryKey = null;
+      }
+      throw error;
+    }
   }
 
   async waitForRpc() {
@@ -434,6 +550,7 @@ class AssetLibrary {
       }, onProgress);
       this.preparedArchives = result.archives;
       this.preparedVideos = result.videos ?? [];
+      this.setPreparedCursorAsset(result.cursorAsset ?? null);
       result.effectiveMode = mode;
       if (mode === "install" && !persistenceGranted) {
         result.warning = {
@@ -444,16 +561,18 @@ class AssetLibrary {
       if (mode === "install" && result.installed) {
         const installedArchives = result.installed.archives ?? [];
         const installedVideos = result.installed.videos ?? [];
+        const installedCursorAsset = result.installed.cursorAsset ?? null;
         const manifest = {
           version: LIBRARY_VERSION,
           game: "zeroHour",
           root: installRoot,
           preparedAt: Date.now(),
-          totalBytes: [...installedArchives, ...installedVideos]
+          totalBytes: [...installedArchives, ...installedVideos, ...(installedCursorAsset ? [installedCursorAsset] : [])]
             .reduce((sum, file) => sum + file.bytes, 0),
           includeVideos: installedVideos.length > 0,
           archives: installedArchives,
           videos: installedVideos,
+          cursorAsset: installedCursorAsset,
         };
         if (!storageSet(INSTALLED_KEY, JSON.stringify(manifest))) {
           throw new Error("Browser storage could not save the installed-library manifest");
@@ -491,6 +610,9 @@ class AssetLibrary {
       }
       return result;
     } catch (error) {
+      this.preparedArchives = null;
+      this.preparedVideos = [];
+      this.setPreparedCursorAsset(null);
       if (namespaceRoot) await this.request("discard", { path: namespaceRoot }).catch(() => {});
       if (installRoot) await this.request("discard", { path: installRoot }).catch(() => {});
       throw error;
@@ -506,6 +628,8 @@ class AssetLibrary {
           || !Array.isArray(value.archives)
           || !Array.isArray(value.videos)
           || value.archives.length !== REQUIRED_ARCHIVE_NAMES.length) return null;
+      const cursorAsset = normalizeCursorAsset(value.cursorAsset, value.root);
+      if (cursorAsset === undefined) return null;
       const names = new Set(value.archives.map((archive) => archive?.name));
       if (names.size !== REQUIRED_ARCHIVE_NAMES.length
           || REQUIRED_ARCHIVE_NAMES.some((name) => !names.has(name))) return null;
@@ -516,10 +640,10 @@ class AssetLibrary {
           || video.opfsPath !== `${value.root}/movies/${video.name}`
           || !Number.isSafeInteger(video.bytes) || video.bytes <= 48)) return null;
       if (value.includeVideos !== (value.videos.length > 0)) return null;
-      const totalBytes = [...value.archives, ...value.videos]
+      const totalBytes = [...value.archives, ...value.videos, ...(cursorAsset ? [cursorAsset] : [])]
         .reduce((sum, file) => sum + file.bytes, 0);
       if (!Number.isSafeInteger(value.totalBytes) || value.totalBytes !== totalBytes) return null;
-      return value;
+      return { ...value, cursorAsset };
     } catch {
       return null;
     }
@@ -548,9 +672,24 @@ class AssetLibrary {
       }
       if (installed.videos.length) {
         const movies = await directory.getDirectoryHandle("movies", { create: false });
+        let metadataChanged = false;
         for (const video of installed.videos) {
           const file = await (await movies.getFileHandle(video.name, { create: false })).getFile();
           if (file.size !== video.bytes) throw new Error(`${video.name} size changed`);
+          const metadata = parseBrowserBinkHeader(
+            new Uint8Array(await file.slice(0, 44).arrayBuffer()), file.size);
+          metadataChanged ||= video.headerHex !== metadata.headerHex;
+          Object.assign(video, metadata);
+        }
+        if (metadataChanged) {
+          storageSet(INSTALLED_KEY, JSON.stringify(installed));
+        }
+      }
+      if (installed.cursorAsset) {
+        const file = await (await directory.getFileHandle(
+          ORIGINAL_CURSOR_PACK_NAME, { create: false })).getFile();
+        if (file.size !== installed.cursorAsset.bytes) {
+          throw new Error(`${ORIGINAL_CURSOR_PACK_NAME} size changed`);
         }
       }
       await this.collectInstalledRoots(installed.root);
@@ -560,6 +699,242 @@ class AssetLibrary {
       await this.collectInstalledRoots(null);
       return null;
     }
+  }
+
+  async createTransferSource() {
+    const installed = await this.verifyInstalledLibrary();
+    if (!installed) throw new Error("Install Zero Hour in this browser before sending it");
+    let directory = await navigator.storage.getDirectory();
+    for (const part of installed.root.split("/")) {
+      directory = await directory.getDirectoryHandle(part, { create: false });
+    }
+    const files = [];
+    const snapshots = new Map();
+    for (const archive of installed.archives) {
+      const file = await (await directory.getFileHandle(archive.name, { create: false })).getFile();
+      if (file.size !== archive.bytes) throw new Error(`${archive.name} changed before transfer`);
+      const descriptor = {
+        id: `archive-${files.length + 1}`,
+        kind: "archive",
+        name: archive.name,
+        bytes: archive.bytes,
+        entryCount: archive.entryCount,
+      };
+      files.push(descriptor);
+      snapshots.set(descriptor.id, file);
+    }
+    if (installed.videos.length) {
+      const movies = await directory.getDirectoryHandle("movies", { create: false });
+      for (const video of installed.videos) {
+        const file = await (await movies.getFileHandle(video.name, { create: false })).getFile();
+        if (file.size !== video.bytes) throw new Error(`${video.name} changed before transfer`);
+        const descriptor = {
+          id: `video-${files.length + 1}`,
+          kind: "video",
+          name: video.name,
+          bytes: video.bytes,
+        };
+        files.push(descriptor);
+        snapshots.set(descriptor.id, file);
+      }
+    }
+    if (installed.cursorAsset) {
+      const file = await (await directory.getFileHandle(
+        ORIGINAL_CURSOR_PACK_NAME, { create: false })).getFile();
+      if (file.size !== installed.cursorAsset.bytes) {
+        throw new Error(`${ORIGINAL_CURSOR_PACK_NAME} changed before transfer`);
+      }
+      const descriptor = {
+        id: `cursor-${files.length + 1}`,
+        kind: "cursor",
+        name: ORIGINAL_CURSOR_PACK_NAME,
+        bytes: installed.cursorAsset.bytes,
+        entryCount: installed.cursorAsset.entryCount,
+      };
+      files.push(descriptor);
+      snapshots.set(descriptor.id, file);
+    }
+    return {
+      manifest: { version: DEVICE_TRANSFER_VERSION, game: "zeroHour", files },
+      async readChunk(id, offset, length) {
+        const file = snapshots.get(id);
+        if (!file || !Number.isSafeInteger(offset) || offset < 0
+            || !Number.isSafeInteger(length) || length < 0 || offset + length > file.size) {
+          throw new Error("Installed-library transfer read range is invalid");
+        }
+        return new Uint8Array(await file.slice(offset, offset + length).arrayBuffer());
+      },
+    };
+  }
+
+  async beginTransferredLibrary(manifest) {
+    if (window.ZeroHRuntime?.started) {
+      throw new Error("Close the running game before receiving replacement game files");
+    }
+    if (this.incomingTransfer) throw new Error("Another game-file transfer is already in progress");
+    const files = transferredLibraryFiles(manifest);
+    let resolveReady;
+    let rejectReady;
+    let releaseLock;
+    const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+    const lockHeld = new Promise((resolve) => { releaseLock = resolve; });
+    this.incomingTransfer = ready;
+
+    const lockedOperation = this.withLibraryMutation(async () => {
+      const installName = `install-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
+      const installRoot = `${INSTALL_ROOT}/${installName}`;
+      const previousInstall = this.installedLibrary();
+      let root;
+      let libraryDirectory;
+      let installDirectory;
+      let current = null;
+      let index = 0;
+      let closed = false;
+
+      const removeIncomingRoot = async () => {
+        try { await libraryDirectory?.removeEntry(installName, { recursive: true }); } catch { /* best effort */ }
+      };
+
+      const endSession = () => {
+        if (!closed) {
+          closed = true;
+          releaseLock();
+        }
+      };
+
+      try {
+        await navigator.storage?.persist?.().catch(() => false);
+        root = await navigator.storage.getDirectory();
+        libraryDirectory = await root.getDirectoryHandle(INSTALL_ROOT, { create: true });
+        installDirectory = await libraryDirectory.getDirectoryHandle(installName, { create: true });
+
+        const session = {
+          async beginFile(id) {
+            if (closed || current || index >= files.length || files[index].id !== id) {
+              throw new Error("Transferred library file order is invalid");
+            }
+            const file = files[index];
+            const parent = file.kind === "video"
+              ? await installDirectory.getDirectoryHandle("movies", { create: true })
+              : installDirectory;
+            const handle = await parent.getFileHandle(file.name, { create: true });
+            current = { ...file, handle, writer: await handle.createWritable(), written: 0 };
+          },
+          async writeChunk(id, offset, value) {
+            const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+            if (closed || !current || current.id !== id || offset !== current.written
+                || current.written + bytes.byteLength > current.bytes) {
+              throw new Error("Transferred library chunk is out of order");
+            }
+            await current.writer.write(bytes);
+            current.written += bytes.byteLength;
+          },
+          async finishFile(id) {
+            if (closed || !current || current.id !== id || current.written !== current.bytes) {
+              throw new Error("Transferred library file is incomplete");
+            }
+            await current.writer.close();
+            current.writer = null;
+            const stored = await current.handle.getFile();
+            if (stored.size !== current.bytes) throw new Error(`${current.name} was not stored completely`);
+            if (current.kind === "video") {
+              Object.assign(files[index], parseBrowserBinkHeader(
+                new Uint8Array(await stored.slice(0, 44).arrayBuffer()), stored.size));
+            }
+            current = null;
+            index += 1;
+          },
+          async finish() {
+            if (closed || current || index !== files.length) {
+              throw new Error("Transferred Zero Hour library is incomplete");
+            }
+            try {
+              const archives = files.filter((file) => file.kind === "archive").map((file) => ({
+                name: file.name,
+                bytes: file.bytes,
+                entryCount: file.entryCount,
+                opfsPath: `${installRoot}/${file.name}`,
+              }));
+              const videos = files.filter((file) => file.kind === "video").map((file) => ({
+                name: file.name,
+                bytes: file.bytes,
+                opfsPath: `${installRoot}/movies/${file.name}`,
+                signature: file.signature,
+                headerHex: file.headerHex,
+                frames: file.frames,
+                width: file.width,
+                height: file.height,
+                fpsNum: file.fpsNum,
+                fpsDen: file.fpsDen,
+                audioTracks: file.audioTracks,
+              }));
+              const cursorFile = files.find((file) => file.kind === "cursor") ?? null;
+              const cursorAsset = cursorFile ? {
+                name: ORIGINAL_CURSOR_PACK_NAME,
+                bytes: cursorFile.bytes,
+                entryCount: cursorFile.entryCount,
+                opfsPath: `${installRoot}/${ORIGINAL_CURSOR_PACK_NAME}`,
+              } : null;
+              const installed = {
+                version: LIBRARY_VERSION,
+                game: "zeroHour",
+                root: installRoot,
+                preparedAt: Date.now(),
+                totalBytes: files.reduce((sum, file) => sum + file.bytes, 0),
+                includeVideos: videos.length > 0,
+                archives,
+                videos,
+                cursorAsset,
+              };
+              // Keep the previous manifest authoritative until every fallible
+              // pre-commit cleanup has succeeded. A failed receive must never
+              // leave localStorage pointing at the incoming root we remove.
+              await this.clearRememberedHandles();
+              if (!storageSet(INSTALLED_KEY, JSON.stringify(installed))) {
+                throw new Error("Browser storage could not save the transferred-library manifest");
+              }
+              OLD_INSTALLED_KEYS.forEach(storageRemove);
+              this.preparedArchives = archives.map((archive) => ({ ...archive }));
+              this.preparedVideos = videos.map((video) => ({ ...video }));
+              this.setPreparedCursorAsset(cursorAsset);
+              this.includeVideos = videos.length > 0;
+              if (previousInstall?.root && previousInstall.root !== installRoot) {
+                await this.request("discard", { path: previousInstall.root }).catch(() => {});
+              }
+              endSession();
+              window.dispatchEvent(new CustomEvent("zeroh:library-transferred", { detail: installed }));
+              return installed;
+            } catch (error) {
+              await removeIncomingRoot();
+              endSession();
+              throw error;
+            }
+          },
+          async abort() {
+            if (closed) return;
+            if (current?.writer) {
+              try { await current.writer.abort(); } catch { /* already closed */ }
+            }
+            current = null;
+            await removeIncomingRoot();
+            endSession();
+          },
+        };
+        // Bind methods that need AssetLibrary ownership without exposing it to callers.
+        session.finish = session.finish.bind(this);
+        resolveReady(session);
+        await lockHeld;
+      } catch (error) {
+        await removeIncomingRoot();
+        endSession();
+        rejectReady(error);
+        throw error;
+      } finally {
+        this.incomingTransfer = null;
+      }
+    });
+    lockedOperation.catch(() => {});
+    return ready;
   }
 
   async collectInstalledRoots(keepRoot) {
@@ -604,11 +979,12 @@ class AssetLibrary {
 
   async archivesForLaunch(onProgress = null) {
     if (this.preparedArchives?.length) return this.preparedArchives;
-    const installed = this.installedLibrary();
+    const installed = await this.verifyInstalledLibrary();
     if (installed) {
       onProgress?.({ detail: "Installed Zero Hour library", completed: 1, total: 1 });
       this.preparedArchives = installed.archives.map((archive) => ({ ...archive }));
       this.preparedVideos = installed.videos.map((video) => ({ ...video }));
+      this.setPreparedCursorAsset(installed.cursorAsset);
       this.includeVideos = installed.includeVideos;
       return this.preparedArchives;
     }
@@ -632,12 +1008,12 @@ class AssetLibrary {
   }
 
   async forgetUnlocked() {
+    storageRemove(INSTALLED_KEY);
+    OLD_INSTALLED_KEYS.forEach(storageRemove);
     await this.discardPreparedArchives();
     this.scanResult = null;
     this.sourceHandles = [];
     this.presentationIconCandidate = null;
-    storageRemove(INSTALLED_KEY);
-    OLD_INSTALLED_KEYS.forEach(storageRemove);
     await this.clearRememberedHandles();
     await clearRetailPresentationCache();
     try {
@@ -654,6 +1030,7 @@ class AssetLibrary {
       .filter((path) => path.startsWith(`${RUNTIME_ROOT}/`)));
     this.preparedArchives = null;
     this.preparedVideos = [];
+    this.setPreparedCursorAsset(null);
     for (const path of roots) {
       if (path) await this.request("discard", { path }).catch(() => {});
     }
@@ -666,6 +1043,7 @@ class AssetLibrary {
       totalBytes: installed?.totalBytes || this.scanResult?.totalBytes || 0,
       formattedBytes: formatBytes(installed?.totalBytes || this.scanResult?.totalBytes || 0),
       ready: Boolean(this.preparedArchives?.length || installed),
+      originalCursors: Boolean(this.preparedCursorAsset || installed?.cursorAsset),
       presentationSource: retailPresentationSource,
     };
   }

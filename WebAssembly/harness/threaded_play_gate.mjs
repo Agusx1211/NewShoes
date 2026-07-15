@@ -62,13 +62,19 @@ const BOOT_TIMEOUT_MS = Number(process.env.BOOT_TIMEOUT_MS ?? 15 * 60 * 1000);
 // per RENDERED frame, so slow SwiftShader runs need tens of seconds before
 // the menu is fully lit.
 const SETTLE_MS = Number(process.env.SETTLE_MS ?? 30000);
+const browserExecutablePath = process.env.THREADED_PLAY_BROWSER_EXECUTABLE
+  ?? process.env.CHROME_PATH;
+const browserArgs = (process.env.THREADED_PLAY_BROWSER_ARGS ?? "")
+  .split(/\s+/)
+  .filter(Boolean);
 // Runs only the production Bink movie leg after boot. This keeps video
 // iteration fast while retaining the same real play page, archive mount,
 // engine loop, and screenshot path as the complete threaded gate.
 const BINK_VIDEO_ONLY = process.env.BINK_VIDEO_ONLY === "1";
 const BINK_VIDEO_DISABLED = process.env.BINK_VIDEO_DISABLED === "1";
+const CURSOR_ONLY = process.env.CURSOR_ONLY === "1";
 
-class BinkVideoGateComplete extends Error {}
+class RequestedGateComplete extends Error {}
 
 function log(line) {
   process.stdout.write(`[threaded-play-gate] ${line}\n`);
@@ -345,10 +351,11 @@ async function main() {
   await mkdir(profileDir, { recursive: true });
   const browser = await chromium.launchPersistentContext(profileDir, {
     viewport: { width: 1280, height: 800 },
+    ...(browserExecutablePath ? { executablePath: browserExecutablePath } : {}),
     // Autoplay allowed = the AudioContext runs from boot, matching the real
     // play flow where the owner's Play click is the resuming gesture before
     // any engine audio starts. Required for the audible-path checks.
-    args: ["--autoplay-policy=no-user-gesture-required"],
+    args: ["--autoplay-policy=no-user-gesture-required", ...browserArgs],
   });
   const consoleLines = [];
   const summary = {};
@@ -358,7 +365,11 @@ async function main() {
     // Isolate the visual reference from the persistent game profile. Closing
     // a same-profile reference page would launch its own pagehide IDBFS flush
     // and can contend with the save-order race this gate intentionally tests.
-    const referenceBrowser = await chromium.launch({ headless: true });
+    const referenceBrowser = await chromium.launch({
+      headless: true,
+      ...(browserExecutablePath ? { executablePath: browserExecutablePath } : {}),
+      args: browserArgs,
+    });
     const desktopReferencePath = join(shotDir, "p1c-desktop-reference.png");
     let desktopReference;
     try {
@@ -375,7 +386,7 @@ async function main() {
     summary.desktopReference = desktopReferencePath;
 
     // ---------- threaded boot (GATE B) ----------
-    const threadedQuery = "harness/play.html?autostart=1"
+    const threadedQuery = "harness/play.html?autostart=1&perfCounters=1"
       + (BINK_VIDEO_ONLY ? "&shellmap=0" : "")
       + (BINK_VIDEO_ONLY && !BINK_VIDEO_DISABLED ? "&videos=1" : "")
       + (threadedPlayDist ? `&dist=${threadedPlayDist}` : "");
@@ -510,10 +521,21 @@ async function main() {
       loopError: loopB?.error ?? null,
       frame: statusB?.status?.frame ?? null,
     };
+    const drawBatchPerf = statusB?.status?.graphics?.d3d8Perf ?? {};
+    summary.pacing.drawBatches = {
+      queued: drawBatchPerf.drawBatchQueued ?? null,
+      flushed: drawBatchPerf.drawBatchFlushes ?? null,
+    };
     log(`paced loop measured over ${seconds.toFixed(1)}s: client ${clientRate.toFixed(1)}/s logic ${logicRate.toFixed(1)}/s`);
     checks.push(["paced loop active on the engine thread", loopB?.active === true]);
     checks.push(["client frames advancing", clientRate > 1]);
     checks.push(["logic frames advancing", logicRate > 0.5]);
+    checks.push([
+      "threaded frame boundaries submit every queued draw batch",
+      drawBatchPerf.countersEnabled === true
+        && Number(drawBatchPerf.drawBatchQueued ?? 0) > 0
+        && drawBatchPerf.drawBatchQueued === drawBatchPerf.drawBatchFlushes,
+    ]);
     checks.push([
       // Paced-mode invariant: logic never exceeds catchup (2) logic frames
       // per client frame. Under SwiftShader overload the loop legitimately
@@ -551,7 +573,7 @@ async function main() {
         summary.videoOnlyExit?.ok === true
           && summary.videoOnlyExit?.result?.engine?.workerTerminated === true,
       ]);
-      throw new BinkVideoGateComplete();
+      throw new RequestedGateComplete();
     }
 
     // ---------- GATE C: forwarded input reaches the engine ----------
@@ -579,7 +601,7 @@ async function main() {
       };
     }, targetCss);
     const engineCursor = inputProbe?.probe?.cursor ?? null;
-    summary.input = { expectedEnginePoint, engineCursor };
+    summary.input = { expectedEnginePoint, engineCursor, probe: inputProbe };
     const probedX = Number(engineCursor?.x ?? NaN);
     const probedY = Number(engineCursor?.y ?? NaN);
     const cursorMatches = expectedEnginePoint
@@ -660,6 +682,16 @@ async function main() {
         && attackFrames.length >= 2
         && restoreCursorResult.ok === true,
     ]);
+
+    if (CURSOR_ONLY) {
+      summary.cursorOnlyExit = await page.evaluate(() => window.ZeroHRuntime.exit());
+      checks.push([
+        "cursor-only gate shuts the threaded runtime down cleanly",
+        summary.cursorOnlyExit?.ok === true
+          && summary.cursorOnlyExit?.result?.engine?.workerTerminated === true,
+      ]);
+      throw new RequestedGateComplete();
+    }
 
     // Hover/click visual evidence: sweep the mouse across the menu band and
     // capture before/after shots; a hilite change is expected but only
@@ -1015,13 +1047,26 @@ async function main() {
         "/home/web_user/Command and Conquer Generals Zero Hour Data/Save/__threaded_gate_roundtrip.sav",
       )),
     }));
+    const originalExitClick = await page.evaluate(() =>
+      window.CnCPort.rpc("clickWindowByName", { name: "MainMenu.wnd:ButtonExit" }));
+    await page.waitForFunction(() =>
+      window.ZeroHRuntime?.closing === true || window.ZeroHRuntime?.closed === true, null, {
+      timeout: 30000,
+      polling: 100,
+    });
     const relaunchExit = await page.evaluate(() => window.ZeroHRuntime.exit());
-    summary.cleanExit.relaunch = { state: relaunchState, exit: relaunchExit };
+    summary.cleanExit.relaunch = {
+      state: relaunchState,
+      originalExitClick,
+      exit: relaunchExit,
+    };
     checks.push([
-      "desktop shortcut transparently relaunches and cleanly closes a fresh runtime",
+      "desktop shortcut relaunches and the original Exit button cleanly closes the fresh runtime",
       relaunchState.started === true
         && relaunchState.closed === false
         && JSON.stringify(relaunchState.saveBytes) === JSON.stringify([0x53, 0x41, 0x56, 0x45, 0x21])
+        && originalExitClick?.ok === true
+        && originalExitClick?.result?.clicked === true
         && relaunchExit?.ok === true
         && relaunchExit?.result?.engine?.workerTerminated === true
         && relaunchExit?.result?.engine?.pendingCommands === 0
@@ -1095,7 +1140,7 @@ async function main() {
     }, saveMarker);
     await savePage.close();
   } catch (error) {
-    if (!(error instanceof BinkVideoGateComplete)) {
+    if (!(error instanceof RequestedGateComplete)) {
       failure = error instanceof Error ? error.stack ?? error.message : String(error);
     }
   } finally {

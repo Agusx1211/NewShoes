@@ -86,6 +86,13 @@
 #include "GameLogic/VictoryConditions.h"
 #include "GameLogic/AIPathfind.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_agent_record_match_outcome(
+	UnsignedInt endFrame,
+	Bool localVictory,
+	Bool localDefeat);
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -197,6 +204,9 @@ void ScriptActions::doQuickVictory( void )
 	doDisableInput();
 	if(TheCampaignManager)
 		TheCampaignManager->SetVictorious(TRUE);
+#ifdef __EMSCRIPTEN__
+	cnc_port_agent_record_match_outcome(TheGameLogic->getFrame(), TRUE, FALSE);
+#endif
 	TheScriptEngine->startQuickEndGameTimer();
 }
 
@@ -230,6 +240,9 @@ void ScriptActions::doVictory( void )
 	}	
 	if(TheCampaignManager)
 		TheCampaignManager->SetVictorious(TRUE);
+#ifdef __EMSCRIPTEN__
+	cnc_port_agent_record_match_outcome(TheGameLogic->getFrame(), TRUE, FALSE);
+#endif
 	TheScriptEngine->startEndGameTimer();
 }
 
@@ -254,6 +267,9 @@ void ScriptActions::doDefeat( void )
 	}
 	if(TheCampaignManager)
 		TheCampaignManager->SetVictorious(FALSE);
+#ifdef __EMSCRIPTEN__
+	cnc_port_agent_record_match_outcome(TheGameLogic->getFrame(), FALSE, TRUE);
+#endif
 	TheScriptEngine->startEndGameTimer();
 }
 
