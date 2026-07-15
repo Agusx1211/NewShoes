@@ -172,6 +172,10 @@ export function isConstructionComplete(record) {
   return !hasSemanticTag(record, "status", "underConstruction");
 }
 
+export function isStrategicEntity(record) {
+  return hasCategory(record, "structure") || record?.capabilities?.orderable === true;
+}
+
 function coarseKind(record) {
   if (hasCategory(record, "structure")) return "structure";
   if (hasCategory(record, "aircraft")) return "aircraft";
@@ -219,7 +223,7 @@ function summarizeForces(objects, localPlayerIndex) {
   for (const object of objects) {
     const owner = normalizedOwnership(object, localPlayerIndex);
     if (!["self", "allied", "enemy"].includes(owner)) continue;
-    if (coarseKind(object) === "structure") continue;
+    if (coarseKind(object) === "structure" || !isStrategicEntity(object)) continue;
     const ownership = owner === "self" ? "owned" : owner;
     const handle = ownership === "owned" && Number.isInteger(object.teamId)
       ? `squad:${object.teamId}` : `force:${ownership}:${coarseKind(object)}`;
@@ -245,7 +249,9 @@ function summarizeProduction(objects, localPlayerIndex) {
     const queue = object.capabilities?.productionQueue;
     if (!Array.isArray(queue) || queue.length === 0) continue;
     result.push({ facility: semanticHandle(object, localPlayerIndex), queue: queue.map((entry) => ({
-      kind: entry.kind, progress: entry.progress ?? entry.percentComplete ?? null,
+      type: entry.type ?? entry.kind ?? null,
+      name: entry.name ?? null,
+      progress: entry.progress ?? entry.percentComplete ?? null,
     })) });
   }
   return result.sort((left, right) => left.facility.localeCompare(right.facility));
@@ -272,10 +278,14 @@ function summarizeObjectives(objects, localPlayerIndex) {
 
 function objectDelta(previous, current, localPlayerIndex) {
   if (!previous) return [];
-  const before = new Map((previous.objects || []).map((object) => [object.id, object]));
-  const after = new Map((current.objects || []).map((object) => [object.id, object]));
+  const relevant = (object) => ["self", "allied", "enemy"]
+    .includes(normalizedOwnership(object, localPlayerIndex)) && isStrategicEntity(object);
+  const before = new Map((previous.objects || []).filter(relevant)
+    .map((object) => [object.id, object]));
+  const after = new Map((current.objects || []).filter(relevant)
+    .map((object) => [object.id, object]));
   const deltas = [];
-  for (const object of current.objects || []) {
+  for (const object of after.values()) {
     const prior = before.get(object.id);
     if (!prior) deltas.push({
       type: "appeared",
@@ -296,7 +306,7 @@ function objectDelta(previous, current, localPlayerIndex) {
       }
     }
   }
-  for (const object of previous.objects || []) {
+  for (const object of before.values()) {
     if (!after.has(object.id)) deltas.push({
       type: "disappeared",
       handle: semanticHandle(object, localPlayerIndex),
@@ -313,7 +323,8 @@ export function compactRoutineObservation(raw, {
 } = {}) {
   const local = (raw.players || []).find((player) => player.index === raw.localPlayerIndex || player.local);
   const relevant = (raw.objects || []).filter((object) =>
-    ["self", "allied", "enemy"].includes(normalizedOwnership(object, raw.localPlayerIndex)));
+    ["self", "allied", "enemy"].includes(normalizedOwnership(object, raw.localPlayerIndex))
+      && isStrategicEntity(object));
   const previousFrame = Number(previous?.frame);
   const elapsedFrames = Number.isFinite(previousFrame)
     ? Math.max(0, raw.frame - previousFrame) : 0;

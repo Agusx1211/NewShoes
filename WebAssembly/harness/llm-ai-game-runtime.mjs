@@ -63,6 +63,24 @@ export class LlmAiGameCoordinator {
     }
   }
 
+  recordTerminalOutcomes(state) {
+    if (state.outcomeAuthoritative !== true) return;
+    for (const entry of this.active.values()) {
+      const assignment = [...(state.terminalOutcomes || []), ...(state.assignments || [])]
+        .find((candidate) => candidate.slot === entry.assignment.slot
+          && candidate.profileId === entry.assignment.profileId);
+      if (!assignment || !["victory", "defeat", "ended"].includes(assignment.outcome)) continue;
+      entry.runtime.setAuthoritativeOutcome({
+        outcome: assignment.outcome,
+        frame: state.frame,
+        endFrame: state.endFrame,
+        strategy: assignment.strategyController
+          ? { ...(entry.lastAssignment || entry.assignment), ...assignment }
+          : entry.lastAssignment || entry.assignment,
+      });
+    }
+  }
+
   matchKey(state) {
     const identity = `${state.gameMode}:${state.gameId}:${state.seed}:${state.map}`;
     if (!this.lastPlayable || state.frame < this.lastFrame || identity !== this.lastIdentity) {
@@ -105,7 +123,10 @@ export class LlmAiGameCoordinator {
       getStrategicState: () => strategic.checkpointState(),
       transferToClassic: () => strategic.release(),
     });
-    const entry = { key, matchKey: matchKeyValue, assignment, controller, runtime, strategic };
+    const entry = {
+      key, matchKey: matchKeyValue, assignment, lastAssignment: assignment,
+      controller, runtime, strategic,
+    };
     this.active.set(key, entry);
     entry.promise = runtime.start({
       matchKey: matchKeyValue, map: state.map, gameMode: state.gameMode,
@@ -137,8 +158,14 @@ export class LlmAiGameCoordinator {
   async reconcile() {
     const state = await this.assignments();
     this.lastState = state;
+    for (const entry of this.active.values()) {
+      const assignment = (state.assignments || []).find((candidate) =>
+        candidate.slot === entry.assignment.slot && candidate.profileId === entry.assignment.profileId);
+      if (Number.isInteger(assignment?.playerIndex)) entry.lastAssignment = assignment;
+    }
     if (!state.playable || !state.authoritative) {
-      this.abortActive(!state.authoritative ? "This browser is not the match authority" : "Match ended");
+      this.recordTerminalOutcomes(state);
+      this.abortActive(!state.playable ? "Match ended" : "This browser is not the match authority");
       if (!state.playable) {
         this.lastPlayable = false;
         this.lastFrame = 0;

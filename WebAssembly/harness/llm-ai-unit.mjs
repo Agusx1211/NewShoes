@@ -26,6 +26,7 @@ import {
   compactRoutineObservation,
   hasCategory,
   isConstructionComplete,
+  isStrategicEntity,
   normalizedEntity,
 } from "./llm-ai-strategy.mjs";
 import { MemoryLlmAiStore } from "./llm-ai-store.mjs";
@@ -288,9 +289,35 @@ const tool = {
     construction: { state: "constructing", percent: 1 } }]);
   assert.equal(strategic.deltas.find((delta) => delta.handle === "contact:91")?.owner, "enemy");
 
+  const transientFiltered = compactRoutineObservation({
+    snapshotId: 10, frame: 121, localPlayerIndex: 4, game: { outcome: null },
+    players: [{ index: 4, local: true }],
+    objects: [
+      { id: 101, owner: 5, relationship: "enemy", categories: [],
+        capabilities: { orderable: false, mobile: true } },
+      { id: 102, owner: 5, relationship: "enemy", categories: ["vehicle"],
+        capabilities: { orderable: true, mobile: true } },
+    ],
+  }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [], previous: previousStrategic });
+  assert.deepEqual(transientFiltered.threats.map((force) => force.handle), ["force:enemy:vehicle"]);
+  assert.deepEqual(transientFiltered.deltas.map((delta) => delta.handle), ["contact:102"]);
+
+  const producing = compactRoutineObservation({
+    snapshotId: 11, frame: 121, localPlayerIndex: 4, game: { outcome: null },
+    players: [{ index: 4, local: true, economy: { money: 1_000 } }],
+    objects: [{ id: 93, owner: 4, categories: ["structure"], capabilities: {
+      productionQueue: [{ type: "unit", name: "ObservedInfantry", progress: 42 }],
+    } }],
+  }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [] });
+  assert.deepEqual(producing.production, [{ facility: "facility:93", queue: [{
+    type: "unit", name: "ObservedInfantry", progress: 42,
+  }] }]);
+
   assert.equal(hasCategory({ categories: ["STRUC_ture"] }, "structure"), true);
   assert.equal(isConstructionComplete({ construction: -1, status: [] }), true);
   assert.equal(isConstructionComplete({ construction: 25, status: ["UNDER_construction"] }), false);
+  assert.equal(isStrategicEntity({ capabilities: { orderable: false } }), false);
+  assert.equal(isStrategicEntity({ categories: ["Struc_ture"] }), true);
   assert.deepEqual(normalizedEntity({
     id: 92, owner: 5, relationship: "ENEMIES", categories: ["VeHiClE", "Can-Attack"],
     capabilities: { mobile: true, attack: true, weaponRange: 150 }, position: [1, 2, 0],
@@ -405,7 +432,12 @@ const tool = {
   };
   const rpc = async (command, payload) => {
     calls.push({ command, payload });
-    if (command === "llmAiWorldSnapshot") return { ok: true, result: { ok: true, ...world } };
+    if (command === "llmAiWorldSnapshot") return { ok: true, result: {
+      ok: true, ...world,
+      commandSets: state?.catalog?.commandSets || {},
+      objectCapabilities: state?.catalog?.objectCapabilities || {},
+      engineServices: state?.catalog?.engineServices || {},
+    } };
     if (command === "llmAiEngineRequest") return { ok: true, result: { ok: true, teamId: 12, frame: 40 } };
     return { ok: true, result: { ok: true, accepted: true, frame: 40 } };
   };
@@ -525,6 +557,43 @@ const tool = {
   assert.equal(state.jobs.get(force.job.id).state, "complete");
 }
 
+// A fresh query observes availability changes that occurred during inference,
+// and a production request rejects a handle that disappeared before execution.
+{
+  let snapshotId = 50;
+  let available = true;
+  let engineRequests = 0;
+  const rpc = async (command) => {
+    if (command !== "llmAiWorldSnapshot") {
+      engineRequests += 1;
+      return { ok: true, result: { ok: true, accepted: true } };
+    }
+    snapshotId += 1;
+    return { ok: true, result: {
+      ok: true, snapshotId, frame: snapshotId, localPlayerIndex: 4,
+      objects: [{ id: 51, owner: 4, template: "ObservedFactory", categories: ["structure"] }],
+      commandSets: { ObservedFactory: available ? [{
+        name: "TrainObservedUnit", type: "produce",
+        product: { template: "ObservedUnit", categories: ["vehicle"], cost: 500, buildFrames: 90 },
+      }] : [] },
+      objectCapabilities: { 51: { commandSet: "ObservedFactory", commandState: available
+        ? { TrainObservedUnit: { availability: "available" } } : {} } },
+      engineServices: {},
+    } };
+  };
+  const state = new LlmAiStrategicState({ rpc, playerIndex: 4, profile });
+  const tools = createLlmAiGameTools({ rpc, playerIndex: 4, profile, state });
+  const query = tools.find((entry) => entry.name === "query_buildable_options");
+  const production = tools.find((entry) => entry.name === "request_production");
+  const options = await query.execute({ purpose: "vehicle", readyOnly: true });
+  assert.equal(options.items[0].handle, "produce:ObservedUnit@facility:51");
+  available = false;
+  await assert.rejects(() => production.execute({ optionHandle: options.items[0].handle }), /stale/);
+  assert.equal(engineRequests, 0, "stale production never reaches an engine action");
+  const refreshed = await query.execute({ purpose: "vehicle", readyOnly: false });
+  assert.equal(refreshed.total, 0);
+}
+
 // Focused detail snapshots must not erase the elapsed time between routine
 // observations; model inference and queries occur while simulation continues.
 {
@@ -634,8 +703,8 @@ const tool = {
     && event.data.rejectedResponse.code === "missing_tool_call"));
 }
 
-// Recovery keeps the provider's native tool schema stable and rejects a
-// temporarily disallowed call through an observable tool result.
+// Recovery keeps the provider's native schema stable and leaves bounded detail
+// queries available so the model can resolve a current handle before acting.
 {
   let now = 1_750;
   const memory = new MemoryLlmAiStore();
@@ -663,9 +732,14 @@ const tool = {
   const events = await memory.listEvents(runtime.session.id);
   const request = events.find((event) => event.type === "model.request");
   assert.equal(request.data.toolCount, 2);
-  assert.equal(request.data.allowedToolCount, 1);
+  assert.equal(request.data.allowedToolCount, 2);
   assert(events.some((event) => event.type === "tool.result"
-    && event.data.result.error.code === "recovery_tool_unavailable"));
+    && event.data.name === informational.name && event.data.ok === true));
+
+  runtime.actionFailureStreak = 2;
+  runtime.recoveryBlockedTool = tool.name;
+  assert.deepEqual(runtime.recoveryToolSet().tools.map((candidate) => candidate.name),
+    [informational.name], "a failed action is withheld without hiding handle lookup");
 }
 
 // Once visible threats disappear, recovery permits bounded reconnaissance but
@@ -712,6 +786,33 @@ const tool = {
   assert(events.some((event) => event.type === "strategy.ownership_transferred"));
 }
 
+// A terminal outcome latched by the authoritative assignment bridge completes
+// a session even after the eliminated player can no longer be observed.
+{
+  const memory = new MemoryLlmAiStore();
+  const saved = await memory.saveProfile(profile, { cryptoImpl, now: () => 2_500 });
+  const runtime = new LlmAiAgentRuntime({
+    profile: saved, tools: [tool],
+    observe: async () => ({ frame: 300, game: { outcome: null } }),
+    store: memory, cryptoImpl, now: () => 2_500,
+  });
+  await runtime.start();
+  runtime.setAuthoritativeOutcome({
+    outcome: "victory", frame: 450, endFrame: 448,
+    strategy: { strategyController: "llm", classicStrategyUpdates: 0, controllerNeutralUpdates: 90 },
+  });
+  const controller = new AbortController();
+  controller.abort(new Error("Match ended"));
+  await runtime.run({ signal: controller.signal });
+  assert.equal(runtime.session.status, "completed");
+  assert.equal(runtime.session.outcome, "victory");
+  const events = await memory.listEvents(runtime.session.id);
+  assert(events.some((event) => event.type === "match.outcome"
+    && event.data.authoritative === true && event.data.source === "assignment-state"));
+  assert(events.some((event) => event.type === "session.completed"));
+  assert.equal(events.some((event) => event.type === "session.cancelled"), false);
+}
+
 // Coordinator claims the explicit lease before starting one runtime per assignment.
 {
   let starts = 0;
@@ -742,6 +843,40 @@ const tool = {
   await coordinator.reconcileNow();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(starts, 1, "completed assignment does not restart in the same match");
+}
+
+// The coordinator records authoritative terminal evidence before aborting work
+// whose player object is being removed by the score-screen transition.
+{
+  let evidence = null;
+  const memory = new MemoryLlmAiStore();
+  const coordinator = new LlmAiGameCoordinator({
+    rpc: async (command) => {
+      assert.equal(command, "realEngineLlmAiAssignments");
+      return { ok: true, result: {
+        ok: true, playable: false, authoritative: true, outcomeAuthoritative: true,
+        frame: 451, endFrame: 448,
+        assignments: [],
+        terminalOutcomes: [{ slot: 1, profileId: "profile-1", playerIndex: 4,
+          outcome: "victory", strategyController: "llm", classicStrategyUpdates: 0,
+          controllerNeutralUpdates: 91 }],
+      } };
+    },
+    store: memory,
+  });
+  const controller = new AbortController();
+  coordinator.active.set("terminal", {
+    assignment: { slot: 1, profileId: "profile-1", playerIndex: 4 },
+    lastAssignment: { slot: 1, profileId: "profile-1", playerIndex: 4,
+      strategyController: "llm", classicStrategyUpdates: 0, controllerNeutralUpdates: 90 },
+    controller,
+    runtime: { setAuthoritativeOutcome(value) { evidence = value; } },
+  });
+  await coordinator.reconcileNow();
+  assert.equal(evidence.outcome, "victory");
+  assert.equal(evidence.strategy.strategyController, "llm");
+  assert.equal(controller.signal.aborted, true);
+  assert.equal(controller.signal.reason.message, "Match ended");
 }
 
 console.log("LLM AI unit: PASS");

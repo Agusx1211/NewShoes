@@ -371,6 +371,7 @@ async function main() {
     let latest = sessionStarted;
     let world = null;
     let terminal = false;
+    let authoritativeOutcome = null;
     let lastProgressSignature = "";
     let lastFailureCount = 0;
     const competition = {
@@ -383,7 +384,8 @@ async function main() {
       combatReactions: 0,
     };
     while (Date.now() - startedAt < maximumSeconds * 1_000) {
-      [latest, world] = await within(Promise.all([
+      let worldReply;
+      [latest, worldReply] = await within(Promise.all([
         page.evaluate(async (sessionId) => ({
           session: await window.ZeroHLlmAi.store.getSession(sessionId),
           events: await window.ZeroHLlmAi.store.listEvents(sessionId),
@@ -395,7 +397,12 @@ async function main() {
           includeCapabilities: false,
         }),
       ]), "match evidence poll");
-      terminal = ["victory", "defeat", "ended"].includes(world?.result?.game?.outcome);
+      if (worldReply?.result?.ok === true && worldReply.result.game) world = worldReply;
+      const outcomeEvent = latest.events.findLast((event) => event.type === "match.outcome"
+        && event.data?.authoritative === true);
+      authoritativeOutcome = outcomeEvent?.data?.outcome ?? latest.session.outcome
+        ?? world?.result?.game?.outcome ?? null;
+      terminal = ["victory", "defeat", "ended"].includes(authoritativeOutcome);
       const objects = world?.result?.objects ?? [];
       const player = world?.result?.players?.find((candidate) => candidate.local === true);
       competition.peakOwnedObjects = Math.max(competition.peakOwnedObjects,
@@ -431,7 +438,7 @@ async function main() {
           toolCalls: latest.session.toolCalls,
           failures: latest.session.failures,
           frame: world?.result?.frame ?? null,
-          outcome: world?.result?.game?.outcome ?? null,
+          outcome: authoritativeOutcome,
           lastModelError: modelError?.data ?? null,
         });
         if (sessionExportPath) {
@@ -549,11 +556,15 @@ async function main() {
       await rpc(page, "realEngineLlmAiAssignments"), "final LLM assignments");
     const finalAssignment = finalAssignments.assignments.find((candidate) =>
       candidate.profileId === savedProfile.id);
-    if (finalAssignment?.strategyController !== "llm"
-        || finalAssignment.classicStrategyUpdates !== assignment.classicStrategyUpdates
-        || finalAssignment.controllerNeutralUpdates <= assignment.controllerNeutralUpdates) {
+    const authoritativeOutcomeEvent = latest.events.findLast((event) =>
+      event.type === "match.outcome" && event.data?.authoritative === true);
+    const finalStrategy = expectTerminal && latest.session.status === "completed"
+      ? authoritativeOutcomeEvent?.data?.strategy || finalAssignment : finalAssignment;
+    if (finalStrategy?.strategyController !== "llm"
+        || finalStrategy.classicStrategyUpdates !== assignment.classicStrategyUpdates
+        || finalStrategy.controllerNeutralUpdates <= assignment.controllerNeutralUpdates) {
       throw new Error(`strategy ownership was not exclusive while neutral execution advanced: ${JSON.stringify({
-        initial: assignment, final: finalAssignment,
+        initial: assignment, final: finalAssignment, outcome: authoritativeOutcomeEvent?.data,
       })}`);
     }
 
@@ -590,7 +601,7 @@ async function main() {
         cacheHitRequests: latest.session.cacheHitRequests,
         outcome: latest.session.outcome,
       },
-      gameOutcome: world?.result?.game?.outcome ?? null,
+      gameOutcome: authoritativeOutcome,
       worldFrame: world?.result?.frame ?? null,
       verification: { expectTerminal, minimumFrame, minimumActions, minimumOwnedObjects },
       competition,

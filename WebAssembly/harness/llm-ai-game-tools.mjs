@@ -6,6 +6,7 @@ import {
   hasSemanticTag,
   internalNameFromHandle,
   isConstructionComplete,
+  isStrategicEntity,
   normalizedEntity,
 } from "./llm-ai-strategy.mjs";
 
@@ -141,6 +142,10 @@ export class LlmAiStrategicState {
       objectCapabilities: raw.objectCapabilities || {}, engineServices: raw.engineServices || {},
     };
     this.catalogRevision = `catalog:${raw.snapshotId}`;
+    this.catalogSignature = this.catalogSourceSignature(raw);
+    this.raw = raw;
+    this.updateJobs();
+    return raw;
   }
 
   updateJobs() {
@@ -313,7 +318,8 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
         source: { type: "string", maxLength: 128 }, sort: { type: "string", enum: ["handle", "cost"] },
         direction: { type: "string", enum: ["asc", "desc"] }, limit: { type: "integer", minimum: 1, maximum: 64 }, cursor: { type: "string", maxLength: 2048 },
       }, additionalProperties: false },
-      execute(args) {
+      async execute(args) {
+        if (!args.cursor) await strategic.refreshCatalog();
         const prerequisiteState = (record) => {
           if (record.prerequisites === "complete") return "complete";
           if (record.prerequisites === "validated-on-request") return "validated-on-request";
@@ -352,8 +358,9 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
       parameters: { type: "object", properties: { optionHandle: { type: "string", maxLength: 320 } }, required: ["optionHandle"], additionalProperties: false },
       validate(args) { objectValue(args, "request_production arguments"); },
       async execute(args) {
+        await strategic.refreshCatalog();
         const option = buildableOptions(strategic.catalog).find((candidate) => candidate.handle === args.optionHandle);
-        if (!option) throw new TypeError("optionHandle is not in the current catalog revision");
+        if (!option) throw new TypeError("optionHandle is stale; query current buildable options again");
         const [productHandle] = args.optionHandle.split("@facility:");
         const upgrade = productHandle.startsWith("upgrade:");
         const unit = productHandle.startsWith("produce:");
@@ -388,6 +395,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
       }, required: ["archetypeHandle"], additionalProperties: false },
       validate(args) { internalNameFromHandle(objectValue(args, "request_force arguments").archetypeHandle, "force"); },
       async execute(args) {
+        await strategic.refreshCatalog();
         const internalName = internalNameFromHandle(args.archetypeHandle, "force");
         if (!strategic.catalog?.engineServices?.teamPrototypes?.includes(internalName)) throw new TypeError("archetypeHandle is stale");
         const recruit = args.mode === "recruit";
@@ -472,7 +480,8 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
       async execute(args) {
         const raw = args.cursor ? strategic.raw : await strategic.focused();
         const filters = { scope: args.scope || "any", owner: args.owner || "any", kind: args.kind || "any", handles: args.handles || [] }; const direction = args.direction || "asc";
-        let records = (raw?.objects || []).map((object) => normalizedEntity(object, raw.localPlayerIndex))
+        let records = (raw?.objects || []).filter(isStrategicEntity)
+          .map((object) => normalizedEntity(object, raw.localPlayerIndex))
           .filter((record) => ["self", "allied", "enemy"].includes(record.owner)).filter((record) =>
             (filters.owner === "any" || record.owner === filters.owner) && (filters.kind === "any" || record.kind === filters.kind)
             && (filters.handles.length === 0 || filters.handles.includes(record.handle) || filters.handles.includes(record.squadHandle)));

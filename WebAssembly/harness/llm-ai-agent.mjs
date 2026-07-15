@@ -10,6 +10,9 @@ import { boundLlmPayload } from "./llm-ai-strategy.mjs";
 const INFORMATIONAL_TOOLS = new Set([
   "set_priorities", "query_buildable_options", "inspect_entities", "inspect_job", "query_map_region", "wait_for_tick",
 ]);
+const RECOVERY_DETAIL_TOOLS = new Set([
+  "query_buildable_options", "inspect_entities", "inspect_job", "query_map_region",
+]);
 const ACTIVE_JOB_STATES = new Set(["queued", "assembling", "moving", "engaged"]);
 const PROVIDER_CONTRACT_ERRORS = new Set([
   "invalid_action", "invalid_arguments", "invalid_json", "invalid_stream", "invalid_tool_call",
@@ -98,6 +101,7 @@ export class LlmAiAgentRuntime {
     this.nonActionStreak = 0;
     this.recoveryBlockedTool = null;
     this.observedOutcome = null;
+    this.authoritativeOutcome = null;
   }
 
   async event(type, data = {}) {
@@ -189,6 +193,35 @@ export class LlmAiAgentRuntime {
     return true;
   }
 
+  setAuthoritativeOutcome({ outcome, frame = null, endFrame = null, strategy = null } = {}) {
+    if (!new Set(["victory", "defeat", "ended"]).has(String(outcome).toLowerCase())) {
+      throw new TypeError("Authoritative outcome must be victory, defeat, or ended");
+    }
+    this.authoritativeOutcome = {
+      outcome: String(outcome).toLowerCase(), frame, endFrame, strategy,
+    };
+  }
+
+  async finishAuthoritativeOutcome(reason = "authoritative-match-state") {
+    if (!this.authoritativeOutcome || this.session?.status === "completed") return false;
+    const evidence = this.authoritativeOutcome;
+    this.lastObservation = {
+      ...(this.lastObservation || {}),
+      frame: evidence.frame ?? evidence.endFrame ?? this.lastObservation?.frame ?? null,
+      terminal: true,
+      game: { ...(this.lastObservation?.game || {}), outcome: evidence.outcome,
+        endFrame: evidence.endFrame ?? this.lastObservation?.game?.endFrame ?? null },
+    };
+    if (this.observedOutcome !== evidence.outcome) {
+      this.observedOutcome = evidence.outcome;
+      await this.event("match.outcome", {
+        authoritative: true, source: "assignment-state", ...evidence,
+      });
+    }
+    await this.finish(reason);
+    return true;
+  }
+
   compactContext({ force = false } = {}) {
     const compacted = compactLlmConversation(this.messages, this.profile, {
       tools: this.tools,
@@ -231,12 +264,13 @@ export class LlmAiAgentRuntime {
         reason: "find-remaining-objective",
       };
     }
-    const actionTools = this.tools.filter((tool) => !INFORMATIONAL_TOOLS.has(tool.name));
+    const recoveryTools = this.tools.filter((tool) => !INFORMATIONAL_TOOLS.has(tool.name)
+      || RECOVERY_DETAIL_TOOLS.has(tool.name));
     const alternatives = this.actionFailureStreak >= RECOVERY_THRESHOLD
-      ? actionTools.filter((tool) => tool.name !== this.recoveryBlockedTool)
-      : actionTools;
+      ? recoveryTools.filter((tool) => tool.name !== this.recoveryBlockedTool)
+      : recoveryTools;
     return {
-      tools: alternatives.length > 0 ? alternatives : actionTools,
+      tools: alternatives.length > 0 ? alternatives : recoveryTools,
       recoveryRequired: true,
       reason: "require-gameplay-action",
     };
@@ -257,7 +291,7 @@ export class LlmAiAgentRuntime {
       role: "user",
       content: `ENVIRONMENT RECOVERY REQUIRED\n${boundedJson(recovery, this.profile.routineObservationTokens, this.tokenizer)}\n${reason === "find-remaining-objective"
         ? "The match is non-terminal with no visible threat. Do not wait. Use an allowed detail query or send a surviving squad to scout a distinct map region, then attack any discovered structure objective."
-        : "Issue a materially different gameplay action now. Query stable handles when needed; do not guess identifiers or repeat rejected arguments."}\nOnly toolsAvailableThisTurn are currently permitted; a successful gameplay action clears the restriction.`,
+        : "Issue a materially different gameplay action now. Use an available detail query first when a current stable handle is missing; do not guess identifiers or repeat rejected arguments."}\nOnly toolsAvailableThisTurn are currently permitted. Detail queries do not clear this restriction; include a successful gameplay action.`,
     });
     await this.event("agent.recovery_required", recovery);
   }
@@ -336,8 +370,8 @@ export class LlmAiAgentRuntime {
       state: result?.job?.state ?? result?.mission?.state ?? result?.state ?? null,
       error: result?.error ?? null,
     };
-    if (INFORMATIONAL_TOOLS.has(call.name)) await this.event("environment.query", execution);
-    else if (call.name === "set_priorities") await this.event("controller.state_changed", execution);
+    if (call.name === "set_priorities") await this.event("controller.state_changed", execution);
+    else if (INFORMATIONAL_TOOLS.has(call.name)) await this.event("environment.query", execution);
     else await this.event("engine.execution", execution);
     this.recordToolOutcome(call.name, ok);
     this.session.toolCalls += 1;
@@ -389,6 +423,9 @@ export class LlmAiAgentRuntime {
     try {
       turn = await requestModel(1, "strategic-turn");
     } catch (error) {
+      if (signal?.aborted && await this.finishAuthoritativeOutcome()) {
+        return { terminal: true, error, session: this.session };
+      }
       if (isContextOverflow(error)) {
         const overflowCompaction = this.compactContext({ force: true });
         await this.event("context.compacted", {
@@ -517,13 +554,15 @@ export class LlmAiAgentRuntime {
         await this.sleep(failureDelay, signal);
       }
       if (signal?.aborted && !["completed", "failed"].includes(this.session.status)) {
-        if (!await this.finishIfTerminal("runtime-stopped")) {
+        if (!await this.finishAuthoritativeOutcome()
+            && !await this.finishIfTerminal("runtime-stopped")) {
           await this.cancel(signal.reason?.message || "cancelled");
         }
       }
     } catch (error) {
       if (signal?.aborted) {
-        if (!await this.finishIfTerminal("runtime-stopped")) {
+        if (!await this.finishAuthoritativeOutcome()
+            && !await this.finishIfTerminal("runtime-stopped")) {
           await this.cancel(signal.reason?.message || "cancelled");
         }
       }
