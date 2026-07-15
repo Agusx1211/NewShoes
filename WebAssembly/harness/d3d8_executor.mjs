@@ -2503,6 +2503,8 @@ function createD3D8Buffer(payload = {}) {
     byteSize,
     target,
     buffer,
+    bindingId: id,
+    gpuReferenced: false,
     bytes: null,
     d3dUsage: usageInfo.d3dUsage,
     dynamic: usageInfo.dynamic,
@@ -2550,12 +2552,85 @@ function createD3D8Buffer(payload = {}) {
 // start. Ranges are immutable until the next DISCARD recycles their pool
 // slots, so multi-pass re-draws and out-of-order references stay correct.
 const D3D8_DYNAMIC_RANGE_BUFFER_ID_BASE = 0x40000000;
+const D3D8_RENAMED_BUFFER_ID_BASE = 0x20000000;
 // One pool per GL target: a WebGL buffer object is permanently typed by its
 // first bind target, so vertex and element slots must never mix.
 const d3d8DynamicRangeSlotPools = new Map();
+const d3d8BufferRetirements = [];
+const D3D8_RETIREMENTS_BEFORE_FLUSH = 32;
 let d3d8DynamicRangeSlotCounter = 0;
+let d3d8RenamedBufferCounter = 0;
+let d3d8RetirementsSinceFlush = 0;
+
+function drainD3D8BufferRetirements() {
+  if (!gl || typeof gl.clientWaitSync !== "function") {
+    return;
+  }
+  let completed = 0;
+  while (completed < d3d8BufferRetirements.length) {
+    const retirement = d3d8BufferRetirements[completed];
+    const status = gl.clientWaitSync(retirement.sync, 0, 0);
+    if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED &&
+        status !== gl.WAIT_FAILED) {
+      // Syncs are inserted into one GL command stream. If the oldest pending
+      // fence has not completed, no newer one can have completed either.
+      break;
+    }
+    gl.deleteSync(retirement.sync);
+    if (status === gl.WAIT_FAILED) {
+      for (const slot of retirement.slots) {
+        gl.deleteBuffer(slot.buffer);
+      }
+    } else {
+      for (const slot of retirement.slots) {
+        let pool = d3d8DynamicRangeSlotPools.get(slot.target);
+        if (!pool) {
+          pool = [];
+          d3d8DynamicRangeSlotPools.set(slot.target, pool);
+        }
+        pool.push(slot);
+      }
+    }
+    completed += 1;
+  }
+  if (completed > 0) {
+    d3d8BufferRetirements.splice(0, completed);
+  }
+}
+
+function retireD3D8BufferSlots(slots = []) {
+  const liveSlots = slots.filter((slot) => slot?.buffer);
+  if (liveSlots.length === 0) {
+    return;
+  }
+  if (typeof gl.fenceSync === "function" && typeof gl.clientWaitSync === "function" &&
+      typeof gl.deleteSync === "function") {
+    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    if (sync) {
+      d3d8BufferRetirements.push({ sync, slots: liveSlots });
+      d3d8RetirementsSinceFlush += 1;
+      // A long batched engine RPC can keep JavaScript on one task for minutes,
+      // so the browser may not submit these fences at a normal task boundary.
+      // Periodically flush (without waiting) to keep the retirement queue and
+      // its buffer storage bounded during those soaks.
+      if (d3d8RetirementsSinceFlush >= D3D8_RETIREMENTS_BEFORE_FLUSH &&
+          typeof gl.flush === "function") {
+        gl.flush();
+        d3d8RetirementsSinceFlush = 0;
+      }
+      return;
+    }
+  }
+  // WebGL2 always provides sync objects, but keep context-loss/test doubles
+  // safe: deleting an in-flight object is deferred by GL, while reusing it is
+  // not safe without a completion signal.
+  for (const slot of liveSlots) {
+    gl.deleteBuffer(slot.buffer);
+  }
+}
 
 function acquireD3D8DynamicRangeSlot(target) {
+  drainD3D8BufferRetirements();
   let pool = d3d8DynamicRangeSlotPools.get(target);
   if (!pool) {
     pool = [];
@@ -2577,20 +2652,39 @@ function acquireD3D8DynamicRangeSlot(target) {
   };
 }
 
-function recycleD3D8DynamicRangeSlot(range) {
-  if (!range.slot) {
-    return;
+function takeD3D8DynamicRangeSlots(ranges) {
+  const slots = [];
+  for (const range of ranges) {
+    if (range?.slot) {
+      slots.push(range.slot);
+      range.slot = null;
+    }
   }
-  // Never delete pool buffers: cached VAOs may still reference them, and
-  // reuse via bufferData full-replace is always safe (fresh storage). The
-  // pool's high-water mark is bounded by the max concurrent ranges.
-  let pool = d3d8DynamicRangeSlotPools.get(range.slot.target);
-  if (!pool) {
-    pool = [];
-    d3d8DynamicRangeSlotPools.set(range.slot.target, pool);
+  return slots;
+}
+
+function replaceD3D8BufferStorage(resource) {
+  drainD3D8BufferRetirements();
+  const buffer = gl.createBuffer();
+  if (!buffer) {
+    return false;
   }
-  pool.push(range.slot);
-  range.slot = null;
+  const previousBuffer = resource.buffer;
+  if (resource.target === gl.ELEMENT_ARRAY_BUFFER) {
+    bindD3D8DefaultVertexArray();
+    bindD3D8ElementArrayBuffer(buffer);
+  } else {
+    bindD3D8ArrayBuffer(buffer);
+  }
+  d3d8RenamedBufferCounter += 1;
+  resource.buffer = buffer;
+  resource.bindingId = D3D8_RENAMED_BUFFER_ID_BASE + d3d8RenamedBufferCounter;
+  resource.gpuReferenced = false;
+  // This object is never reused. WebGL deletion is deferred until queued
+  // commands and cached VAO references release it, so no explicit fence (or
+  // JS-side retirement reference) is needed.
+  gl.deleteBuffer(previousBuffer);
+  return true;
 }
 
 function uploadD3D8DynamicSlot(resource, slot, bytes) {
@@ -2611,23 +2705,35 @@ function noteD3D8DynamicBufferUpdate(resource, start, byteLength, discard) {
   if (!Array.isArray(ranges)) {
     ranges = resource.dynRanges = [];
   }
-  const end = start + byteLength;
+  let mergedStart = start;
+  let mergedEnd = start + byteLength;
+  const retiredSlots = [];
+  if (resource.dynSharedSlot) {
+    retiredSlots.push(resource.dynSharedSlot);
+    resource.dynSharedSlot = null;
+  }
   if (discard) {
-    for (const range of ranges) {
-      recycleD3D8DynamicRangeSlot(range);
-    }
+    retiredSlots.push(...takeD3D8DynamicRangeSlots(ranges));
     ranges.length = 0;
   } else {
     for (let i = ranges.length - 1; i >= 0; i -= 1) {
       const range = ranges[i];
-      if (range.start < end && start < range.end) {
-        recycleD3D8DynamicRangeSlot(range);
+      const overlaps = range.start < mergedEnd && mergedStart < range.end;
+      // Coalesce adjacent writes only before either range has reached the GPU.
+      // Streaming append ranges are update/draw interleaved; merging an
+      // already-uploaded append would repeatedly re-upload the entire ring.
+      const unuploadedAdjacent = range.slot == null &&
+        (range.end === mergedStart || range.start === mergedEnd);
+      if (overlaps || unuploadedAdjacent) {
+        mergedStart = Math.min(mergedStart, range.start);
+        mergedEnd = Math.max(mergedEnd, range.end);
+        retiredSlots.push(...takeD3D8DynamicRangeSlots([range]));
         ranges.splice(i, 1);
       }
     }
   }
-  ranges.push({ start, end, slot: null });
-  resource.dynSharedClean = false;
+  ranges.push({ start: mergedStart, end: mergedEnd, slot: null });
+  retireD3D8BufferSlots(retiredSlots);
 }
 
 function findD3D8DynamicRange(resource, byteOffset) {
@@ -2665,31 +2771,28 @@ function ensureD3D8DynamicRangeUploaded(resource, range) {
 
 // Fallback for draws whose vertex/index window is not contained in a single
 // recorded range (buffers filled by several partial updates and drawn across
-// them — terrain chunks, atlases). Refresh the shared GL buffer from the
-// whole mirror once and mark it clean until the next update, then draw
-// unredirected. Rarely-updated buffers thus pay one full upload per actual
-// change instead of a mid-frame sync per draw.
+// them — terrain chunks, atlases). Upload the whole mirror into its own pooled
+// slot once per change. The logical resource's backing store may still be in
+// flight, so mutating it here would reintroduce the sync this path avoids.
 function ensureD3D8DynamicSharedBufferCurrent(resource) {
-  if (resource.dynSharedClean === true) {
-    return true;
+  if (resource.dynSharedSlot) {
+    return resource.dynSharedSlot;
   }
   if (!(resource.bytes instanceof Uint8Array)) {
-    return false;
+    return null;
   }
-  if (resource.target === gl.ELEMENT_ARRAY_BUFFER) {
-    bindD3D8DefaultVertexArray();
-    bindD3D8ElementArrayBuffer(resource.buffer);
-  } else {
-    bindD3D8ArrayBuffer(resource.buffer);
+  const slot = acquireD3D8DynamicRangeSlot(resource.target);
+  if (!slot) {
+    return null;
   }
-  gl.bufferData(
-    resource.target,
+  uploadD3D8DynamicSlot(
+    resource,
+    slot,
     resource.bytes.subarray(0, Math.min(resource.byteSize, resource.bytes.byteLength)),
-    resource.glUsage,
   );
-  resource.dynSharedClean = true;
+  resource.dynSharedSlot = slot;
   if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDynamicRedirectFallbacks += 1;
-  return true;
+  return slot;
 }
 
 function updateD3D8Buffer(payload = {}) {
@@ -2741,15 +2844,28 @@ function updateD3D8Buffer(payload = {}) {
       resized = true;
     }
   } else {
+    if (requiredByteSize > resource.byteSize) {
+      resource.byteSize = requiredByteSize;
+      resized = true;
+    }
+    // D3D8 drivers rename storage behind a full/default-pool Lock when the
+    // previous contents are still referenced by queued draws. WebGL does not:
+    // bufferSubData on that live object can synchronously wait for the GPU.
+    // Give whole replacements (and dynamic start-at-zero rewrites) a new GL
+    // object instead. GL defers deletion of the old object's in-flight store,
+    // and the new binding ID keeps cached VAOs from referring to stale data.
+    const canReplaceWholeStorage = byteOffset === 0 &&
+      (resource.dynamic === true || bytes.byteLength >= resource.byteSize);
+    if (resource.gpuReferenced === true && (resized || canReplaceWholeStorage)) {
+      orphaned = replaceD3D8BufferStorage(resource);
+    }
     if (resource.target === gl.ARRAY_BUFFER) {
       bindD3D8ArrayBuffer(resource.buffer);
     } else {
       bindD3D8ElementArrayBuffer(resource.buffer);
     }
-    if (requiredByteSize > resource.byteSize) {
-      gl.bufferData(resource.target, requiredByteSize, resource.glUsage);
-      resource.byteSize = requiredByteSize;
-      resized = true;
+    if (resized && !orphaned) {
+      gl.bufferData(resource.target, resource.byteSize, resource.glUsage);
     }
   }
   const mirrorStartedAt = perfNow();
@@ -2778,8 +2894,13 @@ function updateD3D8Buffer(payload = {}) {
   if (dynamicRedirect) {
     noteD3D8DynamicBufferUpdate(resource, byteOffset, bytes.byteLength, discard);
     if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDynamicRedirectedUpdates += 1;
+  } else if (orphaned && byteOffset === 0 && bytes.byteLength === resource.byteSize) {
+    gl.bufferData(resource.target, bytes, resource.glUsage);
   } else {
     const subDataStartedAt = perfNow();
+    if (orphaned) {
+      gl.bufferData(resource.target, resource.byteSize, resource.glUsage);
+    }
     gl.bufferSubData(resource.target, byteOffset, bytes);
     subDataMs = perfNow() - subDataStartedAt;
   }
@@ -2883,9 +3004,12 @@ function releaseD3D8Buffer(payload = {}) {
   forgetD3D8BufferBinding(resource.buffer);
   gl.deleteBuffer(resource.buffer);
   if (Array.isArray(resource.dynRanges)) {
-    for (const range of resource.dynRanges) {
-      recycleD3D8DynamicRangeSlot(range);
+    const retiredSlots = takeD3D8DynamicRangeSlots(resource.dynRanges);
+    if (resource.dynSharedSlot) {
+      retiredSlots.push(resource.dynSharedSlot);
+      resource.dynSharedSlot = null;
     }
+    retireD3D8BufferSlots(retiredSlots);
     resource.dynRanges.length = 0;
   }
   d3d8Buffers.delete(key);
@@ -12868,10 +12992,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     // start. Mirror-reading paths above (fill/shade fallbacks) keep original
     // offsets; only the GL binding below uses the effective values.
     let effectiveVertexResource = vertexResource;
-    let effectiveVertexBufferId = vertexBufferId;
+    let effectiveVertexBufferId = vertexResource.bindingId ?? vertexBufferId;
     let effectiveVertexByteOffset = vertexByteOffset;
     let effectiveIndexResource = indexResource;
-    let effectiveIndexBufferId = indexBufferId;
+    let effectiveIndexBufferId = indexResource.bindingId ?? indexBufferId;
     if (vertexResource.dynamic === true) {
       // The draw may only read vertices [minVertexIndex,
       // minVertexIndex + vertexCount) relative to the attrib base
@@ -12898,7 +13022,11 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicVertexRedirects += 1;
       } else if (vertexResource.dynRanges?.length > 0) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicVertexSharedFallbacks += 1;
-        ensureD3D8DynamicSharedBufferCurrent(vertexResource);
+        const sharedSlot = ensureD3D8DynamicSharedBufferCurrent(vertexResource);
+        if (sharedSlot) {
+          effectiveVertexResource = { buffer: sharedSlot.buffer };
+          effectiveVertexBufferId = sharedSlot.id;
+        }
       }
     }
     if (indexResource.dynamic === true && temporaryIndices == null) {
@@ -12915,7 +13043,11 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicIndexRedirects += 1;
       } else if (indexResource.dynRanges?.length > 0) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicIndexSharedFallbacks += 1;
-        ensureD3D8DynamicSharedBufferCurrent(indexResource);
+        const sharedSlot = ensureD3D8DynamicSharedBufferCurrent(indexResource);
+        if (sharedSlot) {
+          effectiveIndexResource = { buffer: sharedSlot.buffer };
+          effectiveIndexBufferId = sharedSlot.id;
+        }
       }
     } else if (indexResource.dynamic === true) {
       // Temp-index fallback paths read the mirror, not the GL buffer.
@@ -13832,6 +13964,12 @@ function paintD3D8DrawIndexed(payload = {}) {
       globalThis.__cncSM1UniformDump = dumpEntry;
     }
     if (fillModeDraw.supported && shadeModeDraw.supported) {
+      if (effectiveVertexResource === vertexResource) {
+        vertexResource.gpuReferenced = true;
+      }
+      if (temporaryIndices == null && effectiveIndexResource === indexResource) {
+        indexResource.gpuReferenced = true;
+      }
       const canQueueAdjacentBatch = Boolean(
         earlyBatchInfo &&
         temporaryIndices == null &&
@@ -14216,7 +14354,13 @@ function paintD3D8DrawIndexed(payload = {}) {
     onD3D8BackbufferResize,
     releaseD3D8ProbeBackingStore,
     sampleD3D8TextureCenter,
+    d3d8Buffers,
     d3d8Textures,
+    acquireD3D8DynamicRangeSlot,
+    drainD3D8BufferRetirements,
+    ensureD3D8DynamicRangeUploaded,
+    ensureD3D8DynamicSharedBufferCurrent,
+    retireD3D8BufferSlots,
     // mutable executor state, exposed as getters
     d3d8DiagLevelValue: () => d3d8DiagLevel,
     webglContextLost: () => webglContextLost,
