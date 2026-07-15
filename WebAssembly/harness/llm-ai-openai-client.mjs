@@ -242,15 +242,26 @@ export async function discoverLlmAiModels(connection, {
   };
 }
 
-function requestBody(profile, messages) {
+function requestBody(profile, messages, { stream = false, sessionId = null } = {}) {
   const body = {
     model: profile.model,
     messages,
     temperature: 0,
     max_tokens: profile.responseTokens,
   };
-  if (profile.thinkingEffort !== "provider-default") {
+  if (stream) {
+    body.stream = true;
+    body.stream_options = { include_usage: true };
+  }
+  if (/qwen/i.test(profile.model)) {
+    if (profile.thinkingEffort !== "provider-default") {
+      body.enable_thinking = !["none", "off"].includes(profile.thinkingEffort);
+    }
+  } else if (profile.thinkingEffort !== "provider-default") {
     body.reasoning_effort = profile.thinkingEffort;
+  }
+  if (sessionId && /(^|\.)api\.openai\.com$/i.test(new URL(profile.endpoint).hostname)) {
+    body.prompt_cache_key = sessionId.slice(0, 64);
   }
   return body;
 }
@@ -262,15 +273,31 @@ function chatTools(tools) {
       name,
       description,
       parameters,
-      strict: false,
     },
   }));
+}
+
+export function buildLlmAiChatRequest(profile, messages, tools, {
+  protocol = profile.toolProtocol,
+  sessionId = null,
+} = {}) {
+  if (protocol === "structured") {
+    return {
+      ...requestBody(profile, [...messages, structuredProtocolMessage(tools)], { sessionId }),
+      response_format: structuredSchema(tools),
+    };
+  }
+  return {
+    ...requestBody(profile, messages, { stream: true, sessionId }),
+    tools: chatTools(tools),
+  };
 }
 
 function usageFrom(response) {
   const usage = response?.usage || {};
   return {
     promptTokens: usage.prompt_tokens ?? null,
+    cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? null,
     completionTokens: usage.completion_tokens ?? null,
     reasoningTokens: usage.completion_tokens_details?.reasoning_tokens ?? null,
     totalTokens: usage.total_tokens ?? null,
@@ -292,7 +319,6 @@ function structuredSchema(tools) {
     type: "json_schema",
     json_schema: {
       name: "zero_hour_agent_action",
-      strict: false,
       schema: {
         type: "object",
         properties: {
@@ -362,11 +388,129 @@ async function createCompletion(profile, body, { fetchImpl, signal }) {
   return { response, latencyMs: Math.round(performance.now() - startedAt) };
 }
 
-async function structuredCompletion(profile, messages, tools, options, compatibility = null) {
-  const body = {
-    ...requestBody(profile, [...messages, structuredProtocolMessage(tools)]),
-    response_format: structuredSchema(tools),
+function providerErrorCode(message, status, fallback = "http_error") {
+  if (status === 413 || /context (?:length|window)|too many tokens|maximum.*tokens/i.test(message)) {
+    return "context_overflow";
+  }
+  return fallback;
+}
+
+function applyStreamChunk(accumulator, chunk) {
+  if (typeof chunk?.id === "string") accumulator.id ||= chunk.id;
+  if (chunk?.usage) accumulator.usage = chunk.usage;
+  const choice = Array.isArray(chunk?.choices) ? chunk.choices[0] : null;
+  if (!choice) return;
+  if (choice.finish_reason) accumulator.finishReason = choice.finish_reason;
+  const delta = choice.delta || {};
+  if (typeof delta.content === "string") accumulator.content += delta.content;
+  for (const field of ["reasoning_content", "reasoning", "reasoning_text"]) {
+    if (typeof delta[field] === "string" && delta[field]) {
+      accumulator.reasoningContent += delta[field];
+      break;
+    }
+  }
+  for (const toolDelta of delta.tool_calls || []) {
+    const index = Number.isInteger(toolDelta.index) ? toolDelta.index : accumulator.toolCalls.size;
+    const call = accumulator.toolCalls.get(index) || {
+      id: "", type: "function", function: { name: "", arguments: "" },
+    };
+    if (toolDelta.id) call.id = toolDelta.id;
+    if (toolDelta.type) call.type = toolDelta.type;
+    if (toolDelta.function?.name) call.function.name += toolDelta.function.name;
+    if (toolDelta.function?.arguments) call.function.arguments += toolDelta.function.arguments;
+    accumulator.toolCalls.set(index, call);
+  }
+}
+
+export async function parseLlmAiCompletionStream(response, { signal } = {}) {
+  if (!response?.body?.getReader) throw new LlmAiProviderError("LLM streaming response has no readable body", {
+    code: "missing_stream", retryable: true,
+  });
+  const accumulator = {
+    id: null, content: "", reasoningContent: "", finishReason: null,
+    usage: null, toolCalls: new Map(),
   };
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const consumeEvent = (event) => {
+    const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart()).join("\n");
+    if (!data || data === "[DONE]") return;
+    let chunk;
+    try { chunk = JSON.parse(data); } catch {
+      throw new LlmAiProviderError("LLM endpoint emitted invalid streaming JSON", {
+        code: "invalid_stream", retryable: true,
+      });
+    }
+    applyStreamChunk(accumulator, chunk);
+  };
+  while (true) {
+    if (signal?.aborted) throw signal.reason || new Error("Request aborted");
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const events = buffer.split(/\r?\n\r?\n/);
+    buffer = events.pop() || "";
+    for (const event of events) consumeEvent(event);
+    if (done) break;
+  }
+  if (buffer.trim()) consumeEvent(buffer);
+  return {
+    id: accumulator.id,
+    choices: [{
+      finish_reason: accumulator.finishReason,
+      message: {
+        role: "assistant", content: accumulator.content || null,
+        reasoning_content: accumulator.reasoningContent || undefined,
+        tool_calls: [...accumulator.toolCalls.entries()].sort((left, right) => left[0] - right[0]).map((entry) => entry[1]),
+      },
+    }],
+    usage: accumulator.usage,
+  };
+}
+
+async function createStreamingCompletion(profile, body, { fetchImpl, signal }) {
+  const startedAt = performance.now();
+  const timeout = withTimeout(signal, profile.requestTimeoutMs);
+  try {
+    const response = await fetchImpl(llmChatCompletionsUrl(profile.endpoint), {
+      ...localNetworkRequestOptions(llmChatCompletionsUrl(profile.endpoint)),
+      method: "POST", headers: headers(profile), body: JSON.stringify(body), signal: timeout.signal,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch { /* bounded text below */ }
+      const message = json?.error?.message || json?.message || text.slice(0, MAX_ERROR_BODY)
+        || `LLM endpoint returned HTTP ${response.status}`;
+      throw new LlmAiProviderError(message, {
+        status: response.status, code: providerErrorCode(message, response.status, json?.error?.code),
+        retryable: response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500,
+      });
+    }
+    const parsed = await parseLlmAiCompletionStream(response, { signal: timeout.signal });
+    return { response: parsed, latencyMs: Math.round(performance.now() - startedAt) };
+  } catch (error) {
+    if (timeout.timedOut()) {
+      error = new LlmAiProviderError(`LLM request exceeded ${profile.requestTimeoutMs} ms`, {
+        code: "timeout", retryable: true,
+      });
+    } else if (!(error instanceof LlmAiProviderError) && !timeout.signal.aborted) {
+      error = new LlmAiProviderError(`Could not reach LLM endpoint: ${error?.message || error}`, {
+        code: "network_error", retryable: true,
+      });
+    }
+    error.latencyMs = Math.round(performance.now() - startedAt);
+    throw error;
+  } finally {
+    timeout.dispose();
+  }
+}
+
+async function structuredCompletion(profile, messages, tools, options) {
+  const body = buildLlmAiChatRequest(profile, messages, tools, {
+    protocol: "structured", sessionId: options.sessionId,
+  });
   const { response, latencyMs } = await createCompletion(profile, body, options);
   const message = response?.choices?.[0]?.message;
   if (!message) throw new LlmAiProviderError("LLM response has no assistant message", {
@@ -376,7 +520,6 @@ async function structuredCompletion(profile, messages, tools, options, compatibi
   const action = validateStructuredAction(extractJsonObject(raw), tools);
   return {
     protocol: "structured",
-    compatibility,
     action,
     assistantMessage: { role: "assistant", content: JSON.stringify(action) },
     reasoningContent: message.reasoning_content || "",
@@ -390,19 +533,15 @@ async function structuredCompletion(profile, messages, tools, options, compatibi
 export async function completeLlmAiTurn(profile, messages, tools, {
   fetchImpl = globalThis.fetch,
   signal,
+  sessionId = null,
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetch is unavailable");
   if (!Array.isArray(tools) || tools.length === 0) throw new TypeError("At least one agent tool is required");
   if (profile.toolProtocol === "structured") {
-    return structuredCompletion(profile, messages, tools, { fetchImpl, signal });
+    return structuredCompletion(profile, messages, tools, { fetchImpl, signal, sessionId });
   }
-  const body = {
-    ...requestBody(profile, messages),
-    tools: chatTools(tools),
-    tool_choice: "required",
-    parallel_tool_calls: false,
-  };
-  const { response, latencyMs } = await createCompletion(profile, body, { fetchImpl, signal });
+  const body = buildLlmAiChatRequest(profile, messages, tools, { protocol: "native", sessionId });
+  const { response, latencyMs } = await createStreamingCompletion(profile, body, { fetchImpl, signal });
   const message = response?.choices?.[0]?.message;
   if (!message) throw new LlmAiProviderError("LLM response has no assistant message", {
     code: "missing_message", retryable: true,
@@ -437,7 +576,8 @@ export async function completeLlmAiTurn(profile, messages, tools, {
       calls,
       assistantMessage: {
         role: "assistant",
-        content: message.content || "",
+        content: message.content || null,
+        ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}),
         tool_calls: message.tool_calls,
       },
       reasoningContent: message.reasoning_content || "",
@@ -447,17 +587,11 @@ export async function completeLlmAiTurn(profile, messages, tools, {
       responseId: response.id || null,
     };
   }
-  if (profile.toolProtocol === "native") {
-    throw new LlmAiProviderError("Model did not emit a native tool call", {
-      code: "missing_tool_call", retryable: true,
-    });
-  }
-  return structuredCompletion(profile, messages, tools, { fetchImpl, signal }, {
-    reason: "native_tool_calls_missing",
-    reasoningContent: message.reasoning_content || "",
-    firstResponseId: response.id || null,
-    firstLatencyMs: latencyMs,
+  const error = new LlmAiProviderError("Model did not emit a native tool call; this profile never switches protocols automatically", {
+    code: "missing_tool_call", retryable: true,
   });
+  error.latencyMs = latencyMs;
+  throw error;
 }
 
 export async function probeLlmAiEndpoint(profile, {
@@ -582,7 +716,7 @@ export async function probeLlmAiEndpoint(profile, {
       status: "pass",
       label: "Exact tool call verified",
       detail: protocol === "structured"
-        ? "The model echoed the one-time probe through the structured-action fallback."
+        ? "The separately selected structured adapter returned the one-time probe."
         : "The model echoed the one-time probe through a native function call.",
     });
   }

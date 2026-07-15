@@ -8461,6 +8461,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_llm_ai_assignme
 			json += ",\"computerPlayer\":";
 			json += player != NULL && player->getPlayerType() == PLAYER_COMPUTER
 				&& player->isSkirmishAIPlayer() ? "true" : "false";
+			json += ",\"strategyController\":";
+			json += player != NULL && player->hasExternalAIStrategyController()
+				? "\"llm\"" : "\"classic\"";
+			json += ",\"classicStrategyUpdates\":"
+				+ std::to_string(player != NULL
+					? player->getClassicAIStrategyUpdateCount() : 0);
+			json += ",\"controllerNeutralUpdates\":"
+				+ std::to_string(player != NULL
+					? player->getControllerNeutralAIUpdateCount() : 0);
+			json += ",\"strategyTransitions\":"
+				+ std::to_string(player != NULL
+					? player->getAIStrategyControllerTransitionCount() : 0);
 			json += "}";
 		}
 	}

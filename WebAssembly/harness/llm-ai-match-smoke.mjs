@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +22,8 @@ const minimumFrame = Number(process.env.LLM_AI_MATCH_MIN_FRAME
 const minimumActions = Number(process.env.LLM_AI_MATCH_MIN_ACTIONS
   ?? process.env.LLM_AI_MATCH_MIN_TERMINAL_ACTIONS ?? (expectTerminal ? 3 : 1));
 const minimumOwnedObjects = Number(process.env.LLM_AI_MATCH_MIN_OWNED_OBJECTS ?? 0);
+const requireStrategicCoverage = process.env.LLM_AI_MATCH_REQUIRE_STRATEGIC_COVERAGE !== "0";
+const testFallbackTransfer = process.env.LLM_AI_MATCH_TEST_FALLBACK !== "0";
 const dist = process.env.LLM_AI_MATCH_DIST ?? "dist-threaded";
 const browserExecutable = process.env.LLM_AI_MATCH_BROWSER_EXECUTABLE ?? process.env.CHROME_PATH;
 const browserArgs = (process.env.LLM_AI_MATCH_BROWSER_ARGS ?? "")
@@ -30,6 +32,9 @@ const profileDir = resolve(process.env.LLM_AI_MATCH_PROFILE_DIR
   ?? resolve(wasmRoot, `artifacts/pw-profiles/llm-ai-${opponent}`));
 const screenshotPath = resolve(process.env.LLM_AI_MATCH_SCREENSHOT
   ?? resolve(wasmRoot, `artifacts/screenshots/llm-ai-vs-${opponent}.png`));
+const sessionExportPath = process.env.LLM_AI_MATCH_SESSION_EXPORT
+  ? resolve(process.env.LLM_AI_MATCH_SESSION_EXPORT)
+  : null;
 const keepProfile = process.env.LLM_AI_MATCH_KEEP_PROFILE === "1";
 const runTag = Date.now().toString(36);
 
@@ -39,6 +44,20 @@ function delay(milliseconds) {
 
 function report(stage, details = {}) {
   process.stderr.write(`[llm-ai-match] ${stage} ${JSON.stringify(details)}\n`);
+}
+
+async function within(promise, label, timeoutMs = 60_000) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} exceeded ${timeoutMs} ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function waitFor(label, operation, accept, timeoutMs = 120_000, intervalMs = 250) {
@@ -133,6 +152,7 @@ async function main() {
   if (!keepProfile) await rm(profileDir, { recursive: true, force: true });
   await mkdir(profileDir, { recursive: true });
   await mkdir(dirname(screenshotPath), { recursive: true });
+  if (sessionExportPath) await mkdir(dirname(sessionExportPath), { recursive: true });
   const server = await startStaticServer({ root: wasmRoot, port: 0, host: "127.0.0.1" });
   let browser;
   const pageErrors = [];
@@ -237,7 +257,10 @@ async function main() {
       responseTokens: Number(process.env.LLM_AI_RESPONSE_TOKENS ?? 4096),
       mandate: process.env.LLM_AI_MANDATE
         ?? `Defeat the ${opponent} classic AI. Build a resilient economy, scout, counter threats, produce a balanced force, and attack decisively until victory.`,
-      toolProtocol: process.env.LLM_AI_TOOL_PROTOCOL ?? "auto",
+      toolProtocol: process.env.LLM_AI_TOOL_PROTOCOL ?? "native",
+      routineObservationTokens: Number(process.env.LLM_AI_OBSERVATION_TOKENS ?? 8_192),
+      toolResultTokens: Number(process.env.LLM_AI_TOOL_RESULT_TOKENS ?? 4_096),
+      recentContextTokens: Number(process.env.LLM_AI_RECENT_CONTEXT_TOKENS ?? 20_000),
       planningIntervalMs: Number(process.env.LLM_AI_PLANNING_INTERVAL_MS ?? 2_000),
       requestTimeoutMs: Number(process.env.LLM_AI_REQUEST_TIMEOUT_MS ?? 120_000),
       maxConsecutiveFailures: 5,
@@ -274,15 +297,63 @@ async function main() {
       opponent: opponentSelection.row.cells,
     });
 
+    await page.evaluate(() => window.ZeroHLlmAiGameRuntime.stop("verification setup"));
     await activate(page, "SkirmishGameOptionsMenu.wnd:ButtonStart");
     report("match start requested");
     const assignments = await waitFor("authoritative LLM assignment", () =>
       rpc(page, "realEngineLlmAiAssignments"), (reply) => reply?.result?.playable === true
         && reply.result.assignments?.some((assignment) => assignment.profileId === savedProfile.id
           && assignment.playerActive && assignment.computerPlayer), 8 * 60_000, 500);
-    const assignment = assignments.result.assignments.find((candidate) =>
+    let assignment = assignments.result.assignments.find((candidate) =>
       candidate.profileId === savedProfile.id);
+    if (assignment.strategyController !== "llm") {
+      throw new Error(`LLM slot did not own the exclusive strategy lease: ${JSON.stringify(assignment)}`);
+    }
     report("assignment active", assignment);
+
+    const assignedBeforeUpdates = assignment;
+    assignment = await waitFor("LLM-owned strategy update loop", async () => {
+      const state = requireResult(await rpc(page, "realEngineLlmAiAssignments"), "active assignments");
+      return state.assignments.find((candidate) => candidate.profileId === savedProfile.id);
+    }, (candidate) => candidate?.strategyController === "llm"
+      && candidate.controllerNeutralUpdates > assignedBeforeUpdates.controllerNeutralUpdates,
+    3 * 60_000, 100);
+    if (assignment.classicStrategyUpdates !== assignedBeforeUpdates.classicStrategyUpdates) {
+      throw new Error(`classic strategy advanced before the fallback test: ${JSON.stringify({
+        initial: assignedBeforeUpdates, active: assignment,
+      })}`);
+    }
+
+    let fallbackEvidence = null;
+    if (testFallbackTransfer) {
+      const toClassic = requireResult(await rpc(page, "llmAiStrategyController", {
+        playerIndex: assignment.playerIndex, controller: "classic",
+      }), "transfer strategy lease to classic");
+      const classicActive = await waitFor("observable classic fallback", async () => {
+        const state = requireResult(await rpc(page, "realEngineLlmAiAssignments"), "fallback assignments");
+        return state.assignments.find((candidate) => candidate.profileId === savedProfile.id);
+      }, (candidate) => candidate?.strategyController === "classic"
+        && candidate.classicStrategyUpdates > assignment.classicStrategyUpdates, 30_000, 100);
+      const toLlm = requireResult(await rpc(page, "llmAiStrategyController", {
+        playerIndex: assignment.playerIndex, controller: "llm",
+      }), "return strategy lease to LLM");
+      // The engine may take more classic ticks between observing classicActive and
+      // executing the synchronous transfer RPC. The transfer result is the exact
+      // counter value at the ownership boundary.
+      const classicCount = toLlm.classicStrategyUpdates;
+      const llmRestored = await waitFor("classic strategy freeze after LLM restore", async () => {
+        const state = requireResult(await rpc(page, "realEngineLlmAiAssignments"), "restored assignments");
+        return state.assignments.find((candidate) => candidate.profileId === savedProfile.id);
+      }, (candidate) => candidate?.strategyController === "llm"
+        && candidate.controllerNeutralUpdates > classicActive.controllerNeutralUpdates + 10, 30_000, 100);
+      if (llmRestored.classicStrategyUpdates !== classicCount) {
+        throw new Error(`classic policy continued after the LLM lease was restored: ${JSON.stringify(llmRestored)}`);
+      }
+      fallbackEvidence = { toClassic, classicActive, toLlm, llmRestored };
+      assignment = llmRestored;
+      report("exclusive fallback transfer verified", fallbackEvidence);
+    }
+    await page.evaluate(() => window.ZeroHLlmAiGameRuntime.start());
 
     const sessionStarted = await waitFor("LLM session start", () => page.evaluate(async (profileId) => {
       const sessions = await window.ZeroHLlmAi.store.listSessions({ profileId });
@@ -300,14 +371,18 @@ async function main() {
     let world = null;
     let terminal = false;
     let lastProgressSignature = "";
+    let lastFailureCount = 0;
     const competition = {
       peakOwnedObjects: 0,
       peakVisibleEnemies: 0,
       peakMoney: 0,
       successfulActions: 0,
+      productionActions: 0,
+      movementActions: 0,
+      combatReactions: 0,
     };
     while (Date.now() - startedAt < maximumSeconds * 1_000) {
-      [latest, world] = await Promise.all([
+      [latest, world] = await within(Promise.all([
         page.evaluate(async (sessionId) => ({
           session: await window.ZeroHLlmAi.store.getSession(sessionId),
           events: await window.ZeroHLlmAi.store.listEvents(sessionId),
@@ -318,17 +393,27 @@ async function main() {
           detail: "tactical",
           includeCapabilities: false,
         }),
-      ]);
+      ]), "match evidence poll");
       terminal = ["victory", "defeat", "ended"].includes(world?.result?.game?.outcome);
       const objects = world?.result?.objects ?? [];
       const player = world?.result?.players?.find((candidate) => candidate.local === true);
       competition.peakOwnedObjects = Math.max(competition.peakOwnedObjects,
         objects.filter((object) => object.owner === assignment.playerIndex).length);
       competition.peakVisibleEnemies = Math.max(competition.peakVisibleEnemies,
-        objects.filter((object) => object.relationship === "enemy").length);
+        objects.filter((object) => object.relationship === "enemies").length);
       competition.peakMoney = Math.max(competition.peakMoney, player?.economy?.money ?? 0);
       competition.successfulActions = latest.events.filter((event) => event.type === "tool.result"
-        && event.data?.ok === true && !["wait_for_tick", "query_terrain"].includes(event.data?.name)).length;
+        && event.data?.ok === true && ![
+          "wait_for_tick", "query_buildable_options", "inspect_job", "inspect_entities", "query_map_region",
+          "set_priorities",
+        ].includes(event.data?.name)).length;
+      competition.productionActions = latest.events.filter((event) => event.type === "tool.result"
+        && event.data?.ok === true && ["request_production", "request_force"].includes(event.data?.name)).length;
+      competition.movementActions = latest.events.filter((event) => event.type === "tool.result"
+        && event.data?.ok === true && ["assign_mission", "issue_order"].includes(event.data?.name)).length;
+      competition.combatReactions = latest.events.filter((event) => event.type === "engine.reaction"
+        && ((event.data?.deltas || []).some((delta) => ["damaged", "disappeared"].includes(delta.type))
+          || (event.data?.missions || []).some((mission) => mission.state === "engaged"))).length;
       const progressSignature = [
         latest.session.turns,
         latest.session.toolCalls,
@@ -336,35 +421,60 @@ async function main() {
       ].join(":");
       if (progressSignature !== lastProgressSignature) {
         lastProgressSignature = progressSignature;
+        const modelError = latest.session.failures > lastFailureCount
+          ? latest.events.findLast((event) => event.type === "model.error") : null;
+        lastFailureCount = latest.session.failures;
         report("session progress", {
           turns: latest.session.turns,
           toolCalls: latest.session.toolCalls,
           failures: latest.session.failures,
           frame: world?.result?.frame ?? null,
           outcome: world?.result?.game?.outcome ?? null,
+          lastModelError: modelError?.data ?? null,
         });
+        if (sessionExportPath) {
+          await writeFile(sessionExportPath, `${JSON.stringify({ checkpoint: true, ...latest }, null, 2)}\n`);
+        }
       }
       const competitiveEnough = Number(world?.result?.frame ?? 0) >= minimumFrame
         && competition.successfulActions >= minimumActions
-        && competition.peakOwnedObjects >= minimumOwnedObjects;
+        && competition.peakOwnedObjects >= minimumOwnedObjects
+        && (!requireStrategicCoverage || (competition.productionActions > 0
+          && competition.movementActions > 0 && competition.combatReactions > 0));
       if (!expectTerminal && latest.session.turns >= 2 && competitiveEnough) break;
       if (terminal && latest.session.status === "completed") break;
       await delay(1_000);
     }
 
     await page.screenshot({ path: screenshotPath });
+    await page.evaluate(() => window.ZeroHLlmAiGameRuntime.stop("LLM match verification captured"));
+    await waitFor("LLM session quiescence", () => page.evaluate(() => ({
+      active: window.ZeroHLlmAiGameRuntime.active.size,
+    })), (value) => value.active === 0, 30_000, 100);
+    latest = await page.evaluate(async (sessionId) => ({
+      session: await window.ZeroHLlmAi.store.getSession(sessionId),
+      events: await window.ZeroHLlmAi.store.listEvents(sessionId),
+    }), sessionStarted.session.id);
     const eventTypes = Object.fromEntries([...new Set(latest.events.map((event) => event.type))]
       .map((type) => [type, latest.events.filter((event) => event.type === type).length]));
     const toolCalls = latest.events.filter((event) => event.type === "tool.called");
-    const toolResults = latest.events.filter((event) => event.type === "tool.result").map((event, index) => ({
+    const callsById = new Map(toolCalls.map((event) => [event.data?.callId, event]));
+    const toolResults = latest.events.filter((event) => event.type === "tool.result").map((event) => ({
+      callId: event.data?.callId,
       name: event.data?.name,
-      arguments: toolCalls[index]?.data?.arguments ?? null,
+      arguments: callsById.get(event.data?.callId)?.data?.arguments ?? null,
       ok: event.data?.ok,
       code: event.data?.result?.error?.code ?? null,
       message: event.data?.result?.error?.message ?? null,
     }));
     const successfulActions = toolResults.filter((result) => result.ok
-      && !["wait_for_tick", "query_terrain"].includes(result.name));
+      && !["wait_for_tick", "query_buildable_options", "inspect_job", "inspect_entities", "query_map_region", "set_priorities"].includes(result.name));
+    const modelRequests = latest.events.filter((event) => event.type === "model.request");
+    const modelResponses = latest.events.filter((event) => event.type === "model.response");
+    const modelErrors = latest.events.filter((event) => event.type === "model.error");
+    const modelDecisions = latest.events.filter((event) => event.type === "model.decision");
+    const engineExecutions = latest.events.filter((event) => event.type === "engine.execution");
+    const engineReactions = latest.events.filter((event) => event.type === "engine.reaction");
     if (pageErrors.length > 0 || consoleErrors.length > 0) {
       throw new Error(`browser errors occurred during the match: ${JSON.stringify({
         pageErrors,
@@ -378,6 +488,30 @@ async function main() {
         eventTypes,
       })}`);
     }
+    if (modelRequests.length !== modelResponses.length + modelErrors.length
+        || latest.session.providerRequests !== modelRequests.length) {
+      throw new Error(`provider request evidence is incomplete: ${JSON.stringify({
+        providerRequests: latest.session.providerRequests,
+        requests: modelRequests.length,
+        responses: modelResponses.length,
+        errors: modelErrors.length,
+      })}`);
+    }
+    if (modelDecisions.length < 1 || modelDecisions.some((event) => event.data?.protocol !== "native")) {
+      throw new Error(`match did not use native model tool calls exclusively: ${JSON.stringify(modelDecisions)}`);
+    }
+    const expectedEngineExecutions = toolResults.filter((result) => [
+      "request_production", "request_force", "assign_mission", "issue_order", "use_command",
+    ].includes(result.name));
+    if (engineExecutions.length !== expectedEngineExecutions.length || engineReactions.length < modelDecisions.length) {
+      throw new Error(`session provenance is incomplete: ${JSON.stringify({
+        decisions: modelDecisions.length, executions: engineExecutions.length,
+        expectedEngineExecutions: expectedEngineExecutions.length, reactions: engineReactions.length,
+      })}`);
+    }
+    if (latest.events.some((event) => event.type === "strategy.ownership_transferred")) {
+      throw new Error("classic fallback took ownership during the LLM evidence match");
+    }
     if (expectTerminal && !terminal) {
       throw new Error(`match did not reach a terminal outcome in ${maximumSeconds}s: ${JSON.stringify({
         session: latest.session,
@@ -386,6 +520,11 @@ async function main() {
         competition,
         toolResults,
       })}`);
+    }
+    if (expectTerminal && (!latest.events.some((event) => event.type === "match.outcome"
+          && event.data?.authoritative === true)
+        || !latest.events.some((event) => event.type === "session.completed"))) {
+      throw new Error(`terminal match lacks authoritative outcome evidence: ${JSON.stringify(eventTypes)}`);
     }
     if (Number(world?.result?.frame ?? 0) < minimumFrame
         || competition.successfulActions < minimumActions
@@ -399,10 +538,30 @@ async function main() {
         competition,
       })}`);
     }
+    if (requireStrategicCoverage && (competition.productionActions < 1
+        || competition.movementActions < 1 || competition.combatReactions < 1)) {
+      throw new Error(`match lacks attributable production, movement, or combat evidence: ${JSON.stringify(competition)}`);
+    }
+
+    const finalAssignments = requireResult(
+      await rpc(page, "realEngineLlmAiAssignments"), "final LLM assignments");
+    const finalAssignment = finalAssignments.assignments.find((candidate) =>
+      candidate.profileId === savedProfile.id);
+    if (finalAssignment?.strategyController !== "llm"
+        || finalAssignment.classicStrategyUpdates !== assignment.classicStrategyUpdates
+        || finalAssignment.controllerNeutralUpdates <= assignment.controllerNeutralUpdates) {
+      throw new Error(`strategy ownership was not exclusive while neutral execution advanced: ${JSON.stringify({
+        initial: assignment, final: finalAssignment,
+      })}`);
+    }
+
     const exported = await page.evaluate(
       (sessionId) => window.ZeroHLlmAi.store.exportSession(sessionId), latest.session.id);
     if (JSON.stringify(exported).includes(process.env.LLM_AI_API_KEY ?? "__no_key__")) {
       throw new Error("session export contained the configured API key");
+    }
+    if (sessionExportPath) {
+      await writeFile(sessionExportPath, `${JSON.stringify(exported, null, 2)}\n`);
     }
     process.stdout.write(`${JSON.stringify({
       ok: true,
@@ -423,15 +582,21 @@ async function main() {
         toolCalls: latest.session.toolCalls,
         failures: latest.session.failures,
         totalTokens: latest.session.totalTokens,
+        providerRequests: latest.session.providerRequests,
+        providerLatencyMs: latest.session.providerLatencyMs,
+        cachedTokens: latest.session.cachedTokens,
+        cacheHitRequests: latest.session.cacheHitRequests,
         outcome: latest.session.outcome,
       },
       gameOutcome: world?.result?.game?.outcome ?? null,
       worldFrame: world?.result?.frame ?? null,
       verification: { expectTerminal, minimumFrame, minimumActions, minimumOwnedObjects },
       competition,
+      strategyOwnership: { initial: assignment, final: finalAssignment, fallbackEvidence },
       eventTypes,
       toolResults,
       screenshot: screenshotPath,
+      sessionExport: sessionExportPath,
       pageErrors,
       consoleErrors,
     }, null, 2)}\n`);

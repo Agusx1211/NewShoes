@@ -2311,6 +2311,17 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "llmAiStrategyController": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_strategy_controller", "string",
+          ["number", "number"],
+          [Number(payload.playerIndex), payload.controller === "llm" ? 1 : 0]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "llmAiGameOrder": {
       try {
         const result = await threadedEngine.engineCall(
@@ -2341,10 +2352,10 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
-    case "llmAiClassicDirective": {
+    case "llmAiEngineRequest": {
       try {
         const result = await threadedEngine.engineCall(
-          "cnc_port_llm_ai_classic_directive", "string",
+          "cnc_port_llm_ai_engine_request", "string",
           ["number", "string", "string", "number"],
           [
             Number(payload.playerIndex), String(payload.action ?? ""),
@@ -6169,6 +6180,11 @@ async function loadWasmModule() {
         "string",
         ["number", "number", "number", "number", "number", "number", "number", "number"],
       ),
+      llmAiStrategyController: module.cwrap(
+        "cnc_port_llm_ai_strategy_controller",
+        "string",
+        ["number", "number"],
+      ),
       llmAiGameOrder: module.cwrap(
         "cnc_port_llm_ai_game_order",
         "string",
@@ -6179,8 +6195,8 @@ async function loadWasmModule() {
         "string",
         ["number", "number", "string", "number", "number", "number", "number", "number"],
       ),
-      llmAiClassicDirective: module.cwrap(
-        "cnc_port_llm_ai_classic_directive",
+      llmAiEngineRequest: module.cwrap(
+        "cnc_port_llm_ai_engine_request",
         "string",
         ["number", "string", "string", "number"],
       ),
@@ -13260,9 +13276,10 @@ async function rpc(command, payload = {}) {
       }
     case "llmAiWorldSnapshot":
     case "llmAiTerrainQuery":
+    case "llmAiStrategyController":
     case "llmAiGameOrder":
     case "llmAiGameCommand":
-    case "llmAiClassicDirective":
+    case "llmAiEngineRequest":
       {
         const moduleResult = await getWasmModuleForArchives(command);
         if (moduleResult.error) {
@@ -13283,6 +13300,9 @@ async function rpc(command, payload = {}) {
               Number(payload.minX), Number(payload.minY),
               Number(payload.maxX), Number(payload.maxY),
               Number(payload.columns), Number(payload.rows));
+          } else if (command === "llmAiStrategyController") {
+            raw = module.llmAiStrategyController(
+              playerIndex, payload.controller === "llm" ? 1 : 0);
           } else if (command === "llmAiGameOrder") {
             raw = module.llmAiGameOrder(
               playerIndex, String(payload.action ?? ""), String(payload.objectIds ?? ""),
@@ -13293,7 +13313,7 @@ async function rpc(command, payload = {}) {
               Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
               Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0);
           } else {
-            raw = module.llmAiClassicDirective(
+            raw = module.llmAiEngineRequest(
               playerIndex, String(payload.action ?? ""), String(payload.name ?? ""),
               Number(payload.value ?? 0));
           }

@@ -366,10 +366,15 @@
                 <div class="llm-ai-fields three-column">
                   <label>Thinking effort<select id="llmAiThinking"><option>provider-default</option><option>none</option><option>minimal</option><option>low</option><option selected>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
                   <label>Context tokens <span id="llmAiContextHint" class="llm-ai-optional">Manual until reported by the provider</span><span class="llm-ai-inline-control"><input id="llmAiContext" type="number" min="4096" max="2097152" step="1024" value="262144"><button id="llmAiApplyContext" type="button" class="button secondary small" hidden>Use detected</button></span></label>
-                  <label>Tool protocol<select id="llmAiToolProtocol"><option value="auto" selected>Auto compatible</option><option value="native">Native only</option><option value="structured">Structured fallback</option></select></label>
+                  <label>Tool adapter<select id="llmAiToolProtocol"><option value="native" selected>Native streaming tools</option><option value="structured">Structured action adapter</option></select></label>
+                </div>
+                <div class="llm-ai-fields three-column">
+                  <label>Routine observation budget <input id="llmAiObservationTokens" type="number" min="512" max="65536" step="256" value="8192"> tokens</label>
+                  <label>Tool result budget <input id="llmAiToolResultTokens" type="number" min="256" max="65536" step="256" value="4096"> tokens</label>
+                  <label>Recent context suffix <input id="llmAiRecentContextTokens" type="number" min="1024" max="131072" step="1024" value="20000"> tokens</label>
                 </div>
                 <label>Mandate<textarea id="llmAiMandate" maxlength="8192" rows="4">Play to the best of your capability and win the game.</textarea></label>
-                <div class="llm-ai-runtime-policy"><label><input id="llmAiClassicFallback" type="checkbox" checked> Keep the model session retrying during classic-AI fallback</label><label>Planning interval <input id="llmAiPlanningInterval" type="number" min="250" max="60000" step="250" value="2000"> ms</label></div>
+                <div class="llm-ai-runtime-policy"><label><input id="llmAiClassicFallback" type="checkbox" checked> Transfer the strategy lease to classic AI after the failure limit</label><label>Planning interval <input id="llmAiPlanningInterval" type="number" min="250" max="60000" step="250" value="2000"> ms</label></div>
                 <section id="llmAiDiagnostics" class="llm-ai-diagnostics" aria-label="Endpoint diagnostics" hidden><header><strong>Endpoint diagnostics</strong><span id="llmAiDiagnosticsSummary"></span></header><ul id="llmAiDiagnosticChecks"></ul></section>
                 <div id="llmAiFormStatus" class="llm-ai-status" role="status">Profiles and session traces stay in this browser.</div>
                 <div class="llm-ai-form-actions"><button id="llmAiDeleteProfile" type="button" class="button secondary small" disabled>Delete</button><button id="llmAiDuplicateProfile" type="button" class="button secondary small" disabled>Duplicate</button><span></span><button id="llmAiTestEndpoint" type="button" class="button secondary small">Run diagnostics</button><button type="submit" class="button primary small">Save commander</button></div>

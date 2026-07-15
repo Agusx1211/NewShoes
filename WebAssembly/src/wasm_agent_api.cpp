@@ -46,6 +46,7 @@
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/PartitionManager.h"
+#include "GameLogic/SidesList.h"
 #include "GameLogic/TerrainLogic.h"
 #include "GameLogic/VictoryConditions.h"
 #include "GameLogic/Weapon.h"
@@ -1540,6 +1541,9 @@ void append_object(std::string &json, Object *object, Player *local_player,
 	json += owner != nullptr ? std::to_string(owner->getPlayerIndex()) : "null";
 	json += ",\"relationship\":";
 	append_json_string(json, relationship_name(relationship));
+	json += ",\"teamId\":";
+	json += locally_controlled && object->getTeam() != nullptr
+		? std::to_string(object->getTeam()->getID()) : "null";
 	json += ",\"position\":";
 	append_coord(json, *position);
 	json += ",\"orientation\":";
@@ -1729,7 +1733,43 @@ void append_capability_catalog(std::string &json, const std::vector<Object *> &o
 	json += "}";
 }
 
-void collect_classic_ai_catalog(
+bool has_ai_build_slot(Player *player, const std::string &name, bool queued)
+{
+	if (player == nullptr) return false;
+	for (BuildListInfo *info = player->getBuildList(); info != nullptr; info = info->getNext()) {
+		if (info->getTemplateName().str() != name || info->getObjectID() != INVALID_ID
+			|| !info->isBuildable()) continue;
+		if (info->isPriorityBuild() == queued) return true;
+	}
+	return false;
+}
+
+std::unordered_set<TeamID> team_instance_ids(TeamPrototype *prototype)
+{
+	std::unordered_set<TeamID> ids;
+	if (prototype == nullptr) return ids;
+	for (DLINK_ITERATOR<Team> iter = prototype->iterate_TeamInstanceList();
+		!iter.done(); iter.advance()) {
+		Team *team = iter.cur();
+		if (team != nullptr) ids.insert(team->getID());
+	}
+	return ids;
+}
+
+TeamID added_team_instance(
+	TeamPrototype *prototype,
+	const std::unordered_set<TeamID> &before)
+{
+	if (prototype == nullptr) return TEAM_ID_INVALID;
+	for (DLINK_ITERATOR<Team> iter = prototype->iterate_TeamInstanceList();
+		!iter.done(); iter.advance()) {
+		Team *team = iter.cur();
+		if (team != nullptr && before.find(team->getID()) == before.end()) return team->getID();
+	}
+	return TEAM_ID_INVALID;
+}
+
+void collect_engine_service_catalog(
 	Player *player,
 	std::vector<std::string> &building_templates,
 	std::vector<std::string> &upgrades)
@@ -1749,6 +1789,7 @@ void collect_classic_ai_catalog(
 				if (command->getCommandType() == GUI_COMMAND_DOZER_CONSTRUCT
 					&& product != nullptr && product->isBuildableItem()
 					&& player->allowedToBuild(product)
+					&& has_ai_build_slot(player, product->getName().str(), false)
 					&& seen_buildings.insert(product->getName().str()).second) {
 					building_templates.push_back(product->getName().str());
 				}
@@ -1764,18 +1805,20 @@ void collect_classic_ai_catalog(
 	std::sort(upgrades.begin(), upgrades.end());
 }
 
-void append_classic_ai_catalog(std::string &json, Player *player)
+void append_engine_service_catalog(std::string &json, Player *player)
 {
 	std::vector<std::string> building_templates;
 	std::vector<std::string> upgrades;
-	collect_classic_ai_catalog(player, building_templates, upgrades);
+	collect_engine_service_catalog(player, building_templates, upgrades);
 
-	json += "{\"directMutationsAvailable\":";
+	json += "{\"strategyController\":";
+	append_json_string(json, player != nullptr && player->hasExternalAIStrategyController()
+		? "llm" : "classic");
+	json += ",\"semanticRequestsAvailable\":";
 	json += TheGameLogic != nullptr && TheGameLogic->getGameMode() == GAME_SKIRMISH
 		? "true" : "false";
-	json += ",\"directives\":[\"buildBuilding\",\"buildUpgrade\","
-		"\"buildBaseDefense\",\"buildBaseDefenseStructure\",\"buildTeam\","
-		"\"recruitTeam\",\"buildBySupplies\",\"hunt\",\"teamDelay\"]";
+	json += ",\"requests\":[\"buildBuilding\",\"buildUpgrade\","
+		"\"buildTeam\",\"recruitTeam\"]";
 	json += ",\"availableBuildingTemplates\":[";
 	for (std::size_t i = 0; i < building_templates.size(); ++i) {
 		if (i != 0) json += ",";
@@ -2606,8 +2649,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 		append_command_set_catalog(json, observed_objects);
 		json += ",\"objectCapabilities\":";
 		append_capability_catalog(json, observed_objects);
-		json += ",\"classicAi\":";
-		append_classic_ai_catalog(json, local_player);
+		json += ",\"engineServices\":";
+		append_engine_service_catalog(json, local_player);
 	}
 	json += "}";
 	return json.c_str();
@@ -2861,6 +2904,41 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_terrain_query(
 		camera_bound, min_x, min_y, max_x, max_y, columns, rows);
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_strategy_controller(
+	Int player_index,
+	Int external_controller)
+{
+	static std::string json;
+	std::string error;
+	Player *player = resolve_llm_ai_player(player_index, error);
+	if (player == nullptr) return finish_llm_error(json, "invalid_player", error);
+	if (external_controller != 0 && external_controller != 1) {
+		return finish_llm_error(json, "invalid_controller",
+			"controller must be classic (0) or llm (1)");
+	}
+	if (TheGameLogic->getGameMode() != GAME_SKIRMISH) {
+		return finish_llm_error(json, "unsupported_in_multiplayer",
+			"strategy ownership transitions require a deterministic synchronized multiplayer command");
+	}
+
+	const bool was_external = player->hasExternalAIStrategyController();
+	player->setExternalAIStrategyController(external_controller != 0);
+	begin_result(json, true);
+	json += ",\"playerIndex\":" + std::to_string(player_index);
+	json += ",\"previousController\":";
+	append_json_string(json, was_external ? "llm" : "classic");
+	json += ",\"controller\":";
+	append_json_string(json, player->hasExternalAIStrategyController() ? "llm" : "classic");
+	json += ",\"frame\":" + std::to_string(TheGameLogic->getFrame());
+	json += ",\"classicStrategyUpdates\":"
+		+ std::to_string(player->getClassicAIStrategyUpdateCount());
+	json += ",\"controllerNeutralUpdates\":"
+		+ std::to_string(player->getControllerNeutralAIUpdateCount());
+	json += ",\"transitions\":"
+		+ std::to_string(player->getAIStrategyControllerTransitionCount()) + "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_game_order(
 	Int player_index,
 	const char *action,
@@ -2896,7 +2974,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_game_command(
 		source_id, command_name, target_id, x, y, angle, has_position);
 }
 
-extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_classic_directive(
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_engine_request(
 	Int player_index,
 	const char *action,
 	const char *name,
@@ -2908,7 +2986,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_classic_directive(
 	if (player == nullptr) return finish_llm_error(json, "invalid_player", error);
 	if (TheGameLogic->getGameMode() != GAME_SKIRMISH) {
 		return finish_llm_error(json, "unsupported_in_multiplayer",
-			"classic AI directives are available only in skirmish because they mutate deterministic AI state directly");
+			"semantic engine requests are available only in skirmish until their synchronized multiplayer command is implemented");
 	}
 	if (!std::isfinite(value)) {
 		return finish_llm_error(json, "invalid_value", "value must be finite");
@@ -2919,26 +2997,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_classic_directive(
 	const std::string requested_name_string = requested_name.str();
 	std::vector<std::string> available_buildings;
 	std::vector<std::string> available_upgrades;
-	collect_classic_ai_catalog(player, available_buildings, available_upgrades);
-	if (requested == "buildBuilding" || requested == "buildBaseDefenseStructure") {
+	collect_engine_service_catalog(player, available_buildings, available_upgrades);
+	TeamID created_team_id = TEAM_ID_INVALID;
+	if (requested == "buildBuilding") {
 		const ThingTemplate *thing = TheThingFactory != nullptr
 			? TheThingFactory->findTemplate(requested_name, FALSE) : nullptr;
 		if (thing == nullptr || !thing->isBuildableItem() || !player->allowedToBuild(thing)
 			|| std::find(available_buildings.begin(), available_buildings.end(),
-				requested_name_string) == available_buildings.end()
-			|| (requested == "buildBaseDefenseStructure"
-				&& !thing->isKindOf(KINDOF_FS_BASE_DEFENSE))) {
+				requested_name_string) == available_buildings.end()) {
 			return finish_llm_error(json, "invalid_template",
-				requested == "buildBaseDefenseStructure"
-					? "name must identify an available faction base-defense structure"
-					: "name must be listed in this player's currently available building templates");
+				"name must identify a currently requestable entry in this player's AI build list");
 		}
-		if (requested == "buildBuilding") player->buildSpecificBuilding(requested_name);
-		else {
-			if (value != 0.0f && value != 1.0f) {
-				return finish_llm_error(json, "invalid_value", "flank value must be 0 or 1");
-			}
-			player->buildBaseDefenseStructure(requested_name, value != 0.0f);
+		player->buildSpecificBuilding(requested_name);
+		if (!has_ai_build_slot(player, requested_name_string, true)) {
+			return finish_llm_error(json, "request_rejected",
+				"the original AI build list did not accept this building request");
 		}
 	} else if (requested == "buildUpgrade") {
 		const UpgradeTemplate *upgrade = TheUpgradeCenter != nullptr
@@ -2950,11 +3023,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_classic_directive(
 				"name must be listed in this player's currently available upgrades");
 		}
 		player->buildUpgrade(requested_name);
-	} else if (requested == "buildBaseDefense") {
-		if (value != 0.0f && value != 1.0f) {
-			return finish_llm_error(json, "invalid_value", "flank value must be 0 or 1");
+		if (!player->hasUpgradeInProduction(upgrade)) {
+			return finish_llm_error(json, "request_rejected",
+				"the original production queues did not accept this upgrade request");
 		}
-		player->buildBaseDefense(value != 0.0f);
 	} else if (requested == "buildTeam" || requested == "recruitTeam") {
 		TeamPrototype *team = TheTeamFactory != nullptr
 			? TheTeamFactory->findTeamPrototype(requested_name) : nullptr;
@@ -2962,6 +3034,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_classic_directive(
 			return finish_llm_error(json, "invalid_team",
 				"name must identify a team prototype owned by this AI player");
 		}
+		const std::unordered_set<TeamID> before = team_instance_ids(team);
 		if (requested == "buildTeam") player->buildSpecificTeam(team);
 		else {
 			if (value < 0.0f) {
@@ -2970,38 +3043,22 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_llm_ai_classic_directive(
 			}
 			player->recruitSpecificTeam(team, value);
 		}
-	} else if (requested == "buildBySupplies") {
-		const ThingTemplate *thing = TheThingFactory != nullptr
-			? TheThingFactory->findTemplate(requested_name, FALSE) : nullptr;
-		if (thing == nullptr || !thing->isBuildableItem() || !player->allowedToBuild(thing)
-			|| std::find(available_buildings.begin(), available_buildings.end(),
-				requested_name_string) == available_buildings.end()
-			|| value < 0.0f || value > static_cast<Real>((std::numeric_limits<Int>::max)())
-			|| std::floor(value) != value) {
-			return finish_llm_error(json, "invalid_directive",
-				"buildBySupplies requires a buildable template and a non-negative cash threshold");
+		created_team_id = added_team_instance(team, before);
+		if (created_team_id == TEAM_ID_INVALID) {
+			return finish_llm_error(json, "request_rejected",
+				"the original team machinery did not accept this force request");
 		}
-		player->buildBySupplies(static_cast<Int>(value), requested_name);
-	} else if (requested == "hunt") {
-		if (value != 0.0f && value != 1.0f) {
-			return finish_llm_error(json, "invalid_value", "hunt value must be 0 or 1");
-		}
-		player->setUnitsShouldHunt(value != 0.0f, CMD_FROM_AI);
-	} else if (requested == "teamDelay") {
-		if (value < 0.0f || value > 3600.0f || std::floor(value) != value) {
-			return finish_llm_error(json, "invalid_value",
-				"teamDelay value must be a whole number from 0 through 3600 seconds");
-		}
-		player->setTeamDelaySeconds(static_cast<Int>(value));
 	} else {
-		return finish_llm_error(json, "unsupported_directive",
-			"action must be buildBuilding, buildUpgrade, buildBaseDefense, buildBaseDefenseStructure, buildTeam, recruitTeam, buildBySupplies, hunt, or teamDelay");
+		return finish_llm_error(json, "unsupported_request",
+			"action must be buildBuilding, buildUpgrade, buildTeam, or recruitTeam");
 	}
 
 	begin_result(json, true);
 	json += ",\"action\":";
 	append_json_string(json, requested);
 	json += ",\"playerIndex\":" + std::to_string(player_index);
+	json += ",\"teamId\":";
+	json += created_team_id != TEAM_ID_INVALID ? std::to_string(created_team_id) : "null";
 	json += ",\"frame\":" + std::to_string(TheGameLogic->getFrame()) + "}";
 	return json.c_str();
 }

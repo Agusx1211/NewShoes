@@ -11,7 +11,7 @@ const profile = createLlmAiProfile({
   thinkingEffort: process.env.LLM_AI_THINKING_EFFORT || "low",
   contextSize: Number(process.env.LLM_AI_CONTEXT_SIZE || 262_144),
   responseTokens: 512,
-  toolProtocol: "auto",
+  toolProtocol: "native",
   mandate: "Verify the tool protocol.",
 });
 
@@ -29,7 +29,6 @@ console.log("LLM AI live endpoint: PASS", {
   endpoint,
   model,
   protocol: result.protocol,
-  compatibilityReason: result.compatibility?.reason || null,
   reportedModels: result.reportedModels,
   detectedContextSize: result.contextSize,
   contextSource: result.contextSource,

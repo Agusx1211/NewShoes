@@ -5,18 +5,19 @@ import {
   redactLlmAiData,
 } from "./llm-ai-profile.mjs";
 import { completeLlmAiTurn, LlmAiProviderError } from "./llm-ai-openai-client.mjs";
+import { boundLlmPayload } from "./llm-ai-strategy.mjs";
 
-const INFORMATIONAL_TOOLS = new Set(["query_terrain", "wait_for_tick"]);
+const INFORMATIONAL_TOOLS = new Set([
+  "query_buildable_options", "inspect_entities", "inspect_job", "query_map_region", "wait_for_tick",
+]);
+const PROVIDER_CONTRACT_ERRORS = new Set([
+  "invalid_action", "invalid_arguments", "invalid_json", "invalid_stream", "invalid_tool_call",
+  "missing_message", "missing_stream", "missing_tool_call", "unknown_tool",
+]);
 const RECOVERY_THRESHOLD = 2;
 
-function boundedJson(value, maximum = 128 * 1024) {
-  const text = JSON.stringify(value ?? null);
-  if (text.length <= maximum) return text;
-  return JSON.stringify({
-    truncated: true,
-    originalCharacters: text.length,
-    preview: text.slice(0, maximum),
-  });
+function boundedJson(value, maximumTokens = 4_096, tokenizer = null) {
+  return JSON.stringify(boundLlmPayload(value, maximumTokens, { tokenizer }).value);
 }
 
 function defaultTerminal(observation) {
@@ -27,6 +28,11 @@ function defaultTerminal(observation) {
 
 function defaultOutcome(observation) {
   return observation?.game?.outcome ?? observation?.outcome ?? null;
+}
+
+function isContextOverflow(error) {
+  return error?.code === "context_overflow" || error?.status === 413
+    || /context (?:length|window)|too many tokens|maximum.*tokens/i.test(error?.message || "");
 }
 
 function delay(milliseconds, signal) {
@@ -55,6 +61,9 @@ export class LlmAiAgentRuntime {
     now = () => Date.now(),
     sleep = delay,
     isTerminal = defaultTerminal,
+    getStrategicState = () => ({}),
+    transferToClassic = null,
+    tokenizer = null,
   }) {
     if (!profile?.id) throw new TypeError("Agent runtime requires a saved profile");
     if (!Array.isArray(tools) || tools.length === 0) throw new TypeError("Agent runtime requires tools");
@@ -75,6 +84,9 @@ export class LlmAiAgentRuntime {
     this.now = now;
     this.sleep = sleep;
     this.isTerminal = isTerminal;
+    this.getStrategicState = getStrategicState;
+    this.transferToClassic = transferToClassic;
+    this.tokenizer = tokenizer;
     this.session = null;
     this.sequence = 0;
     this.messages = [];
@@ -84,6 +96,7 @@ export class LlmAiAgentRuntime {
     this.actionFailureStreak = 0;
     this.nonActionStreak = 0;
     this.recoveryBlockedTool = null;
+    this.observedOutcome = null;
   }
 
   async event(type, data = {}) {
@@ -117,6 +130,10 @@ export class LlmAiAgentRuntime {
       toolCalls: 0,
       failures: 0,
       totalTokens: 0,
+      providerRequests: 0,
+      providerLatencyMs: 0,
+      cachedTokens: 0,
+      cacheHitRequests: 0,
       metadata,
     };
     await this.store.createSession(this.session);
@@ -129,11 +146,30 @@ export class LlmAiAgentRuntime {
 
   async captureObservation(reason) {
     const observation = await this.observe({ reason, session: this.session });
-    this.lastObservation = observation;
-    const content = `ENVIRONMENT OBSERVATION (${reason})\n${boundedJson(observation)}`;
+    const bounded = boundLlmPayload(observation, this.profile.routineObservationTokens, {
+      tokenizer: this.tokenizer, handle: `observation:${this.sequence + 1}`,
+    });
+    this.lastObservation = bounded.value;
+    const content = `ENVIRONMENT OBSERVATION (${reason})\n${JSON.stringify(bounded.value)}`;
     this.messages.push({ role: "user", content });
-    await this.event("environment.observation", { reason, observation });
-    return observation;
+    await this.event("environment.observation", { reason, observation: bounded.value, budget: bounded.budget });
+    const outcome = bounded.value?.game?.outcome ?? bounded.value?.outcome ?? null;
+    if (this.isTerminal(bounded.value) && outcome !== this.observedOutcome) {
+      this.observedOutcome = outcome;
+      await this.event("match.outcome", {
+        authoritative: true, outcome, frame: bounded.value?.frame ?? null,
+      });
+    }
+    if (reason === "after-agent-turn") {
+      await this.event("engine.reaction", {
+        frame: bounded.value?.frame ?? null,
+        outcome: bounded.value?.game?.outcome ?? null,
+        deltas: bounded.value?.deltas ?? [],
+        missions: bounded.value?.missions ?? [],
+        production: bounded.value?.production ?? [],
+      });
+    }
+    return bounded.value;
   }
 
   async finishIfTerminal(reason) {
@@ -152,8 +188,13 @@ export class LlmAiAgentRuntime {
     return true;
   }
 
-  compactContext() {
-    const compacted = compactLlmConversation(this.messages, this.profile);
+  compactContext({ force = false } = {}) {
+    const compacted = compactLlmConversation(this.messages, this.profile, {
+      tools: this.tools,
+      strategicState: this.getStrategicState(),
+      tokenizer: this.tokenizer,
+      force,
+    });
     this.messages = compacted.messages;
     return compacted;
   }
@@ -178,6 +219,17 @@ export class LlmAiAgentRuntime {
     const recoveryRequired = this.actionFailureStreak >= RECOVERY_THRESHOLD
       || this.nonActionStreak >= RECOVERY_THRESHOLD;
     if (!recoveryRequired) return { tools: this.tools, recoveryRequired: false };
+    const needsSearch = this.nonActionStreak >= RECOVERY_THRESHOLD
+      && Array.isArray(this.lastObservation?.threats)
+      && this.lastObservation.threats.length === 0
+      && !this.isTerminal(this.lastObservation);
+    if (needsSearch) {
+      return {
+        tools: this.tools.filter((tool) => tool.name !== "wait_for_tick"),
+        recoveryRequired: true,
+        reason: "find-remaining-objective",
+      };
+    }
     const actionTools = this.tools.filter((tool) => !INFORMATIONAL_TOOLS.has(tool.name));
     const alternatives = this.actionFailureStreak >= RECOVERY_THRESHOLD
       ? actionTools.filter((tool) => tool.name !== this.recoveryBlockedTool)
@@ -185,35 +237,42 @@ export class LlmAiAgentRuntime {
     return {
       tools: alternatives.length > 0 ? alternatives : actionTools,
       recoveryRequired: true,
+      reason: "require-gameplay-action",
     };
   }
 
-  async requireRecovery(tools) {
-    const classicAi = this.lastObservation?.classicAi ?? {};
-    const playerIndex = this.lastObservation?.assignment?.playerIndex;
-    const ownedObjectIds = Array.isArray(this.lastObservation?.objects)
-      ? this.lastObservation.objects
-        .filter((object) => object?.owner === playerIndex)
-        .map((object) => object.id)
-        .filter(Number.isInteger)
-        .slice(0, 128)
-      : [];
+  async requireRecovery(tools, reason) {
     const recovery = {
+      reason,
       actionFailureStreak: this.actionFailureStreak,
       nonActionStreak: this.nonActionStreak,
       excludedFailedTool: this.recoveryBlockedTool,
       toolsAvailableThisTurn: tools.map((tool) => tool.name),
-      exactBuildingTemplates: classicAi.availableBuildingTemplates ?? [],
-      exactBaseDefenseTemplates: classicAi.availableBaseDefenseTemplates ?? [],
-      exactUpgradeNames: classicAi.availableUpgrades ?? [],
-      exactTeamNames: classicAi.teamPrototypes ?? [],
-      currentOwnedObjectIds: ownedObjectIds,
+      catalogRevision: this.lastObservation?.catalogRevision ?? null,
+      activeMissions: this.lastObservation?.missions ?? [],
     };
     this.messages.push({
       role: "user",
-      content: `ENVIRONMENT RECOVERY REQUIRED\n${boundedJson(recovery)}\nIssue a materially different gameplay action now. Copy names and public IDs exactly from the latest observation; do not guess identifiers or retry rejected coordinates. Informational and recently failing tools are temporarily unavailable until a gameplay action succeeds.`,
+      content: `ENVIRONMENT RECOVERY REQUIRED\n${boundedJson(recovery, this.profile.routineObservationTokens, this.tokenizer)}\n${reason === "find-remaining-objective"
+        ? "The match is non-terminal with no visible threat. Do not wait. Use an allowed detail query or send a surviving squad to scout a distinct map region, then attack any discovered structure objective."
+        : "Issue a materially different gameplay action now. Query stable handles when needed; do not guess identifiers or repeat rejected arguments."}\nOnly toolsAvailableThisTurn are currently permitted; a successful gameplay action clears the restriction.`,
     });
     await this.event("agent.recovery_required", recovery);
+  }
+
+  async requireProviderCorrection(error) {
+    if (!PROVIDER_CONTRACT_ERRORS.has(error?.code)) return;
+    const correction = {
+      rejectedResponse: { code: error.code, message: error.message || String(error) },
+      requiredProtocol: this.profile.toolProtocol,
+      availableTools: this.tools.map((tool) => tool.name),
+    };
+    this.messages.push({
+      role: "user",
+      content: `ENVIRONMENT PROVIDER RESPONSE REJECTED\n${boundedJson(correction,
+        Math.min(this.profile.toolResultTokens, 1_024), this.tokenizer)}\nReturn a valid ${this.profile.toolProtocol} tool call on the next response. Do not answer with prose alone.`,
+    });
+    await this.event("model.correction_requested", correction);
   }
 
   async executeTool(call, protocol, allowedTools = this.tools) {
@@ -228,6 +287,7 @@ export class LlmAiAgentRuntime {
     const signature = JSON.stringify([call.name, call.arguments]);
     const allowed = allowedTools.some((candidate) => candidate.name === call.name);
     let result;
+    let eventExtra = {};
     if (!allowed) {
       result = {
         ok: false,
@@ -236,110 +296,152 @@ export class LlmAiAgentRuntime {
           message: `${call.name} is temporarily unavailable during action recovery. Choose one of: ${allowedTools.map((candidate) => candidate.name).join(", ")}.`,
         },
       };
-      await this.event("tool.result", {
-        callId: call.id ?? null,
-        name: call.name,
-        ok: false,
-        result,
-        recoveryRestriction: true,
-      });
-      this.recordToolOutcome(call.name, false);
-      this.session.toolCalls += 1;
-      return result;
-    }
-    const previousFailure = this.failedToolSignatures.get(signature);
-    if (previousFailure) {
+      eventExtra = { recoveryRestriction: true };
+    } else if (this.failedToolSignatures.has(signature)) {
+      const previousFailure = this.failedToolSignatures.get(signature);
       previousFailure.repetitions += 1;
       result = {
         ok: false,
         error: {
           code: "repeated_invalid_action",
-          message: `This exact call already failed with ${previousFailure.code}. Change the tool or arguments instead of retrying it. For construction, copy an exact classicAi.availableBuildingTemplates name into classic_ai_directive buildBuilding.`,
+          message: `This exact call already failed with ${previousFailure.code}. Change the tool or arguments; query a current stable handle instead of guessing.`,
         },
       };
-      await this.event("tool.result", {
-        callId: call.id ?? null,
-        name: call.name,
-        ok: false,
-        result,
-        blockedRepeat: previousFailure.repetitions,
-      });
-      this.recordToolOutcome(call.name, false);
-      this.session.toolCalls += 1;
-      return result;
+      eventExtra = { blockedRepeat: previousFailure.repetitions };
+    } else {
+      try {
+        if (typeof tool.validate === "function") tool.validate(call.arguments);
+        result = await tool.execute(call.arguments, {
+          session: this.session,
+          observation: this.lastObservation,
+        });
+      } catch (error) {
+        result = { ok: false, error: { code: error?.code || "tool_error", message: error?.message || String(error) } };
+        this.failedToolSignatures.set(signature, { code: result.error.code, repetitions: 1 });
+      }
     }
-    try {
-      if (typeof tool.validate === "function") tool.validate(call.arguments);
-      result = await tool.execute(call.arguments, {
-        session: this.session,
-        observation: this.lastObservation,
-      });
-      await this.event("tool.result", {
-        callId: call.id ?? null,
-        name: call.name,
-        ok: true,
-        result,
-      });
-      this.recordToolOutcome(call.name, true);
-    } catch (error) {
-      result = { ok: false, error: { code: error?.code || "tool_error", message: error?.message || String(error) } };
-      await this.event("tool.result", {
-        callId: call.id ?? null,
-        name: call.name,
-        ok: false,
-        result,
-      });
-      this.failedToolSignatures.set(signature, {
-        code: result.error.code,
-        repetitions: 1,
-      });
-      this.recordToolOutcome(call.name, false);
-    }
+    const bounded = boundLlmPayload(result, this.profile.toolResultTokens, {
+      tokenizer: this.tokenizer, handle: `tool-result:${call.id || this.session.toolCalls + 1}`,
+    });
+    result = bounded.value;
+    const ok = result?.ok !== false && !result?.error;
+    await this.event("tool.result", {
+      callId: call.id ?? null, name: call.name, ok, result, budget: bounded.budget, ...eventExtra,
+    });
+    const execution = {
+      callId: call.id ?? null, name: call.name, ok,
+      jobId: result?.job?.id ?? result?.mission?.id ?? result?.jobId ?? null,
+      state: result?.job?.state ?? result?.mission?.state ?? result?.state ?? null,
+      error: result?.error ?? null,
+    };
+    if (INFORMATIONAL_TOOLS.has(call.name)) await this.event("environment.query", execution);
+    else if (call.name === "set_priorities") await this.event("controller.state_changed", execution);
+    else await this.event("engine.execution", execution);
+    this.recordToolOutcome(call.name, ok);
     this.session.toolCalls += 1;
     return result;
   }
 
   async step({ signal } = {}) {
     if (!this.session) await this.start();
-    if (this.session.status === "completed" || this.session.status === "failed" || this.session.status === "cancelled") {
+    if (["completed", "failed", "cancelled", "fallback"].includes(this.session.status)) {
       return { terminal: true, session: this.session };
     }
     const compaction = this.compactContext();
     if (compaction.compacted) await this.event("context.compacted", { omitted: compaction.omitted });
     const recovery = this.recoveryToolSet();
-    if (recovery.recoveryRequired) await this.requireRecovery(recovery.tools);
+    if (recovery.recoveryRequired) await this.requireRecovery(recovery.tools, recovery.reason);
     let turn;
-    try {
-      turn = await this.complete(this.profile, this.messages, recovery.tools, { signal });
-    } catch (error) {
-      this.consecutiveFailures += 1;
-      this.session.failures += 1;
-      await this.event("model.error", {
-        code: error?.code || "model_error",
-        message: error?.message || String(error),
-        retryable: error instanceof LlmAiProviderError ? error.retryable : false,
-        consecutiveFailures: this.consecutiveFailures,
+    const requestModel = async (attempt, reason) => {
+      const requestNumber = ++this.session.providerRequests;
+      await this.event("model.request", {
+        requestNumber, attempt, reason, protocol: this.profile.toolProtocol,
+        messageCount: this.messages.length, toolCount: this.tools.length,
+        allowedToolCount: recovery.tools.length,
       });
-      const exhausted = this.consecutiveFailures >= this.profile.maxConsecutiveFailures;
-      if (exhausted && !this.profile.classicFallback) {
-        await this.fail(error);
+      try {
+        // Keep the native schema stable for provider prefix caching and for valid
+        // tool names already present in conversation history. Recovery restrictions
+        // are enforced by executeTool with an explicit result the model can observe.
+        const response = await this.complete(this.profile, this.messages, this.tools, {
+          signal, sessionId: this.session.id,
+        });
+        this.session.providerLatencyMs += response.latencyMs || 0;
+        this.session.cachedTokens += response.usage?.cachedTokens || 0;
+        if ((response.usage?.cachedTokens || 0) > 0) this.session.cacheHitRequests += 1;
+        await this.event("model.response", {
+          requestNumber, responseId: response.responseId, latencyMs: response.latencyMs,
+          usage: response.usage, finishReason: response.finishReason,
+        });
+        return response;
+      } catch (error) {
+        this.session.providerLatencyMs += error?.latencyMs || 0;
+        await this.event("model.error", {
+          requestNumber, code: error?.code || "model_error",
+          message: error?.message || String(error), latencyMs: error?.latencyMs || null,
+          retryable: error instanceof LlmAiProviderError ? error.retryable : false,
+        });
         throw error;
       }
-      await this.store.updateSession(this.session.id, {
-        status: exhausted ? "degraded" : "running",
-        failures: this.session.failures,
-      });
-      if (await this.finishIfTerminal("after-model-error")) {
-        return { terminal: true, error, degraded: exhausted, session: this.session };
+    };
+    try {
+      turn = await requestModel(1, "strategic-turn");
+    } catch (error) {
+      if (isContextOverflow(error)) {
+        const overflowCompaction = this.compactContext({ force: true });
+        await this.event("context.compacted", {
+          reason: "provider-overflow", omitted: overflowCompaction.omitted,
+          omittedGroups: overflowCompaction.omittedGroups,
+        });
+        try {
+          turn = await requestModel(2, "overflow-retry");
+        } catch (retryError) {
+          error = retryError;
+        }
       }
-      return { terminal: false, error, degraded: exhausted };
+      if (turn) {
+        // The interrupted turn was retried from a semantic checkpoint.
+      } else {
+        this.consecutiveFailures += 1;
+        this.session.failures += 1;
+        const exhausted = this.consecutiveFailures >= this.profile.maxConsecutiveFailures;
+        if (exhausted) {
+          if (!this.profile.classicFallback || typeof this.transferToClassic !== "function") {
+            await this.fail(error);
+            throw error;
+          }
+          const transition = await this.transferToClassic();
+          if (transition?.controller !== "classic") throw new Error("Classic fallback lease transfer was not confirmed");
+          const endedAt = this.now();
+          this.session = { ...this.session, status: "fallback", endedAt, updatedAt: endedAt };
+          await this.event("strategy.ownership_transferred", {
+            from: "llm", to: "classic", reason: "failure-limit", transition,
+          });
+          await this.store.updateSession(this.session.id, this.session);
+          return { terminal: true, error, fallback: true, session: this.session };
+        }
+        await this.store.updateSession(this.session.id, {
+          status: "running",
+          failures: this.session.failures,
+          providerRequests: this.session.providerRequests,
+          providerLatencyMs: this.session.providerLatencyMs,
+          cachedTokens: this.session.cachedTokens,
+          cacheHitRequests: this.session.cacheHitRequests,
+        });
+        if (await this.finishIfTerminal("after-model-error")) {
+          return { terminal: true, error, session: this.session };
+        }
+        // Keep correction as the final message so deterministic providers do not
+        // overlook it behind the fresh observation captured above.
+        await this.requireProviderCorrection(error);
+        return { terminal: false, error };
+      }
     }
     this.consecutiveFailures = 0;
     this.session.turns += 1;
     this.session.totalTokens += turn.usage?.totalTokens || 0;
-    await this.event("model.turn", {
+    await this.event("model.decision", {
       protocol: turn.protocol,
-      compatibility: turn.compatibility || null,
       responseId: turn.responseId,
       latencyMs: turn.latencyMs,
       usage: turn.usage,
@@ -354,14 +456,15 @@ export class LlmAiAgentRuntime {
     if (turn.protocol === "native") {
       for (const call of turn.calls) {
         const result = await this.executeTool(call, turn.protocol, recovery.tools);
-        this.messages.push({ role: "tool", tool_call_id: call.id, content: boundedJson(result) });
+        this.messages.push({ role: "tool", tool_call_id: call.id,
+          content: boundedJson(result, this.profile.toolResultTokens, this.tokenizer) });
       }
     } else if (turn.action.action === "tool") {
       const call = { id: null, name: turn.action.tool, arguments: turn.action.arguments };
       const result = await this.executeTool(call, turn.protocol, recovery.tools);
       this.messages.push({
         role: "user",
-        content: `ENVIRONMENT TOOL RESULT (${call.name})\n${boundedJson(result)}`,
+        content: `ENVIRONMENT TOOL RESULT (${call.name})\n${boundedJson(result, this.profile.toolResultTokens, this.tokenizer)}`,
       });
     } else if (turn.action.action === "finish") {
       requestedFinish = true;
@@ -392,6 +495,10 @@ export class LlmAiAgentRuntime {
       toolCalls: this.session.toolCalls,
       failures: this.session.failures,
       totalTokens: this.session.totalTokens,
+      providerRequests: this.session.providerRequests,
+      providerLatencyMs: this.session.providerLatencyMs,
+      cachedTokens: this.session.cachedTokens,
+      cacheHitRequests: this.session.cacheHitRequests,
     });
     return { terminal: false, session: this.session, turn };
   }
@@ -399,7 +506,7 @@ export class LlmAiAgentRuntime {
   async run({ signal } = {}) {
     if (!this.session) await this.start();
     try {
-      while (!signal?.aborted && !["completed", "failed", "cancelled"].includes(this.session.status)) {
+      while (!signal?.aborted && !["completed", "failed", "cancelled", "fallback"].includes(this.session.status)) {
         const result = await this.step({ signal });
         if (result.terminal) break;
         const failureDelay = result.error

@@ -54,6 +54,9 @@ function formInput() {
     apiKey: byId("llmAiApiKey").value,
     thinkingEffort: byId("llmAiThinking").value,
     contextSize: Number(byId("llmAiContext").value),
+    routineObservationTokens: Number(byId("llmAiObservationTokens").value),
+    toolResultTokens: Number(byId("llmAiToolResultTokens").value),
+    recentContextTokens: Number(byId("llmAiRecentContextTokens").value),
     mandate: byId("llmAiMandate").value,
     toolProtocol: byId("llmAiToolProtocol").value,
     planningIntervalMs: Number(byId("llmAiPlanningInterval").value),
@@ -199,7 +202,10 @@ function fillForm(profile = null) {
   byId("llmAiThinking").value = profile?.thinkingEffort || "medium";
   byId("llmAiContext").value = String(profile?.contextSize || 262_144);
   byId("llmAiMandate").value = profile?.mandate || DEFAULT_LLM_AI_MANDATE;
-  byId("llmAiToolProtocol").value = profile?.toolProtocol || "auto";
+  byId("llmAiToolProtocol").value = profile?.toolProtocol === "structured" ? "structured" : "native";
+  byId("llmAiObservationTokens").value = String(profile?.routineObservationTokens || 8_192);
+  byId("llmAiToolResultTokens").value = String(profile?.toolResultTokens || 4_096);
+  byId("llmAiRecentContextTokens").value = String(profile?.recentContextTokens || 20_000);
   byId("llmAiPlanningInterval").value = String(profile?.planningIntervalMs || 2_000);
   byId("llmAiClassicFallback").checked = profile?.classicFallback !== false;
   byId("llmAiFormTitle").textContent = profile ? profile.name : "New commander";
@@ -293,6 +299,9 @@ async function selectSession(id) {
     ["Status", session.status],
     ["Turns", session.turns || 0],
     ["Tools", session.toolCalls || 0],
+    ["Requests", session.providerRequests || 0],
+    ["Provider time", `${(session.providerLatencyMs || 0).toLocaleString()} ms`],
+    ["Cached tokens", (session.cachedTokens || 0).toLocaleString()],
     ["Tokens", (session.totalTokens || 0).toLocaleString()],
     ["Duration", formatDuration(session)],
   ]) {
@@ -436,13 +445,10 @@ byId("llmAiTestEndpoint").addEventListener("click", async () => {
     const result = await probeLlmAiEndpoint(profile);
     renderModelCatalog(result);
     renderDiagnostics(result);
-    const compatibility = result.compatibility
-      ? " Native calls were unavailable, so the validated structured-action fallback was selected."
-      : "";
     const context = result.contextSize
       ? ` · ${result.contextSize.toLocaleString()} context detected`
       : " · context remains manual";
-    setStatus(`Connected in ${result.latencyMs} ms · ${result.protocol} protocol · exact tool arguments verified${context}.${compatibility}`, "success");
+    setStatus(`Connected in ${result.latencyMs} ms · ${result.protocol} protocol · exact tool arguments verified${context}.`, "success");
   } catch (error) {
     renderDiagnostics(null, error);
     setStatus(error.message, "error");

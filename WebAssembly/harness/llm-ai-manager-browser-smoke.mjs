@@ -44,23 +44,37 @@ const provider = createServer((request, response) => {
       const promptedProbe = /probe="([^"]+)"/.exec(
         body.messages?.find((message) => message.content?.includes("report_ready with ready=true"))?.content || "")?.[1];
       const probe = body.tools?.[0]?.function?.parameters?.properties?.probe?.enum?.[0] || promptedProbe;
-      response.end(JSON.stringify({
-        id: structured ? "browser-structured" : "browser-native-missing",
-        choices: [{
-          finish_reason: "stop",
-          message: structured ? {
+      if (structured) {
+        response.end(JSON.stringify({
+          id: "browser-structured",
+          choices: [{
+            finish_reason: "stop",
+            message: {
             role: "assistant",
             content: "",
             reasoning_content: JSON.stringify({
               action: "tool", tool: "report_ready", arguments: { ready: true, probe }, note: "ready",
             }),
             tool_calls: [],
-          } : {
-            role: "assistant", content: "", reasoning_content: "<tool_call>report_ready</tool_call>", tool_calls: [],
-          },
-        }],
-        usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 },
-      }));
+            },
+          }],
+          usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 },
+        }));
+        return;
+      }
+      response.setHeader("Content-Type", "text/event-stream");
+      const send = (chunk) => response.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      send({ id: "browser-native", choices: [{ delta: { reasoning_content: "Checking the exact probe. " } }] });
+      send({ id: "browser-native", choices: [{ delta: { tool_calls: [{
+        index: 0, id: "call_browser_probe", type: "function", function: { name: "report_", arguments: '{"ready":true,' },
+      }] } }] });
+      send({ id: "browser-native", choices: [{ delta: { tool_calls: [{
+        index: 0, function: { name: "ready", arguments: `"probe":${JSON.stringify(probe)}}` },
+      }] }, finish_reason: "tool_calls" }] });
+      send({ id: "browser-native", choices: [], usage: {
+        prompt_tokens: 20, completion_tokens: 10, total_tokens: 30,
+      } });
+      response.end("data: [DONE]\n\n");
     });
     return;
   }
@@ -105,6 +119,9 @@ try {
   assert.equal(await page.locator("#llmAiContext").inputValue(), "131072");
   await page.locator("#llmAiName").fill("Browser General");
   await page.locator("#llmAiThinking").selectOption("low");
+  await page.locator("#llmAiObservationTokens").fill("6144");
+  await page.locator("#llmAiToolResultTokens").fill("3072");
+  await page.locator("#llmAiRecentContextTokens").fill("18432");
   await page.locator("#llmAiMandate").fill("Build a resilient economy, adapt, and win.");
   await page.locator("#llmAiProfileForm").evaluate((form) => form.requestSubmit());
   try {
@@ -129,11 +146,11 @@ try {
   assert.match(catalogSync.catalog[0].id, /^[A-Za-z0-9._-]+$/);
 
   await page.locator("#llmAiTestEndpoint").click();
-  await page.waitForFunction(() => document.querySelector("#llmAiFormStatus")?.textContent.includes("structured protocol"));
-  assert.match(await page.locator("#llmAiFormStatus").textContent(), /structured-action fallback/i);
+  await page.waitForFunction(() => document.querySelector("#llmAiFormStatus")?.textContent.includes("native protocol"));
+  assert.doesNotMatch(await page.locator("#llmAiFormStatus").textContent(), /fallback/i);
   assert.equal(await page.locator("#llmAiDiagnosticChecks li").count(), 5);
   assert.equal(await page.locator("#llmAiDiagnosticChecks li.is-pass").count(), 5);
-  assert.match(await page.locator('[data-check="tool"] span').textContent(), /one-time probe.*structured-action fallback/i);
+  assert.match(await page.locator('[data-check="tool"] span').textContent(), /one-time probe.*native function call/i);
   await page.waitForTimeout(1_000);
   await page.screenshot({ path: screenshotPath });
 
@@ -158,7 +175,7 @@ try {
       sessionId: session.id,
       sequence: 1,
       timestamp: Date.now(),
-      type: "model.turn",
+      type: "model.decision",
       data: { authorization: "Bearer browser-ultra-secret", result: "victory" },
     });
     return { profileId: profile.id, sessionId: session.id };
@@ -173,6 +190,9 @@ try {
   }), created);
   assert.equal(persisted.profile.name, "Browser General");
   assert.equal(persisted.profile.apiKey, "browser-ultra-secret");
+  assert.equal(persisted.profile.routineObservationTokens, 6144);
+  assert.equal(persisted.profile.toolResultTokens, 3072);
+  assert.equal(persisted.profile.recentContextTokens, 18432);
   assert.equal(persisted.session.outcome, "victory");
   assert.equal(JSON.stringify(persisted.exported).includes("browser-ultra-secret"), false);
 

@@ -1,9 +1,9 @@
-export const LLM_AI_SCHEMA_VERSION = 1;
+export const LLM_AI_SCHEMA_VERSION = 2;
 export const DEFAULT_LLM_AI_MANDATE = "Play to the best of your capability and win the game.";
 export const LLM_AI_THINKING_EFFORTS = Object.freeze([
   "provider-default", "none", "minimal", "low", "medium", "high", "xhigh", "max",
 ]);
-export const LLM_AI_TOOL_PROTOCOLS = Object.freeze(["auto", "native", "structured"]);
+export const LLM_AI_TOOL_PROTOCOLS = Object.freeze(["native", "structured"]);
 
 const PROFILE_NAME_LIMIT = 64;
 const MODEL_LIMIT = 256;
@@ -86,7 +86,10 @@ export function createLlmAiProfile(input = {}, {
   if (!LLM_AI_THINKING_EFFORTS.includes(thinkingEffort)) {
     throw new TypeError("Thinking effort is not supported");
   }
-  const toolProtocol = input.toolProtocol ?? "auto";
+  // Version-1 "auto" profiles silently changed protocols during a match. They
+  // migrate to native and must be explicitly changed to the separate adapter.
+  const requestedProtocol = input.toolProtocol ?? "native";
+  const toolProtocol = requestedProtocol === "auto" ? "native" : requestedProtocol;
   if (!LLM_AI_TOOL_PROTOCOLS.includes(toolProtocol)) {
     throw new TypeError("Tool protocol is not supported");
   }
@@ -105,6 +108,12 @@ export function createLlmAiProfile(input = {}, {
     thinkingEffort,
     contextSize,
     responseTokens,
+    routineObservationTokens: integerInRange(input.routineObservationTokens ?? 8_192,
+      "Routine observation budget", 512, 65_536),
+    toolResultTokens: integerInRange(input.toolResultTokens ?? 4_096,
+      "Tool result budget", 256, 65_536),
+    recentContextTokens: integerInRange(input.recentContextTokens ?? 20_000,
+      "Recent context suffix", 1_024, 131_072),
     mandate: requireString(input.mandate ?? DEFAULT_LLM_AI_MANDATE, "Mandate", MANDATE_LIMIT),
     toolProtocol,
     planningIntervalMs: integerInRange(input.planningIntervalMs ?? 2_000,
@@ -160,43 +169,130 @@ export function buildLlmAiSystemPrompt(profile, { toolProtocol = profile.toolPro
     `You are ${profile.name}, an autonomous Command & Conquer: Generals – Zero Hour commander.`,
     `MANDATE: ${profile.mandate}`,
     "No human is chatting with you during the match. Messages labelled ENVIRONMENT are authoritative game observations or tool results, not user requests.",
+    "Simulation time is authoritative: the engine runs at 30 logic frames per game-second. Use observation time.gameSeconds and time.sincePrevious to judge whether jobs, movement, scouting, income, or combat have had enough game time to progress.",
     "Act continuously until the authoritative game state reports victory, defeat, or cancellation. Never wait for approval and never claim an action happened unless its tool result confirms it.",
     "Operate only the assigned player. Treat fog of war, hidden entities, unavailable commands, resource limits, placement rules, and rejected actions as real constraints.",
-    "The classic AI is the execution and safety substrate for this LLM slot. Use its strategic levers and semantic game tools deliberately: maintain income and power, expand production, scout, counter observed threats, assemble effective forces, attack objectives, and recover from failed plans. Prefer classic_ai_directive buildBuilding for strategic construction because the classic AI owns legal placement; use use_command construction only after inspecting terrain and nearby objects.",
+    "You exclusively own strategic policy for this player. Classic strategic selection is disabled while your lease is active. The engine still executes accepted work orders, production queues, team completion, pathfinding, combat state machines, and deterministic commands.",
+    "Use the semantic strategic tools deliberately: maintain income and power, expand production, scout, counter observed threats, assemble forces, assign missions, attack objectives, and recover from blocked jobs. Query bounded detail only when the compact routine observation does not answer a decision.",
+    "A non-terminal match with no visible threats is not victory. Attack every visible structure objective. If none is visible, use the map extent, inspect enemy structures, and send surviving squads to scout distinct unexplored regions until an objective appears; then destroy it. Never wait repeatedly for victory while the authoritative outcome is still empty.",
     "Prefer a short sequence of high-impact actions over repetitive polling. A wait is appropriate only while a confirmed action is progressing; do not spend consecutive turns waiting while the game is active and legal strategic, production, scouting, or combat actions remain. Re-observe after material tool results. If a tool fails, use the error to change the plan; do not repeat an identical invalid call indefinitely.",
     "Use only the supplied tools. Tool arguments are untrusted until the runtime validates them. A wait action means the current plan is progressing and the agent should wake on the next meaningful event or planning deadline.",
-    `Tool protocol: ${toolProtocol}. Keep private reasoning private; concise action notes may be recorded in the match session.`,
+    `Tool protocol: ${toolProtocol}. Protocols never change automatically during a match. Keep private reasoning private; concise action notes may be recorded in the match session.`,
   ].join("\n\n");
 }
 
-export function approximateLlmTokens(messages) {
-  return messages.reduce((total, message) => total + 8
-    + Math.ceil(JSON.stringify(message).length / 4), 0);
+export function conservativeLlmTokens(value, { tokenizer } = {}) {
+  const serialized = typeof value === "string" ? value : JSON.stringify(value ?? null);
+  if (typeof tokenizer === "function") {
+    const exact = Number(tokenizer(serialized));
+    if (Number.isInteger(exact) && exact >= 0) return exact;
+  }
+  const bytes = typeof TextEncoder === "function"
+    ? new TextEncoder().encode(serialized).length : serialized.length * 2;
+  return Math.ceil(bytes / 3) + 4;
+}
+
+export function approximateLlmTokens(messages, options = {}) {
+  return conservativeLlmTokens(messages, options) + messages.length * 4;
+}
+
+export function estimateLlmRequestTokens(messages, tools, profile, options = {}) {
+  return approximateLlmTokens(messages, options)
+    + conservativeLlmTokens((tools || []).map(({ name, description, parameters }) =>
+      ({ name, description, parameters })), options)
+    + profile.responseTokens;
+}
+
+function conversationGroups(messages) {
+  const groups = [];
+  for (let index = 0; index < messages.length;) {
+    const message = messages[index];
+    if (message.role === "assistant" && Array.isArray(message.tool_calls)
+      && message.tool_calls.length > 0) {
+      const ids = new Set(message.tool_calls.map((call) => call.id));
+      const group = [message];
+      index += 1;
+      while (index < messages.length && messages[index].role === "tool"
+        && ids.has(messages[index].tool_call_id)) {
+        group.push(messages[index]);
+        index += 1;
+      }
+      groups.push(group);
+      continue;
+    }
+    groups.push([message]);
+    index += 1;
+  }
+  return groups;
+}
+
+function checkpointMessage(strategicState, priorSummary, omittedGroups) {
+  const retainedPrior = priorSummary && typeof priorSummary === "object"
+    ? Object.fromEntries(Object.entries(priorSummary).filter(([key]) => key !== "priorSummary"))
+    : priorSummary || null;
+  return {
+    role: "system",
+    content: `STRATEGIC CHECKPOINT\n${JSON.stringify({
+      version: 1,
+      omittedGroups,
+      priorSummary: retainedPrior,
+      ...strategicState,
+    })}`,
+  };
 }
 
 export function compactLlmConversation(messages, {
   contextSize,
   responseTokens,
-  targetFraction = 0.82,
+  recentContextTokens = 20_000,
+} = {}, {
+  tools = [],
+  strategicState = {},
+  tokenizer,
+  force = false,
 } = {}) {
-  const limit = Math.max(1_024, Math.floor((contextSize - responseTokens) * targetFraction));
-  if (approximateLlmTokens(messages) <= limit) return { messages: [...messages], compacted: false };
-  const system = messages.filter((message) => message.role === "system").slice(0, 1);
-  const candidates = messages.slice(system.length);
-  const retained = [];
-  let used = approximateLlmTokens(system) + 80;
-  for (let index = candidates.length - 1; index >= 0; index -= 1) {
-    const candidate = candidates[index];
-    const cost = approximateLlmTokens([candidate]);
-    if (used + cost > limit && retained.length > 0) break;
-    retained.unshift(candidate);
-    used += cost;
+  const system = messages.slice(0, 1);
+  const previousCheckpoint = messages.find((message, index) => index > 0
+    && message.role === "system" && message.content?.startsWith("STRATEGIC CHECKPOINT\n"));
+  let priorSummary = null;
+  if (previousCheckpoint) {
+    try { priorSummary = JSON.parse(previousCheckpoint.content.slice("STRATEGIC CHECKPOINT\n".length)); }
+    catch { priorSummary = { unavailable: true }; }
   }
-  while (retained[0]?.role === "tool") retained.shift();
-  const omitted = candidates.length - retained.length;
-  const marker = {
-    role: "system",
-    content: `CONTEXT COMPACTION: ${omitted} older environment/model/tool messages were omitted. The latest retained observations and tool results are authoritative. Re-observe before relying on omitted tactical detail.`,
+  const candidates = messages.slice(1).filter((message) => message !== previousCheckpoint);
+  const currentEstimate = estimateLlmRequestTokens(messages, tools,
+    { responseTokens }, { tokenizer });
+  const hardLimit = contextSize;
+  const triggerLimit = Math.floor(contextSize * 0.90);
+  if (!force && currentEstimate <= triggerLimit) {
+    return { messages: [...messages], compacted: false, estimatedTokens: currentEstimate };
+  }
+
+  const groups = conversationGroups(candidates);
+  const retainedGroups = [];
+  let suffixTokens = 0;
+  for (let index = groups.length - 1; index >= 0; index -= 1) {
+    const cost = approximateLlmTokens(groups[index], { tokenizer });
+    if (retainedGroups.length > 0 && suffixTokens + cost > recentContextTokens) break;
+    retainedGroups.unshift(groups[index]);
+    suffixTokens += cost;
+  }
+  let omittedGroups = groups.length - retainedGroups.length;
+  let checkpoint = checkpointMessage(strategicState, priorSummary, omittedGroups);
+  let compacted = [...system, checkpoint, ...retainedGroups.flat()];
+  while (retainedGroups.length > 0
+    && estimateLlmRequestTokens(compacted, tools, { responseTokens }, { tokenizer }) > hardLimit) {
+    retainedGroups.shift();
+    omittedGroups += 1;
+    checkpoint = checkpointMessage(strategicState, priorSummary, omittedGroups);
+    compacted = [...system, checkpoint, ...retainedGroups.flat()];
+  }
+  return {
+    messages: compacted,
+    compacted: true,
+    omitted: candidates.length - retainedGroups.flat().length,
+    omittedGroups,
+    retainedMessages: retainedGroups.flat().length,
+    estimatedTokens: estimateLlmRequestTokens(compacted, tools, { responseTokens }, { tokenizer }),
   };
-  return { messages: [...system, marker, ...retained], compacted: true, omitted };
 }
