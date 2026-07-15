@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="./harness.css">
     <link rel="stylesheet" href="./launcher.css">
     <link rel="stylesheet" href="./launcher-games.css">
+    <link rel="stylesheet" href="./llm-ai-manager.css">
     <link rel="stylesheet" href="./launcher-runtime.css">
   </head>
   <body>
@@ -27,6 +28,7 @@
       <symbol id="i-box" viewBox="0 0 24 24"><path d="m3 7 9-4.4L21 7v10l-9 4.4L3 17V7Z" fill="#ca8b42"/><path d="m3 7 9 4.4L21 7l-9-4.4L3 7Z" fill="#edb969"/><path d="m12 11.4 9-4.4v10l-9 4.4v-10Z" fill="#a96831"/><path d="m7.4 4.8 9 4.4v3.3l-1.8-.5-1.4 1.9v-3.4L4.8 6.4l2.6-1.6Z" fill="#ffd895"/></symbol>
       <symbol id="i-apps" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5" fill="#4d91cf"/><rect x="13" y="3" width="8" height="8" rx="1.5" fill="#dc8446"/><rect x="3" y="13" width="8" height="8" rx="1.5" fill="#79a952"/><rect x="13" y="13" width="8" height="8" rx="1.5" fill="#e0ba3f"/></symbol>
       <symbol id="i-mod" viewBox="0 0 24 24"><path d="M4.2 4.2h4.1a3.7 3.7 0 1 1 7.4 0h4.1v4.1a3.7 3.7 0 1 1 0 7.4v4.1h-4.1a3.7 3.7 0 1 1-7.4 0H4.2v-4.1a3.7 3.7 0 1 1 0-7.4V4.2Z" fill="#7457ad"/><path d="M12 2.3c-1 0-1.8.8-1.8 1.9 0 .7.4 1.3 1 1.6H6v5.4a1.9 1.9 0 1 0 0 3.6V18h5.2a1.9 1.9 0 1 1 3.6 0H18v-5.2a1.9 1.9 0 1 0 0-3.6V6h-5.2c.7-.3 1-1 1-1.8 0-1-.8-1.9-1.8-1.9Z" fill="#9d83cf"/><path d="M6 11.2a1.9 1.9 0 1 0 0 3.6" fill="none" stroke="#eadfff" stroke-width="1.1"/></symbol>
+      <symbol id="i-llm-ai" viewBox="0 0 48 48"><defs><linearGradient id="g-llm-ai" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#54a5cf"/><stop offset="1" stop-color="#3b4b8d"/></linearGradient></defs><path d="M12 8h24a6 6 0 0 1 6 6v20a6 6 0 0 1-6 6H12a6 6 0 0 1-6-6V14a6 6 0 0 1 6-6Z" fill="url(#g-llm-ai)" stroke="#d8f1ff" stroke-width="2"/><path d="M24 2v6M18 2h12" stroke="#d8f1ff" stroke-width="2" stroke-linecap="round"/><circle cx="17" cy="22" r="3" fill="#9ce7c5"/><circle cx="31" cy="22" r="3" fill="#9ce7c5"/><path d="M15 31c5 4 13 4 18 0M2 20h4M42 20h4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/><path d="m35 7 2-4 2 4 4 2-4 2-2 4-2-4-4-2 4-2Z" fill="#f3cf68"/></symbol>
       <symbol id="i-gear" viewBox="0 0 24 24"><path d="M9.8 2.6h4.4l.7 2.3c.5.2 1 .5 1.4.8l2.3-.5 2.2 3.7-1.6 1.8v1.7l1.6 1.8-2.2 3.7-2.3-.5c-.4.3-.9.6-1.4.8l-.7 2.3H9.8l-.7-2.3c-.5-.2-1-.5-1.4-.8l-2.3.5-2.2-3.7 1.6-1.8v-1.7L3.2 8.9l2.2-3.7 2.3.5c.4-.3.9-.6 1.4-.8l.7-2.3Z" fill="#7893a5"/><circle cx="12" cy="11.7" r="3.4" fill="#e8f1f5"/><circle cx="12" cy="11.7" r="1.6" fill="#65849a"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="#5b9dd3"/><circle cx="12" cy="7.2" r="1.3" fill="#fff"/><path d="M10.7 10.2h2.5v7.1h-2.5z" fill="#fff"/></symbol>
       <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2.2 8 3v5.9c0 5.2-3.3 8.7-8 10.7-4.7-2-8-5.5-8-10.7V5.2l8-3Z" fill="#5d9e72"/><path d="m8.2 11.8 2.3 2.3 5.4-5.5" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -78,6 +80,9 @@
         </button>
         <button class="desktop-icon" type="button" data-open="mods" aria-label="Open Mod Manager">
           <span class="desktop-icon-art app-art"><svg><use href="#i-mod"/></svg></span><span>Mod Manager</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="llmAi" aria-label="Open LLM AI Manager">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-llm-ai"/></svg></span><span>LLM AI Manager</span>
         </button>
         <button class="desktop-icon" type="button" data-open="gameData" aria-label="Open Save and Replay Manager">
           <span class="desktop-icon-art"><svg><use href="#i-save"/></svg></span><span>Save &amp; Replay Manager</span>
@@ -337,6 +342,52 @@
               <div id="modImportProgress" class="mod-import-progress" role="status">Ready to import. Files remain on this device.</div>
             </section>
             <section class="installed-mods-panel"><header><div><h2>Launch configuration</h2><p id="modConfigurationSummary">No mods enabled.</p></div><div><button id="modUseVanillaButton" type="button" class="button secondary small">Use vanilla</button><button id="modApplyButton" type="button" class="button primary small">Apply &amp; reload</button></div></header><div id="installedModList" class="installed-mod-list"></div><div id="installedModEmpty" class="manager-empty"><svg><use href="#i-mod"/></svg><strong>No mods installed</strong><span>Import a downloaded package or an unpacked mod folder.</span></div></section>
+          </div>
+        </article>
+
+        <article id="llmAiWindow" class="window llm-ai-window" data-app="llmAi" style="--x: 53%; --y: 45%; --w: 940px; --h: 650px;" aria-label="LLM AI Manager">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-llm-ai"/></svg></span><span>Zero Hour LLM AI Manager</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="llm-ai-manager-body">
+            <header class="llm-ai-heading">
+              <div><p class="eyebrow">AUTONOMOUS COMMANDERS</p><h1>LLM AI Manager</h1><p>Configure OpenAI-compatible commanders and inspect every locally recorded match session.</p></div>
+              <button id="llmAiNewProfile" type="button" class="button primary small">New commander</button>
+            </header>
+            <nav class="llm-ai-tabs" aria-label="LLM AI manager sections"><button type="button" class="is-selected" data-llm-ai-view="profiles">Commanders</button><button type="button" data-llm-ai-view="sessions">Sessions</button></nav>
+            <section id="llmAiProfilesView" class="llm-ai-view llm-ai-profile-view">
+              <aside><div id="llmAiProfileList" class="llm-ai-profile-list"></div><div id="llmAiProfileEmpty" class="llm-ai-empty"><svg><use href="#i-llm-ai"/></svg><strong>No LLM commanders yet</strong><span>Create one to make it available to Zero Hour.</span></div></aside>
+              <form id="llmAiProfileForm" class="llm-ai-form" autocomplete="off">
+                <input id="llmAiProfileId" type="hidden">
+                <div class="llm-ai-form-heading"><div><h2 id="llmAiFormTitle">New commander</h2><p>Credentials remain in this browser and are excluded from exports.</p></div><span id="llmAiSavedBadge" hidden>Saved</span></div>
+                <div class="llm-ai-fields two-column">
+                  <label>Name<input id="llmAiName" maxlength="64" required placeholder="Strategist Alpha"></label>
+                  <label>Model <span id="llmAiModelHint" class="llm-ai-optional">Enter an endpoint to discover models</span><span class="llm-ai-inline-control"><input id="llmAiModel" list="llmAiModelOptions" maxlength="256" required placeholder="qwen3.6-35b-a3b-mtp@q8_k_xl"><button id="llmAiDiscoverModels" type="button" class="button secondary small">Load models</button></span><datalist id="llmAiModelOptions"></datalist></label>
+                </div>
+                <label>OpenAI-compatible endpoint <span class="llm-ai-optional">HTTPS, localhost, or browser-approved local network</span><input id="llmAiEndpoint" type="url" maxlength="2048" required placeholder="http://127.0.0.1:1234"></label>
+                <label>API key <span class="llm-ai-optional">optional · stored locally</span><input id="llmAiApiKey" type="password" maxlength="4096" spellcheck="false" placeholder="Not required by local endpoints"></label>
+                <div class="llm-ai-fields three-column">
+                  <label>Thinking effort<select id="llmAiThinking"><option>provider-default</option><option>none</option><option>minimal</option><option>low</option><option selected>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
+                  <label>Context tokens <span id="llmAiContextHint" class="llm-ai-optional">Manual until reported by the provider</span><span class="llm-ai-inline-control"><input id="llmAiContext" type="number" min="4096" max="2097152" step="1024" value="262144"><button id="llmAiApplyContext" type="button" class="button secondary small" hidden>Use detected</button></span></label>
+                  <label>Tool adapter<select id="llmAiToolProtocol"><option value="native" selected>Native streaming tools</option><option value="structured">Structured action adapter</option></select></label>
+                </div>
+                <div class="llm-ai-fields three-column">
+                  <label>Routine observation budget <input id="llmAiObservationTokens" type="number" min="512" max="65536" step="256" value="8192"> tokens</label>
+                  <label>Tool result budget <input id="llmAiToolResultTokens" type="number" min="256" max="65536" step="256" value="4096"> tokens</label>
+                  <label>Recent context suffix <input id="llmAiRecentContextTokens" type="number" min="1024" max="131072" step="1024" value="20000"> tokens</label>
+                </div>
+                <label>Mandate<textarea id="llmAiMandate" maxlength="8192" rows="4">Play to the best of your capability and win the game.</textarea></label>
+                <div class="llm-ai-runtime-policy"><label><input id="llmAiClassicFallback" type="checkbox" checked> Transfer the strategy lease to classic AI after the failure limit</label><label>Planning interval <input id="llmAiPlanningInterval" type="number" min="250" max="60000" step="250" value="2000"> ms</label></div>
+                <section id="llmAiDiagnostics" class="llm-ai-diagnostics" aria-label="Endpoint diagnostics" hidden><header><strong>Endpoint diagnostics</strong><span id="llmAiDiagnosticsSummary"></span></header><ul id="llmAiDiagnosticChecks"></ul></section>
+                <div id="llmAiFormStatus" class="llm-ai-status" role="status">Profiles and session traces stay in this browser.</div>
+                <div class="llm-ai-form-actions"><button id="llmAiDeleteProfile" type="button" class="button secondary small" disabled>Delete</button><button id="llmAiDuplicateProfile" type="button" class="button secondary small" disabled>Duplicate</button><span></span><button id="llmAiTestEndpoint" type="button" class="button secondary small">Run diagnostics</button><button type="submit" class="button primary small">Save commander</button></div>
+              </form>
+            </section>
+            <section id="llmAiSessionsView" class="llm-ai-view llm-ai-session-view" hidden>
+              <aside><div id="llmAiSessionList" class="llm-ai-session-list"></div><div id="llmAiSessionEmpty" class="llm-ai-empty"><svg><use href="#i-replay"/></svg><strong>No recorded sessions</strong><span>Matches will appear here turn by turn.</span></div></aside>
+              <div class="llm-ai-session-detail"><header><div><h2 id="llmAiSessionTitle">Select a session</h2><p id="llmAiSessionSummary">Model turns, tools, errors, timing, and outcome are recorded locally.</p></div><div><button id="llmAiExportSession" type="button" class="button secondary small" disabled>Export JSON</button><button id="llmAiDeleteSession" type="button" class="button secondary small" disabled>Delete</button></div></header><div id="llmAiSessionMetrics" class="llm-ai-session-metrics"></div><ol id="llmAiSessionEvents" class="llm-ai-session-events"></ol></div>
+            </section>
           </div>
         </article>
 

@@ -189,6 +189,42 @@ assert.equal(diag.d3d8PerfSummary().vertexArrayCacheEntries, 1);
 
 assert.equal(hooks.cncPortD3D8BufferCreate({
   kind: 1,
+  id: 5,
+  byteSize: 16,
+  usage: D3DUSAGE_WRITEONLY,
+}), 1);
+const releasedVertexArray = { id: "released-vertex-buffer-vao" };
+diag.rememberD3D8VertexArray(
+  vertexArrayKey(5),
+  94,
+  releasedVertexArray,
+  { id: "index-94" },
+);
+assert.equal(hooks.cncPortD3D8BufferRelease({ kind: 1, id: 5 }), 1);
+assert.equal(calls.deletedVertexArrays.includes(releasedVertexArray), true);
+assert.equal(calls.deletedVertexArrays.includes(unrelatedVertexArray), false);
+assert.equal(diag.d3d8PerfSummary().vertexArrayCacheEntries, 1);
+
+assert.equal(hooks.cncPortD3D8BufferCreate({
+  kind: 2,
+  id: 6,
+  byteSize: 16,
+  usage: D3DUSAGE_WRITEONLY,
+}), 1);
+const releasedIndexArray = { id: "released-index-buffer-vao" };
+diag.rememberD3D8VertexArray(
+  vertexArrayKey(95),
+  6,
+  releasedIndexArray,
+  diag.d3d8Buffers.get("index:6").buffer,
+);
+assert.equal(hooks.cncPortD3D8BufferRelease({ kind: 2, id: 6 }), 1);
+assert.equal(calls.deletedVertexArrays.includes(releasedIndexArray), true);
+assert.equal(calls.deletedVertexArrays.includes(unrelatedVertexArray), false);
+assert.equal(diag.d3d8PerfSummary().vertexArrayCacheEntries, 1);
+
+assert.equal(hooks.cncPortD3D8BufferCreate({
+  kind: 1,
   id: 2,
   byteSize: 32,
   usage: D3DUSAGE_DYNAMIC,

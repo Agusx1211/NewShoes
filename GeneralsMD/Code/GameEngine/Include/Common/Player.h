@@ -445,6 +445,11 @@ public:
 
 	/// Is this player a skirmish ai player?
 	Bool isSkirmishAIPlayer( void );
+	void setExternalAIStrategyController(Bool enabled);
+	Bool hasExternalAIStrategyController(void) const;
+	UnsignedInt getClassicAIStrategyUpdateCount(void) const;
+	UnsignedInt getControllerNeutralAIUpdateCount(void) const;
+	UnsignedInt getAIStrategyControllerTransitionCount(void) const;
 
 	/// Have the ai check for bridges.
 	virtual Bool checkBridges(Object *unit, Waypoint *way);

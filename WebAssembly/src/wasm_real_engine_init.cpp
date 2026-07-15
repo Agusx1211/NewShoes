@@ -82,6 +82,7 @@
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
 #include "GameNetwork/GameInfo.h"
+#include "GameNetwork/GameSpy/ThreadUtils.h"
 #include "wasm_browser_mouse.h"
 #include "GameLogic/AI.h"
 #include "GameLogic/Module/AIUpdate.h"
@@ -91,6 +92,7 @@
 #include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/TerrainLogic.h"
+#include "GameLogic/VictoryConditions.h"
 #include "GameLogic/Weapon.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/Module/BodyModule.h"
@@ -311,6 +313,105 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_commander_n
 	json = g_browser_commander_name.empty()
 		? "{\"ok\":false,\"error\":\"emptyCommanderName\"}"
 		: "{\"ok\":true}";
+	return json.c_str();
+}
+
+static bool decode_llm_ai_catalog_component(const std::string &encoded, std::string &decoded)
+{
+	decoded.clear();
+	decoded.reserve(encoded.size());
+	for (std::size_t i = 0; i < encoded.size(); ++i) {
+		unsigned char c = static_cast<unsigned char>(encoded[i]);
+		if (c != '%') {
+			decoded.push_back(static_cast<char>(c));
+			continue;
+		}
+		if (i + 2 >= encoded.size()
+			|| !std::isxdigit(static_cast<unsigned char>(encoded[i + 1]))
+			|| !std::isxdigit(static_cast<unsigned char>(encoded[i + 2]))) {
+			return false;
+		}
+		auto hex_value = [](char value) -> unsigned char {
+			if (value >= '0' && value <= '9') return static_cast<unsigned char>(value - '0');
+			if (value >= 'a' && value <= 'f') return static_cast<unsigned char>(value - 'a' + 10);
+			return static_cast<unsigned char>(value - 'A' + 10);
+		};
+		decoded.push_back(static_cast<char>((hex_value(encoded[i + 1]) << 4)
+			| hex_value(encoded[i + 2])));
+		i += 2;
+	}
+	return true;
+}
+
+static bool valid_llm_ai_profile_id(const std::string &id)
+{
+	if (id.empty() || id.size() > 128) return false;
+	for (unsigned char c : id) {
+		if (!std::isalnum(c) && c != '.' && c != '_' && c != '-') return false;
+	}
+	return true;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_llm_ai_profiles(const char *catalog)
+{
+	static std::string json;
+	std::vector<std::pair<std::string, std::string> > parsed;
+	std::string packed = catalog != NULL ? catalog : "";
+	std::size_t start = 0;
+	std::string error;
+	while (start < packed.size()) {
+		std::size_t end = packed.find('&', start);
+		if (end == std::string::npos) end = packed.size();
+		std::string row = packed.substr(start, end - start);
+		std::size_t separator = row.find('=');
+		std::string id;
+		std::string name;
+		if (separator == std::string::npos
+			|| !decode_llm_ai_catalog_component(row.substr(0, separator), id)
+			|| !decode_llm_ai_catalog_component(row.substr(separator + 1), name)) {
+			error = "invalidEncoding";
+			break;
+		}
+		if (!valid_llm_ai_profile_id(id) || name.empty() || name.size() > 256) {
+			error = "invalidProfile";
+			break;
+		}
+		bool duplicate = false;
+		for (const auto &entry : parsed) {
+			if (entry.first == id) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (duplicate) {
+			error = "duplicateProfile";
+			break;
+		}
+		parsed.push_back(std::make_pair(id, name));
+		if (parsed.size() > MAX_LLM_AI_PROFILES) {
+			error = "tooManyProfiles";
+			break;
+		}
+		start = end + 1;
+	}
+
+	if (!error.empty()) {
+		json = "{\"ok\":false,\"error\":\"" + error + "\"}";
+		return json.c_str();
+	}
+
+	ClearLlmAiProfileCatalog();
+	for (const auto &entry : parsed) {
+		UnicodeString name;
+		name.set(MultiByteToWideCharSingleLine(entry.second.c_str()).c_str());
+		if (!AddLlmAiProfileToCatalog(AsciiString(entry.first.c_str()), name)) {
+			ClearLlmAiProfileCatalog();
+			json = "{\"ok\":false,\"error\":\"catalogRejected\"}";
+			return json.c_str();
+		}
+	}
+	json = "{\"ok\":true,\"profileCount\":"
+		+ std::to_string(static_cast<long long>(GetLlmAiProfileCount())) + "}";
 	return json.c_str();
 }
 static unsigned int g_frame_texture_apply_count = 0;
@@ -3696,6 +3797,9 @@ void append_game_slot_json(std::string &json, const char *field_name, const Game
 		json += slot->isHuman() ? "true" : "false";
 		json += ",\"ai\":";
 		json += slot->isAI() ? "true" : "false";
+		json += ",\"llmAi\":";
+		json += slot->isLlmAi() ? "true" : "false";
+		json += ",\"llmAiProfileId\":\"" + json_escape(slot->getLlmAiProfileId().str()) + "\"";
 		json += ",\"occupied\":";
 		json += slot->isOccupied() ? "true" : "false";
 		json += ",\"color\":" + std::to_string(static_cast<long long>(slot->getColor()));
@@ -3753,6 +3857,9 @@ void append_game_info_json(std::string &json, const char *field_name, const Game
 			json += slot->isHuman() ? "true" : "false";
 			json += ",\"ai\":";
 			json += slot->isAI() ? "true" : "false";
+			json += ",\"llmAi\":";
+			json += slot->isLlmAi() ? "true" : "false";
+			json += ",\"llmAiProfileId\":\"" + json_escape(slot->getLlmAiProfileId().str()) + "\"";
 			json += ",\"color\":" + std::to_string(static_cast<long long>(slot->getColor()));
 			json += ",\"startPos\":" + std::to_string(static_cast<long long>(slot->getStartPos()));
 			json += ",\"teamNumber\":" + std::to_string(static_cast<long long>(slot->getTeamNumber()));
@@ -8302,6 +8409,282 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_lan_state()
 	json = "{";
 	append_lan_runtime_json(json);
 	json += "}";
+	return json.c_str();
+}
+
+namespace {
+
+struct LlmAiTerminalSlotOutcome {
+	Int slot;
+	Int player_index;
+	std::string profile_id;
+	std::string outcome;
+	std::string strategy_controller;
+	UnsignedInt classic_strategy_updates;
+	UnsignedInt controller_neutral_updates;
+	UnsignedInt strategy_transitions;
+};
+
+struct LlmAiTerminalOutcomeLatch {
+	bool authoritative = false;
+	UnsignedInt end_frame = 0;
+	Int game_id = 0;
+	UnsignedInt seed = 0;
+	std::string map;
+	std::vector<LlmAiTerminalSlotOutcome> slots;
+};
+
+LlmAiTerminalOutcomeLatch g_llm_ai_terminal_outcome;
+
+const LlmAiTerminalSlotOutcome *find_latched_llm_outcome(
+	Int slot,
+	const std::string &profile_id)
+{
+	for (const LlmAiTerminalSlotOutcome &entry : g_llm_ai_terminal_outcome.slots) {
+		if (entry.slot == slot && entry.profile_id == profile_id) return &entry;
+	}
+	return NULL;
+}
+
+Player *find_llm_ai_slot_player(Int slot_num)
+{
+	AsciiString player_name;
+	player_name.format("player%d", slot_num);
+	return ThePlayerList != NULL && TheNameKeyGenerator != NULL
+		? ThePlayerList->findPlayerWithNameKey(
+			TheNameKeyGenerator->nameToKey(player_name)) : NULL;
+}
+
+LlmAiTerminalSlotOutcome make_llm_ai_slot_outcome(
+	Int slot_num,
+	const GameSlot *slot,
+	Player *player,
+	const char *outcome)
+{
+	return {
+		slot_num,
+		player != NULL ? player->getPlayerIndex() : -1,
+		slot->getLlmAiProfileId().str(),
+		outcome,
+		player != NULL && player->hasExternalAIStrategyController() ? "llm" : "classic",
+		player != NULL ? player->getClassicAIStrategyUpdateCount() : 0,
+		player != NULL ? player->getControllerNeutralAIUpdateCount() : 0,
+		player != NULL ? player->getAIStrategyControllerTransitionCount() : 0,
+	};
+}
+
+void remember_llm_ai_slot_outcome(const LlmAiTerminalSlotOutcome &outcome)
+{
+	for (LlmAiTerminalSlotOutcome &entry : g_llm_ai_terminal_outcome.slots) {
+		if (entry.slot == outcome.slot && entry.profile_id == outcome.profile_id) {
+			entry = outcome;
+			return;
+		}
+	}
+	g_llm_ai_terminal_outcome.slots.push_back(outcome);
+}
+
+void remember_llm_ai_match_identity(const GameInfo *game)
+{
+	if (game == NULL) return;
+	g_llm_ai_terminal_outcome.authoritative = true;
+	g_llm_ai_terminal_outcome.game_id = game->getGameID();
+	g_llm_ai_terminal_outcome.seed = game->getSeed();
+	g_llm_ai_terminal_outcome.map = game->getMap().str();
+}
+
+}
+
+extern "C" void cnc_port_reset_llm_ai_terminal_outcomes(void)
+{
+	g_llm_ai_terminal_outcome = LlmAiTerminalOutcomeLatch();
+}
+
+extern "C" void cnc_port_capture_llm_ai_player_defeat(Int slot_num)
+{
+	const Int game_mode = TheGameLogic != NULL ? TheGameLogic->getGameMode() : GAME_NONE;
+	const GameInfo *game = TheGameInfo != NULL ? TheGameInfo : TheSkirmishGameInfo;
+	const bool authoritative = game_mode == GAME_SKIRMISH
+		|| (game_mode == GAME_LAN && game != NULL && game->amIHost());
+	const GameSlot *slot = game != NULL ? game->getConstSlot(slot_num) : NULL;
+	if (!authoritative || slot == NULL || !slot->isLlmAi()) return;
+
+	remember_llm_ai_match_identity(game);
+	remember_llm_ai_slot_outcome(make_llm_ai_slot_outcome(
+		slot_num, slot, find_llm_ai_slot_player(slot_num), "defeat"));
+}
+
+extern "C" void cnc_port_capture_llm_ai_terminal_outcomes(void)
+{
+	const Int game_mode = TheGameLogic != NULL ? TheGameLogic->getGameMode() : GAME_NONE;
+	const GameInfo *game = TheGameInfo != NULL ? TheGameInfo : TheSkirmishGameInfo;
+	const bool authoritative = game_mode == GAME_SKIRMISH
+		|| (game_mode == GAME_LAN && game != NULL && game->amIHost());
+	const UnsignedInt end_frame = TheVictoryConditions != NULL
+		? TheVictoryConditions->getEndFrame() : 0;
+	if (!authoritative || game == NULL || end_frame == 0) return;
+
+	LlmAiTerminalOutcomeLatch captured;
+	captured.authoritative = true;
+	captured.end_frame = end_frame;
+	captured.game_id = game->getGameID();
+	captured.seed = game->getSeed();
+	captured.map = game->getMap().str();
+	for (Int slot_num = 0; slot_num < MAX_SLOTS; ++slot_num) {
+		const GameSlot *slot = game->getConstSlot(slot_num);
+		if (slot == NULL || !slot->isLlmAi()) continue;
+		Player *player = find_llm_ai_slot_player(slot_num);
+		bool victory = player != NULL && TheVictoryConditions != NULL
+			&& TheVictoryConditions->hasAchievedVictory(player);
+		if (player == NULL) {
+			victory = slot->lastFrameInGame() == 0;
+			const Int team = slot->getTeamNumber();
+			if (!victory && team >= 0) {
+				for (Int ally_slot_num = 0; ally_slot_num < MAX_SLOTS; ++ally_slot_num) {
+					const GameSlot *ally = game->getConstSlot(ally_slot_num);
+					if (ally != NULL && ally->isOccupied() && ally->getTeamNumber() == team
+						&& ally->lastFrameInGame() == 0) {
+						victory = true;
+						break;
+					}
+				}
+			}
+		}
+		const LlmAiTerminalSlotOutcome *prior = find_latched_llm_outcome(
+			slot_num, slot->getLlmAiProfileId().str());
+		if (!victory && prior != NULL) captured.slots.push_back(*prior);
+		else captured.slots.push_back(make_llm_ai_slot_outcome(
+			slot_num, slot, player, victory ? "victory" : "defeat"));
+	}
+	g_llm_ai_terminal_outcome = captured;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_llm_ai_assignments()
+{
+	static std::string json;
+	const Int game_mode = TheGameLogic != NULL ? TheGameLogic->getGameMode() : GAME_NONE;
+	const GameInfo *game = TheGameInfo;
+	if (game == NULL && TheSkirmishGameInfo != NULL) game = TheSkirmishGameInfo;
+	const UnsignedInt current_end_frame = TheVictoryConditions != NULL
+		? TheVictoryConditions->getEndFrame() : 0;
+	const UnsignedInt end_frame = g_llm_ai_terminal_outcome.authoritative
+		? g_llm_ai_terminal_outcome.end_frame : current_end_frame;
+	const bool completed_skirmish = game_mode == GAME_NONE && end_frame != 0
+		&& game != NULL && game == TheSkirmishGameInfo;
+	const bool supported_mode = game_mode == GAME_SKIRMISH || game_mode == GAME_LAN
+		|| completed_skirmish || g_llm_ai_terminal_outcome.authoritative;
+	const bool authoritative = game_mode == GAME_SKIRMISH || completed_skirmish
+		|| g_llm_ai_terminal_outcome.authoritative
+		|| (game_mode == GAME_LAN && game != NULL && game->amIHost());
+	const bool playable = supported_mode && TheGameLogic != NULL && TheGameLogic->isInGame()
+		&& ThePlayerList != NULL && game != NULL && game->isGameInProgress();
+	const bool outcome_authoritative = g_llm_ai_terminal_outcome.authoritative
+		|| (authoritative && game != NULL && end_frame != 0);
+
+	json = "{\"ok\":true";
+	json += ",\"supportedMode\":";
+	json += supported_mode ? "true" : "false";
+	json += ",\"authoritative\":";
+	json += authoritative ? "true" : "false";
+	json += ",\"playable\":";
+	json += playable ? "true" : "false";
+	json += ",\"endFrame\":" + std::to_string(end_frame);
+	json += ",\"outcomeAuthoritative\":";
+	json += outcome_authoritative ? "true" : "false";
+	json += ",\"gameMode\":" + std::to_string(game_mode);
+	json += ",\"frame\":"
+		+ std::to_string(TheGameLogic != NULL ? TheGameLogic->getFrame() : 0);
+	json += ",\"gameId\":" + std::to_string(g_llm_ai_terminal_outcome.authoritative
+		? g_llm_ai_terminal_outcome.game_id : game != NULL ? game->getGameID() : 0);
+	json += ",\"map\":\"" + json_escape(g_llm_ai_terminal_outcome.authoritative
+		? g_llm_ai_terminal_outcome.map : game != NULL ? game->getMap().str() : "") + "\"";
+	json += ",\"seed\":" + std::to_string(g_llm_ai_terminal_outcome.authoritative
+		? g_llm_ai_terminal_outcome.seed : game != NULL ? game->getSeed() : 0);
+	json += ",\"assignments\":[";
+	bool first = true;
+	if (game != NULL) {
+		for (Int slot_num = 0; slot_num < MAX_SLOTS; ++slot_num) {
+			const GameSlot *slot = game->getConstSlot(slot_num);
+			if (slot == NULL || !slot->isLlmAi()) continue;
+			AsciiString player_name;
+			player_name.format("player%d", slot_num);
+			Player *player = ThePlayerList != NULL && TheNameKeyGenerator != NULL
+				? ThePlayerList->findPlayerWithNameKey(
+					TheNameKeyGenerator->nameToKey(player_name)) : NULL;
+			if (!first) json += ",";
+			first = false;
+			json += "{\"slot\":" + std::to_string(slot_num);
+			json += ",\"profileId\":\""
+				+ json_escape(slot->getLlmAiProfileId().str()) + "\"";
+			json += ",\"displayName\":\""
+				+ json_escape(unicode_to_debug_ascii(slot->getName())) + "\"";
+			json += ",\"playerIndex\":";
+			json += player != NULL ? std::to_string(player->getPlayerIndex()) : "null";
+			json += ",\"playerActive\":";
+			json += player != NULL && player->isPlayerActive() ? "true" : "false";
+			json += ",\"computerPlayer\":";
+			json += player != NULL && player->getPlayerType() == PLAYER_COMPUTER
+				&& player->isSkirmishAIPlayer() ? "true" : "false";
+			const LlmAiTerminalSlotOutcome *latched = find_latched_llm_outcome(
+				slot_num, slot->getLlmAiProfileId().str());
+			json += ",\"outcome\":";
+			if (latched != NULL) {
+				json += "\"" + latched->outcome + "\"";
+			} else if (!outcome_authoritative) {
+				json += "null";
+			} else if (player != NULL && TheVictoryConditions != NULL
+				&& TheVictoryConditions->hasAchievedVictory(player)) {
+				json += "\"victory\"";
+			} else if (player != NULL && TheVictoryConditions != NULL
+				&& TheVictoryConditions->hasBeenDefeated(player)) {
+				json += "\"defeat\"";
+			} else {
+				bool allied_survivor = slot->lastFrameInGame() == 0;
+				const Int team = slot->getTeamNumber();
+				if (!allied_survivor && team >= 0) {
+					for (Int ally_slot_num = 0; ally_slot_num < MAX_SLOTS; ++ally_slot_num) {
+						const GameSlot *ally = game->getConstSlot(ally_slot_num);
+						if (ally != NULL && ally->isOccupied() && ally->getTeamNumber() == team
+							&& ally->lastFrameInGame() == 0) {
+							allied_survivor = true;
+							break;
+						}
+					}
+				}
+				json += allied_survivor ? "\"victory\"" : "\"defeat\"";
+			}
+			json += ",\"strategyController\":";
+			json += player != NULL && player->hasExternalAIStrategyController()
+				? "\"llm\"" : "\"classic\"";
+			json += ",\"classicStrategyUpdates\":"
+				+ std::to_string(player != NULL
+					? player->getClassicAIStrategyUpdateCount() : 0);
+			json += ",\"controllerNeutralUpdates\":"
+				+ std::to_string(player != NULL
+					? player->getControllerNeutralAIUpdateCount() : 0);
+			json += ",\"strategyTransitions\":"
+				+ std::to_string(player != NULL
+					? player->getAIStrategyControllerTransitionCount() : 0);
+			json += "}";
+		}
+	}
+	json += "],\"terminalOutcomes\":[";
+	for (std::size_t i = 0; i < g_llm_ai_terminal_outcome.slots.size(); ++i) {
+		const LlmAiTerminalSlotOutcome &entry = g_llm_ai_terminal_outcome.slots[i];
+		if (i != 0) json += ",";
+		json += "{\"slot\":" + std::to_string(entry.slot);
+		json += ",\"profileId\":\"" + json_escape(entry.profile_id) + "\"";
+		json += ",\"playerIndex\":" + std::to_string(entry.player_index);
+		json += ",\"outcome\":\"" + entry.outcome + "\"";
+		json += ",\"strategyController\":\"" + entry.strategy_controller + "\"";
+		json += ",\"classicStrategyUpdates\":"
+			+ std::to_string(entry.classic_strategy_updates);
+		json += ",\"controllerNeutralUpdates\":"
+			+ std::to_string(entry.controller_neutral_updates);
+		json += ",\"strategyTransitions\":" + std::to_string(entry.strategy_transitions);
+		json += "}";
+	}
+	json += "]}";
 	return json.c_str();
 }
 
