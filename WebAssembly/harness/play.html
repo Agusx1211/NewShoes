@@ -33,6 +33,7 @@
       <symbol id="i-game" viewBox="0 0 24 24"><path d="M5.6 7.2h12.8c2 0 3.1 1.7 3.5 4.2l.7 4.6c.4 2.5-2.3 3.8-3.9 2l-2.2-2.5h-9L5.3 18c-1.6 1.8-4.3.5-3.9-2l.7-4.6c.4-2.5 1.5-4.2 3.5-4.2Z" fill="#496d85"/><path d="M6.8 10v4M4.8 12h4" stroke="#eaf5f8" stroke-width="1.7" stroke-linecap="round"/><circle cx="16.3" cy="10.8" r="1.1" fill="#f3bd3c"/><circle cx="18.5" cy="13" r="1.1" fill="#e88a55"/></symbol>
       <symbol id="i-save" viewBox="0 0 24 24"><path d="M4 2.8h13l3 3v15.4H4V2.8Z" fill="#5d91c2"/><path d="M7 2.8h8v6H7z" fill="#e9f3f7"/><path d="M7 13h10v8.2H7z" fill="#d5e5ed"/><path d="M9.3 15.3h5.4" stroke="#7895a6" stroke-width="1.4"/></symbol>
       <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.3" fill="#4e8fc4"/><path d="M3 12h18M12 2.7c2.2 2.5 3.3 5.6 3.3 9.3S14.2 18.8 12 21.3C9.8 18.8 8.7 15.7 8.7 12S9.8 5.2 12 2.7Z" fill="none" stroke="#dcecf4" stroke-width="1.2"/><path d="M5.1 6.8h13.8M5.1 17.2h13.8" stroke="#dcecf4" stroke-width="1.2"/></symbol>
+      <symbol id="i-agent" viewBox="0 0 24 24"><path d="M7 5.5h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3Z" fill="#446f8d" stroke="#d8edf7" stroke-width="1"/><path d="M12 5.5V3m-1.5 0h3" stroke="#d8edf7" stroke-width="1.4" stroke-linecap="round"/><circle cx="9" cy="11" r="1.4" fill="#81d894"/><circle cx="15" cy="11" r="1.4" fill="#81d894"/><path d="M8.2 15h7.6M2.5 10.5v3M21.5 10.5v3" stroke="#d8edf7" stroke-width="1.4" stroke-linecap="round"/></symbol>
       <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2.5v9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M7.1 5.6a8.2 8.2 0 1 0 9.8 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
       <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14.5v4.2A1.3 1.3 0 0 0 5.3 20h13.4a1.3 1.3 0 0 0 1.3-1.3v-4.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12m0 0 4.5-4.5M12 16l-4.5-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 18.5V20h16v-1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
@@ -80,6 +81,9 @@
         </button>
         <button class="desktop-icon" type="button" data-open="gameData" aria-label="Open Save and Replay Manager">
           <span class="desktop-icon-art"><svg><use href="#i-save"/></svg></span><span>Save &amp; Replay Manager</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="agentBridge" aria-label="Open Remote Agent configuration">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-agent"/></svg></span><span>Remote Agent</span>
         </button>
         <button class="desktop-icon" type="button" data-open="browser" aria-label="Open Project New Shoes Browser">
           <span class="desktop-icon-art app-art"><svg><use href="#i-browser"/></svg></span><span>Project New Shoes Browser</span>
@@ -501,6 +505,33 @@
           </div>
         </article>
 
+        <article id="agentBridgeWindow" class="window agent-bridge-window" data-app="agentBridge" style="--x: 54%; --y: 45%; --w: 720px; --h: 590px;" aria-label="Remote Agent configuration">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-agent"/></svg></span><span>Remote Agent</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="agent-bridge-body">
+            <header class="agent-bridge-heading">
+              <span class="agent-bridge-mark"><svg><use href="#i-agent"/></svg></span>
+              <div><p class="eyebrow">DIRECT CONTROL</p><h1>Connect a remote playing agent</h1><p>Run the New Shoes agent bridge separately, then copy its browser connection details here before launching Zero Hour.</p></div>
+            </header>
+            <form id="agentBridgeForm" class="agent-bridge-form" autocomplete="off" novalidate>
+              <label class="agent-bridge-enable"><span><strong>Enable Remote Agent</strong><small>No bridge code, socket, polling, or timers run while this is off.</small></span><input id="agentBridgeEnabled" type="checkbox" role="switch"><i aria-hidden="true"></i></label>
+              <fieldset id="agentBridgeFields">
+                <legend class="sr-only">Remote Agent connection details</legend>
+                <label class="agent-bridge-field" for="agentBridgeUrl"><span><strong>Bridge WebSocket URL</strong><small>Use the browser URL printed by the Go bridge.</small></span><input id="agentBridgeUrl" type="url" inputmode="url" spellcheck="false" maxlength="4096" placeholder="ws://127.0.0.1:18888/engine"></label>
+                <label class="agent-bridge-field" for="agentBridgeToken"><span><strong>Browser token</strong><small>Kept only in memory until this page closes.</small></span><span class="agent-bridge-secret"><input id="agentBridgeToken" type="password" autocomplete="off" data-1p-ignore maxlength="4096" placeholder="Token printed by the bridge"><button id="agentBridgeTokenReveal" type="button" aria-pressed="false">Show</button></span></label>
+                <label class="agent-bridge-field" for="agentBridgeSession"><span><strong>Session ID</strong><small>The REST client uses this name to address the match.</small></span><input id="agentBridgeSession" type="text" spellcheck="false" maxlength="128" value="game-1" pattern="[A-Za-z0-9._-]+"></label>
+                <label class="agent-bridge-field" for="agentBridgeMode"><span><strong>Play mode</strong><small>Global exposes all human-accessible map information; Camera limits observation to the tactical view.</small></span><select id="agentBridgeMode"><option value="global">Global</option><option value="camera">Camera</option></select></label>
+              </fieldset>
+              <p id="agentBridgeError" class="agent-bridge-error" role="alert" hidden></p>
+              <div id="agentBridgeStatus" class="agent-bridge-status" data-state="disabled" role="status" aria-live="polite"><span aria-hidden="true"></span><div><strong>Remote Agent is disabled</strong><small>Enable it and apply a connection before launching the game.</small></div></div>
+              <p id="agentBridgeLockNotice" class="agent-bridge-lock" hidden>Configuration is locked for this running game. Reload or shut down the runtime to change it.</p>
+              <footer class="agent-bridge-actions"><p>The bridge process remains outside the browser. The connection opens after engine initialization.</p><button id="agentBridgeApply" type="submit" class="button primary">Apply for next launch</button></footer>
+            </form>
+          </div>
+        </article>
+
         <article id="settingsWindow" class="window settings-window" data-app="settings" style="--x: 52%; --y: 45%; --w: 820px; --h: 610px;" aria-label="Project New Shoes settings">
           <header class="titlebar">
             <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-gear"/></svg></span><span>Project New Shoes Settings</span></div>
@@ -596,6 +627,7 @@
             <button type="button" data-open="explorer"><span class="start-icon"><svg><use href="#i-folder"/></svg></span><div><strong>My Files</strong><small>Browse folders and local files</small></div></button>
             <button type="button" data-open="mods"><span class="start-icon"><svg><use href="#i-mod"/></svg></span><div><strong>Mod Manager</strong><small>Import and choose launch mods</small></div></button>
             <button type="button" data-open="gameData"><span class="start-icon"><svg><use href="#i-save"/></svg></span><div><strong>Save &amp; Replay Manager</strong><small>Browse isolated game data</small></div></button>
+            <button type="button" data-open="agentBridge"><span class="start-icon"><svg><use href="#i-agent"/></svg></span><div><strong>Remote Agent</strong><small>Configure direct agent control</small></div></button>
             <button type="button" data-open="browser"><span class="start-icon"><svg><use href="#i-browser"/></svg></span><div><strong>Project New Shoes Browser</strong><small>Command Net and the open web</small></div></button>
             <button type="button" data-open="notepad"><span class="start-icon"><svg><use href="#i-note"/></svg></span><div><strong>Notepad</strong><small>Write notes to your virtual drive</small></div></button>
             <button type="button" data-open="games"><span class="start-icon"><svg><use href="#i-games"/></svg></span><div><strong>Games</strong><small>Classic XP games, command-approved</small></div></button>

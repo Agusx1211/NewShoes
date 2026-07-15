@@ -53,6 +53,7 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
     explorer: { title: "My Files", icon: "#i-folder" },
     mods: { title: "Mod Manager", icon: "#i-mod" },
     gameData: { title: "Save & Replay Manager", icon: "#i-save" },
+    agentBridge: { title: "Remote Agent", icon: "#i-agent" },
     browser: { title: "Project New Shoes Browser", icon: "#i-browser" },
     notepad: { title: "Notepad", icon: "#i-note" },
     games: { title: "Games", icon: "#i-games" },
@@ -371,6 +372,7 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
       explorer: "files",
       mods: "mods",
       gameData: "game_data",
+      agentBridge: "agent_bridge",
       about: "about",
     }[appId];
     if (screen && !wasOpen) track("app_view", { screen });

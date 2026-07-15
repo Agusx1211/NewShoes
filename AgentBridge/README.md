@@ -29,7 +29,22 @@ The two credentials must be distinct. Treat that output as secret. For a bridge
 behind a TLS reverse proxy, pass its public socket address with
 `-engine-url wss://host/engine`.
 
-Configure the launcher before pressing Launch:
+Before pressing Launch, open **Remote Agent** from the Project New Shoes
+desktop or Start menu:
+
+1. Turn on **Enable Remote Agent**.
+2. Paste the bridge's printed WebSocket URL and browser token.
+3. Choose a session ID and the same Global or Camera play mode used by the
+   bridge process.
+4. Select **Apply for next launch**, then launch Zero Hour normally.
+
+The app validates and stages the connection immediately. The socket opens only
+after the real engine and its frame loop are ready. The browser token lives only
+in page memory: it is a password field, is never stored in local or session
+storage, and is omitted from public status and issue dumps.
+
+Automation or embedding hosts can configure the same pre-launch state without
+the app:
 
 ```js
 await window.CnCPort.play.configure({
@@ -42,7 +57,7 @@ await window.CnCPort.play.configure({
 });
 ```
 
-An embedding page can instead define the same object as
+An embedding page can also define the same object as
 `window.CnCPortPlayConfig.agentBridge` before `play.mjs` loads. The credential
 is not accepted in the page URL, is omitted from public status, and is not
 recorded in issue dumps. If no configuration is provided, the adapter module is
@@ -383,6 +398,7 @@ go test ./...
 go vet ./...
 cd ../WebAssembly
 npm run test:agent-bridge
+npm run test:agent-bridge-ui
 npm run test:agent-bridge-browser
 ```
 

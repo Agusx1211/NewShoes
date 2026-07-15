@@ -165,17 +165,6 @@ async function main() {
       ...(browserExecutable ? { executablePath: browserExecutable } : {}),
       args: ["--autoplay-policy=no-user-gesture-required", ...browserArgs],
     });
-    await browser.addInitScript((config) => {
-      window.CnCPortPlayConfig = config;
-    }, {
-      agentBridge: {
-        url: `ws://127.0.0.1:${port}/engine`,
-        token: engineToken,
-        sessionId,
-        playMode,
-      },
-    });
-
     const page = await browser.newPage();
     const renderer = await page.evaluate(() => {
       const context = document.createElement("canvas").getContext("webgl2");
@@ -206,15 +195,26 @@ async function main() {
     });
     const localServerUrl = new URL(server.url);
     localServerUrl.hostname = "127.0.0.1";
-    const pageUrl = new URL(`harness/play.html?autostart=1&dist=${dist}`, localServerUrl);
+    const pageUrl = new URL(`harness/play.html?dist=${dist}`, localServerUrl);
     await page.goto(pageUrl.href, { waitUntil: "load" });
+    await page.waitForFunction(() => Boolean(window.CnCPort?.play && window.ZeroHDesktop));
+    await page.locator('.desktop-icon[data-open="agentBridge"]').click();
+    await page.waitForSelector("#agentBridgeWindow.is-open.is-active");
+    await page.locator(".agent-bridge-enable").click();
+    await page.locator("#agentBridgeUrl").fill(`ws://127.0.0.1:${port}/engine`);
+    await page.locator("#agentBridgeToken").fill(engineToken);
+    await page.locator("#agentBridgeSession").fill(sessionId);
+    await page.locator("#agentBridgeMode").selectOption(playMode);
+    await page.locator("#agentBridgeApply").click();
+    await page.waitForFunction(() => window.CnCPort.play.getConfiguration().agentBridge.configured);
     pageDiagnostic = await page.evaluate(() => ({
-      hostConfigured: Boolean(window.CnCPortPlayConfig?.agentBridge),
-      hostTokenLength: String(window.CnCPortPlayConfig?.agentBridge?.token ?? "").length,
       publicConfiguration: window.CnCPort?.play?.getConfiguration?.().agentBridge ?? null,
       bridgeState: window.CnCPort?.getAgentBridgeState?.() ?? null,
     }));
     process.stderr.write(`[agent-bridge-browser] page ${JSON.stringify(pageDiagnostic)}\n`);
+    await page.evaluate(() => {
+      void window.ZeroHRuntime.launch();
+    });
     let lastBootReport = "";
     let nextBootReport = 0;
     const adapterState = await waitFor("browser agent adapter", async () => {
@@ -230,8 +230,20 @@ async function main() {
         nextBootReport = Date.now() + 30_000;
       }
       return state;
-    }, (state) => state.bridge?.configured === true, timeoutMs);
+    }, (state) => state.bridge?.connected === true, timeoutMs);
     process.stderr.write(`[agent-bridge-browser] adapter ${JSON.stringify(adapterState)}\n`);
+    const connectedAppState = await page.evaluate(() => ({
+      status: document.querySelector("#agentBridgeStatus")?.dataset.state,
+      applyDisabled: document.querySelector("#agentBridgeApply")?.disabled,
+      tokenType: document.querySelector("#agentBridgeToken")?.type,
+    }));
+    if (connectedAppState.status !== "connected"
+        || connectedAppState.applyDisabled !== true
+        || connectedAppState.tokenType !== "password") {
+      throw new Error(`connected app status was not locked and secure: ${JSON.stringify(
+        connectedAppState,
+      )}`);
+    }
 
     const authorization = { Authorization: `Bearer ${apiToken}` };
     const rest = async (path, options = {}) => {
@@ -252,6 +264,14 @@ async function main() {
         && reply.body.sessions?.some((session) =>
           session.id === sessionId && session.playMode === playMode),
       30000);
+
+    // The original shell defers its main-menu button reveal until the first
+    // browser pointer movement. Reproduce that human boot gesture once before
+    // the REST-only semantic input assertions below.
+    const viewportBounds = await page.locator("#viewport").boundingBox();
+    if (!viewportBounds) throw new Error("runtime viewport was not visible after agent connection");
+    await page.mouse.move(viewportBounds.x + 32, viewportBounds.y + 32);
+    await page.mouse.move(viewportBounds.x + 160, viewportBounds.y + 160);
 
     const sessionPath = `/v1/sessions/${encodeURIComponent(sessionId)}`;
     const snapshotsPath = `${sessionPath}/ui`;
