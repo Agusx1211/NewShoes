@@ -5,7 +5,10 @@ import {
   publicLlmAiProfile,
   redactLlmAiData,
 } from "./llm-ai-profile.mjs";
-import { probeLlmAiEndpoint } from "./llm-ai-openai-client.mjs";
+import {
+  discoverLlmAiModels,
+  probeLlmAiEndpoint,
+} from "./llm-ai-openai-client.mjs";
 import { LlmAiStore } from "./llm-ai-store.mjs";
 
 const desktop = window.ZeroHDesktop;
@@ -14,6 +17,11 @@ let profiles = [];
 let sessions = [];
 let selectedProfileId = null;
 let selectedSessionId = null;
+let discoveredModels = [];
+let pendingContextSize = null;
+let contextEdited = false;
+let discoveryGeneration = 0;
+let discoveryTimer = null;
 
 const byId = (id) => document.getElementById(id);
 const profileForm = byId("llmAiProfileForm");
@@ -27,6 +35,14 @@ function setStatus(message, kind = "") {
 
 function selectedProfile() {
   return profiles.find((profile) => profile.id === selectedProfileId) || null;
+}
+
+function connectionInput() {
+  return {
+    endpoint: byId("llmAiEndpoint").value,
+    apiKey: byId("llmAiApiKey").value,
+    requestTimeoutMs: selectedProfile()?.requestTimeoutMs || 120_000,
+  };
 }
 
 function formInput() {
@@ -45,7 +61,135 @@ function formInput() {
   };
 }
 
+function clearDiagnostics() {
+  byId("llmAiDiagnostics").hidden = true;
+  byId("llmAiDiagnosticsSummary").textContent = "";
+  byId("llmAiDiagnosticChecks").replaceChildren();
+}
+
+function renderDiagnostics(result = null, error = null) {
+  const panel = byId("llmAiDiagnostics");
+  const checks = result?.checks || error?.checks || [{
+    id: error?.stage || "provider",
+    status: "fail",
+    label: "Diagnostic stopped",
+    detail: error?.message || String(error),
+  }];
+  panel.hidden = false;
+  byId("llmAiDiagnosticsSummary").textContent = result
+    ? `${result.latencyMs} ms · ${result.protocol} protocol`
+    : `Failed at ${error?.stage || "provider"}`;
+  const list = byId("llmAiDiagnosticChecks");
+  list.replaceChildren();
+  for (const check of checks) {
+    const item = document.createElement("li");
+    item.className = check.status === "pass" ? "is-pass" : check.status === "fail" ? "is-fail" : "is-info";
+    item.dataset.check = check.id;
+    const label = document.createElement("strong");
+    label.textContent = check.label;
+    const detail = document.createElement("span");
+    detail.textContent = check.detail;
+    detail.title = check.detail;
+    item.append(label, detail);
+    list.append(item);
+  }
+}
+
+function renderContextMetadata({ allowAutoApply = true } = {}) {
+  const model = discoveredModels.find((candidate) => candidate.id === byId("llmAiModel").value.trim());
+  const hint = byId("llmAiContextHint");
+  const apply = byId("llmAiApplyContext");
+  pendingContextSize = model?.contextSize || null;
+  if (!pendingContextSize) {
+    hint.textContent = discoveredModels.length > 0
+      ? "Provider did not report this model's context"
+      : "Manual until reported by the provider";
+    apply.hidden = true;
+    return;
+  }
+  hint.textContent = `${pendingContextSize.toLocaleString()} detected · ${model.contextSource}`;
+  if (allowAutoApply && !contextEdited) byId("llmAiContext").value = String(pendingContextSize);
+  const alreadyApplied = Number(byId("llmAiContext").value) === pendingContextSize;
+  apply.textContent = `Use ${pendingContextSize.toLocaleString()}`;
+  apply.hidden = alreadyApplied;
+}
+
+function renderModelCatalog(result) {
+  discoveredModels = result?.models || [];
+  const options = byId("llmAiModelOptions");
+  options.replaceChildren();
+  for (const model of discoveredModels) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.label = [
+      model.contextSize ? `${model.contextSize.toLocaleString()} ctx` : "context unknown",
+      model.supportsTools ? "tool use" : null,
+      model.state,
+    ].filter(Boolean).join(" · ");
+    options.append(option);
+  }
+  const current = byId("llmAiModel");
+  if (!current.value.trim() && discoveredModels.length > 0) current.value = discoveredModels[0].id;
+  const selectedIsReported = discoveredModels.some((model) => model.id === current.value.trim());
+  byId("llmAiModelHint").textContent = discoveredModels.length === 0
+    ? "Provider returned no model names"
+    : `${discoveredModels.length} available${selectedIsReported ? " · selected model reported" : " · custom model retained"}`;
+  renderContextMetadata();
+}
+
+async function loadModels({ automatic = false } = {}) {
+  if (!byId("llmAiEndpoint").value.trim()) {
+    discoveredModels = [];
+    byId("llmAiModelOptions").replaceChildren();
+    byId("llmAiModelHint").textContent = "Enter an endpoint to discover models";
+    renderContextMetadata();
+    return null;
+  }
+  const generation = ++discoveryGeneration;
+  const button = byId("llmAiDiscoverModels");
+  button.disabled = true;
+  byId("llmAiModelHint").textContent = "Loading provider catalog…";
+  if (!automatic) setStatus("Loading available models and context metadata…");
+  try {
+    const result = await discoverLlmAiModels(connectionInput());
+    if (generation !== discoveryGeneration) return null;
+    renderModelCatalog(result);
+    if (!automatic) {
+      const context = pendingContextSize
+        ? ` Context detected: ${pendingContextSize.toLocaleString()} tokens.`
+        : " The provider did not report a context limit.";
+      setStatus(`Loaded ${result.models.length} model${result.models.length === 1 ? "" : "s"} in ${result.latencyMs} ms.${context}`, "success");
+    }
+    return result;
+  } catch (error) {
+    if (generation !== discoveryGeneration) return null;
+    discoveredModels = [];
+    byId("llmAiModelOptions").replaceChildren();
+    byId("llmAiModelHint").textContent = `Discovery unavailable: ${error.message}`;
+    renderContextMetadata();
+    if (!automatic) throw error;
+    return null;
+  } finally {
+    if (generation === discoveryGeneration) button.disabled = false;
+  }
+}
+
+function queueModelDiscovery() {
+  clearTimeout(discoveryTimer);
+  discoveryGeneration += 1;
+  if (!byId("llmAiEndpoint").value.trim()) {
+    void loadModels({ automatic: true });
+    return;
+  }
+  discoveryTimer = setTimeout(() => void loadModels({ automatic: true }), 350);
+}
+
 function fillForm(profile = null) {
+  clearTimeout(discoveryTimer);
+  discoveryGeneration += 1;
+  discoveredModels = [];
+  pendingContextSize = null;
+  contextEdited = Boolean(profile);
   selectedProfileId = profile?.id || null;
   byId("llmAiProfileId").value = profile?.id || "";
   byId("llmAiName").value = profile?.name || "";
@@ -62,10 +206,17 @@ function fillForm(profile = null) {
   byId("llmAiDeleteProfile").disabled = !profile;
   byId("llmAiDuplicateProfile").disabled = !profile;
   byId("llmAiSavedBadge").hidden = true;
+  byId("llmAiModelOptions").replaceChildren();
+  byId("llmAiModelHint").textContent = profile?.endpoint
+    ? "Loading provider catalog…"
+    : "Enter an endpoint to discover models";
+  renderContextMetadata();
+  clearDiagnostics();
   setStatus(profile
     ? `Last saved ${new Date(profile.updatedAt).toLocaleString()}. The API key is local and never included in exports.`
     : "Profiles and session traces stay in this browser.");
   renderProfiles();
+  if (profile?.endpoint) queueModelDiscovery();
 }
 
 function renderProfiles() {
@@ -245,21 +396,59 @@ byId("llmAiDuplicateProfile").addEventListener("click", () => void runUiAction(a
   setStatus("Duplicate saved. Endpoint credentials were copied only within this browser.", "success");
 }));
 
+byId("llmAiDiscoverModels").addEventListener("click", () =>
+  void runUiAction(() => loadModels()));
+
+for (const id of ["llmAiEndpoint", "llmAiApiKey"]) {
+  byId(id).addEventListener("change", () => {
+    clearDiagnostics();
+    queueModelDiscovery();
+  });
+}
+
+byId("llmAiModel").addEventListener("input", () => {
+  clearDiagnostics();
+  renderContextMetadata();
+});
+
+byId("llmAiContext").addEventListener("input", () => {
+  contextEdited = true;
+  renderContextMetadata({ allowAutoApply: false });
+});
+
+byId("llmAiApplyContext").addEventListener("click", () => {
+  if (!pendingContextSize) return;
+  byId("llmAiContext").value = String(pendingContextSize);
+  contextEdited = false;
+  renderContextMetadata();
+  clearDiagnostics();
+});
+
 byId("llmAiTestEndpoint").addEventListener("click", async () => {
   const button = byId("llmAiTestEndpoint");
+  const discoveryButton = byId("llmAiDiscoverModels");
   button.disabled = true;
-  setStatus("Checking model discovery and tool-call compatibility…");
+  discoveryButton.disabled = true;
+  clearDiagnostics();
+  setStatus("Running reachability, model, context, query, and exact tool-call diagnostics…");
   try {
     const profile = createLlmAiProfile(formInput());
     const result = await probeLlmAiEndpoint(profile);
+    renderModelCatalog(result);
+    renderDiagnostics(result);
     const compatibility = result.compatibility
       ? " Native calls were unavailable, so the validated structured-action fallback was selected."
       : "";
-    setStatus(`Connected in ${result.latencyMs} ms · ${result.protocol} protocol · model available.${compatibility}`, "success");
+    const context = result.contextSize
+      ? ` · ${result.contextSize.toLocaleString()} context detected`
+      : " · context remains manual";
+    setStatus(`Connected in ${result.latencyMs} ms · ${result.protocol} protocol · exact tool arguments verified${context}.${compatibility}`, "success");
   } catch (error) {
+    renderDiagnostics(null, error);
     setStatus(error.message, "error");
   } finally {
     button.disabled = false;
+    discoveryButton.disabled = false;
   }
 });
 

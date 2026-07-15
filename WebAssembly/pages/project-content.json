@@ -75,9 +75,9 @@
       "name": "Configure LLM commanders",
       "status": "experimental",
       "summary": "Named OpenAI-compatible models can occupy computer slots and command the real engine through observed state, semantic orders, and the original AI's production controls.",
-      "reviewedAt": "2026-07-14",
+      "reviewedAt": "2026-07-15",
       "details": [
-        "The launcher's LLM AI Manager stores named commander profiles with an endpoint, model, API key, thinking effort, context size, strategic mandate, tool protocol, planning interval, and fallback policy. A saved profile appears as a computer-player choice in the original Skirmish and LAN setup screens.",
+        "The launcher's LLM AI Manager stores named commander profiles with an endpoint, model, API key, thinking effort, context size, strategic mandate, tool protocol, planning interval, and fallback policy. It can load the endpoint's available model catalog, apply a context limit reported in provider metadata without overwriting an explicit manual value, and run staged reachability, model, query, and exact tool-call diagnostics. A saved profile appears as a computer-player choice in the original Skirmish and LAN setup screens.",
         "During a match, the host gives each configured commander a player-scoped view of the real simulation. The model can inspect terrain and known units, issue ordinary unit and command-button orders, and ask the original skirmish AI systems to build structures, upgrades, defenses, and teams. Fog, relationships, resources, command availability, authority, and deterministic game-message paths remain owned by the engine.",
         "Profiles and match transcripts persist in that browser's IndexedDB. Sessions record observations, model usage, tool calls, errors, outcomes, and summary metrics; the manager can inspect, export, or delete them. Exported sessions redact API keys. Failed repeated actions are bounded and context is compacted. If model requests fail repeatedly, an optional degraded retry policy keeps the session alive while the classic-AI substrate continues to play."
       ],
@@ -253,7 +253,7 @@
     },
     {
       "problem": "An LLM commander cannot connect or take a turn",
-      "answer": "Open the LLM AI Manager and test the profile endpoint. Confirm the URL and model, verify any API key and provider quota, and make sure the endpoint is reachable from the browser and allows the site's origin through CORS. For an HTTP private-network address from the hosted HTTPS launcher, current Chrome may ask for Local Network Access permission; otherwise use HTTPS or localhost. The session view records bounded request, protocol, and tool errors without exposing the API key in exports."
+      "answer": "Open the LLM AI Manager, load the provider's model catalog, and run diagnostics. The staged result distinguishes endpoint reachability, model availability, context metadata, chat completion, and exact tool-call handling. Confirm any API key and provider quota, and make sure the endpoint allows the site's origin through CORS. For an HTTP private-network address from the hosted HTTPS launcher, current Chrome may ask for Local Network Access permission; otherwise use HTTPS or localhost. If the provider does not report a context limit, keep a documented manual value. The session view records bounded request, protocol, and tool errors without exposing the API key in exports."
     },
     {
       "problem": "Media validation fails",

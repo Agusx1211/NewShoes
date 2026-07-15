@@ -17,11 +17,23 @@ const profile = createLlmAiProfile({
 
 const result = await probeLlmAiEndpoint(profile);
 if (!result.ok) throw new Error("Endpoint probe did not succeed");
+if (!process.env.LLM_AI_ENDPOINT) {
+  if (result.contextSize !== 262_144) {
+    throw new Error(`Expected provider context discovery to report 262144, got ${result.contextSize}`);
+  }
+  if (result.modelInfo?.supportsTools !== true) {
+    throw new Error("Expected provider metadata to advertise tool use");
+  }
+}
 console.log("LLM AI live endpoint: PASS", {
   endpoint,
   model,
   protocol: result.protocol,
   compatibilityReason: result.compatibility?.reason || null,
   reportedModels: result.reportedModels,
+  detectedContextSize: result.contextSize,
+  contextSource: result.contextSource,
+  metadataToolUse: result.modelInfo?.supportsTools ?? null,
+  checks: result.checks.map(({ id, status }) => ({ id, status })),
   latencyMs: result.latencyMs,
 });

@@ -21,12 +21,29 @@ const provider = createServer((request, response) => {
     response.end(JSON.stringify({ object: "list", data: [{ id: "browser-smoke-model", object: "model" }] }));
     return;
   }
+  if (request.url === "/api/v0/models") {
+    response.end(JSON.stringify({
+      object: "list",
+      data: [{
+        id: "browser-smoke-model",
+        object: "model",
+        state: "loaded",
+        loaded_context_length: 131_072,
+        max_context_length: 262_144,
+        capabilities: ["tool_use"],
+      }],
+    }));
+    return;
+  }
   if (request.url === "/v1/chat/completions" && request.method === "POST") {
     const chunks = [];
     request.on("data", (chunk) => chunks.push(chunk));
     request.on("end", () => {
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       const structured = Boolean(body.response_format);
+      const promptedProbe = /probe="([^"]+)"/.exec(
+        body.messages?.find((message) => message.content?.includes("report_ready with ready=true"))?.content || "")?.[1];
+      const probe = body.tools?.[0]?.function?.parameters?.properties?.probe?.enum?.[0] || promptedProbe;
       response.end(JSON.stringify({
         id: structured ? "browser-structured" : "browser-native-missing",
         choices: [{
@@ -35,7 +52,7 @@ const provider = createServer((request, response) => {
             role: "assistant",
             content: "",
             reasoning_content: JSON.stringify({
-              action: "tool", tool: "report_ready", arguments: { ready: true }, note: "ready",
+              action: "tool", tool: "report_ready", arguments: { ready: true, probe }, note: "ready",
             }),
             tool_calls: [],
           } : {
@@ -72,15 +89,34 @@ try {
   assert.equal(await page.evaluate(() => window.ZeroHLlmAiGameRuntime.interval !== null), true);
   await page.locator('.desktop-icon[data-open="llmAi"]').click();
   await page.waitForSelector("#llmAiWindow.is-open");
-  await page.locator("#llmAiName").fill("Browser General");
-  await page.locator("#llmAiModel").fill("browser-smoke-model");
   await page.locator("#llmAiEndpoint").fill(`http://127.0.0.1:${providerPort}`);
   await page.locator("#llmAiApiKey").fill("browser-ultra-secret");
+  await page.locator("#llmAiDiscoverModels").click();
+  await page.waitForFunction(() => document.querySelector("#llmAiModel")?.value === "browser-smoke-model");
+  assert.equal(await page.locator("#llmAiContext").inputValue(), "131072");
+  assert.match(await page.locator("#llmAiContextHint").textContent(), /131,072 detected.*provider runtime metadata/i);
+  assert.match(await page.locator("#llmAiModelHint").textContent(), /1 available.*selected model reported/i);
+  await page.locator("#llmAiContext").fill("65536");
+  await page.locator("#llmAiDiscoverModels").click();
+  await page.waitForFunction(() => document.querySelector("#llmAiFormStatus")?.textContent.includes("Loaded 1 model"));
+  assert.equal(await page.locator("#llmAiContext").inputValue(), "65536", "discovery must preserve an explicit context value");
+  assert.equal(await page.locator("#llmAiApplyContext").isVisible(), true);
+  await page.locator("#llmAiApplyContext").click();
+  assert.equal(await page.locator("#llmAiContext").inputValue(), "131072");
+  await page.locator("#llmAiName").fill("Browser General");
   await page.locator("#llmAiThinking").selectOption("low");
-  await page.locator("#llmAiContext").fill("262144");
   await page.locator("#llmAiMandate").fill("Build a resilient economy, adapt, and win.");
   await page.locator("#llmAiProfileForm").evaluate((form) => form.requestSubmit());
-  await page.waitForFunction(() => document.querySelector("#llmAiFormStatus")?.textContent.includes("ready for a player slot"));
+  try {
+    await page.waitForFunction(() => document.querySelector("#llmAiFormStatus")?.textContent.includes("ready for a player slot"));
+  } catch (error) {
+    const detail = await page.evaluate(() => ({
+      status: document.querySelector("#llmAiFormStatus")?.textContent,
+      valid: document.querySelector("#llmAiProfileForm")?.checkValidity(),
+      invalid: [...document.querySelectorAll("#llmAiProfileForm :invalid")].map((element) => element.id),
+    }));
+    throw new Error(`Commander save did not complete: ${JSON.stringify(detail)}`, { cause: error });
+  }
   assert.equal(await page.locator(".llm-ai-profile-card").count(), 1);
   const catalogSync = await page.evaluate(async () => ({
     result: await window.ZeroHLlmAi.syncProfileCatalog(),
@@ -95,6 +131,11 @@ try {
   await page.locator("#llmAiTestEndpoint").click();
   await page.waitForFunction(() => document.querySelector("#llmAiFormStatus")?.textContent.includes("structured protocol"));
   assert.match(await page.locator("#llmAiFormStatus").textContent(), /structured-action fallback/i);
+  assert.equal(await page.locator("#llmAiDiagnosticChecks li").count(), 5);
+  assert.equal(await page.locator("#llmAiDiagnosticChecks li.is-pass").count(), 5);
+  assert.match(await page.locator('[data-check="tool"] span').textContent(), /one-time probe.*structured-action fallback/i);
+  await page.waitForTimeout(1_000);
+  await page.screenshot({ path: screenshotPath });
 
   const created = await page.evaluate(async () => {
     const [profile] = await window.ZeroHLlmAi.store.listProfiles();
@@ -142,7 +183,6 @@ try {
   await page.waitForFunction(() => document.querySelectorAll("#llmAiSessionEvents li").length === 1);
   assert.match(await page.locator("#llmAiSessionSummary").textContent(), /victory/i);
   assert.equal(await page.locator("#llmAiSessionEvents").textContent().then((text) => text.includes("browser-ultra-secret")), false);
-  await page.screenshot({ path: screenshotPath });
   assert.deepEqual(pageErrors, []);
 
   console.log("LLM AI manager browser smoke: PASS", {

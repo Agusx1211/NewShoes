@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { LlmAiAgentRuntime } from "./llm-ai-agent.mjs";
-import { completeLlmAiTurn } from "./llm-ai-openai-client.mjs";
+import {
+  completeLlmAiTurn,
+  discoverLlmAiModels,
+  probeLlmAiEndpoint,
+} from "./llm-ai-openai-client.mjs";
 import {
   approximateLlmTokens,
   buildLlmAiSystemPrompt,
@@ -9,6 +13,7 @@ import {
   exportLlmAiSession,
   llmChatCompletionsUrl,
   llmModelsUrl,
+  llmProviderMetadataUrl,
   publicLlmAiProfile,
 } from "./llm-ai-profile.mjs";
 import { MemoryLlmAiStore } from "./llm-ai-store.mjs";
@@ -31,6 +36,7 @@ assert.equal(profile.mandate, "Play to the best of your capability and win the g
 assert.equal(llmChatCompletionsUrl(profile.endpoint), "http://192.168.100.203:1234/v1/chat/completions");
 assert.equal(llmChatCompletionsUrl("https://example.test/openai/v1"), "https://example.test/openai/v1/chat/completions");
 assert.equal(llmModelsUrl("https://example.test/openai/v1/chat/completions"), "https://example.test/openai/v1/models");
+assert.equal(llmProviderMetadataUrl("https://example.test/openai/v1"), "https://example.test/openai/api/v0/models");
 assert.throws(() => createLlmAiProfile({ ...profile, endpoint: "file:///tmp/model" }), /HTTP or HTTPS/);
 assert.throws(() => createLlmAiProfile({ ...profile, contextSize: 2_000 }), /Context size/);
 assert.equal(publicLlmAiProfile(profile).apiKey, undefined);
@@ -59,6 +65,109 @@ assert.equal(compacted.messages[0].role, "system");
 assert.match(compacted.messages[1].content, /CONTEXT COMPACTION/);
 assert.equal(compacted.messages.at(-1).content, "latest observation");
 assert(approximateLlmTokens(compacted.messages) < approximateLlmTokens(longMessages));
+
+{
+  const requested = [];
+  const fetchImpl = async (url, init) => {
+    requested.push({ url, authorization: init.headers.Authorization });
+    if (url.endsWith("/v1/models")) {
+      return new Response(JSON.stringify({
+        object: "list",
+        data: [
+          { id: "alpha", owned_by: "test", metadata: { context_window: 32_768 } },
+          { id: profile.model, owned_by: "test" },
+        ],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.endsWith("/api/v0/models")) {
+      return new Response(JSON.stringify({
+        object: "list",
+        data: [{
+          id: profile.model,
+          state: "loaded",
+          loaded_context_length: 262_144,
+          max_context_length: 524_288,
+          capabilities: ["tool_use"],
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`Unexpected discovery URL ${url}`);
+  };
+  const discovered = await discoverLlmAiModels(profile, { fetchImpl });
+  assert.deepEqual(discovered.reportedModels, ["alpha", profile.model]);
+  assert.equal(discovered.models[0].contextSize, 32_768);
+  assert.equal(discovered.models[1].contextSize, 262_144, "loaded context must win over maximum context");
+  assert.equal(discovered.models[1].supportsTools, true);
+  assert.match(discovered.models[1].contextSource, /provider runtime metadata/);
+  assert(requested.every((request) => request.authorization === "Bearer super-secret-key"));
+}
+
+{
+  const fetchImpl = async (url) => new Response(JSON.stringify(url.endsWith("/v1/models")
+    ? { data: [{ id: "another-model" }] }
+    : { error: { message: "optional metadata unavailable" } }), {
+    status: url.endsWith("/v1/models") ? 200 : 404,
+    headers: { "Content-Type": "application/json" },
+  });
+  let unavailable;
+  try {
+    await probeLlmAiEndpoint(profile, { fetchImpl, deep: false });
+  } catch (error) {
+    unavailable = error;
+  }
+  assert.equal(unavailable.stage, "model");
+  assert.deepEqual(unavailable.checks.map(({ id, status }) => ({ id, status })), [
+    { id: "reachability", status: "pass" },
+    { id: "model", status: "fail" },
+  ]);
+}
+
+{
+  const fetchImpl = async (url, init) => {
+    if (url.endsWith("/v1/models")) {
+      return new Response(JSON.stringify({ data: [{ id: profile.model }] }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/api/v0/models")) {
+      return new Response(JSON.stringify({ data: [{
+        id: profile.model,
+        loaded_context_length: 262_144,
+        capabilities: ["tool_use"],
+      }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.endsWith("/v1/chat/completions")) {
+      const body = JSON.parse(init.body);
+      const [expectedProbe] = body.tools[0].function.parameters.properties.probe.enum;
+      return new Response(JSON.stringify({
+        id: "probe-native",
+        choices: [{ finish_reason: "tool_calls", message: {
+          role: "assistant",
+          content: "",
+          tool_calls: [{
+            id: "probe-call",
+            type: "function",
+            function: {
+              name: "report_ready",
+              arguments: JSON.stringify({ ready: true, probe: expectedProbe }),
+            },
+          }],
+        } }],
+        usage: { prompt_tokens: 15, completion_tokens: 5, total_tokens: 20 },
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`Unexpected diagnostic URL ${url}`);
+  };
+  const result = await probeLlmAiEndpoint({ ...profile, toolProtocol: "native" }, {
+    fetchImpl,
+    probeId: "one-time-unit-probe",
+  });
+  assert.equal(result.protocol, "native");
+  assert.equal(result.contextSize, 262_144);
+  assert.equal(result.checks.length, 5);
+  assert(result.checks.every((check) => check.status === "pass"));
+  assert.match(result.checks.at(-1).detail, /native function call/);
+}
 
 const tool = {
   name: "move_army",

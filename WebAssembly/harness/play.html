@@ -359,19 +359,20 @@
                 <div class="llm-ai-form-heading"><div><h2 id="llmAiFormTitle">New commander</h2><p>Credentials remain in this browser and are excluded from exports.</p></div><span id="llmAiSavedBadge" hidden>Saved</span></div>
                 <div class="llm-ai-fields two-column">
                   <label>Name<input id="llmAiName" maxlength="64" required placeholder="Strategist Alpha"></label>
-                  <label>Model<input id="llmAiModel" maxlength="256" required placeholder="qwen3.6-35b-a3b-mtp@q8_k_xl"></label>
+                  <label>Model <span id="llmAiModelHint" class="llm-ai-optional">Enter an endpoint to discover models</span><span class="llm-ai-inline-control"><input id="llmAiModel" list="llmAiModelOptions" maxlength="256" required placeholder="qwen3.6-35b-a3b-mtp@q8_k_xl"><button id="llmAiDiscoverModels" type="button" class="button secondary small">Load models</button></span><datalist id="llmAiModelOptions"></datalist></label>
                 </div>
                 <label>OpenAI-compatible endpoint <span class="llm-ai-optional">HTTPS, localhost, or browser-approved local network</span><input id="llmAiEndpoint" type="url" maxlength="2048" required placeholder="http://127.0.0.1:1234"></label>
                 <label>API key <span class="llm-ai-optional">optional · stored locally</span><input id="llmAiApiKey" type="password" maxlength="4096" spellcheck="false" placeholder="Not required by local endpoints"></label>
                 <div class="llm-ai-fields three-column">
                   <label>Thinking effort<select id="llmAiThinking"><option>provider-default</option><option>none</option><option>minimal</option><option>low</option><option selected>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
-                  <label>Context tokens<input id="llmAiContext" type="number" min="4096" max="2097152" step="1024" value="262144"></label>
+                  <label>Context tokens <span id="llmAiContextHint" class="llm-ai-optional">Manual until reported by the provider</span><span class="llm-ai-inline-control"><input id="llmAiContext" type="number" min="4096" max="2097152" step="1024" value="262144"><button id="llmAiApplyContext" type="button" class="button secondary small" hidden>Use detected</button></span></label>
                   <label>Tool protocol<select id="llmAiToolProtocol"><option value="auto" selected>Auto compatible</option><option value="native">Native only</option><option value="structured">Structured fallback</option></select></label>
                 </div>
                 <label>Mandate<textarea id="llmAiMandate" maxlength="8192" rows="4">Play to the best of your capability and win the game.</textarea></label>
                 <div class="llm-ai-runtime-policy"><label><input id="llmAiClassicFallback" type="checkbox" checked> Keep the model session retrying during classic-AI fallback</label><label>Planning interval <input id="llmAiPlanningInterval" type="number" min="250" max="60000" step="250" value="2000"> ms</label></div>
+                <section id="llmAiDiagnostics" class="llm-ai-diagnostics" aria-label="Endpoint diagnostics" hidden><header><strong>Endpoint diagnostics</strong><span id="llmAiDiagnosticsSummary"></span></header><ul id="llmAiDiagnosticChecks"></ul></section>
                 <div id="llmAiFormStatus" class="llm-ai-status" role="status">Profiles and session traces stay in this browser.</div>
-                <div class="llm-ai-form-actions"><button id="llmAiDeleteProfile" type="button" class="button secondary small" disabled>Delete</button><button id="llmAiDuplicateProfile" type="button" class="button secondary small" disabled>Duplicate</button><span></span><button id="llmAiTestEndpoint" type="button" class="button secondary small">Test endpoint</button><button type="submit" class="button primary small">Save commander</button></div>
+                <div class="llm-ai-form-actions"><button id="llmAiDeleteProfile" type="button" class="button secondary small" disabled>Delete</button><button id="llmAiDuplicateProfile" type="button" class="button secondary small" disabled>Duplicate</button><span></span><button id="llmAiTestEndpoint" type="button" class="button secondary small">Run diagnostics</button><button type="submit" class="button primary small">Save commander</button></div>
               </form>
             </section>
             <section id="llmAiSessionsView" class="llm-ai-view llm-ai-session-view" hidden>

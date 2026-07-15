@@ -65,6 +65,14 @@ export function llmModelsUrl(endpoint) {
   return apiUrl(endpoint, "models");
 }
 
+export function llmProviderMetadataUrl(endpoint) {
+  const url = new URL(`${normalizeLlmEndpoint(endpoint)}/`);
+  const normalizedPath = url.pathname.replace(/\/+$/, "");
+  const providerRoot = normalizedPath.replace(/\/v1(?:\/(?:chat\/completions|models))?$/, "");
+  url.pathname = `${providerRoot}/api/v0/models`.replace(/^\/\//, "/");
+  return url.href;
+}
+
 export function createLlmAiProfile(input = {}, {
   cryptoImpl = globalThis.crypto,
   now = () => Date.now(),

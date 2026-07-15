@@ -32,12 +32,26 @@
 .llm-ai-form input:not([type="checkbox"]), .llm-ai-form select { height: 30px; }
 .llm-ai-form textarea { resize: vertical; line-height: 1.45; }
 .llm-ai-optional { color: #8a9aa2; font-size: 8px; font-weight: normal; }
+.llm-ai-inline-control { min-width: 0; display: flex; gap: 5px; }
+.llm-ai-inline-control input { flex: 1; }
+.llm-ai-inline-control .button { flex: 0 0 auto; height: 30px; padding-inline: 8px; white-space: nowrap; }
 .llm-ai-fields { display: grid; gap: 10px; }
 .llm-ai-fields.two-column { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); }
 .llm-ai-fields.three-column { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .llm-ai-runtime-policy { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; color: #607782; border: 1px solid #d2dde1; background: #edf3f5; font-size: 8px; }
 .llm-ai-runtime-policy label { display: flex; align-items: center; gap: 6px; }
 .llm-ai-runtime-policy input[type="number"] { width: 78px; }
+.llm-ai-diagnostics { display: grid; gap: 7px; padding: 9px 10px; border: 1px solid #c9d8df; background: #f9fbfc; }
+.llm-ai-diagnostics[hidden] { display: none; }
+.llm-ai-diagnostics header { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #395b6c; font-size: 9px; }
+.llm-ai-diagnostics header span { overflow: hidden; color: #7a8f99; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.llm-ai-diagnostics ul { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin: 0; padding: 0; list-style: none; }
+.llm-ai-diagnostics li { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 2px 6px; padding: 6px 7px; border: 1px solid #d7e1e5; background: #fff; }
+.llm-ai-diagnostics li::before { content: "i"; grid-row: span 2; width: 8px; height: 8px; margin-top: 1px; display: grid; place-items: center; color: #fff; border-radius: 50%; background: #7da4b8; font: bold 6px Arial, sans-serif; }
+.llm-ai-diagnostics li.is-pass::before { content: "✓"; background: #58a56c; }
+.llm-ai-diagnostics li.is-fail::before { content: "×"; background: #bc6555; }
+.llm-ai-diagnostics li strong { overflow: hidden; color: #435e6b; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.llm-ai-diagnostics li span { grid-column: 2; overflow: hidden; color: #7d8f97; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .llm-ai-status { min-height: 29px; display: flex; align-items: center; padding: 7px 9px; color: #58707c; border-left: 3px solid #73a7c5; background: #e8f2f7; font-size: 8px; }
 .llm-ai-status.is-error { color: #804439; border-color: #bc6555; background: #f7e9e6; }
 .llm-ai-status.is-success { color: #367152; border-color: #62a37c; background: #e8f4ec; }
@@ -61,5 +75,6 @@
   .llm-ai-view > aside { max-height: 145px; border-right: 0; border-bottom: 1px solid #ccd7dc; }
   .llm-ai-fields.two-column, .llm-ai-fields.three-column { grid-template-columns: 1fr; }
   .llm-ai-runtime-policy { align-items: flex-start; flex-direction: column; }
+  .llm-ai-diagnostics ul { grid-template-columns: 1fr; }
   .llm-ai-session-metrics { grid-template-columns: repeat(2, 1fr); }
 }

@@ -76,8 +76,9 @@ usage.
 The browser desktop also owns a local LLM commander path that does not require
 the remote AgentBridge service. The LLM AI Manager stores named
 OpenAI-compatible profiles and match sessions in IndexedDB, tests provider and
-tool-protocol compatibility, redacts credentials from exports, and publishes
-saved profile names into the original Skirmish and LAN player-template lists.
+tool-protocol compatibility, discovers available model names and reported
+context limits, redacts credentials from exports, and publishes saved profile
+names into the original Skirmish and LAN player-template lists.
 Provider requests travel directly from the browser to the endpoint selected by
 the user; the project does not proxy model credentials or gameplay context.
 
