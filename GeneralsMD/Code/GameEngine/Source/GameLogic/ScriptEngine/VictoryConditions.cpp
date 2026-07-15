@@ -51,6 +51,7 @@
 #include "GameLogic/VictoryConditions.h"
 
 #ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_capture_llm_ai_player_defeat(Int slot_num);
 extern "C" void cnc_port_capture_llm_ai_terminal_outcomes(void);
 extern "C" void cnc_port_reset_llm_ai_terminal_outcomes(void);
 #endif
@@ -219,6 +220,10 @@ void VictoryConditions::update( void )
 					{
 						DEBUG_LOG(("Marking AI player %s as defeated\n", pName.str()));
 						slot->setLastFrameInGame(TheGameLogic->getFrame());
+#ifdef __EMSCRIPTEN__
+						if (slot->isLlmAi())
+							cnc_port_capture_llm_ai_player_defeat(idx);
+#endif
 					}
 				}
 			}
@@ -381,5 +386,4 @@ Bool VictoryConditions::isLocalDefeat( void )
 
 	return (m_localPlayerDefeated);
 }
-
 

@@ -85,6 +85,8 @@ assert.match(buildLlmAiSystemPrompt(profile), /exclusively own strategic policy/
 assert.match(buildLlmAiSystemPrompt(profile), /Classic strategic selection is disabled/);
 assert.match(buildLlmAiSystemPrompt(profile), /ready-only build query is empty/);
 assert.match(buildLlmAiSystemPrompt(profile), /GAME MODEL: This is a real-time base-building strategy game/);
+assert.match(buildLlmAiSystemPrompt(profile), /lostContact delta means only/);
+assert.match(buildLlmAiSystemPrompt(profile), /Managed squad handles exclude builders and harvesters/);
 
 const exported = exportLlmAiSession({
   profile,
@@ -294,29 +296,73 @@ const tool = {
     players: [{ index: 4, local: true }],
     objects: [
       { id: 101, owner: 5, relationship: "enemy", categories: [],
-        capabilities: { orderable: false, mobile: true } },
+        capabilities: null },
       { id: 102, owner: 5, relationship: "enemy", categories: ["vehicle"],
-        capabilities: { orderable: true, mobile: true } },
+        capabilities: null, position: { x: 400, y: 500 } },
+      { id: 103, owner: 5, relationship: "enemy", categories: ["vehicle", "projectile"],
+        capabilities: null, position: { x: 450, y: 550 } },
     ],
   }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [], previous: previousStrategic });
   assert.deepEqual(transientFiltered.threats.map((force) => force.handle), ["force:enemy:vehicle"]);
+  assert.deepEqual(transientFiltered.threats[0].position, { x: 400, y: 500 });
   assert.deepEqual(transientFiltered.deltas.map((delta) => delta.handle), ["contact:102"]);
+
+  const safeSquads = compactRoutineObservation({
+    snapshotId: 10, frame: 122, localPlayerIndex: 4, game: { outcome: null },
+    players: [{ index: 4, local: true }], objects: [
+      { id: 201, owner: 4, teamId: 5, categories: ["infantry", "combat"], construction: -1,
+        position: { x: 100, y: 200 }, capabilities: { orderable: true, mobile: true } },
+      { id: 202, owner: 4, teamId: 5, categories: ["vehicle", "builder"], construction: -1,
+        position: { x: 300, y: 400 }, capabilities: { orderable: true, mobile: true } },
+      { id: 203, owner: 4, teamId: 5, categories: ["aircraft", "harvester"], construction: -1,
+        position: { x: 500, y: 600 }, capabilities: { orderable: true, mobile: true } },
+    ],
+  }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [], previous: previousStrategic });
+  assert.deepEqual(safeSquads.forces.map((force) => force.handle), [
+    "force:owned:builder", "force:owned:harvester", "squad:5",
+  ]);
+  assert.deepEqual(safeSquads.forces.find((force) => force.handle === "squad:5").composition,
+    { infantry: 1 });
+  assert.equal(normalizedEntity({
+    id: 202, owner: 4, teamId: 5, categories: ["vehicle", "builder"], construction: -1,
+    capabilities: { orderable: true, mobile: true },
+  }, 4).squadHandle, null);
 
   const producing = compactRoutineObservation({
     snapshotId: 11, frame: 121, localPlayerIndex: 4, game: { outcome: null },
     players: [{ index: 4, local: true, economy: { money: 1_000 } }],
-    objects: [{ id: 93, owner: 4, categories: ["structure"], capabilities: {
+    objects: [{ id: 93, owner: 4, categories: ["structure", "barracks"],
+      position: { x: 100, y: 200 }, health: { current: 750, max: 1_000 }, capabilities: {
       productionQueue: [{ type: "unit", name: "ObservedInfantry", progress: 42 }],
     } }],
   }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [] });
   assert.deepEqual(producing.production, [{ facility: "facility:93", queue: [{
     type: "unit", name: "ObservedInfantry", progress: 42,
   }] }]);
+  assert.deepEqual(producing.facilities, [{
+    handle: "facility:93", roles: ["barracks"], health: 75,
+    construction: { state: "complete" }, position: { x: 100, y: 200 },
+  }]);
+
+  const lostContact = compactRoutineObservation({
+    snapshotId: 12, frame: 150, localPlayerIndex: 4, game: { outcome: null },
+    players: [{ index: 4, local: true }], objects: [],
+  }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [], previous: {
+    frame: 140, objects: [{ id: 200, owner: 5, relationship: "enemy", categories: ["structure"],
+      position: { x: 900, y: 800 }, health: { current: 600, max: 1_000 } }],
+  } });
+  assert.deepEqual(lostContact.deltas, [{
+    type: "lostContact", handle: "contact:200", owner: "enemy", kind: "structure",
+    lastKnownPosition: { x: 900, y: 800 }, lastKnownHealth: 60,
+  }]);
 
   assert.equal(hasCategory({ categories: ["STRUC_ture"] }, "structure"), true);
   assert.equal(isConstructionComplete({ construction: -1, status: [] }), true);
   assert.equal(isConstructionComplete({ construction: 25, status: ["UNDER_construction"] }), false);
   assert.equal(isStrategicEntity({ capabilities: { orderable: false } }), false);
+  assert.equal(isStrategicEntity({ categories: ["vehicle"], capabilities: null }), true,
+    "runtime-shaped enemy mobile units remain strategic despite null local capabilities");
+  assert.equal(isStrategicEntity({ categories: ["vehicle", "projectile"] }), false);
   assert.equal(isStrategicEntity({ categories: ["Struc_ture"] }), true);
   assert.deepEqual(normalizedEntity({
     id: 92, owner: 5, relationship: "ENEMIES", categories: ["VeHiClE", "Can-Attack"],
@@ -422,12 +468,18 @@ const tool = {
         position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: false } },
       { id: 24, owner: 4, teamId: 9, categories: ["vehicle"], construction: 50,
         position: { x: 0, y: 0 }, capabilities: { orderable: false, mobile: true } },
+      { id: 25, owner: 4, teamId: 9, categories: ["vehicle", "builder"], construction: -1,
+        position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: true } },
+      { id: 26, owner: 4, teamId: 9, categories: ["aircraft", "harvester"], construction: -1,
+        position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: true } },
       { id: 31, owner: 4, categories: ["structure", "barracks"], construction: -1,
         position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: false } },
       { id: 32, owner: 4, template: "RuntimeInfantry", teamId: 10, categories: ["infantry"],
         construction: -1, position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: true } },
       { id: 30, owner: 5, relationship: "ENEMIES", categories: ["structure"], construction: -1,
         position: { x: 500, y: 600 }, health: [500, 1_000] },
+      { id: 33, owner: 5, relationship: "ENEMIES", categories: ["vehicle"], construction: -1,
+        position: { x: 700, y: 800 }, capabilities: null },
     ],
   };
   const rpc = async (command, payload) => {
@@ -470,6 +522,13 @@ const tool = {
   assert.deepEqual(calls.find((entry) => entry.command === "llmAiGameOrder").payload, {
     playerIndex: 4, action: "attack", objectIds: "21,22", targetId: 30, x: 0, y: 0,
   });
+  await assert.rejects(() => tools.find((entry) => entry.name === "assign_mission").execute({
+    mission: "scout", objectIds: [25], position: { x: 50, y: 60 },
+  }), /excludes unavailable, builder, or harvester IDs: 25/);
+  const squadEntities = await tools.find((entry) => entry.name === "inspect_entities").execute({
+    owner: "self", scope: "squad", handles: ["squad:9"],
+  });
+  assert.deepEqual(squadEntities.items.map((item) => item.handle), ["unit:21", "unit:22"]);
   state.jobs.get(mission.mission.id).state = "blocked";
   state.jobs.get(mission.mission.id).blockedReason = "simulated earlier stall";
 
@@ -500,12 +559,21 @@ const tool = {
   });
   assert.equal(enemyStructures.total, 1);
   assert.equal(enemyStructures.items[0].handle, "contact:30");
+  const enemyVehicles = await tools.find((entry) => entry.name === "inspect_entities").execute({
+    owner: "enemy", kind: "vehicle", scope: "contact",
+  });
+  assert.equal(enemyVehicles.total, 1);
+  assert.equal(enemyVehicles.items[0].handle, "contact:33");
 
   const readyForces = await tools.find((entry) => entry.name === "query_buildable_options").execute({
     purpose: "force", readyOnly: true,
   });
   assert.equal(readyForces.total, 0);
   assert.match(readyForces.hint, /readyOnly false/);
+  const generalReady = await tools.find((entry) => entry.name === "query_buildable_options").execute({
+    purpose: "any", readyOnly: true,
+  });
+  assert.match(generalReady.hint, /force archetypes/);
   const allForces = await tools.find((entry) => entry.name === "query_buildable_options").execute({
     purpose: "force", readyOnly: false,
   });
@@ -877,6 +945,41 @@ const tool = {
   assert.equal(evidence.strategy.strategyController, "llm");
   assert.equal(controller.signal.aborted, true);
   assert.equal(controller.signal.reason.message, "Match ended");
+}
+
+// A defeated LLM slot can become inactive while the match remains playable.
+// Its per-player terminal latch must win the assignment-removal race.
+{
+  let evidence = null;
+  const memory = new MemoryLlmAiStore();
+  const coordinator = new LlmAiGameCoordinator({
+    rpc: async (command) => {
+      assert.equal(command, "realEngineLlmAiAssignments");
+      return { ok: true, result: {
+        ok: true, playable: true, authoritative: true, outcomeAuthoritative: true,
+        gameMode: 2, gameId: 3, seed: 4, map: "TestMap", frame: 500, endFrame: 0,
+        assignments: [{ slot: 1, profileId: "profile-1", playerIndex: 4,
+          playerActive: false, computerPlayer: true, strategyController: "llm" }],
+        terminalOutcomes: [{ slot: 1, profileId: "profile-1", playerIndex: 4,
+          outcome: "defeat", strategyController: "llm", classicStrategyUpdates: 0,
+          controllerNeutralUpdates: 99 }],
+      } };
+    },
+    store: memory,
+  });
+  const controller = new AbortController();
+  coordinator.active.set("eliminated", {
+    assignment: { slot: 1, profileId: "profile-1", playerIndex: 4 },
+    lastAssignment: { slot: 1, profileId: "profile-1", playerIndex: 4,
+      strategyController: "llm", classicStrategyUpdates: 0, controllerNeutralUpdates: 98 },
+    controller,
+    runtime: { setAuthoritativeOutcome(value) { evidence = value; } },
+  });
+  await coordinator.reconcileNow();
+  assert.equal(evidence.outcome, "defeat");
+  assert.equal(evidence.strategy.classicStrategyUpdates, 0);
+  assert.equal(controller.signal.aborted, true);
+  assert.equal(controller.signal.reason.message, "LLM player assignment changed");
 }
 
 console.log("LLM AI unit: PASS");

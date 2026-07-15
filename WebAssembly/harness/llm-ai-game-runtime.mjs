@@ -163,8 +163,11 @@ export class LlmAiGameCoordinator {
         candidate.slot === entry.assignment.slot && candidate.profileId === entry.assignment.profileId);
       if (Number.isInteger(assignment?.playerIndex)) entry.lastAssignment = assignment;
     }
+    // A defeated player becomes inactive before the overall match necessarily
+    // leaves its playable state. Latch its authoritative per-slot outcome before
+    // the normal assignment reconciliation aborts the in-flight model request.
+    this.recordTerminalOutcomes(state);
     if (!state.playable || !state.authoritative) {
-      this.recordTerminalOutcomes(state);
       this.abortActive(!state.playable ? "Match ended" : "This browser is not the match authority");
       if (!state.playable) {
         this.lastPlayable = false;

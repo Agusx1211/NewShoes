@@ -6,6 +6,7 @@ import {
   hasSemanticTag,
   internalNameFromHandle,
   isConstructionComplete,
+  isManagedSquadMember,
   isStrategicEntity,
   normalizedEntity,
 } from "./llm-ai-strategy.mjs";
@@ -74,12 +75,6 @@ function missionDistance(job, members, raw) {
   const distances = positions.map((position) => Math.hypot(position.x - target.x, position.y - target.y))
     .sort((left, right) => left - right);
   return distances[Math.floor(distances.length / 2)];
-}
-
-function isOrderableMissionMember(object, playerIndex) {
-  return object.owner === playerIndex && !hasCategory(object, "structure")
-    && object.capabilities?.orderable === true && object.capabilities?.mobile === true
-    && isConstructionComplete(object);
 }
 
 function engineError(reply, command) {
@@ -348,6 +343,9 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
         const page = strategic.pager.page(records, pageOptions(args, filters, field, direction, strategic.catalogRevision));
         if (filters.readyOnly && page.total === 0 && available.some(matchesStableFilters)) {
           page.hint = "Matching options exist but are not currently marked ready; retry with readyOnly false to inspect blocked or validated-on-request choices.";
+        } else if (filters.readyOnly && filters.purpose === "any"
+            && available.some((record) => record.purpose === "force")) {
+          page.hint = "Validated-on-request force archetypes are omitted by readyOnly; query purpose force with readyOnly false to discover coherent squads.";
         }
         return page;
       },
@@ -414,7 +412,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
     },
     {
       name: "assign_mission",
-      description: "Assign a stable squad handle (preferred) or exceptional explicit object IDs to defend, scout, capture, harass, attackRegion, escort, or regroup. Uses original synchronized order, pathfinding, and combat execution. defend, scout, capture, and regroup require position; escort requires targetId; harass and attackRegion accept either position or an observable targetId. Returns persistent mission ID/state. Freshness: execution frame; one command result.",
+      description: "Assign a stable managed squad handle (preferred) or exceptional explicit non-economic unit IDs to defend, scout, capture, harass, attackRegion, escort, or regroup. Managed squads exclude builders and harvesters; use issue_order for deliberate economic-unit movement. Uses original synchronized order, pathfinding, and combat execution. defend, scout, capture, and regroup require position; escort requires targetId; harass and attackRegion accept either position or an observable targetId. Returns persistent mission ID/state. Freshness: execution frame; one command result.",
       parameters: { type: "object", properties: {
         mission: { type: "string", enum: MISSIONS }, squadHandle: { type: "string", pattern: "^squad:[0-9]+$", maxLength: 64 },
         objectIds: { type: "array", minItems: 1, maxItems: 128, items: { type: "integer", minimum: 1 } },
@@ -438,14 +436,21 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
       },
       async execute(args) {
         this.validate(args);
+        const raw = await strategic.focused();
         let objectIds;
         if (args.squadHandle) {
-          const raw = await strategic.focused();
           const teamId = integer(args.squadHandle.slice("squad:".length), "squad team ID", 1);
           objectIds = (raw.objects || []).filter((object) => object.owner === raw.localPlayerIndex
-            && object.teamId === teamId && isOrderableMissionMember(object, raw.localPlayerIndex)).map((object) => object.id);
-          if (objectIds.length === 0) throw new TypeError("squadHandle has no current orderable mobile members");
-        } else objectIds = ids(args.objectIds);
+            && object.teamId === teamId && isManagedSquadMember(object, raw.localPlayerIndex)).map((object) => object.id);
+          if (objectIds.length === 0) throw new TypeError("squadHandle has no current managed non-economic members");
+        } else {
+          objectIds = ids(args.objectIds);
+          const byId = new Map((raw.objects || []).map((object) => [object.id, object]));
+          const unsafe = objectIds.filter((id) => !isManagedSquadMember(byId.get(id), raw.localPlayerIndex));
+          if (unsafe.length > 0) {
+            throw new TypeError(`assign_mission excludes unavailable, builder, or harvester IDs: ${unsafe.join(",")}; use issue_order for deliberate economic-unit movement`);
+          }
+        }
         const position = point(args.position);
         const action = args.mission === "escort" ? "guardObject"
           : TARGETABLE_OFFENSIVE_MISSIONS.has(args.mission) && args.targetId ? "attack"
@@ -485,7 +490,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
           .filter((record) => ["self", "allied", "enemy"].includes(record.owner)).filter((record) =>
             (filters.owner === "any" || record.owner === filters.owner) && (filters.kind === "any" || record.kind === filters.kind)
             && (filters.handles.length === 0 || filters.handles.includes(record.handle) || filters.handles.includes(record.squadHandle)));
-        if (filters.scope === "squad") records = records.filter((record) => record.owner === "self" && record.kind !== "structure");
+        if (filters.scope === "squad") records = records.filter((record) => record.owner === "self" && record.squadHandle);
         if (filters.scope === "contact") records = records.filter((record) => record.owner !== "self");
         if (["base", "facility"].includes(filters.scope)) records = records.filter((record) => record.owner === "self" && record.kind === "structure");
         if (filters.scope === "objective") {

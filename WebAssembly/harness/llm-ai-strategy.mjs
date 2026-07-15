@@ -173,7 +173,26 @@ export function isConstructionComplete(record) {
 }
 
 export function isStrategicEntity(record) {
-  return hasCategory(record, "structure") || record?.capabilities?.orderable === true;
+  if (hasCategory(record, "projectile")) return false;
+  return ["structure", "infantry", "vehicle", "aircraft"]
+    .some((kind) => hasCategory(record, kind))
+    || record?.capabilities?.orderable === true;
+}
+
+export function isEconomicUnit(record) {
+  return hasCategory(record, "builder") || hasCategory(record, "harvester");
+}
+
+export function isManagedSquadMember(record, localPlayerIndex) {
+  return record?.owner === localPlayerIndex && !hasCategory(record, "structure")
+    && !isEconomicUnit(record)
+    && record?.capabilities?.orderable === true && record?.capabilities?.mobile === true
+    && isConstructionComplete(record);
+}
+
+export function managedSquadHandle(record, localPlayerIndex) {
+  return isManagedSquadMember(record, localPlayerIndex) && Number.isInteger(record.teamId)
+    ? `squad:${record.teamId}` : null;
 }
 
 function coarseKind(record) {
@@ -204,6 +223,25 @@ function semanticRoles(record) {
     .map(canonicalSemanticValue).filter((tag) => tag && !kindTags.has(tag)))];
 }
 
+function position2d(value) {
+  if (Array.isArray(value) && value.length >= 2) return { x: Number(value[0]), y: Number(value[1]) };
+  if (value && typeof value === "object") return { x: Number(value.x), y: Number(value.y) };
+  return null;
+}
+
+function roundedPosition(value) {
+  const position = position2d(value);
+  if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return null;
+  return { x: Math.round(position.x * 10) / 10, y: Math.round(position.y * 10) / 10 };
+}
+
+function healthPercent(record) {
+  const health = Array.isArray(record?.health)
+    ? { current: record.health[0], max: record.health[1] } : record?.health;
+  return Number.isFinite(health?.current) && health?.max > 0
+    ? Math.max(0, Math.round(100 * health.current / health.max)) : null;
+}
+
 function normalizedCapabilities(record) {
   const capabilities = record?.capabilities;
   if (!capabilities || typeof capabilities !== "object") return null;
@@ -225,21 +263,61 @@ function summarizeForces(objects, localPlayerIndex) {
     if (!["self", "allied", "enemy"].includes(owner)) continue;
     if (coarseKind(object) === "structure" || !isStrategicEntity(object)) continue;
     const ownership = owner === "self" ? "owned" : owner;
-    const handle = ownership === "owned" && Number.isInteger(object.teamId)
-      ? `squad:${object.teamId}` : `force:${ownership}:${coarseKind(object)}`;
-    const key = `${handle}:${coarseKind(object)}`;
-    const current = groups.get(key) || {
-      handle, ownership, kind: coarseKind(object), count: 0, damaged: 0, incomplete: 0,
+    const economicRole = hasCategory(object, "builder") ? "builder"
+      : hasCategory(object, "harvester") ? "harvester" : null;
+    const squadHandle = owner === "self" ? managedSquadHandle(object, localPlayerIndex) : null;
+    const handle = squadHandle || `force:${ownership}:${economicRole || coarseKind(object)}`;
+    const current = groups.get(handle) || {
+      handle, ownership, count: 0, damaged: 0, incomplete: 0,
+      composition: {}, _roles: new Set(), _positions: [],
     };
     current.count += 1;
+    const kind = coarseKind(object);
+    current.composition[kind] = (current.composition[kind] || 0) + 1;
+    for (const role of semanticRoles(object)) current._roles.add(role);
+    const position = roundedPosition(object.position);
+    if (position) current._positions.push(position);
     const health = Array.isArray(object.health)
       ? { current: object.health[0], max: object.health[1] } : object.health;
     if (health?.max > 0 && health.current < health.max * 0.7) current.damaged += 1;
     if (!isConstructionComplete(object)) current.incomplete += 1;
-    groups.set(key, current);
+    groups.set(handle, current);
   }
-  return [...groups.values()].sort((left, right) =>
-    left.handle.localeCompare(right.handle) || left.kind.localeCompare(right.kind));
+  return [...groups.values()].map((group) => {
+    const kinds = Object.keys(group.composition).sort();
+    const position = group._positions.length > 0 ? {
+      x: Math.round(group._positions.reduce((sum, entry) => sum + entry.x, 0)
+        / group._positions.length * 10) / 10,
+      y: Math.round(group._positions.reduce((sum, entry) => sum + entry.y, 0)
+        / group._positions.length * 10) / 10,
+    } : null;
+    return {
+      handle: group.handle,
+      ownership: group.ownership,
+      kind: kinds.length === 1 ? kinds[0] : "mixed",
+      composition: group.composition,
+      roles: [...group._roles].sort(),
+      count: group.count,
+      damaged: group.damaged,
+      incomplete: group.incomplete,
+      position,
+    };
+  }).sort((left, right) => left.handle.localeCompare(right.handle));
+}
+
+function summarizeFacilities(objects, localPlayerIndex) {
+  return objects.filter((object) => object.owner === localPlayerIndex
+      && coarseKind(object) === "structure")
+    .map((object) => ({
+      handle: semanticHandle(object, localPlayerIndex),
+      roles: semanticRoles(object),
+      health: healthPercent(object),
+      construction: isConstructionComplete(object)
+        ? { state: "complete" }
+        : { state: "constructing", percent: object.construction },
+      position: roundedPosition(object.position),
+    }))
+    .sort((left, right) => left.handle.localeCompare(right.handle));
 }
 
 function summarizeProduction(objects, localPlayerIndex) {
@@ -307,11 +385,17 @@ function objectDelta(previous, current, localPlayerIndex) {
     }
   }
   for (const object of before.values()) {
-    if (!after.has(object.id)) deltas.push({
-      type: "disappeared",
+    if (after.has(object.id)) continue;
+    const owner = normalizedOwnership(object, localPlayerIndex);
+    const health = Array.isArray(object.health) ? object.health[0] : object.health?.current;
+    deltas.push({
+      type: Number.isFinite(health) && health <= 0 ? "destroyed"
+        : owner === "self" ? "lost" : "lostContact",
       handle: semanticHandle(object, localPlayerIndex),
-      owner: normalizedOwnership(object, localPlayerIndex),
+      owner,
       kind: coarseKind(object),
+      lastKnownPosition: roundedPosition(object.position),
+      lastKnownHealth: healthPercent(object),
     });
   }
   return deltas.sort((left, right) => left.handle.localeCompare(right.handle));
@@ -329,7 +413,7 @@ export function compactRoutineObservation(raw, {
   const elapsedFrames = Number.isFinite(previousFrame)
     ? Math.max(0, raw.frame - previousFrame) : 0;
   const observation = {
-    schema: "new-shoes.llm-routine/2",
+    schema: "new-shoes.llm-routine/3",
     snapshot: raw.snapshotId,
     frame: raw.frame,
     time: {
@@ -349,6 +433,7 @@ export function compactRoutineObservation(raw, {
     economy: local?.economy || null,
     priorities,
     forces: summarizeForces(relevant, raw.localPlayerIndex),
+    facilities: summarizeFacilities(relevant, raw.localPlayerIndex),
     production: summarizeProduction(relevant, raw.localPlayerIndex),
     missions: jobs.map((job) => ({ id: job.id, type: job.type, state: job.state, blockedReason: job.blockedReason || null })),
     threats: summarizeForces(relevant.filter((object) =>
@@ -371,8 +456,7 @@ export function normalizedEntity(record, localPlayerIndex) {
     handle: semanticHandle(record, localPlayerIndex),
     kind: coarseKind(record),
     owner: normalizedOwnership(record, localPlayerIndex),
-    squadHandle: record.owner === localPlayerIndex && Number.isInteger(record.teamId)
-      ? `squad:${record.teamId}` : null,
+    squadHandle: managedSquadHandle(record, localPlayerIndex),
     roles: semanticRoles(record),
     position: record.position,
     health,

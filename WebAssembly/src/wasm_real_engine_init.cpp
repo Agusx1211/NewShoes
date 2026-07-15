@@ -8446,11 +8446,72 @@ const LlmAiTerminalSlotOutcome *find_latched_llm_outcome(
 	return NULL;
 }
 
+Player *find_llm_ai_slot_player(Int slot_num)
+{
+	AsciiString player_name;
+	player_name.format("player%d", slot_num);
+	return ThePlayerList != NULL && TheNameKeyGenerator != NULL
+		? ThePlayerList->findPlayerWithNameKey(
+			TheNameKeyGenerator->nameToKey(player_name)) : NULL;
+}
+
+LlmAiTerminalSlotOutcome make_llm_ai_slot_outcome(
+	Int slot_num,
+	const GameSlot *slot,
+	Player *player,
+	const char *outcome)
+{
+	return {
+		slot_num,
+		player != NULL ? player->getPlayerIndex() : -1,
+		slot->getLlmAiProfileId().str(),
+		outcome,
+		player != NULL && player->hasExternalAIStrategyController() ? "llm" : "classic",
+		player != NULL ? player->getClassicAIStrategyUpdateCount() : 0,
+		player != NULL ? player->getControllerNeutralAIUpdateCount() : 0,
+		player != NULL ? player->getAIStrategyControllerTransitionCount() : 0,
+	};
+}
+
+void remember_llm_ai_slot_outcome(const LlmAiTerminalSlotOutcome &outcome)
+{
+	for (LlmAiTerminalSlotOutcome &entry : g_llm_ai_terminal_outcome.slots) {
+		if (entry.slot == outcome.slot && entry.profile_id == outcome.profile_id) {
+			entry = outcome;
+			return;
+		}
+	}
+	g_llm_ai_terminal_outcome.slots.push_back(outcome);
+}
+
+void remember_llm_ai_match_identity(const GameInfo *game)
+{
+	if (game == NULL) return;
+	g_llm_ai_terminal_outcome.authoritative = true;
+	g_llm_ai_terminal_outcome.game_id = game->getGameID();
+	g_llm_ai_terminal_outcome.seed = game->getSeed();
+	g_llm_ai_terminal_outcome.map = game->getMap().str();
+}
+
 }
 
 extern "C" void cnc_port_reset_llm_ai_terminal_outcomes(void)
 {
 	g_llm_ai_terminal_outcome = LlmAiTerminalOutcomeLatch();
+}
+
+extern "C" void cnc_port_capture_llm_ai_player_defeat(Int slot_num)
+{
+	const Int game_mode = TheGameLogic != NULL ? TheGameLogic->getGameMode() : GAME_NONE;
+	const GameInfo *game = TheGameInfo != NULL ? TheGameInfo : TheSkirmishGameInfo;
+	const bool authoritative = game_mode == GAME_SKIRMISH
+		|| (game_mode == GAME_LAN && game != NULL && game->amIHost());
+	const GameSlot *slot = game != NULL ? game->getConstSlot(slot_num) : NULL;
+	if (!authoritative || slot == NULL || !slot->isLlmAi()) return;
+
+	remember_llm_ai_match_identity(game);
+	remember_llm_ai_slot_outcome(make_llm_ai_slot_outcome(
+		slot_num, slot, find_llm_ai_slot_player(slot_num), "defeat"));
 }
 
 extern "C" void cnc_port_capture_llm_ai_terminal_outcomes(void)
@@ -8472,11 +8533,7 @@ extern "C" void cnc_port_capture_llm_ai_terminal_outcomes(void)
 	for (Int slot_num = 0; slot_num < MAX_SLOTS; ++slot_num) {
 		const GameSlot *slot = game->getConstSlot(slot_num);
 		if (slot == NULL || !slot->isLlmAi()) continue;
-		AsciiString player_name;
-		player_name.format("player%d", slot_num);
-		Player *player = ThePlayerList != NULL && TheNameKeyGenerator != NULL
-			? ThePlayerList->findPlayerWithNameKey(
-				TheNameKeyGenerator->nameToKey(player_name)) : NULL;
+		Player *player = find_llm_ai_slot_player(slot_num);
 		bool victory = player != NULL && TheVictoryConditions != NULL
 			&& TheVictoryConditions->hasAchievedVictory(player);
 		if (player == NULL) {
@@ -8493,16 +8550,11 @@ extern "C" void cnc_port_capture_llm_ai_terminal_outcomes(void)
 				}
 			}
 		}
-		captured.slots.push_back({
-			slot_num,
-			player != NULL ? player->getPlayerIndex() : -1,
-			slot->getLlmAiProfileId().str(),
-			victory ? "victory" : "defeat",
-			player != NULL && player->hasExternalAIStrategyController() ? "llm" : "classic",
-			player != NULL ? player->getClassicAIStrategyUpdateCount() : 0,
-			player != NULL ? player->getControllerNeutralAIUpdateCount() : 0,
-			player != NULL ? player->getAIStrategyControllerTransitionCount() : 0,
-		});
+		const LlmAiTerminalSlotOutcome *prior = find_latched_llm_outcome(
+			slot_num, slot->getLlmAiProfileId().str());
+		if (!victory && prior != NULL) captured.slots.push_back(*prior);
+		else captured.slots.push_back(make_llm_ai_slot_outcome(
+			slot_num, slot, player, victory ? "victory" : "defeat"));
 	}
 	g_llm_ai_terminal_outcome = captured;
 }

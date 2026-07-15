@@ -421,7 +421,7 @@ async function main() {
       competition.movementActions = latest.events.filter((event) => event.type === "tool.result"
         && event.data?.ok === true && ["assign_mission", "issue_order"].includes(event.data?.name)).length;
       competition.combatReactions = latest.events.filter((event) => event.type === "engine.reaction"
-        && ((event.data?.deltas || []).some((delta) => ["damaged", "disappeared"].includes(delta.type))
+        && ((event.data?.deltas || []).some((delta) => ["damaged", "destroyed", "lost"].includes(delta.type))
           || (event.data?.missions || []).some((mission) => mission.state === "engaged"))).length;
       const progressSignature = [
         latest.session.turns,
