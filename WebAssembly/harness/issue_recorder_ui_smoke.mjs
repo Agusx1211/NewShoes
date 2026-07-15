@@ -102,9 +102,23 @@ try {
   await page.locator("#captureOverlayToggle").click();
   await page.waitForFunction(() => window.CnCIssueRecorder?.recording === true);
 
+  await page.evaluate(() => {
+    const originalStringify = JSON.stringify;
+    window.__issueRecorderRestoreStringify = () => {
+      JSON.stringify = originalStringify;
+      delete window.__issueRecorderRestoreStringify;
+    };
+    JSON.stringify = function rejectWholeDumpStringify(value, ...args) {
+      if (value?.schema === "cnc.issue-dump.v1") {
+        throw new RangeError("Invalid string length");
+      }
+      return originalStringify.call(this, value, ...args);
+    };
+  });
   const downloadPromise = page.waitForEvent("download");
   await page.locator("#captureOverlayDownload").click();
   const download = await downloadPromise;
+  await page.evaluate(() => window.__issueRecorderRestoreStringify?.());
   assert.match(download.suggestedFilename(), /in-game-overlay\.cncdump\.json$/);
   const downloadPath = await download.path();
   assert.ok(downloadPath, "capture overlay did not produce a downloadable issue dump");
