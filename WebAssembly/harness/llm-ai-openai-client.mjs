@@ -41,11 +41,26 @@ function headers(profile) {
   return result;
 }
 
+function localNetworkRequestOptions(url) {
+  if (globalThis.location?.protocol !== "https:") return {};
+  try {
+    return new URL(url).protocol === "http:" ? { targetAddressSpace: "local" } : {};
+  } catch {
+    return {};
+  }
+}
+
 async function providerJson(fetchImpl, url, init, { timeoutMs, signal } = {}) {
   const timeout = withTimeout(signal, timeoutMs);
   let response;
+  let text;
   try {
-    response = await fetchImpl(url, { ...init, signal: timeout.signal });
+    response = await fetchImpl(url, {
+      ...localNetworkRequestOptions(url),
+      ...init,
+      signal: timeout.signal,
+    });
+    text = await response.text();
   } catch (error) {
     if (timeout.timedOut()) {
       throw new LlmAiProviderError(`LLM request exceeded ${timeoutMs} ms`, {
@@ -59,7 +74,6 @@ async function providerJson(fetchImpl, url, init, { timeoutMs, signal } = {}) {
   } finally {
     timeout.dispose();
   }
-  const text = await response.text();
   let json = null;
   try { json = text ? JSON.parse(text) : {}; } catch { /* reported below */ }
   if (!response.ok) {

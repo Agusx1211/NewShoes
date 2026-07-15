@@ -71,6 +71,26 @@ authoritative Easy-AI victory at frame 27,791 and is tracked under GitHub issue
 [`AgentBridge/README.md`](AgentBridge/README.md) for the wire boundary and local
 usage.
 
+### LLM commanders
+
+The browser desktop also owns a local LLM commander path that does not require
+the remote AgentBridge service. The LLM AI Manager stores named
+OpenAI-compatible profiles and match sessions in IndexedDB, tests provider and
+tool-protocol compatibility, redacts credentials from exports, and publishes
+saved profile names into the original Skirmish and LAN player-template lists.
+Provider requests travel directly from the browser to the endpoint selected by
+the user; the project does not proxy model credentials or gameplay context.
+
+During a playable match, the authoritative browser creates one autonomous
+session per LLM slot. The engine resolves the slot to its real computer
+`Player`, produces a fog- and stealth-filtered player-scoped observation, and
+accepts validated semantic orders through the original game-message paths. In
+skirmish, the model can also steer the assigned player's real classic-AI build,
+upgrade, defense, and team queues; direct AI-state mutations are rejected in
+LAN games. The classic skirmish AI remains the execution and safety substrate,
+so model directives augment a working army rather than replacing engine-owned
+placement, production, combat, or pathfinding with browser logic.
+
 ### Rendering
 
 The browser exposes a D3D8-shaped device to WW3D. It maps buffers, textures,

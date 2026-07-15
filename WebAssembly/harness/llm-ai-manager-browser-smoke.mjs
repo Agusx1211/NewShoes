@@ -62,10 +62,14 @@ const browser = await chromium.launch({ headless: true });
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
   const page = await context.newPage();
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error?.message ?? String(error)));
   const playUrl = new URL("harness/play.html", staticServer.url);
   playUrl.searchParams.set("dist", "dist");
   await page.goto(playUrl.href, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => Boolean(window.ZeroHLlmAi?.store && window.ZeroHDesktop));
+  await page.waitForFunction(() => Boolean(
+    window.ZeroHLlmAi?.store && window.ZeroHLlmAiGameRuntime && window.ZeroHDesktop));
+  assert.equal(await page.evaluate(() => window.ZeroHLlmAiGameRuntime.interval !== null), true);
   await page.locator('.desktop-icon[data-open="llmAi"]').click();
   await page.waitForSelector("#llmAiWindow.is-open");
   await page.locator("#llmAiName").fill("Browser General");
@@ -139,6 +143,7 @@ try {
   assert.match(await page.locator("#llmAiSessionSummary").textContent(), /victory/i);
   assert.equal(await page.locator("#llmAiSessionEvents").textContent().then((text) => text.includes("browser-ultra-secret")), false);
   await page.screenshot({ path: screenshotPath });
+  assert.deepEqual(pageErrors, []);
 
   console.log("LLM AI manager browser smoke: PASS", {
     screenshotPath,

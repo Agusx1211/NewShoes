@@ -2281,6 +2281,80 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "llmAiWorldSnapshot": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_world_snapshot", "string",
+          ["number", "number", "number", "number"],
+          [
+            Number(payload.playerIndex), payload.mode === "camera" ? 1 : 0,
+            payload.detail === "tactical" ? 1 : 0,
+            payload.includeCapabilities === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "llmAiTerrainQuery": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_terrain_query", "string",
+          ["number", "number", "number", "number", "number", "number", "number", "number"],
+          [
+            Number(payload.playerIndex), payload.mode === "camera" ? 1 : 0,
+            Number(payload.minX), Number(payload.minY), Number(payload.maxX), Number(payload.maxY),
+            Number(payload.columns), Number(payload.rows),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "llmAiGameOrder": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_game_order", "string",
+          ["number", "string", "string", "number", "number", "number"],
+          [
+            Number(payload.playerIndex), String(payload.action ?? ""),
+            String(payload.objectIds ?? ""), Number(payload.targetId ?? 0),
+            Number(payload.x ?? 0), Number(payload.y ?? 0),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "llmAiGameCommand": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_game_command", "string",
+          ["number", "number", "string", "number", "number", "number", "number", "number"],
+          [
+            Number(payload.playerIndex), Number(payload.sourceId), String(payload.command ?? ""),
+            Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+            Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "llmAiClassicDirective": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_classic_directive", "string",
+          ["number", "string", "string", "number"],
+          [
+            Number(payload.playerIndex), String(payload.action ?? ""),
+            String(payload.name ?? ""), Number(payload.value ?? 0),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "agentCameraLookAt": {
       try {
         const result = await threadedEngine.engineCall(
@@ -2433,6 +2507,15 @@ async function threadedRpc(command, payload = {}) {
         const state = await threadedEngine.engineCall(
           "cnc_port_real_engine_lan_state", "string", [], []);
         return { ok: true, command, lan: state, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineLlmAiAssignments": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_llm_ai_assignments", "string", [], []);
+        return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
@@ -5890,6 +5973,11 @@ async function loadWasmModule() {
         ["number", "number"],
       ),
       realEngineLanState: module.cwrap("cnc_port_real_engine_lan_state", "string", []),
+      realEngineLlmAiAssignments: module.cwrap(
+        "cnc_port_real_engine_llm_ai_assignments",
+        "string",
+        [],
+      ),
       realEngineLanCommand: module.cwrap(
         "cnc_port_real_engine_lan_command",
         "string",
@@ -6070,6 +6158,31 @@ async function loadWasmModule() {
         "cnc_port_agent_game_command",
         "string",
         ["number", "string", "number", "number", "number", "number", "number"],
+      ),
+      llmAiWorldSnapshot: module.cwrap(
+        "cnc_port_llm_ai_world_snapshot",
+        "string",
+        ["number", "number", "number", "number"],
+      ),
+      llmAiTerrainQuery: module.cwrap(
+        "cnc_port_llm_ai_terrain_query",
+        "string",
+        ["number", "number", "number", "number", "number", "number", "number", "number"],
+      ),
+      llmAiGameOrder: module.cwrap(
+        "cnc_port_llm_ai_game_order",
+        "string",
+        ["number", "string", "string", "number", "number", "number"],
+      ),
+      llmAiGameCommand: module.cwrap(
+        "cnc_port_llm_ai_game_command",
+        "string",
+        ["number", "number", "string", "number", "number", "number", "number", "number"],
+      ),
+      llmAiClassicDirective: module.cwrap(
+        "cnc_port_llm_ai_classic_directive",
+        "string",
+        ["number", "string", "string", "number"],
       ),
       agentCameraLookAt: module.cwrap(
         "cnc_port_agent_camera_look_at",
@@ -12202,6 +12315,19 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: error?.message ?? String(error) };
         }
       }
+    case "realEngineLlmAiAssignments":
+      {
+        const moduleResult = await getWasmModuleForArchives(command);
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const result = JSON.parse(moduleResult.wasmModule.realEngineLlmAiAssignments());
+          return { ok: result?.ok === true, command, result, state: snapshotState() };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
     case "realEngineSetNetworkTimeouts":
       {
         const moduleResult = await getWasmModuleForArchives(command);
@@ -13131,6 +13257,51 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: error?.message ?? String(error) };
         }
         return { ok: result?.ok === true, command, result, state: snapshotState() };
+      }
+    case "llmAiWorldSnapshot":
+    case "llmAiTerrainQuery":
+    case "llmAiGameOrder":
+    case "llmAiGameCommand":
+    case "llmAiClassicDirective":
+      {
+        const moduleResult = await getWasmModuleForArchives(command);
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const module = moduleResult.wasmModule;
+          const playerIndex = Number(payload.playerIndex);
+          let raw = null;
+          if (command === "llmAiWorldSnapshot") {
+            raw = module.llmAiWorldSnapshot(
+              playerIndex, payload.mode === "camera" ? 1 : 0,
+              payload.detail === "tactical" ? 1 : 0,
+              payload.includeCapabilities === true ? 1 : 0);
+          } else if (command === "llmAiTerrainQuery") {
+            raw = module.llmAiTerrainQuery(
+              playerIndex, payload.mode === "camera" ? 1 : 0,
+              Number(payload.minX), Number(payload.minY),
+              Number(payload.maxX), Number(payload.maxY),
+              Number(payload.columns), Number(payload.rows));
+          } else if (command === "llmAiGameOrder") {
+            raw = module.llmAiGameOrder(
+              playerIndex, String(payload.action ?? ""), String(payload.objectIds ?? ""),
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0));
+          } else if (command === "llmAiGameCommand") {
+            raw = module.llmAiGameCommand(
+              playerIndex, Number(payload.sourceId), String(payload.command ?? ""),
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+              Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0);
+          } else {
+            raw = module.llmAiClassicDirective(
+              playerIndex, String(payload.action ?? ""), String(payload.name ?? ""),
+              Number(payload.value ?? 0));
+          }
+          const result = JSON.parse(raw);
+          return { ok: result?.ok === true, command, result, state: snapshotState() };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
       }
     case "startMainLoop":
       {

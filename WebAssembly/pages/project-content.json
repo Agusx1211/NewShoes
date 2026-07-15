@@ -71,6 +71,24 @@
       ]
     },
     {
+      "id": "llm-commanders",
+      "name": "Configure LLM commanders",
+      "status": "experimental",
+      "summary": "Named OpenAI-compatible models can occupy computer slots and command the real engine through observed state, semantic orders, and the original AI's production controls.",
+      "reviewedAt": "2026-07-14",
+      "details": [
+        "The launcher's LLM AI Manager stores named commander profiles with an endpoint, model, API key, thinking effort, context size, strategic mandate, tool protocol, planning interval, and fallback policy. A saved profile appears as a computer-player choice in the original Skirmish and LAN setup screens.",
+        "During a match, the host gives each configured commander a player-scoped view of the real simulation. The model can inspect terrain and known units, issue ordinary unit and command-button orders, and ask the original skirmish AI systems to build structures, upgrades, defenses, and teams. Fog, relationships, resources, command availability, authority, and deterministic game-message paths remain owned by the engine.",
+        "Profiles and match transcripts persist in that browser's IndexedDB. Sessions record observations, model usage, tool calls, errors, outcomes, and summary metrics; the manager can inspect, export, or delete them. Exported sessions redact API keys. Failed repeated actions are bounded and context is compacted. If model requests fail repeatedly, an optional degraded retry policy keeps the session alive while the classic-AI substrate continues to play."
+      ],
+      "evidence": [
+        "WebAssembly/harness/llm-ai-manager-browser-smoke.mjs",
+        "WebAssembly/harness/llm-ai-match-smoke.mjs",
+        "WebAssembly/harness/llm-ai-game-runtime.mjs",
+        "WebAssembly/src/wasm_agent_api.cpp"
+      ]
+    },
+    {
       "id": "graphics-audio-video",
       "name": "Graphics, audio, and movies",
       "status": "in_testing",
@@ -184,7 +202,8 @@
     ],
     "assets": [
       "The hosted site supplies HTTPS and the necessary cross-origin isolation headers. A self-hosted copy must do the same.",
-      "A complete English Generals and Zero Hour copy is required. The project does not provide replacement downloads. Existing original media is supported, and digital copies are available through official storefronts linked by the launcher."
+      "A complete English Generals and Zero Hour copy is required. The project does not provide replacement downloads. Existing original media is supported, and digital copies are available through official storefronts linked by the launcher.",
+      "LLM commanders are optional. They require a user-chosen OpenAI-compatible endpoint that the browser can reach and that permits requests from the site origin; any account, API key, model access, usage limits, and provider charges belong to that provider. HTTPS endpoints are portable. Current Chrome can prompt for Local Network Access to an HTTP private address; other browser/version combinations may require HTTPS or localhost."
     ]
   },
   "setup": [
@@ -200,13 +219,15 @@
     "paragraphs": [
       "Retail assets selected in the launcher are read locally and stored locally in the browser profile. They are not uploaded to Project New Shoes. Installed archives, mods, saves, replays, preferences, and generated movie cache files live under browser-managed origin storage.",
       "The settings UI provides an anonymous analytics preference. Documented analytics are limited to broad feature, reliability, setting-category, and performance-bucket events. They exclude filenames, paths, disc labels, game data, save content, free text, issue dumps, and precise hardware or storage values. Global Privacy Control or Do Not Track disables analytics automatically, and advertising features are disabled.",
-      "Imported mod installers are parsed, not executed. Native code found in a mod is not compatible with the WebAssembly engine. Browser origin data can be removed through the launcher or browser site-data controls, but deleting it can remove the installed game, mods, saves, and settings."
+      "Imported mod installers are parsed, not executed. Native code found in a mod is not compatible with the WebAssembly engine. Browser origin data can be removed through the launcher or browser site-data controls, but deleting it can remove the installed game, mods, saves, and settings.",
+      "LLM commander profiles and session transcripts are stored in the browser's IndexedDB. The configured endpoint receives the commander's mandate, compacted conversation, player-scoped game observations, and tool results directly from the browser. Project New Shoes does not proxy those requests. API keys are omitted from session exports, but users should still treat exported strategy transcripts as potentially sensitive."
     ],
     "networkActivity": [
       "Opening the hosted page downloads the open-source browser runtime.",
       "Optional analytics sends only documented broad events when enabled.",
       "Multiplayer uses public discovery relays and direct peer-to-peer game channels.",
       "Device transfer connects the two participating devices for the confirmed encrypted transfer.",
+      "An enabled LLM commander sends gameplay context and receives model responses from the OpenAI-compatible endpoint selected in its profile.",
       "Diagnostics leave the device only when the user explicitly uploads a report."
     ]
   },
@@ -217,6 +238,7 @@
     "Campaign, Challenge, save/load, replay, movies, long multiplayer sessions, reconnects, difficult NAT environments, performance, and remaining rendering fidelity continue to receive testing and fixes.",
     "Browser storage is scoped to the current browser profile, device, and site origin unless the user exports or transfers data.",
     "Native Windows mod DLLs and executables cannot run in WebAssembly.",
+    "LLM commanders are experimental. Model quality, latency, context limits, endpoint availability, CORS policy, and usage cost can affect play; the host owns model requests, and direct classic-AI production directives are restricted to skirmish while multiplayer actions use authoritative game-message paths.",
     "A web agent that reads this site cannot play the canvas or operate local browser permissions. The public llms.txt, project-info.json, and guide are read-only knowledge resources, not a control API.",
     "The live issue tracker is the authority for current bugs and planned work. Archived TODO.md and DONE.md snapshots are historical records, not the current backlog."
   ],
@@ -228,6 +250,10 @@
     {
       "problem": "The folder picker cannot open a Steam directory",
       "answer": "Use Add Game Folder, then the compatibility folder picker offered by the launcher. Ensure both Generals and Zero Hour are installed in English and that the selected tree is complete."
+    },
+    {
+      "problem": "An LLM commander cannot connect or take a turn",
+      "answer": "Open the LLM AI Manager and test the profile endpoint. Confirm the URL and model, verify any API key and provider quota, and make sure the endpoint is reachable from the browser and allows the site's origin through CORS. For an HTTP private-network address from the hosted HTTPS launcher, current Chrome may ask for Local Network Access permission; otherwise use HTTPS or localhost. The session view records bounded request, protocol, and tool errors without exposing the API key in exports."
     },
     {
       "problem": "Media validation fails",
@@ -386,7 +412,7 @@
     },
     {
       "question": "Can ChatGPT or another web agent play it for me?",
-      "answer": "Not through the ordinary public page. A web agent can read these resources, explain the project, and guide a person. It cannot grant local permissions, select retail files, or control the game canvas. Any separately documented control interface should be evaluated on its own contract."
+      "answer": "The experimental LLM commander feature can connect a profile you configure to an OpenAI-compatible model and place it in a computer slot. That is a built-in, host-controlled gameplay feature; an unrelated web agent reading the public site still cannot grant local permissions, select retail files, or directly control the canvas."
     },
     {
       "question": "Where is the current roadmap?",

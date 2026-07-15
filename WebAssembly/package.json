@@ -21,6 +21,7 @@
     "test:llm-ai": "node harness/llm-ai-unit.mjs",
     "verify:llm-ai-endpoint": "node harness/llm-ai-live-endpoint.mjs",
     "verify:llm-ai-manager-browser": "node harness/llm-ai-manager-browser-smoke.mjs",
+    "verify:llm-ai-match": "node harness/llm-ai-match-smoke.mjs",
     "test:release-metadata": "node tools/release_metadata_unit.mjs",
     "test:public-project-content": "node tools/public_project_content_unit.mjs",
     "test:bink-video-capability": "node harness/bink_video_capability_unit.mjs",

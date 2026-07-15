@@ -361,7 +361,7 @@
                   <label>Name<input id="llmAiName" maxlength="64" required placeholder="Strategist Alpha"></label>
                   <label>Model<input id="llmAiModel" maxlength="256" required placeholder="qwen3.6-35b-a3b-mtp@q8_k_xl"></label>
                 </div>
-                <label>OpenAI-compatible endpoint<input id="llmAiEndpoint" type="url" maxlength="2048" required placeholder="http://127.0.0.1:1234"></label>
+                <label>OpenAI-compatible endpoint <span class="llm-ai-optional">HTTPS, localhost, or browser-approved local network</span><input id="llmAiEndpoint" type="url" maxlength="2048" required placeholder="http://127.0.0.1:1234"></label>
                 <label>API key <span class="llm-ai-optional">optional · stored locally</span><input id="llmAiApiKey" type="password" maxlength="4096" spellcheck="false" placeholder="Not required by local endpoints"></label>
                 <div class="llm-ai-fields three-column">
                   <label>Thinking effort<select id="llmAiThinking"><option>provider-default</option><option>none</option><option>minimal</option><option>low</option><option selected>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
@@ -369,7 +369,7 @@
                   <label>Tool protocol<select id="llmAiToolProtocol"><option value="auto" selected>Auto compatible</option><option value="native">Native only</option><option value="structured">Structured fallback</option></select></label>
                 </div>
                 <label>Mandate<textarea id="llmAiMandate" maxlength="8192" rows="4">Play to the best of your capability and win the game.</textarea></label>
-                <div class="llm-ai-runtime-policy"><label><input id="llmAiClassicFallback" type="checkbox" checked> Keep classic AI active as the safety and execution substrate</label><label>Planning interval <input id="llmAiPlanningInterval" type="number" min="250" max="60000" step="250" value="2000"> ms</label></div>
+                <div class="llm-ai-runtime-policy"><label><input id="llmAiClassicFallback" type="checkbox" checked> Keep the model session retrying during classic-AI fallback</label><label>Planning interval <input id="llmAiPlanningInterval" type="number" min="250" max="60000" step="250" value="2000"> ms</label></div>
                 <div id="llmAiFormStatus" class="llm-ai-status" role="status">Profiles and session traces stay in this browser.</div>
                 <div class="llm-ai-form-actions"><button id="llmAiDeleteProfile" type="button" class="button secondary small" disabled>Delete</button><button id="llmAiDuplicateProfile" type="button" class="button secondary small" disabled>Duplicate</button><span></span><button id="llmAiTestEndpoint" type="button" class="button secondary small">Test endpoint</button><button type="submit" class="button primary small">Save commander</button></div>
               </form>

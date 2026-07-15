@@ -8411,6 +8411,63 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_lan_state()
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_llm_ai_assignments()
+{
+	static std::string json;
+	const Int game_mode = TheGameLogic != NULL ? TheGameLogic->getGameMode() : GAME_NONE;
+	const GameInfo *game = TheGameInfo;
+	if (game == NULL && game_mode == GAME_SKIRMISH) game = TheSkirmishGameInfo;
+	const bool supported_mode = game_mode == GAME_SKIRMISH || game_mode == GAME_LAN;
+	const bool authoritative = game_mode == GAME_SKIRMISH
+		|| (game_mode == GAME_LAN && game != NULL && game->amIHost());
+	const bool playable = supported_mode && TheGameLogic != NULL && TheGameLogic->isInGame()
+		&& ThePlayerList != NULL && game != NULL && game->isGameInProgress();
+
+	json = "{\"ok\":true";
+	json += ",\"supportedMode\":";
+	json += supported_mode ? "true" : "false";
+	json += ",\"authoritative\":";
+	json += authoritative ? "true" : "false";
+	json += ",\"playable\":";
+	json += playable ? "true" : "false";
+	json += ",\"gameMode\":" + std::to_string(game_mode);
+	json += ",\"frame\":"
+		+ std::to_string(TheGameLogic != NULL ? TheGameLogic->getFrame() : 0);
+	json += ",\"gameId\":" + std::to_string(game != NULL ? game->getGameID() : 0);
+	json += ",\"map\":\"" + json_escape(game != NULL ? game->getMap().str() : "") + "\"";
+	json += ",\"seed\":" + std::to_string(game != NULL ? game->getSeed() : 0);
+	json += ",\"assignments\":[";
+	bool first = true;
+	if (game != NULL) {
+		for (Int slot_num = 0; slot_num < MAX_SLOTS; ++slot_num) {
+			const GameSlot *slot = game->getConstSlot(slot_num);
+			if (slot == NULL || !slot->isLlmAi()) continue;
+			AsciiString player_name;
+			player_name.format("player%d", slot_num);
+			Player *player = ThePlayerList != NULL && TheNameKeyGenerator != NULL
+				? ThePlayerList->findPlayerWithNameKey(
+					TheNameKeyGenerator->nameToKey(player_name)) : NULL;
+			if (!first) json += ",";
+			first = false;
+			json += "{\"slot\":" + std::to_string(slot_num);
+			json += ",\"profileId\":\""
+				+ json_escape(slot->getLlmAiProfileId().str()) + "\"";
+			json += ",\"displayName\":\""
+				+ json_escape(unicode_to_debug_ascii(slot->getName())) + "\"";
+			json += ",\"playerIndex\":";
+			json += player != NULL ? std::to_string(player->getPlayerIndex()) : "null";
+			json += ",\"playerActive\":";
+			json += player != NULL && player->isPlayerActive() ? "true" : "false";
+			json += ",\"computerPlayer\":";
+			json += player != NULL && player->getPlayerType() == PLAYER_COMPUTER
+				&& player->isSkirmishAIPlayer() ? "true" : "false";
+			json += "}";
+		}
+	}
+	json += "]}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_network_timeouts(
 	unsigned int disconnect_ms,
 	unsigned int player_timeout_ms)

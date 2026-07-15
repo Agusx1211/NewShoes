@@ -1200,7 +1200,14 @@ void InitSkirmishGameGadgets( void )
 	{
 		PopulateColorComboBox(i, comboBoxColor, TheSkirmishGameInfo );
 		GadgetComboBoxSetSelectedPos(comboBoxColor[i], 0);
-		PopulatePlayerTemplateComboBox(i, comboBoxPlayerTemplate, TheSkirmishGameInfo, FALSE );
+		// Let the local browser watch autonomous AI matches without adding an
+		// idle human army.  Computer slots remain normal playable factions.
+#ifdef __EMSCRIPTEN__
+		const Bool allowObserver = i == 0;
+#else
+		const Bool allowObserver = FALSE;
+#endif
+		PopulatePlayerTemplateComboBox(i, comboBoxPlayerTemplate, TheSkirmishGameInfo, allowObserver );
 		PopulateTeamComboBox(i, comboBoxTeam, TheSkirmishGameInfo );
 
 //		if (buttonStartPosition[i])

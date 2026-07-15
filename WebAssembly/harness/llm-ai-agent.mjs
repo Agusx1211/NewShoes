@@ -6,6 +6,9 @@ import {
 } from "./llm-ai-profile.mjs";
 import { completeLlmAiTurn, LlmAiProviderError } from "./llm-ai-openai-client.mjs";
 
+const INFORMATIONAL_TOOLS = new Set(["query_terrain", "wait_for_tick"]);
+const RECOVERY_THRESHOLD = 2;
+
 function boundedJson(value, maximum = 128 * 1024) {
   const text = JSON.stringify(value ?? null);
   if (text.length <= maximum) return text;
@@ -29,11 +32,15 @@ function defaultOutcome(observation) {
 function delay(milliseconds, signal) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(signal.reason); return; }
-    const timeout = setTimeout(resolve, milliseconds);
-    signal?.addEventListener("abort", () => {
+    const abort = () => {
       clearTimeout(timeout);
       reject(signal.reason);
-    }, { once: true });
+    };
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, milliseconds);
+    signal?.addEventListener("abort", abort, { once: true });
   });
 }
 
@@ -73,6 +80,10 @@ export class LlmAiAgentRuntime {
     this.messages = [];
     this.lastObservation = null;
     this.consecutiveFailures = 0;
+    this.failedToolSignatures = new Map();
+    this.actionFailureStreak = 0;
+    this.nonActionStreak = 0;
+    this.recoveryBlockedTool = null;
   }
 
   async event(type, data = {}) {
@@ -125,13 +136,87 @@ export class LlmAiAgentRuntime {
     return observation;
   }
 
+  async finishIfTerminal(reason) {
+    try {
+      await this.captureObservation(reason);
+    } catch (error) {
+      await this.event("environment.error", {
+        reason,
+        code: error?.code || "observation_error",
+        message: error?.message || String(error),
+      });
+      return false;
+    }
+    if (!this.isTerminal(this.lastObservation)) return false;
+    await this.finish(reason);
+    return true;
+  }
+
   compactContext() {
     const compacted = compactLlmConversation(this.messages, this.profile);
     this.messages = compacted.messages;
     return compacted;
   }
 
-  async executeTool(call, protocol) {
+  recordToolOutcome(name, ok) {
+    if (INFORMATIONAL_TOOLS.has(name)) {
+      if (ok) this.nonActionStreak += 1;
+      return;
+    }
+    this.nonActionStreak = 0;
+    if (ok) {
+      this.actionFailureStreak = 0;
+      this.recoveryBlockedTool = null;
+      this.failedToolSignatures.clear();
+      return;
+    }
+    this.actionFailureStreak += 1;
+    this.recoveryBlockedTool = name;
+  }
+
+  recoveryToolSet() {
+    const recoveryRequired = this.actionFailureStreak >= RECOVERY_THRESHOLD
+      || this.nonActionStreak >= RECOVERY_THRESHOLD;
+    if (!recoveryRequired) return { tools: this.tools, recoveryRequired: false };
+    const actionTools = this.tools.filter((tool) => !INFORMATIONAL_TOOLS.has(tool.name));
+    const alternatives = this.actionFailureStreak >= RECOVERY_THRESHOLD
+      ? actionTools.filter((tool) => tool.name !== this.recoveryBlockedTool)
+      : actionTools;
+    return {
+      tools: alternatives.length > 0 ? alternatives : actionTools,
+      recoveryRequired: true,
+    };
+  }
+
+  async requireRecovery(tools) {
+    const classicAi = this.lastObservation?.classicAi ?? {};
+    const playerIndex = this.lastObservation?.assignment?.playerIndex;
+    const ownedObjectIds = Array.isArray(this.lastObservation?.objects)
+      ? this.lastObservation.objects
+        .filter((object) => object?.owner === playerIndex)
+        .map((object) => object.id)
+        .filter(Number.isInteger)
+        .slice(0, 128)
+      : [];
+    const recovery = {
+      actionFailureStreak: this.actionFailureStreak,
+      nonActionStreak: this.nonActionStreak,
+      excludedFailedTool: this.recoveryBlockedTool,
+      toolsAvailableThisTurn: tools.map((tool) => tool.name),
+      exactBuildingTemplates: classicAi.availableBuildingTemplates ?? [],
+      exactBaseDefenseTemplates: classicAi.availableBaseDefenseTemplates ?? [],
+      exactUpgradeNames: classicAi.availableUpgrades ?? [],
+      exactTeamNames: classicAi.teamPrototypes ?? [],
+      currentOwnedObjectIds: ownedObjectIds,
+    };
+    this.messages.push({
+      role: "user",
+      content: `ENVIRONMENT RECOVERY REQUIRED\n${boundedJson(recovery)}\nIssue a materially different gameplay action now. Copy names and public IDs exactly from the latest observation; do not guess identifiers or retry rejected coordinates. Informational and recently failing tools are temporarily unavailable until a gameplay action succeeds.`,
+    });
+    await this.event("agent.recovery_required", recovery);
+  }
+
+  async executeTool(call, protocol, allowedTools = this.tools) {
     const tool = this.tools.find((candidate) => candidate.name === call.name);
     if (!tool) throw new Error(`Unavailable tool ${call.name}`);
     await this.event("tool.called", {
@@ -140,7 +225,49 @@ export class LlmAiAgentRuntime {
       name: call.name,
       arguments: call.arguments,
     });
+    const signature = JSON.stringify([call.name, call.arguments]);
+    const allowed = allowedTools.some((candidate) => candidate.name === call.name);
     let result;
+    if (!allowed) {
+      result = {
+        ok: false,
+        error: {
+          code: "recovery_tool_unavailable",
+          message: `${call.name} is temporarily unavailable during action recovery. Choose one of: ${allowedTools.map((candidate) => candidate.name).join(", ")}.`,
+        },
+      };
+      await this.event("tool.result", {
+        callId: call.id ?? null,
+        name: call.name,
+        ok: false,
+        result,
+        recoveryRestriction: true,
+      });
+      this.recordToolOutcome(call.name, false);
+      this.session.toolCalls += 1;
+      return result;
+    }
+    const previousFailure = this.failedToolSignatures.get(signature);
+    if (previousFailure) {
+      previousFailure.repetitions += 1;
+      result = {
+        ok: false,
+        error: {
+          code: "repeated_invalid_action",
+          message: `This exact call already failed with ${previousFailure.code}. Change the tool or arguments instead of retrying it. For construction, copy an exact classicAi.availableBuildingTemplates name into classic_ai_directive buildBuilding.`,
+        },
+      };
+      await this.event("tool.result", {
+        callId: call.id ?? null,
+        name: call.name,
+        ok: false,
+        result,
+        blockedRepeat: previousFailure.repetitions,
+      });
+      this.recordToolOutcome(call.name, false);
+      this.session.toolCalls += 1;
+      return result;
+    }
     try {
       if (typeof tool.validate === "function") tool.validate(call.arguments);
       result = await tool.execute(call.arguments, {
@@ -153,6 +280,7 @@ export class LlmAiAgentRuntime {
         ok: true,
         result,
       });
+      this.recordToolOutcome(call.name, true);
     } catch (error) {
       result = { ok: false, error: { code: error?.code || "tool_error", message: error?.message || String(error) } };
       await this.event("tool.result", {
@@ -161,6 +289,11 @@ export class LlmAiAgentRuntime {
         ok: false,
         result,
       });
+      this.failedToolSignatures.set(signature, {
+        code: result.error.code,
+        repetitions: 1,
+      });
+      this.recordToolOutcome(call.name, false);
     }
     this.session.toolCalls += 1;
     return result;
@@ -173,9 +306,11 @@ export class LlmAiAgentRuntime {
     }
     const compaction = this.compactContext();
     if (compaction.compacted) await this.event("context.compacted", { omitted: compaction.omitted });
+    const recovery = this.recoveryToolSet();
+    if (recovery.recoveryRequired) await this.requireRecovery(recovery.tools);
     let turn;
     try {
-      turn = await this.complete(this.profile, this.messages, this.tools, { signal });
+      turn = await this.complete(this.profile, this.messages, recovery.tools, { signal });
     } catch (error) {
       this.consecutiveFailures += 1;
       this.session.failures += 1;
@@ -194,6 +329,9 @@ export class LlmAiAgentRuntime {
         status: exhausted ? "degraded" : "running",
         failures: this.session.failures,
       });
+      if (await this.finishIfTerminal("after-model-error")) {
+        return { terminal: true, error, degraded: exhausted, session: this.session };
+      }
       return { terminal: false, error, degraded: exhausted };
     }
     this.consecutiveFailures = 0;
@@ -215,12 +353,12 @@ export class LlmAiAgentRuntime {
     let requestedFinish = false;
     if (turn.protocol === "native") {
       for (const call of turn.calls) {
-        const result = await this.executeTool(call, turn.protocol);
+        const result = await this.executeTool(call, turn.protocol, recovery.tools);
         this.messages.push({ role: "tool", tool_call_id: call.id, content: boundedJson(result) });
       }
     } else if (turn.action.action === "tool") {
       const call = { id: null, name: turn.action.tool, arguments: turn.action.arguments };
-      const result = await this.executeTool(call, turn.protocol);
+      const result = await this.executeTool(call, turn.protocol, recovery.tools);
       this.messages.push({
         role: "user",
         content: `ENVIRONMENT TOOL RESULT (${call.name})\n${boundedJson(result)}`,
@@ -228,6 +366,7 @@ export class LlmAiAgentRuntime {
     } else if (turn.action.action === "finish") {
       requestedFinish = true;
     } else {
+      this.nonActionStreak += 1;
       await this.event("agent.waiting", { note: turn.action.note || "" });
     }
 
@@ -240,6 +379,7 @@ export class LlmAiAgentRuntime {
       await this.event("agent.finish_rejected", {
         reason: "authoritative game state is not terminal",
       });
+      this.nonActionStreak += 1;
       this.messages.push({
         role: "user",
         content: "ENVIRONMENT: finish rejected because the authoritative game state is not terminal. Continue playing.",
@@ -268,10 +408,16 @@ export class LlmAiAgentRuntime {
         await this.sleep(failureDelay, signal);
       }
       if (signal?.aborted && !["completed", "failed"].includes(this.session.status)) {
-        await this.cancel(signal.reason?.message || "cancelled");
+        if (!await this.finishIfTerminal("runtime-stopped")) {
+          await this.cancel(signal.reason?.message || "cancelled");
+        }
       }
     } catch (error) {
-      if (signal?.aborted) await this.cancel(signal.reason?.message || "cancelled");
+      if (signal?.aborted) {
+        if (!await this.finishIfTerminal("runtime-stopped")) {
+          await this.cancel(signal.reason?.message || "cancelled");
+        }
+      }
       else if (this.session.status !== "failed") await this.fail(error);
       if (!signal?.aborted) throw error;
     }
