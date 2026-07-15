@@ -191,17 +191,42 @@ async function clickWindow(client, windowName) {
     `${client.label} could not click ${windowName}`, clicked.result);
 }
 
-async function enterLanLobby(client) {
+async function enterLanLobby(client, { verifyRanked = false } = {}) {
   await waitFor(`${client.label} main menu`, async () => fullFrame(client, 1),
     (result) => result.clientState?.shell?.topIsMainMenu === true
       && result.clientState?.mainMenu?.buttonMultiplayer?.found === true,
   60000, 0);
   await clickWindow(client, "MainMenu.wnd:ButtonMultiplayer");
-  await waitFor(`${client.label} multiplayer menu`, async () => fullFrame(client, 1),
+  const multiplayerMenu = await waitFor(`${client.label} multiplayer menu`,
+    async () => fullFrame(client, 1),
     (result) => result.clientState?.mainMenu?.buttonNetwork?.clickable === true
       && result.clientState?.mainMenu?.debug?.dontAllowTransitions === 0
       && result.clientState?.transition?.finished === true,
   30000, 0);
+  expect(multiplayerMenu.clientState?.mainMenu?.buttonNetwork?.text === "Anonymous"
+      && multiplayerMenu.clientState?.mainMenu?.buttonOnline?.text === "Ranked",
+  `${client.label} did not expose the native Anonymous and Ranked buttons`,
+  multiplayerMenu.clientState?.mainMenu);
+  if (verifyRanked) {
+    await client.page.locator("#viewport").screenshot({
+      path: resolve(artifactRoot, "multiplayer-anonymous-ranked-menu.png"),
+    });
+    await clickWindow(client, "MainMenu.wnd:ButtonOnline");
+    const rankedMessage = await waitFor("native Ranked coming-soon message",
+      async () => fullFrame(client, 1),
+      (result) => result.clientState?.messageBox?.title?.text === "Ranked"
+        && result.clientState?.messageBox?.message?.text
+          === "Ranked is coming soon. Please try Anonymous in the meantime."
+        && result.clientState?.messageBox?.buttonOk?.clickable === true,
+      10000, 0);
+    await client.page.locator("#viewport").screenshot({
+      path: resolve(artifactRoot, "multiplayer-ranked-coming-soon.png"),
+    });
+    expect(rankedMessage.clientState.messageBox.parent.found === true,
+      "Ranked notice was not an original native message box", rankedMessage.clientState.messageBox);
+    await clickWindow(client, "MessageBox.wnd:ButtonOk");
+    await fullFrame(client, 1);
+  }
   await clickWindow(client, "MainMenu.wnd:ButtonNetwork");
   return waitFor(`${client.label} real LAN lobby`, async () => {
     await frame(client, 1);
@@ -343,14 +368,51 @@ try {
   "WebRTC clients did not form a complete peer mesh", peerConnections);
 
   const lobbies = [];
-  for (const client of clients) {
-    lobbies.push(await enterLanLobby(client));
+  for (let index = 0; index < clients.length; ++index) {
+    lobbies.push(await enterLanLobby(clients[index], { verifyRanked: index === 0 }));
   }
   console.error(`[lan-webrtc] ${playerCount} original LAN lobbies entered`);
   expect(new Set(lobbies.map((lobby) => lobby.localIp)).size === playerCount,
     "LAN clients did not receive unique virtual IPs", lobbies);
   expect(lobbies.every((lobby, index) => lobby.localName === clients[index].commanderName),
     "persisted browser commander identity did not reach the original LAN lobby", lobbies);
+
+  const nativeLobbyFrames = await Promise.all(clients.map((client) => fullFrame(client, 1)));
+  expect(nativeLobbyFrames.every((result) =>
+    result.clientState?.lanLobby?.buttonReconnect?.text === "Reconnect"
+      && result.clientState?.lanLobby?.networkStatus?.text?.includes("Discovery:")
+      && result.clientState?.lanLobby?.networkStatus?.text?.includes("Relay:")),
+  "native LAN recovery controls did not expose discovery and relay state",
+  nativeLobbyFrames.map((result) => result.clientState?.lanLobby));
+  await host.page.locator("#viewport").screenshot({
+    path: resolve(artifactRoot, "lan-native-network-status.png"),
+  });
+
+  // Exercise the same original GameWindow action a player clicks. Recovery
+  // must rebuild discovery and then make both LANAPI instances immediately
+  // re-announce, without recreating either game runtime.
+  const reconnectingClient = guests[0];
+  await clickWindow(reconnectingClient, "LanLobbyMenu.wnd:ButtonDirectConnect");
+  const recoveredEndpoints = await waitFor("native LAN reconnect peer mesh", async () => {
+    await allFrames(clients, 1);
+    return Promise.all(clients.map((client) => rpc(client, "browserWebRtcEndpointState")));
+  }, (states) => states.every((state) => state.ok === true
+      && state.runtime?.endpoint?.openPeers === playerCount - 1)
+      && states[clients.indexOf(reconnectingClient)].runtime?.reconnectCount >= 1,
+  60000, 100);
+  const recoveredLobbyFrames = await waitFor("native LAN reconnect player visibility", async () => {
+    await pumpLobby(clients);
+    return Promise.all(clients.map((client) => fullFrame(client, 1)));
+  }, (frames) => frames.every((result) =>
+    result.clientState?.lanLobby?.players?.listBox?.entryCount === playerCount
+      && result.clientState?.lanLobby?.networkStatus?.text?.includes("Discovery: online")),
+  45000, 100);
+  expect(recoveredEndpoints.every((state) => state.runtime.nativeStatus.includes("Relay:")),
+    "recovered endpoint state did not retain native relay diagnostics", recoveredEndpoints);
+  await reconnectingClient.page.locator("#viewport").screenshot({
+    path: resolve(artifactRoot, "lan-native-reconnect-recovered.png"),
+  });
+  console.error(`[lan-webrtc] native reconnect restored ${playerCount} visible LAN players`);
 
   const hostCreate = await lanCommand(host, "host", "Browser Match");
   expect(hostCreate.ok === true, "original LANAPI did not create the host game", hostCreate);
@@ -703,6 +765,12 @@ try {
       strategy: "trystero-nostr",
       configuredRelays: relayUrls,
       testRelay: testRelay?.stats() ?? null,
+      nativeReconnect: {
+        reconnectCount: recoveredEndpoints[clients.indexOf(reconnectingClient)]
+          .runtime.reconnectCount,
+        playerCounts: recoveredLobbyFrames.map((result) =>
+          result.clientState.lanLobby.players.listBox.entryCount),
+      },
     },
     screenshots,
     gpu,

@@ -5442,6 +5442,7 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonSinglePlayer", "MainMenu.wnd:ButtonSinglePlayer");
 	append_window_probe(json, "buttonMultiplayer", "MainMenu.wnd:ButtonMultiplayer");
 	append_window_probe(json, "buttonNetwork", "MainMenu.wnd:ButtonNetwork");
+	append_window_probe(json, "buttonOnline", "MainMenu.wnd:ButtonOnline");
 	append_window_probe(json, "buttonSingleBack", "MainMenu.wnd:ButtonSingleBack");
 	append_window_probe(json, "buttonUSA", "MainMenu.wnd:ButtonUSA");
 	append_window_probe(json, "buttonGLA", "MainMenu.wnd:ButtonGLA");
@@ -5500,7 +5501,17 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonHost", "LanLobbyMenu.wnd:ButtonHost");
 	append_window_probe(json, "buttonJoin", "LanLobbyMenu.wnd:ButtonJoin");
 	append_window_probe(json, "buttonBack", "LanLobbyMenu.wnd:ButtonBack");
+	append_window_probe(json, "buttonReconnect", "LanLobbyMenu.wnd:ButtonDirectConnect");
+	append_window_probe(json, "networkStatus", "LanLobbyMenu.wnd:StaticTextNetworkStatus");
+	append_window_probe(json, "players", "LanLobbyMenu.wnd:ListboxPlayers");
 	append_window_probe(json, "games", "LanLobbyMenu.wnd:ListboxGames");
+	json += "}";
+
+	json += ",\"messageBox\":{\"queried\":true";
+	append_window_probe(json, "parent", "MessageBox.wnd:MessageBoxParent");
+	append_window_probe(json, "title", "MessageBox.wnd:StaticTextTitle");
+	append_window_probe(json, "message", "MessageBox.wnd:StaticTextMessage");
+	append_window_probe(json, "buttonOk", "MessageBox.wnd:ButtonOk");
 	json += "}";
 
 	json += ",\"lanGameOptions\":{\"queried\":true";

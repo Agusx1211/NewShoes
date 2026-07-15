@@ -166,16 +166,19 @@
       "name": "Play peer-to-peer multiplayer",
       "status": "experimental",
       "summary": "The original UDP and lockstep protocol runs over direct WebRTC data channels, with decentralized discovery and continuing determinism and connectivity hardening.",
-      "reviewedAt": "2026-07-14",
+      "reviewedAt": "2026-07-15",
       "details": [
         "Public Nostr relays are used for decentralized peer discovery and encrypted connection negotiation, not to relay the match itself. Game traffic flows through direct WebRTC data channels when a connection is established.",
-        "Players choose the same room in Settings > Multiplayer, choose a commander name, launch Zero Hour, and use Multiplayer > LAN in the original UI. Peers must use the same exact game and ordered mod composition. An empty room value keeps play offline.",
-        "Short matches have been verified at up to four players. Long determinism runs, reconnect and disconnect behavior, authenticated invitations, difficult NAT conditions, and signaling hardening remain active work."
+        "Players choose the same room in Settings > Multiplayer, choose a commander name, launch Zero Hour, and use Multiplayer > Anonymous in the original UI. Ranked is reserved for a future service and currently shows a native coming-soon notice. Peers must use the same exact game and ordered mod composition. An empty room value keeps play offline.",
+        "The native Anonymous lobby reports discovery, project-relay, room, and peer state. Its Reconnect action rebuilds browser discovery and asks the original LAN API to immediately refresh players and games after peer channels recover, without restarting Zero Hour.",
+        "Short matches have been verified at up to four players, including native lobby discovery recovery. Long determinism runs, in-game disconnect and rejoin behavior, authenticated invitations, difficult NAT conditions, and signaling hardening remain active work."
       ],
       "evidence": [
+        "GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/MainMenu.cpp",
+        "GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/LanLobbyMenu.cpp",
         "WebAssembly/harness/lan_webrtc_playable_match_smoke.mjs",
         "WebAssembly/harness/webrtc-udp-endpoint.mjs",
-        "WebAssembly/harness/multiplayer_launch_policy_unit.mjs"
+        "WebAssembly/harness/multiplayer_network_status_unit.mjs"
       ]
     },
     {
@@ -298,7 +301,7 @@
     },
     {
       "problem": "Multiplayer peers do not appear",
-      "answer": "Confirm both players use the same room, compatible browsers, and exactly the same ordered game and mod composition. Check Settings > Multiplayer for connection status. NAT or relay limitations may still prevent a connection; multiplayer remains experimental."
+      "answer": "Confirm both players use the same room, compatible browsers, and exactly the same ordered game and mod composition. In Multiplayer > Anonymous, read the native discovery, relay, room, and peer status; if it is offline, stuck, or missing a peer, select Reconnect to rebuild discovery and refresh the original LAN player and game lists. NAT or relay limitations may still prevent a connection; multiplayer remains experimental."
     },
     {
       "problem": "Remote Agent does not connect",
@@ -458,7 +461,7 @@
     },
     {
       "question": "Can I play multiplayer?",
-      "answer": "Experimental peer-to-peer multiplayer is available through the original LAN UI and the launcher's room settings. Matching game and mod identities are required, and long-session and connectivity hardening remain active work."
+      "answer": "Experimental peer-to-peer multiplayer is available through Multiplayer > Anonymous and the launcher's room settings. The native lobby reports discovery and peer state and can reconnect without restarting the game. Ranked is coming later. Matching game and mod identities are required, and long-session and connectivity hardening remain active work."
     },
     {
       "question": "Can ChatGPT or another web agent play it for me?",

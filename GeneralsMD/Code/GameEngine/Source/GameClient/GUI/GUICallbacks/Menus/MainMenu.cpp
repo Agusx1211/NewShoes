@@ -63,6 +63,7 @@
 #include "GameClient/ShellHooks.h"
 #include "GameClient/KeyDefs.h"
 #include "GameClient/GameWindowManager.h"
+#include "GameClient/GadgetPushButton.h"
 #include "GameClient/GadgetStaticText.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/WindowVideoManager.h"
@@ -641,6 +642,14 @@ void MainMenuInit( WindowLayout *layout, void *userData )
 	buttonSkirmish = TheWindowManager->winGetWindowFromId( parentMainMenu, skirmishID );
 	buttonOnline = TheWindowManager->winGetWindowFromId( parentMainMenu, onlineID );
 	buttonNetwork = TheWindowManager->winGetWindowFromId( parentMainMenu, networkID );
+#ifdef __EMSCRIPTEN__
+	// Product multiplayer modes are code-owned so a replacement MainMenu.wnd
+	// cannot silently restore the retired Network/Online behavior.
+	if (buttonNetwork != NULL)
+		GadgetButtonSetText(buttonNetwork, UnicodeString(L"Anonymous"));
+	if (buttonOnline != NULL)
+		GadgetButtonSetText(buttonOnline, UnicodeString(L"Ranked"));
+#endif
 	buttonOptions = TheWindowManager->winGetWindowFromId( parentMainMenu, optionsID );
 	buttonExit = TheWindowManager->winGetWindowFromId( parentMainMenu, exitID );
 	buttonMOTD = TheWindowManager->winGetWindowFromId( parentMainMenu, motdID );
@@ -1640,6 +1649,12 @@ WindowMsgHandledType MainMenuSystem( GameWindow *window, UnsignedInt msg,
 			}
 			else if( controlID == onlineID )
 			{
+#ifdef __EMSCRIPTEN__
+				MessageBoxOk(
+					UnicodeString(L"Ranked"),
+					UnicodeString(L"Ranked is coming soon. Please try Anonymous in the meantime."),
+					NULL);
+#else
 				if(dontAllowTransitions)
 					break;
 				dontAllowTransitions = TRUE;
@@ -1650,6 +1665,7 @@ WindowMsgHandledType MainMenuSystem( GameWindow *window, UnsignedInt msg,
 				StartPatchCheck();
 //				localAnimateWindowManager->reverseAnimateWindow();
 				dropDown = DROPDOWN_NONE;
+#endif
 
 			}  // end else if
 			else if( controlID == networkID )
