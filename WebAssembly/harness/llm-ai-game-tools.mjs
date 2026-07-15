@@ -7,6 +7,7 @@ import {
   internalNameFromHandle,
   isConstructionComplete,
   isManagedSquadMember,
+  isRelevantStrategicWork,
   isStrategicEntity,
   normalizedEntity,
 } from "./llm-ai-strategy.mjs";
@@ -250,15 +251,16 @@ export class LlmAiStrategicState {
   checkpointState() {
     const local = this.raw?.players?.find((player) => player.local);
     const jobs = [...this.jobs.values()];
+    const relevantJobs = jobs.filter((job) => isRelevantStrategicWork(job, this.raw?.frame ?? 0));
     return {
       mandate: this.profile.mandate,
       decisions: { priorities: this.priorities },
       basesAndRegions: { catalogRevision: this.catalogRevision },
       economy: local?.economy || null,
-      forcesAndMissions: jobs.filter((job) => job.type === "mission").map(publicJob),
-      productionPlan: jobs.filter((job) => job.type !== "mission").map(publicJob),
+      forcesAndMissions: relevantJobs.filter((job) => job.type === "mission").map(publicJob),
+      productionPlan: relevantJobs.filter((job) => job.type !== "mission").map(publicJob),
       threats: null,
-      unresolvedErrors: jobs.filter((job) => job.blockedReason && !job.blockedReason.startsWith("superseded by "))
+      unresolvedErrors: relevantJobs.filter((job) => job.blockedReason)
         .map((job) => ({ id: job.id, reason: job.blockedReason })),
       liveIds: jobs.filter((job) => !TERMINAL_JOB_STATES.has(job.state)).map((job) => job.id),
       frame: this.raw?.frame ?? null,

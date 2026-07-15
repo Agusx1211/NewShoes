@@ -88,6 +88,9 @@ assert.match(buildLlmAiSystemPrompt(profile), /GAME MODEL: This is a real-time b
 assert.match(buildLlmAiSystemPrompt(profile), /lostContact delta means only/);
 assert.match(buildLlmAiSystemPrompt(profile), /Managed squads exclude builders and harvesters/);
 assert.match(buildLlmAiSystemPrompt(profile), /non-null missionHandle/);
+assert.match(buildLlmAiSystemPrompt(profile), /results only on the next planning turn/);
+assert.match(buildLlmAiSystemPrompt(profile), /numeric force counts, damage, attrition/);
+assert.match(buildLlmAiSystemPrompt(profile), /feed reinforcements piecemeal/);
 
 const exported = exportLlmAiSession({
   profile,
@@ -319,6 +322,8 @@ const tool = {
         position: { x: 300, y: 400 }, capabilities: { orderable: true, mobile: true } },
       { id: 203, owner: 4, teamId: 5, categories: ["aircraft", "harvester"], construction: -1,
         position: { x: 500, y: 600 }, capabilities: { orderable: true, mobile: true } },
+      { id: 204, owner: 5, relationship: "enemy", categories: ["vehicle"], construction: -1,
+        position: { x: 700, y: 800 }, capabilities: null },
     ],
   }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [], previous: previousStrategic });
   assert.deepEqual(safeSquads.forces.map((force) => force.handle), [
@@ -330,6 +335,18 @@ const tool = {
     "squad:5");
   assert.equal(safeSquads.forces.find((force) => force.handle === "force:owned:builder").missionHandle,
     null);
+  assert.deepEqual(safeSquads.threats.map((force) => force.handle), ["force:enemy:vehicle"]);
+  assert.deepEqual(safeSquads.combat, {
+    ownedReady: 1,
+    ownedDamaged: 0,
+    visibleEnemies: 1,
+    visibleEnemyStructures: 0,
+    sincePrevious: {
+      ownedUnitsLost: 0,
+      confirmedEnemyUnitsDestroyed: 0,
+      confirmedEnemyStructuresDestroyed: 0,
+    },
+  });
   assert.equal(normalizedEntity({
     id: 202, owner: 4, teamId: 5, categories: ["vehicle", "builder"], construction: -1,
     capabilities: { orderable: true, mobile: true },
@@ -361,6 +378,32 @@ const tool = {
   assert.deepEqual(lostContact.deltas, [{
     type: "lostContact", handle: "contact:200", owner: "enemy", kind: "structure",
     lastKnownPosition: { x: 900, y: 800 }, lastKnownHealth: 60,
+  }]);
+
+  const currentWork = compactRoutineObservation({
+    snapshotId: 13, frame: 2_000, localPlayerIndex: 4, game: { outcome: null },
+    players: [{ index: 4, local: true }], objects: [],
+  }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [
+    { id: "job:old", type: "production", state: "complete", updatedFrame: 500,
+      optionHandle: "produce:Old@facility:1" },
+    { id: "job:active", type: "production", state: "assembling", updatedFrame: 1_990,
+      optionHandle: "produce:Current@facility:1" },
+    { id: "job:blocked", type: "force", state: "blocked", updatedFrame: 1_980,
+      archetypeHandle: "force:CurrentTeam", blockedReason: "insufficient funds" },
+    { id: "mission:1", type: "mission", state: "moving", updatedFrame: 1_995,
+      squadHandle: "squad:7", mission: "attackRegion", position: { x: 900, y: 800 } },
+    { id: "mission:old", type: "mission", state: "failed", updatedFrame: 1_990,
+      squadHandle: "squad:7", mission: "scout", blockedReason: "superseded by mission:1" },
+  ] });
+  assert.deepEqual(currentWork.jobs, [
+    { id: "job:active", type: "production", state: "assembling",
+      optionHandle: "produce:Current@facility:1", squadHandle: null, blockedReason: null },
+    { id: "job:blocked", type: "force", state: "blocked",
+      optionHandle: "force:CurrentTeam", squadHandle: null, blockedReason: "insufficient funds" },
+  ]);
+  assert.deepEqual(currentWork.missions, [{
+    id: "mission:1", squadHandle: "squad:7", mission: "attackRegion", state: "moving",
+    position: { x: 900, y: 800 }, target: null, blockedReason: null,
   }]);
 
   assert.equal(hasCategory({ categories: ["STRUC_ture"] }, "structure"), true);

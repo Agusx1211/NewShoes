@@ -498,6 +498,18 @@ function describeContact(contact) {
     .filter(Boolean).join(" · ");
 }
 
+function describeWork(work) {
+  return [
+    work.id,
+    work.mission || work.optionHandle || work.type,
+    work.squadHandle,
+    work.state,
+    work.position ? `at ${compactValue(work.position)}` : null,
+    work.target ? `target ${work.target}` : null,
+    work.blockedReason,
+  ].filter(Boolean).join(" · ");
+}
+
 function describeDelta(delta) {
   const change = delta.amount ?? delta.delta ?? delta.healthDelta;
   return [readableLabel(delta.type || "change"), delta.handle, delta.owner, delta.kind, change === undefined ? null : compactValue(change), delta.position ? `at ${compactValue(delta.position)}` : null]
@@ -528,17 +540,24 @@ function renderObservationEvent(event, startedAt) {
     ["Units", forceCount(observation.forces)],
     ["Facilities", observation.facilities?.length ?? 0],
     ["Threats", observation.threats?.length ?? 0, observation.threats?.length ? "warning" : ""],
+    ["Combat ready", observation.combat?.ownedReady],
+    ["Recent losses", observation.combat?.sincePrevious?.ownedUnitsLost,
+      observation.combat?.sincePrevious?.ownedUnitsLost ? "warning" : ""],
+    ["Jobs", observation.jobs?.length ?? 0],
     ["Missions", observation.missions?.length ?? 0],
     ["Objectives", observation.objectives?.length ?? 0],
   ]);
   appendDeltas(row, observation.deltas);
-  const hasState = [observation.forces, observation.facilities, observation.threats, observation.objectives]
+  const hasState = [observation.forces, observation.facilities, observation.jobs,
+    observation.missions, observation.threats, observation.objectives]
     .some((values) => Array.isArray(values) && values.length > 0);
   if (hasState) {
     const details = transcriptElement("details", "llm-ai-state-details");
     details.append(transcriptElement("summary", "", "State details available to the model"));
     renderCollection(details, "Forces", observation.forces, describeForce);
     renderCollection(details, "Facilities", observation.facilities, describeFacility);
+    renderCollection(details, "Jobs", observation.jobs, describeWork);
+    renderCollection(details, "Missions", observation.missions, describeWork);
     renderCollection(details, "Threats", observation.threats, describeContact);
     renderCollection(details, "Objectives", observation.objectives, describeContact);
     row.append(details);

@@ -190,6 +190,9 @@ try {
             frame: 7,
             time: { gameSeconds: 0.2 },
             economy: { money: 8_500, powerSufficient: true },
+            combat: { ownedReady: 0, ownedDamaged: 0, visibleEnemies: 0,
+              visibleEnemyStructures: 0, sincePrevious: { ownedUnitsLost: 0,
+                confirmedEnemyUnitsDestroyed: 0, confirmedEnemyStructuresDestroyed: 0 } },
             forces: [{
               handle: "force:owned:builder",
               count: 1,
@@ -205,6 +208,7 @@ try {
               position: { x: 2712.5, y: 2968.8 },
             }],
             missions: [],
+            jobs: [],
             threats: [],
             objectives: [],
             deltas: [],
@@ -276,9 +280,15 @@ try {
             frame: 340,
             time: { gameSeconds: 11.3 },
             economy: { money: 8_300, powerSufficient: true },
+            combat: { ownedReady: 2, ownedDamaged: 0, visibleEnemies: 2,
+              visibleEnemyStructures: 0, sincePrevious: { ownedUnitsLost: 1,
+                confirmedEnemyUnitsDestroyed: 0, confirmedEnemyStructuresDestroyed: 0 } },
             forces: [{ handle: "force:owned:builder", count: 2, composition: { infantry: 2 }, roles: ["builder", "harvester"] }],
             facilities: [{ handle: "facility:28", roles: ["commandcenter", "factory"], health: 100, construction: { state: "complete" } }],
-            missions: [],
+            jobs: [{ id: "job:41", type: "production", state: "assembling",
+              optionHandle: "produce:GLAInfantryWorker@facility:28", squadHandle: null, blockedReason: null }],
+            missions: [{ id: "mission:42", squadHandle: "squad:5", mission: "scout",
+              state: "moving", position: { x: 1750, y: 1750 }, target: null, blockedReason: null }],
             threats: [{ handle: "contact:404", kind: "vehicle", count: 2, position: { x: 2010, y: 1800 } }],
             objectives: [{ handle: "objective:supply:4", type: "supply", position: { x: 1880, y: 1650 } }],
             deltas: [
@@ -328,7 +338,7 @@ try {
   assert.equal(await page.locator(".llm-ai-tool-call.is-success").count(), 1);
   assert.equal(await page.locator(".llm-ai-tool-call.is-error").count(), 1);
   assert.match(await page.locator(".llm-ai-transcript-card.is-turn").textContent(), /Turn 1.*Request production.*Assign mission.*Unknown squad handle/is);
-  assert.match(await page.locator(".llm-ai-transcript-card.is-observation").last().textContent(), /Money.*8,300.*Threats.*1.*contact:404/is);
+  assert.match(await page.locator(".llm-ai-transcript-card.is-observation").last().textContent(), /Money.*8,300.*Threats.*1.*Recent losses.*1.*job:41.*mission:42.*contact:404/is);
   assert.equal(await page.locator(".llm-ai-raw-details").count() >= 6, true);
   assert.equal(await page.locator(".llm-ai-raw-details[open]").count(), 0);
   const turnRaw = page.locator(".llm-ai-transcript-card.is-turn > .llm-ai-raw-details");

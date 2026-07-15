@@ -1,6 +1,7 @@
 import { conservativeLlmTokens } from "./llm-ai-profile.mjs";
 
 const LOGIC_FRAMES_PER_SECOND = 30;
+const RECENT_WORK_FRAMES = 30 * LOGIC_FRAMES_PER_SECOND;
 
 function serializedTokens(value, tokenizer) {
   return conservativeLlmTokens(value, { tokenizer });
@@ -380,6 +381,7 @@ function objectDelta(previous, current, localPlayerIndex) {
           type: "damaged",
           handle: semanticHandle(object, localPlayerIndex),
           owner: normalizedOwnership(object, localPlayerIndex),
+          kind: coarseKind(object),
           healthLost: Math.round(oldHealth - newHealth),
         });
       }
@@ -402,6 +404,62 @@ function objectDelta(previous, current, localPlayerIndex) {
   return deltas.sort((left, right) => left.handle.localeCompare(right.handle));
 }
 
+function summarizeCombat(objects, deltas, localPlayerIndex) {
+  const ownedCombat = objects.filter((object) => isManagedSquadMember(object, localPlayerIndex));
+  const visibleEnemyCombat = objects.filter((object) =>
+    normalizedOwnership(object, localPlayerIndex) === "enemy"
+      && coarseKind(object) !== "structure" && !isEconomicUnit(object));
+  const visibleEnemyStructures = objects.filter((object) =>
+    normalizedOwnership(object, localPlayerIndex) === "enemy"
+      && coarseKind(object) === "structure");
+  return {
+    ownedReady: ownedCombat.length,
+    ownedDamaged: ownedCombat.filter((object) => {
+      const health = healthPercent(object);
+      return health !== null && health < 100;
+    }).length,
+    visibleEnemies: visibleEnemyCombat.length,
+    visibleEnemyStructures: visibleEnemyStructures.length,
+    sincePrevious: {
+      ownedUnitsLost: deltas.filter((delta) => delta.owner === "self"
+        && delta.type === "lost" && delta.kind !== "structure").length,
+      confirmedEnemyUnitsDestroyed: deltas.filter((delta) => delta.owner === "enemy"
+        && delta.type === "destroyed" && delta.kind !== "structure").length,
+      confirmedEnemyStructuresDestroyed: deltas.filter((delta) => delta.owner === "enemy"
+        && delta.type === "destroyed" && delta.kind === "structure").length,
+    },
+  };
+}
+
+export function isRelevantStrategicWork(job, frame) {
+  if (!["complete", "failed", "blocked"].includes(job.state)) return true;
+  if (job.blockedReason?.startsWith("superseded by ")) return false;
+  return frame - (job.updatedFrame ?? job.createdFrame ?? 0) <= RECENT_WORK_FRAMES;
+}
+
+function routineWork(jobs, frame) {
+  const relevant = jobs.filter((job) => isRelevantStrategicWork(job, frame));
+  return {
+    missions: relevant.filter((job) => job.type === "mission").map((job) => ({
+      id: job.id,
+      squadHandle: job.squadHandle || null,
+      mission: job.mission || null,
+      state: job.state,
+      position: job.position || null,
+      target: Number.isInteger(job.targetId) ? `contact:${job.targetId}` : null,
+      blockedReason: job.blockedReason || null,
+    })),
+    jobs: relevant.filter((job) => job.type !== "mission").map((job) => ({
+      id: job.id,
+      type: job.type,
+      state: job.state,
+      optionHandle: job.optionHandle || job.archetypeHandle || null,
+      squadHandle: job.squadHandle || null,
+      blockedReason: job.blockedReason || null,
+    })),
+  };
+}
+
 export function compactRoutineObservation(raw, {
   assignment, match, reason, previous = null, priorities = {}, jobs = [], catalogRevision = null,
   maxTokens = 8_192, tokenizer,
@@ -413,8 +471,10 @@ export function compactRoutineObservation(raw, {
   const previousFrame = Number(previous?.frame);
   const elapsedFrames = Number.isFinite(previousFrame)
     ? Math.max(0, raw.frame - previousFrame) : 0;
+  const deltas = objectDelta(previous, raw, raw.localPlayerIndex);
+  const work = routineWork(jobs, raw.frame);
   const observation = {
-    schema: "new-shoes.llm-routine/3",
+    schema: "new-shoes.llm-routine/4",
     snapshot: raw.snapshotId,
     frame: raw.frame,
     time: {
@@ -433,17 +493,20 @@ export function compactRoutineObservation(raw, {
     strategyController: raw.strategyController || assignment?.strategyController || "llm",
     economy: local?.economy || null,
     priorities,
-    forces: summarizeForces(relevant, raw.localPlayerIndex),
+    forces: summarizeForces(relevant.filter((object) =>
+      normalizedOwnership(object, raw.localPlayerIndex) !== "enemy"), raw.localPlayerIndex),
+    combat: summarizeCombat(relevant, deltas, raw.localPlayerIndex),
     facilities: summarizeFacilities(relevant, raw.localPlayerIndex),
     production: summarizeProduction(relevant, raw.localPlayerIndex),
-    missions: jobs.map((job) => ({ id: job.id, type: job.type, state: job.state, blockedReason: job.blockedReason || null })),
+    jobs: work.jobs,
+    missions: work.missions,
     threats: summarizeForces(relevant.filter((object) =>
       normalizedOwnership(object, raw.localPlayerIndex) === "enemy"
       && !isEconomicUnit(object)), raw.localPlayerIndex),
     objectives: raw.game?.outcome
       ? [{ handle: "objective:match", state: raw.game.outcome }]
       : summarizeObjectives(relevant, raw.localPlayerIndex),
-    deltas: objectDelta(previous, raw, raw.localPlayerIndex),
+    deltas,
     catalogRevision,
     detailTools: ["inspect_entities", "inspect_job", "query_buildable_options", "query_map_region"],
   };
