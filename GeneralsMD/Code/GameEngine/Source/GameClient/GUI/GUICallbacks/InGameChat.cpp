@@ -186,6 +186,61 @@ Bool handleInGameSlashCommands(UnicodeString uText)
 }
 
 // ------------------------------------------------------------------------------------------------
+// Send through the same recipient, filtering, and network path as the chat entry UI.
+// ------------------------------------------------------------------------------------------------
+Bool SendInGameChatMessage( UnicodeString msg, InGameChatType chatType )
+{
+	msg.trim();
+	if (msg.isEmpty())
+		return FALSE;
+	if (handleInGameSlashCommands(msg))
+		return TRUE;
+	if (TheGameLogic == NULL || TheGameLogic->isInReplayGame() ||
+		TheGameInfo == NULL || TheNetwork == NULL || ThePlayerList == NULL ||
+		TheLanguageFilter == NULL)
+		return FALSE;
+
+	const Player *localPlayer = ThePlayerList->getLocalPlayer();
+	if (localPlayer == NULL)
+		return FALSE;
+
+	AsciiString playerName;
+	Int playerMask = 0;
+	for (Int i = 0; i < MAX_SLOTS; ++i)
+	{
+		playerName.format("player%d", i);
+		const Player *player = ThePlayerList->findPlayerWithNameKey(
+			TheNameKeyGenerator->nameToKey(playerName));
+		if (player == NULL)
+			continue;
+
+		switch (chatType)
+		{
+			case INGAME_CHAT_EVERYONE:
+				if (!TheGameInfo->getConstSlot(i)->isMuted())
+					playerMask |= (1 << i);
+				break;
+			case INGAME_CHAT_ALLIES:
+				if ((player->getRelationship(localPlayer->getDefaultTeam()) == ALLIES &&
+					localPlayer->getRelationship(player->getDefaultTeam()) == ALLIES) ||
+					player == localPlayer)
+					playerMask |= (1 << i);
+				break;
+			case INGAME_CHAT_PLAYERS:
+				if (player == localPlayer)
+					playerMask |= (1 << i);
+				break;
+		}
+	}
+	if (playerMask == 0)
+		return FALSE;
+
+	TheLanguageFilter->filterLine(msg);
+	TheNetwork->sendChat(msg, playerMask);
+	return TRUE;
+}
+
+// ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 void ToggleInGameChat( Bool immediate )
 {
@@ -213,40 +268,7 @@ void ToggleInGameChat( Bool immediate )
 			{
 				// Send what is there, clear it out, and hide the window
 				UnicodeString msg = GadgetTextEntryGetText( chatTextEntry );
-				msg.trim();
-				if (!msg.isEmpty() && !handleInGameSlashCommands(msg))
-				{
-					const Player *localPlayer = ThePlayerList->getLocalPlayer();
-					AsciiString playerName;
-					Int playerMask = 0;
-
-					for (Int i=0; i<MAX_SLOTS; ++i)
-					{
-						playerName.format("player%d", i);
-						const Player *player = ThePlayerList->findPlayerWithNameKey( TheNameKeyGenerator->nameToKey( playerName ) );
-						if (player && localPlayer)
-						{
-							switch (inGameChatType)
-							{
-							case INGAME_CHAT_EVERYONE:
-								if (!TheGameInfo->getConstSlot(i)->isMuted())
-									playerMask |= (1<<i);
-								break;
-							case INGAME_CHAT_ALLIES:
-								if ( (player->getRelationship(localPlayer->getDefaultTeam()) == ALLIES &&
-									localPlayer->getRelationship(player->getDefaultTeam()) == ALLIES) || player==localPlayer )
-									playerMask |= (1<<i);
-								break;
-							case INGAME_CHAT_PLAYERS:
-								if ( player == localPlayer )
-									playerMask |= (1<<i);
-								break;
-							}
-						}
-					}
-					TheLanguageFilter->filterLine(msg);
-					TheNetwork->sendChat(msg, playerMask);
-				}
+				SendInGameChatMessage(msg, inGameChatType);
 				GadgetTextEntrySetText( chatTextEntry, UnicodeString::TheEmptyString );
 				HideInGameChat( immediate );
 				justHid = true;
@@ -358,4 +380,3 @@ WindowMsgHandledType InGameChatSystem( GameWindow *window, UnsignedInt msg,
 	return MSG_HANDLED;
 
 }  // end InGameChatSystem
-

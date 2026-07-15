@@ -30,6 +30,7 @@ func main() {
 	publicEngineURL := flag.String("engine-url", "", "WebSocket URL the browser should connect to")
 	engineToken := flag.String("engine-token", "", "browser-to-bridge token (random when omitted)")
 	apiToken := flag.String("api-token", "", "REST bearer token (random when omitted)")
+	playMode := flag.String("play-mode", agentbridge.PlayModeGlobal, "agent play policy: global or camera")
 	requestTimeout := flag.Duration("request-timeout", 30*time.Second, "maximum REST-to-engine request time")
 	eventPollInterval := flag.Duration("event-poll-interval", 250*time.Millisecond,
 		"compact snapshot interval while an event subscriber is active")
@@ -42,7 +43,7 @@ func main() {
 	eventHeartbeatInterval := flag.Duration("event-heartbeat-interval", 15*time.Second,
 		"SSE heartbeat interval")
 	eventReplayLimit := flag.Int("event-replay-limit", 2048,
-		"maximum coalesced events retained per observation mode")
+		"maximum coalesced events retained for the session")
 	flag.Parse()
 
 	if *engineToken == "" {
@@ -70,6 +71,7 @@ func main() {
 	bridge, err := agentbridge.NewServer(agentbridge.Config{
 		EngineToken:             *engineToken,
 		APIToken:                *apiToken,
+		PlayMode:                *playMode,
 		RequestTimeout:          *requestTimeout,
 		EventPollInterval:       *eventPollInterval,
 		EventCapabilityInterval: *eventCapabilityInterval,
@@ -93,7 +95,7 @@ func main() {
 	// This is intentionally the only place the generated credential is shown.
 	// It is launch configuration, not an application log field.
 	fmt.Fprintf(os.Stdout, "Agent bridge listening on http://%s\n", *listen)
-	fmt.Fprintf(os.Stdout, "Browser config: {\"agentBridge\":{\"url\":%q,\"token\":%q,\"sessionId\":\"game-1\"}}\n", *publicEngineURL, *engineToken)
+	fmt.Fprintf(os.Stdout, "Browser config: {\"agentBridge\":{\"url\":%q,\"token\":%q,\"sessionId\":\"game-1\",\"playMode\":%q}}\n", *publicEngineURL, *engineToken, *playMode)
 	fmt.Fprintf(os.Stdout, "REST authorization: Bearer %s\n", *apiToken)
 
 	go func() {

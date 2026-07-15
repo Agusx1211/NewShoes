@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -24,6 +25,7 @@ var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 type Config struct {
 	EngineToken             string
 	APIToken                string
+	PlayMode                string
 	RequestTimeout          time.Duration
 	EventPollInterval       time.Duration
 	EventCapabilityInterval time.Duration
@@ -49,6 +51,12 @@ func NewServer(config Config) (*Server, error) {
 	if tokensEqual(config.EngineToken, config.APIToken) {
 		return nil, errors.New("engine and API tokens must be distinct")
 	}
+	if config.PlayMode == "" {
+		config.PlayMode = PlayModeGlobal
+	}
+	if config.PlayMode != PlayModeGlobal && config.PlayMode != PlayModeCamera {
+		return nil, errors.New("play mode must be global or camera")
+	}
 	if config.RequestTimeout <= 0 {
 		config.RequestTimeout = 30 * time.Second
 	}
@@ -63,17 +71,25 @@ func NewServer(config Config) (*Server, error) {
 	mux.Handle("GET /v1/sessions", server.requireAPIAuth(http.HandlerFunc(server.listSessions)))
 	mux.Handle("POST /v1/sessions/{session}/input/pointer", server.requireAPIAuth(http.HandlerFunc(server.pointerMove)))
 	mux.Handle("POST /v1/sessions/{session}/camera", server.requireAPIAuth(http.HandlerFunc(server.cameraLookAt)))
+	mux.Handle("POST /v1/sessions/{session}/camera/view", server.requireAPIAuth(http.HandlerFunc(server.cameraSetView)))
 	mux.Handle("POST /v1/sessions/{session}/game/selection", server.requireAPIAuth(http.HandlerFunc(server.gameSelection)))
 	mux.Handle("POST /v1/sessions/{session}/game/orders", server.requireAPIAuth(http.HandlerFunc(server.gameOrder)))
+	mux.Handle("POST /v1/sessions/{session}/game/context", server.requireAPIAuth(http.HandlerFunc(server.gameContext)))
 	mux.Handle("POST /v1/sessions/{session}/game/commands", server.requireAPIAuth(http.HandlerFunc(server.gameCommand)))
 	mux.Handle("GET /v1/sessions/{session}/world", server.requireAPIAuth(http.HandlerFunc(server.worldSnapshot)))
 	mux.Handle("GET /v1/sessions/{session}/events", server.requireAPIAuth(http.HandlerFunc(server.tacticalEvents)))
 	mux.Handle("GET /v1/sessions/{session}/terrain", server.requireAPIAuth(http.HandlerFunc(server.terrainQuery)))
+	mux.Handle("GET /v1/sessions/{session}/minimap", server.requireAPIAuth(http.HandlerFunc(server.minimapSnapshot)))
+	mux.Handle("GET /v1/sessions/{session}/hud", server.requireAPIAuth(http.HandlerFunc(server.hudSnapshot)))
+	mux.Handle("POST /v1/sessions/{session}/chat", server.requireAPIAuth(http.HandlerFunc(server.chatSend)))
 	mux.Handle("GET /v1/sessions/{session}/ui", server.requireAPIAuth(http.HandlerFunc(server.uiSnapshot)))
 	mux.Handle("GET /v1/sessions/{session}/ui/items", server.requireAPIAuth(http.HandlerFunc(server.uiItems)))
 	mux.Handle("POST /v1/sessions/{session}/ui/activate", server.requireAPIAuth(http.HandlerFunc(server.uiActivate)))
 	mux.Handle("POST /v1/sessions/{session}/ui/text", server.requireAPIAuth(http.HandlerFunc(server.uiText)))
+	mux.Handle("POST /v1/sessions/{session}/ui/submit", server.requireAPIAuth(http.HandlerFunc(server.uiSubmit)))
 	mux.Handle("POST /v1/sessions/{session}/ui/selection", server.requireAPIAuth(http.HandlerFunc(server.uiSelection)))
+	mux.Handle("POST /v1/sessions/{session}/ui/value", server.requireAPIAuth(http.HandlerFunc(server.uiValue)))
+	mux.Handle("POST /v1/sessions/{session}/ui/tab", server.requireAPIAuth(http.HandlerFunc(server.uiTab)))
 	mux.Handle("POST /v1/sessions/{session}/requests", server.requireAPIAuth(http.HandlerFunc(server.rawRequest)))
 	server.handler = securityHeaders(mux)
 	return server, nil
@@ -138,6 +154,7 @@ func (s *Server) engine(w http.ResponseWriter, r *http.Request) {
 	cancelHello()
 	if err != nil || hello.Type != "hello" || hello.Protocol != ProtocolVersion ||
 		!sessionIDPattern.MatchString(hello.SessionID) ||
+		hello.PlayMode != s.config.PlayMode ||
 		!tokensEqual(hello.Token, s.config.EngineToken) {
 		_ = conn.Close(websocket.StatusPolicyViolation, "invalid engine hello")
 		return
@@ -145,7 +162,7 @@ func (s *Server) engine(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	session := newSession(ctx, hello.SessionID, hello.Capabilities, conn, s.eventsConfig)
+	session := newSession(ctx, hello.SessionID, hello.PlayMode, hello.Capabilities, conn, s.eventsConfig)
 	s.sessions.register(session)
 	defer func() {
 		s.sessions.remove(session)
@@ -155,6 +172,7 @@ func (s *Server) engine(w http.ResponseWriter, r *http.Request) {
 		Type:      "hello",
 		Protocol:  ProtocolVersion,
 		SessionID: hello.SessionID,
+		PlayMode:  hello.PlayMode,
 		OK:        true,
 	}); err != nil {
 		return
@@ -187,6 +205,15 @@ type pointerPosition struct {
 type worldPosition struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
+}
+
+type gameOrderRequest struct {
+	Action     string         `json:"action"`
+	ObjectIDs  []int64        `json:"objectIds"`
+	TargetID   int64          `json:"targetId,omitempty"`
+	Position   *worldPosition `json:"position,omitempty"`
+	GuardMode  string         `json:"guardMode,omitempty"`
+	BestEffort bool           `json:"bestEffort,omitempty"`
 }
 
 func (p worldPosition) validate(field string) error {
@@ -246,6 +273,30 @@ func (s *Server) cameraLookAt(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, "camera.lookAt", request)
 }
 
+func (s *Server) cameraSetView(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Angle *float64 `json:"angle,omitempty"`
+		Pitch *float64 `json:"pitch,omitempty"`
+		Zoom  *float64 `json:"zoom,omitempty"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	if request.Angle == nil && request.Pitch == nil && request.Zoom == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "provide at least one angle, pitch, or zoom")
+		return
+	}
+	for name, value := range map[string]*float64{
+		"angle": request.Angle, "pitch": request.Pitch, "zoom": request.Zoom,
+	} {
+		if value != nil && (math.IsNaN(*value) || math.IsInf(*value, 0)) {
+			writeError(w, http.StatusBadRequest, "invalid_request", name+" must be a finite number")
+			return
+		}
+	}
+	s.call(w, r, "camera.setView", request)
+}
+
 func (s *Server) gameSelection(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		ObjectIDs []int64 `json:"objectIds"`
@@ -257,12 +308,7 @@ func (s *Server) gameSelection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) gameOrder(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Action    string         `json:"action"`
-		ObjectIDs []int64        `json:"objectIds"`
-		TargetID  int64          `json:"targetId,omitempty"`
-		Position  *worldPosition `json:"position,omitempty"`
-	}
+	var request gameOrderRequest
 	if !decodeBody(w, r, &request) {
 		return
 	}
@@ -270,11 +316,28 @@ func (s *Server) gameOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	needsPosition := request.Action == "move" || request.Action == "attackMove" || request.Action == "guardPosition"
-	needsTarget := request.Action == "attack" || request.Action == "guardObject"
-	if !needsPosition && !needsTarget && request.Action != "stop" && request.Action != "scatter" {
+	needsPosition := request.Action == "move" || request.Action == "attackMove" ||
+		request.Action == "forceMove" || request.Action == "forceAttackGround" ||
+		request.Action == "waypoint" || request.Action == "guardPosition"
+	needsTarget := request.Action == "attack" || request.Action == "forceAttackObject" ||
+		request.Action == "guardObject"
+	if !needsPosition && !needsTarget && request.Action != "stop" &&
+		request.Action != "scatter" && request.Action != "formation" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "unsupported tactical action")
+		return
+	}
+	isGuard := request.Action == "guardPosition" || request.Action == "guardObject"
+	if !isGuard && request.GuardMode != "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "guardMode is only used by guard orders")
+		return
+	}
+	if isGuard && request.GuardMode == "" {
+		request.GuardMode = "normal"
+	}
+	if isGuard && request.GuardMode != "normal" && request.GuardMode != "withoutPursuit" &&
+		request.GuardMode != "flyingOnly" {
 		writeError(w, http.StatusBadRequest, "invalid_request",
-			"action must be move, attackMove, attack, guardPosition, guardObject, stop, or scatter")
+			"guardMode must be normal, withoutPursuit, or flyingOnly")
 		return
 	}
 	if needsPosition {
@@ -301,7 +364,68 @@ func (s *Server) gameOrder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "targetId is not used by this order")
 		return
 	}
+	if request.BestEffort {
+		s.gameOrderBestEffort(w, r, request)
+		return
+	}
+	request.BestEffort = false
 	s.call(w, r, "game.order", request)
+}
+
+func (s *Server) gameOrderBestEffort(w http.ResponseWriter, r *http.Request, request gameOrderRequest) {
+	session := s.sessionFor(w, r)
+	if session == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.config.RequestTimeout)
+	defer cancel()
+	type appliedOrder struct {
+		ObjectID int64           `json:"objectId"`
+		Result   json.RawMessage `json:"result"`
+	}
+	type rejectedOrder struct {
+		ObjectID int64          `json:"objectId"`
+		Error    *ProtocolError `json:"error"`
+	}
+	applied := make([]appliedOrder, 0, len(request.ObjectIDs))
+	rejected := make([]rejectedOrder, 0)
+	for _, objectID := range request.ObjectIDs {
+		attempt := request
+		attempt.ObjectIDs = []int64{objectID}
+		attempt.BestEffort = false
+		result, protocolErr, err := session.call(ctx, "game.order", attempt)
+		if err != nil {
+			status := http.StatusBadGateway
+			code := "engine_unavailable"
+			if errors.Is(err, context.DeadlineExceeded) {
+				status = http.StatusGatewayTimeout
+				code = "engine_timeout"
+			}
+			writeError(w, status, code, err.Error())
+			return
+		}
+		if protocolErr != nil {
+			rejected = append(rejected, rejectedOrder{ObjectID: objectID, Error: protocolErr})
+			continue
+		}
+		applied = append(applied, appliedOrder{ObjectID: objectID, Result: result})
+	}
+	acceptedIDs := make([]int64, 0, len(applied))
+	for _, item := range applied {
+		acceptedIDs = append(acceptedIDs, item.ObjectID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":        true,
+		"sessionId": session.id,
+		"result": map[string]any{
+			"accepted":          len(applied) > 0,
+			"complete":          true,
+			"action":            request.Action,
+			"acceptedObjectIds": acceptedIDs,
+			"applied":           applied,
+			"rejected":          rejected,
+		},
+	})
 }
 
 func (s *Server) gameCommand(w http.ResponseWriter, r *http.Request) {
@@ -337,19 +461,47 @@ func (s *Server) gameCommand(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, "game.command", request)
 }
 
-func observationMode(r *http.Request) (string, error) {
-	mode := r.URL.Query().Get("mode")
-	if mode == "" {
-		mode = "unrestricted"
+func (s *Server) gameContext(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ObjectIDs []int64        `json:"objectIds"`
+		TargetID  int64          `json:"targetId,omitempty"`
+		Position  *worldPosition `json:"position,omitempty"`
 	}
-	if mode != "unrestricted" && mode != "camera" {
-		return "", errors.New("mode must be unrestricted or camera")
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	if err := validateObjectIDs(request.ObjectIDs); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if err := validateObjectID(request.TargetID, "targetId", true); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if (request.TargetID != 0) == (request.Position != nil) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "provide exactly one targetId or position")
+		return
+	}
+	if request.Position != nil && !validateBody(w, request.Position.validate("position")) {
+		return
+	}
+	s.call(w, r, "game.context", request)
+}
+
+func observationMode(playMode string, r *http.Request) (string, error) {
+	mode := "unrestricted"
+	if playMode == PlayModeCamera {
+		mode = "camera"
+	}
+	requested := r.URL.Query().Get("mode")
+	if requested != "" && requested != mode {
+		return "", fmt.Errorf("mode is fixed to %s for this session", mode)
 	}
 	return mode, nil
 }
 
 func (s *Server) worldSnapshot(w http.ResponseWriter, r *http.Request) {
-	mode, err := observationMode(r)
+	mode, err := observationMode(s.config.PlayMode, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -376,7 +528,7 @@ func (s *Server) worldSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) terrainQuery(w http.ResponseWriter, r *http.Request) {
-	mode, err := observationMode(r)
+	mode, err := observationMode(s.config.PlayMode, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -425,6 +577,60 @@ func (s *Server) terrainQuery(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) minimapSnapshot(w http.ResponseWriter, r *http.Request) {
+	columns, err := queryInt(r, "columns", 32, 1, 128)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	rows, err := queryInt(r, "rows", 32, 1, 128)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if columns*rows > 16384 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "minimap may contain at most 16384 cells")
+		return
+	}
+	s.call(w, r, "minimap.snapshot", map[string]any{"columns": columns, "rows": rows})
+}
+
+func (s *Server) hudSnapshot(w http.ResponseWriter, r *http.Request) {
+	s.call(w, r, "hud.snapshot", map[string]any{})
+}
+
+func (s *Server) chatSend(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Text     string `json:"text"`
+		Audience string `json:"audience"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	request.Text = strings.TrimSpace(request.Text)
+	codeUnits := len(utf16.Encode([]rune(request.Text)))
+	if codeUnits < 1 || codeUnits > 255 {
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"text must contain 1 through 255 UTF-16 code units")
+		return
+	}
+	for _, char := range request.Text {
+		if char < 0x20 || char == 0x7f {
+			writeError(w, http.StatusBadRequest, "invalid_request",
+				"text must not contain control characters")
+			return
+		}
+	}
+	if request.Audience == "" {
+		request.Audience = "everyone"
+	}
+	if request.Audience != "everyone" && request.Audience != "allies" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "audience must be everyone or allies")
+		return
+	}
+	s.call(w, r, "chat.send", request)
+}
+
 func (r windowReference) validate() error {
 	if r.WindowID < -0x80000000 || r.WindowID > 0x7fffffff {
 		return errors.New("windowId must be a signed 32-bit integer")
@@ -471,6 +677,14 @@ func (s *Server) uiText(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, "ui.setText", request)
 }
 
+func (s *Server) uiSubmit(w http.ResponseWriter, r *http.Request) {
+	var request windowReference
+	if !decodeBody(w, r, &request) || !validateBody(w, request.validate()) {
+		return
+	}
+	s.call(w, r, "ui.submit", request)
+}
+
 func (s *Server) uiSelection(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		windowReference
@@ -484,6 +698,36 @@ func (s *Server) uiSelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.call(w, r, "ui.selectIndex", request)
+}
+
+func (s *Server) uiValue(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		windowReference
+		Value int64 `json:"value"`
+	}
+	if !decodeBody(w, r, &request) || !validateBody(w, request.validate()) {
+		return
+	}
+	if request.Value < -0x80000000 || request.Value > 0x7fffffff {
+		writeError(w, http.StatusBadRequest, "invalid_request", "value must be a signed 32-bit integer")
+		return
+	}
+	s.call(w, r, "ui.setValue", request)
+}
+
+func (s *Server) uiTab(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		windowReference
+		Index int64 `json:"index"`
+	}
+	if !decodeBody(w, r, &request) || !validateBody(w, request.validate()) {
+		return
+	}
+	if request.Index < 0 || request.Index >= 8 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "index must be an integer from 0 through 7")
+		return
+	}
+	s.call(w, r, "ui.selectTab", request)
 }
 
 func (s *Server) uiItems(w http.ResponseWriter, r *http.Request) {

@@ -109,9 +109,15 @@ public:
 
 	virtual Drawable *firstDrawable( void ) { return m_drawableList; }
 
-	virtual GameMessage::Type evaluateContextCommand( Drawable *draw, 
-																										const Coord3D *pos, 
-																										CommandTranslator::CommandEvaluateType cmdType );
+	virtual GameMessage::Type evaluateContextCommand( Drawable *draw,
+																			const Coord3D *pos,
+																			CommandTranslator::CommandEvaluateType cmdType );
+#ifdef __EMSCRIPTEN__
+	void agentSynchronizeCommandSelection( void );
+	GameMessage::Type agentEvaluateForceAttackCommand( Drawable *draw,
+		const Coord3D *pos,
+		CommandTranslator::CommandEvaluateType cmdType );
+#endif
 	void addTextBearingDrawable( Drawable *tbd );
 	void flushTextBearingDrawables( void);
 	void updateFakeDrawables(void);

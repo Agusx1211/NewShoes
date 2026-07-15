@@ -80,6 +80,7 @@ function initialAgentBridgeConfiguration() {
     url,
     token: String(host?.token ?? ""),
     sessionId: String(host?.sessionId ?? ""),
+    playMode: String(host?.playMode ?? "global"),
   };
 }
 let agentBridgeConfiguration = initialAgentBridgeConfiguration();
@@ -1196,6 +1197,7 @@ async function start() {
           protocol: agentBridge.protocol,
           endpoint: agentBridge.endpoint,
           sessionId: agentBridge.sessionId,
+          playMode: agentBridge.playMode,
         },
       });
     }
@@ -2030,6 +2032,7 @@ function playConfiguration() {
       configured: true,
       url: publicAgentBridgeEndpoint(agentBridgeConfiguration.url),
       sessionId: agentBridgeConfiguration.sessionId || null,
+      playMode: agentBridgeConfiguration.playMode,
     } : { configured: false },
     consoleVisible: !consolePanel.classList.contains("hidden"),
     fullscreen: Boolean(fullscreenElement()),
@@ -2062,6 +2065,7 @@ async function configurePlay(options = {}) {
           url: String(options.agentBridge.url ?? ""),
           token: String(options.agentBridge.token ?? ""),
           sessionId: String(options.agentBridge.sessionId ?? ""),
+          playMode: String(options.agentBridge.playMode ?? "global"),
         };
   }
   if (typeof options.consoleVisible === "boolean") {

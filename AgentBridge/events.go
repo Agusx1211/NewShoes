@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -185,16 +186,75 @@ type eventWorldSnapshot struct {
 	Frame           uint64 `json:"frame"`
 	ObservationMode string `json:"observationMode"`
 	Game            struct {
-		Mode     string  `json:"mode"`
-		Playable bool    `json:"playable"`
-		EndFrame uint64  `json:"endFrame"`
-		Outcome  *string `json:"outcome"`
+		Mode            string  `json:"mode"`
+		Playable        bool    `json:"playable"`
+		EndFrame        uint64  `json:"endFrame"`
+		Outcome         *string `json:"outcome"`
+		OutcomeRetained bool    `json:"outcomeRetained"`
 	} `json:"game"`
+	Scoreboard         []eventScoreboardEntry             `json:"scoreboard"`
 	LocalPlayerIndex   int64                              `json:"localPlayerIndex"`
 	Players            []eventPlayer                      `json:"players"`
 	Objects            []eventObject                      `json:"objects"`
 	ObjectCapabilities map[string]eventObjectCapabilities `json:"objectCapabilities"`
 	Truncated          bool                               `json:"truncated"`
+}
+
+type eventScoreboardEntry struct {
+	Index              int64  `json:"index"`
+	Name               string `json:"name"`
+	Side               string `json:"side"`
+	Type               string `json:"type"`
+	Relationship       string `json:"relationship"`
+	Local              bool   `json:"local"`
+	Observer           bool   `json:"observer"`
+	Outcome            string `json:"outcome"`
+	Score              int64  `json:"score"`
+	UnitsBuilt         int64  `json:"unitsBuilt"`
+	UnitsLost          int64  `json:"unitsLost"`
+	UnitsDestroyed     int64  `json:"unitsDestroyed"`
+	BuildingsBuilt     int64  `json:"buildingsBuilt"`
+	BuildingsLost      int64  `json:"buildingsLost"`
+	BuildingsDestroyed int64  `json:"buildingsDestroyed"`
+	MoneyEarned        int64  `json:"moneyEarned"`
+	MoneySpent         int64  `json:"moneySpent"`
+}
+
+type eventHUDMessage struct {
+	Text  string `json:"text"`
+	Frame uint64 `json:"frame"`
+	Color uint32 `json:"color"`
+}
+
+type eventHUDPopup struct {
+	Text        string `json:"text"`
+	X           int64  `json:"x"`
+	Y           int64  `json:"y"`
+	Width       int64  `json:"width"`
+	Color       uint32 `json:"color"`
+	PausesGame  bool   `json:"pausesGame"`
+	PausesMusic bool   `json:"pausesMusic"`
+}
+
+type eventHUDSubtitle struct {
+	Lines []string `json:"lines"`
+}
+
+type eventHUDTimer struct {
+	Name      string `json:"name"`
+	Text      string `json:"text"`
+	Countdown bool   `json:"countdown"`
+}
+
+type eventHUDSnapshot struct {
+	OK              bool              `json:"ok"`
+	Frame           uint64            `json:"frame"`
+	MessagesVisible bool              `json:"messagesVisible"`
+	Messages        []eventHUDMessage `json:"messages"`
+	Popup           *eventHUDPopup    `json:"popup"`
+	Subtitle        *eventHUDSubtitle `json:"subtitle"`
+	TimersVisible   bool              `json:"timersVisible"`
+	Timers          []eventHUDTimer   `json:"timers"`
 }
 
 func (s *eventWorldSnapshot) relationship(object eventObject) string {
@@ -468,13 +528,106 @@ func diffEventSnapshots(previous, current *eventWorldSnapshot) []tacticalEvent {
 	return accumulator.sorted()
 }
 
+func equalHUDPopup(left, right *eventHUDPopup) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
+}
+
+func equalHUDSubtitle(left, right *eventHUDSubtitle) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return slices.Equal(left.Lines, right.Lines)
+}
+
+func baseHUDEvent(world *eventWorldSnapshot, hud *eventHUDSnapshot, eventType string) tacticalEvent {
+	event := baseEvent(world, eventType)
+	if hud.Frame != 0 {
+		event.Frame = hud.Frame
+	}
+	return event
+}
+
+func diffHUDSnapshots(
+	previous, current *eventHUDSnapshot,
+	world *eventWorldSnapshot,
+) []tacticalEvent {
+	if previous == nil || current == nil {
+		return nil
+	}
+	events := make([]tacticalEvent, 0, 4)
+
+	previousMessages := make(map[eventHUDMessage]struct{}, len(previous.Messages))
+	for _, message := range previous.Messages {
+		previousMessages[message] = struct{}{}
+	}
+	newMessages := make([]eventHUDMessage, 0, len(current.Messages))
+	for _, message := range current.Messages {
+		if _, existed := previousMessages[message]; !existed {
+			newMessages = append(newMessages, message)
+		}
+	}
+	if len(newMessages) != 0 {
+		event := baseHUDEvent(world, current, "hud.message")
+		event.Severity, event.Wake = severityNotice, true
+		event.Summary = "New visible HUD messages arrived"
+		event.Details = map[string]any{"messages": newMessages, "newestFirst": true}
+		events = append(events, event)
+	}
+
+	if !equalHUDPopup(previous.Popup, current.Popup) {
+		eventType := "hud.popup"
+		summary := "A visible popup briefing changed"
+		details := map[string]any{"popup": current.Popup}
+		severity, wake := severityNotice, true
+		if current.Popup == nil {
+			eventType, summary = "hud.popupClosed", "The visible popup briefing closed"
+			severity, wake = severityInfo, false
+			delete(details, "popup")
+		} else if current.Popup.PausesGame {
+			severity = severityCritical
+		}
+		event := baseHUDEvent(world, current, eventType)
+		event.Severity, event.Wake, event.Summary, event.Details = severity, wake, summary, details
+		events = append(events, event)
+	}
+
+	if !equalHUDSubtitle(previous.Subtitle, current.Subtitle) && current.Subtitle != nil {
+		event := baseHUDEvent(world, current, "hud.subtitle")
+		event.Severity = severityInfo
+		event.Wake = previous.Subtitle == nil
+		if event.Wake {
+			event.Severity = severityNotice
+		}
+		event.Summary = "Currently revealed military subtitle text changed"
+		event.Details = map[string]any{"lines": current.Subtitle.Lines}
+		events = append(events, event)
+	}
+
+	if current.TimersVisible && !slices.Equal(previous.Timers, current.Timers) {
+		event := baseHUDEvent(world, current, "hud.timer")
+		event.Severity, event.Wake = severityInfo, false
+		event.Summary = "Visible named timers changed"
+		event.Details = map[string]any{"timers": current.Timers}
+		events = append(events, event)
+	}
+	return events
+}
+
 func addOutcomeEvent(accumulator *eventAccumulator, snapshot *eventWorldSnapshot) {
 	event := baseEvent(snapshot, "game.outcome")
 	event.Severity, event.Wake = severityCritical, true
 	event.Summary = "The match reached an authoritative terminal outcome"
-	accumulator.add(event, nil, map[string]any{
+	details := map[string]any{
 		"outcome": *snapshot.Game.Outcome, "endFrame": snapshot.Game.EndFrame,
-	})
+		"retained": snapshot.Game.OutcomeRetained,
+	}
+	if len(snapshot.Scoreboard) != 0 {
+		details["scoreboard"] = snapshot.Scoreboard
+	}
+	accumulator.add(event, nil, details)
 }
 
 func addEconomyEvents(
@@ -604,12 +757,13 @@ type eventSubscription struct {
 	stream            *eventStream
 	id                uint64
 	needsCapabilities bool
+	needsHUD          bool
 	Notify            <-chan struct{}
 	once              sync.Once
 }
 
 func (s *eventSubscription) close() {
-	s.once.Do(func() { s.stream.unsubscribe(s.id, s.needsCapabilities) })
+	s.once.Do(func() { s.stream.unsubscribe(s.id, s.needsCapabilities, s.needsHUD) })
 }
 
 type eventStream struct {
@@ -622,11 +776,13 @@ type eventStream struct {
 	nextCursor            uint64
 	subscribers           map[uint64]chan struct{}
 	capabilitySubscribers int
+	hudSubscribers        int
 	nextSubscriber        uint64
 	runCancel             context.CancelFunc
 	idleTimer             *time.Timer
 	gapCursor             uint64
 	previous              *eventWorldSnapshot
+	previousHUD           *eventHUDSnapshot
 	pending               map[string]*tacticalEvent
 }
 
@@ -637,7 +793,7 @@ func newEventStream(session *Session, mode string, config eventRuntimeConfig) *e
 	}
 }
 
-func (s *eventStream) subscribe(needsCapabilities bool) *eventSubscription {
+func (s *eventStream) subscribe(needsCapabilities, needsHUD bool) *eventSubscription {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.idleTimer != nil {
@@ -650,17 +806,21 @@ func (s *eventStream) subscribe(needsCapabilities bool) *eventSubscription {
 	if needsCapabilities {
 		s.capabilitySubscribers++
 	}
+	if needsHUD {
+		s.hudSubscribers++
+	}
 	if s.runCancel == nil {
 		ctx, cancel := context.WithCancel(s.session.ctx)
 		s.runCancel = cancel
 		go s.run(ctx)
 	}
 	return &eventSubscription{
-		stream: s, id: s.nextSubscriber, needsCapabilities: needsCapabilities, Notify: notify,
+		stream: s, id: s.nextSubscriber, needsCapabilities: needsCapabilities,
+		needsHUD: needsHUD, Notify: notify,
 	}
 }
 
-func (s *eventStream) unsubscribe(id uint64, needsCapabilities bool) {
+func (s *eventStream) unsubscribe(id uint64, needsCapabilities, needsHUD bool) {
 	s.mu.Lock()
 	if _, exists := s.subscribers[id]; !exists {
 		s.mu.Unlock()
@@ -669,6 +829,12 @@ func (s *eventStream) unsubscribe(id uint64, needsCapabilities bool) {
 	delete(s.subscribers, id)
 	if needsCapabilities {
 		s.capabilitySubscribers--
+	}
+	if needsHUD {
+		s.hudSubscribers--
+		if s.hudSubscribers == 0 {
+			s.previousHUD = nil
+		}
 	}
 	if len(s.subscribers) == 0 && s.idleTimer == nil {
 		s.idleTimer = time.AfterFunc(s.config.idleTimeout, s.stopIdle)
@@ -682,6 +848,12 @@ func (s *eventStream) needsCapabilities() bool {
 	return s.capabilitySubscribers > 0
 }
 
+func (s *eventStream) needsHUD() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hudSubscribers > 0
+}
+
 func (s *eventStream) stopIdle() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -692,6 +864,7 @@ func (s *eventStream) stopIdle() {
 	s.runCancel()
 	s.runCancel = nil
 	s.previous = nil
+	s.previousHUD = nil
 	s.pending = make(map[string]*tacticalEvent)
 	s.gapCursor = s.nextCursor + 1
 }
@@ -738,6 +911,16 @@ func (s *eventStream) poll(parent context.Context, includeCapabilities bool) {
 	if json.Unmarshal(result, &snapshot) != nil || !snapshot.OK {
 		return
 	}
+	var hud *eventHUDSnapshot
+	if s.needsHUD() && s.session.supports("hud.snapshot") {
+		hudResult, hudProtocolErr, hudErr := s.session.call(ctx, "hud.snapshot", map[string]any{})
+		if hudErr == nil && hudProtocolErr == nil {
+			var parsed eventHUDSnapshot
+			if json.Unmarshal(hudResult, &parsed) == nil && parsed.OK {
+				hud = &parsed
+			}
+		}
+	}
 
 	s.mu.Lock()
 	if snapshot.ObjectCapabilities == nil && s.previous != nil {
@@ -746,6 +929,10 @@ func (s *eventStream) poll(parent context.Context, includeCapabilities bool) {
 	wasBaseline := s.previous == nil
 	events := diffEventSnapshots(s.previous, &snapshot)
 	s.previous = &snapshot
+	if hud != nil && s.hudSubscribers > 0 {
+		events = append(events, diffHUDSnapshots(s.previousHUD, hud, &snapshot)...)
+		s.previousHUD = hud
+	}
 	for index := range events {
 		s.mergePending(events[index])
 	}
@@ -800,6 +987,16 @@ func (s *eventStream) mergePending(event tacticalEvent) {
 			}
 			current.Details[detailKey] = existing
 			current.Details["count"] = len(existing)
+			continue
+		}
+		if detailKey == "messages" {
+			existing, _ := current.Details[detailKey].([]eventHUDMessage)
+			incoming, _ := value.([]eventHUDMessage)
+			combined := append(append([]eventHUDMessage(nil), incoming...), existing...)
+			if len(combined) > maxEventObjectIDs {
+				combined = combined[:maxEventObjectIDs]
+			}
+			current.Details[detailKey] = combined
 			continue
 		}
 		current.Details[detailKey] = value
@@ -1001,6 +1198,18 @@ func (f eventFilter) wantsCapabilities() bool {
 	return false
 }
 
+func (f eventFilter) wantsHUD() bool {
+	if len(f.types) == 0 {
+		return true
+	}
+	for eventType := range f.types {
+		if strings.HasPrefix(eventType, "hud.") {
+			return true
+		}
+	}
+	return false
+}
+
 func eventCursor(r *http.Request) (uint64, bool, error) {
 	header := r.Header.Get("Last-Event-ID")
 	query := r.URL.Query().Get("after")
@@ -1039,7 +1248,7 @@ func writeSSE(w http.ResponseWriter, eventName string, id uint64, value any) err
 }
 
 func (s *Server) tacticalEvents(w http.ResponseWriter, r *http.Request) {
-	mode, err := observationMode(r)
+	mode, err := observationMode(s.config.PlayMode, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -1069,7 +1278,8 @@ func (s *Server) tacticalEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream := session.events.stream(mode)
-	subscription := stream.subscribe(filter.wantsCapabilities())
+	subscription := stream.subscribe(filter.wantsCapabilities(),
+		filter.wantsHUD() && session.supports("hud.snapshot"))
 	defer subscription.close()
 
 	replay := stream.after(cursor)
@@ -1098,6 +1308,7 @@ func (s *Server) tacticalEvents(w http.ResponseWriter, r *http.Request) {
 			"oldestAvailable": replay.oldest, "observationMode": mode,
 			"pollMilliseconds":     s.eventsConfig.pollInterval.Milliseconds(),
 			"coalesceMilliseconds": s.eventsConfig.coalesceWindow.Milliseconds(),
+			"hudEvents":            filter.wantsHUD() && session.supports("hud.snapshot"),
 		})
 	}
 	flusher.Flush()

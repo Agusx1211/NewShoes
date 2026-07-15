@@ -8,17 +8,34 @@ const CAPABILITIES = Object.freeze([
   "protocol.describe",
   "input.pointerMove",
   "camera.lookAt",
+  "camera.setView",
   "game.select",
   "game.order",
+  "game.context",
   "game.command",
   "world.snapshot",
   "terrain.query",
+  "minimap.snapshot",
+  "hud.snapshot",
+  "chat.send",
   "ui.snapshot",
   "ui.activate",
   "ui.setText",
+  "ui.submit",
   "ui.selectIndex",
+  "ui.setValue",
+  "ui.selectTab",
   "ui.listItems",
 ]);
+const ORDER_ACTIONS = new Set([
+  "move", "attackMove", "forceMove", "attack", "forceAttackGround", "forceAttackObject",
+  "waypoint", "guardPosition", "guardObject", "stop", "scatter", "formation",
+]);
+const POSITION_ORDER_ACTIONS = new Set([
+  "move", "attackMove", "forceMove", "forceAttackGround", "waypoint", "guardPosition",
+]);
+const TARGET_ORDER_ACTIONS = new Set(["attack", "forceAttackObject", "guardObject"]);
+const GUARD_MODES = new Map([["normal", 0], ["withoutPursuit", 1], ["flyingOnly", 2]]);
 
 class ProtocolFault extends Error {
   constructor(code, message, details = undefined) {
@@ -61,16 +78,12 @@ function pointerPosition(args) {
   return { x, y };
 }
 
-function observationMode(args) {
-  const mode = args?.mode ?? "unrestricted";
-  if (mode !== "unrestricted" && mode !== "camera") {
-    throw new ProtocolFault("invalid_arguments", "mode must be unrestricted or camera");
-  }
-  return mode;
+function observationMode(playMode) {
+  return playMode === "camera" ? "camera" : "unrestricted";
 }
 
-function worldObservation(args) {
-  const mode = observationMode(args);
+function worldObservation(args, playMode) {
+  const mode = observationMode(playMode);
   const detail = args?.detail ?? "full";
   if (detail !== "full" && detail !== "tactical") {
     throw new ProtocolFault("invalid_arguments", "detail must be full or tactical");
@@ -82,8 +95,8 @@ function worldObservation(args) {
   return { mode, detail, includeCapabilities };
 }
 
-function terrainQuery(args) {
-  const mode = observationMode(args);
+function terrainQuery(args, playMode) {
+  const mode = observationMode(playMode);
   const minX = Number(args?.minX);
   const minY = Number(args?.minY);
   const maxX = Number(args?.maxX);
@@ -106,6 +119,20 @@ function terrainQuery(args) {
     );
   }
   return { mode, minX, minY, maxX, maxY, columns, rows };
+}
+
+function minimapQuery(args) {
+  const columns = Number(args?.columns ?? 32);
+  const rows = Number(args?.rows ?? 32);
+  if (!Number.isInteger(columns) || columns < 1 || columns > 128
+      || !Number.isInteger(rows) || rows < 1 || rows > 128
+      || columns * rows > 16384) {
+    throw new ProtocolFault(
+      "invalid_arguments",
+      "rows and columns must be integers from 1 through 128 with at most 16384 cells",
+    );
+  }
+  return { columns, rows };
 }
 
 function objectId(value, field, { optional = false } = {}) {
@@ -142,21 +169,25 @@ function worldPosition(value, field = "position") {
 
 function gameOrder(args) {
   const action = boundedString(args?.action, "action", 64);
-  const allowed = new Set([
-    "move", "attackMove", "attack", "guardPosition", "guardObject", "stop", "scatter",
-  ]);
-  if (!allowed.has(action)) {
-    throw new ProtocolFault(
-      "invalid_arguments",
-      "action must be move, attackMove, attack, guardPosition, guardObject, stop, or scatter",
-    );
+  if (!ORDER_ACTIONS.has(action)) {
+    throw new ProtocolFault("invalid_arguments", "unsupported tactical action");
   }
   const objectIds = objectIdList(args);
-  const needsPosition = action === "move" || action === "attackMove" || action === "guardPosition";
-  const needsTarget = action === "attack" || action === "guardObject";
+  const needsPosition = POSITION_ORDER_ACTIONS.has(action);
+  const needsTarget = TARGET_ORDER_ACTIONS.has(action);
   const position = needsPosition ? worldPosition(args?.position) : { x: 0, y: 0 };
   const targetId = needsTarget ? objectId(args?.targetId, "targetId") : 0;
-  return { action, objectIds, targetId, ...position };
+  const isGuard = action === "guardPosition" || action === "guardObject";
+  const guardModeName = args?.guardMode ?? "normal";
+  if (!isGuard && args?.guardMode !== undefined) {
+    throw new ProtocolFault("invalid_arguments", "guardMode is only used by guard orders");
+  }
+  if (!GUARD_MODES.has(guardModeName)) {
+    throw new ProtocolFault(
+      "invalid_arguments", "guardMode must be normal, withoutPursuit, or flyingOnly",
+    );
+  }
+  return { action, objectIds, targetId, ...position, guardMode: GUARD_MODES.get(guardModeName) };
 }
 
 function gameCommand(args) {
@@ -172,6 +203,34 @@ function gameCommand(args) {
   return { sourceId, command, targetId, ...position, angle, hasPosition };
 }
 
+function gameContext(args) {
+  const objectIds = objectIdList(args);
+  const hasTarget = args?.targetId !== undefined && args.targetId !== null && args.targetId !== 0;
+  const hasPosition = args?.position !== undefined && args.position !== null;
+  if (hasTarget === hasPosition) {
+    throw new ProtocolFault("invalid_arguments", "provide exactly one targetId or position");
+  }
+  const targetId = hasTarget ? objectId(args.targetId, "targetId") : 0;
+  const position = hasPosition ? worldPosition(args.position) : { x: 0, y: 0 };
+  return { objectIds, targetId, ...position, hasPosition };
+}
+
+function cameraView(args) {
+  const result = {};
+  for (const field of ["angle", "pitch", "zoom"]) {
+    if (args?.[field] === undefined || args[field] === null) continue;
+    const value = Number(args[field]);
+    if (!Number.isFinite(value)) {
+      throw new ProtocolFault("invalid_arguments", `${field} must be a finite number`);
+    }
+    result[field] = value;
+  }
+  if (Object.keys(result).length === 0) {
+    throw new ProtocolFault("invalid_arguments", "provide at least one angle, pitch, or zoom");
+  }
+  return result;
+}
+
 function normalizeConfig(config, cryptoImpl) {
   const url = new URL(boundedString(config?.url, "url", 4096));
   if (url.protocol !== "ws:" && url.protocol !== "wss:") {
@@ -184,7 +243,11 @@ function normalizeConfig(config, cryptoImpl) {
   if (!/^[A-Za-z0-9._-]+$/.test(sessionId)) {
     throw new TypeError("agent bridge sessionId may contain only letters, numbers, dot, underscore, and hyphen");
   }
-  return Object.freeze({ url: url.href, token, sessionId });
+  const playMode = config?.playMode ?? "global";
+  if (playMode !== "global" && playMode !== "camera") {
+    throw new TypeError("agent bridge playMode must be global or camera");
+  }
+  return Object.freeze({ url: url.href, token, sessionId, playMode });
 }
 
 function publicEndpoint(url) {
@@ -227,6 +290,7 @@ export function createAgentBridgeConnection({
     protocol: AGENT_PROTOCOL,
     endpoint: publicEndpoint(normalized.url),
     sessionId: normalized.sessionId,
+    playMode: normalized.playMode,
     phase: "idle",
     connected: false,
     reconnectAttempt: 0,
@@ -258,6 +322,7 @@ export function createAgentBridgeConnection({
           capabilities: [...CAPABILITIES],
           observation: "request-driven",
           transport: "raw-websocket-json",
+          playMode: normalized.playMode,
         };
       case "input.pointerMove": {
         const point = pointerPosition(args);
@@ -277,16 +342,55 @@ export function createAgentBridgeConnection({
       }
       case "camera.lookAt":
         return engineRequest("agentCameraLookAt", worldPosition(args));
+      case "camera.setView": {
+        const view = cameraView(args);
+        return engineRequest("agentCameraSetView", {
+          angle: view.angle ?? 0,
+          pitch: view.pitch ?? 0,
+          zoom: view.zoom ?? 0,
+          setAngle: view.angle !== undefined,
+          setPitch: view.pitch !== undefined,
+          setZoom: view.zoom !== undefined,
+        });
+      }
       case "game.select":
-        return engineRequest("agentGameSelect", { objectIds: objectIdList(args) });
+        return engineRequest("agentGameSelect", {
+          objectIds: objectIdList(args), cameraBound: normalized.playMode === "camera",
+        });
       case "game.order":
-        return engineRequest("agentGameOrder", gameOrder(args));
+        return engineRequest("agentGameOrder", {
+          ...gameOrder(args), cameraBound: normalized.playMode === "camera",
+        });
+      case "game.context":
+        return engineRequest("agentGameContext", {
+          ...gameContext(args), cameraBound: normalized.playMode === "camera",
+        });
       case "game.command":
-        return engineRequest("agentGameCommand", gameCommand(args));
+        return engineRequest("agentGameCommand", {
+          ...gameCommand(args), cameraBound: normalized.playMode === "camera",
+        });
       case "world.snapshot":
-        return engineRequest("agentWorldSnapshot", worldObservation(args));
+        return engineRequest("agentWorldSnapshot", worldObservation(args, normalized.playMode));
       case "terrain.query":
-        return engineRequest("agentTerrainQuery", terrainQuery(args));
+        return engineRequest("agentTerrainQuery", terrainQuery(args, normalized.playMode));
+      case "minimap.snapshot":
+        return engineRequest("agentMinimapSnapshot", minimapQuery(args));
+      case "hud.snapshot":
+        return engineRequest("agentHudSnapshot", {});
+      case "chat.send": {
+        const text = typeof args?.text === "string" ? args.text.trim() : "";
+        if (text.length < 1 || text.length > 255 || /[\x00-\x1f\x7f]/u.test(text)) {
+          throw new ProtocolFault(
+            "invalid_arguments",
+            "text must contain 1 through 255 UTF-16 code units without control characters",
+          );
+        }
+        const audience = args?.audience ?? "everyone";
+        if (audience !== "everyone" && audience !== "allies") {
+          throw new ProtocolFault("invalid_arguments", "audience must be everyone or allies");
+        }
+        return engineRequest("agentChatSend", { text, audience });
+      }
       case "ui.snapshot":
         if (args?.includeHidden !== undefined && typeof args.includeHidden !== "boolean") {
           throw new ProtocolFault("invalid_arguments", "includeHidden must be boolean");
@@ -301,6 +405,8 @@ export function createAgentBridgeConnection({
         }
         return engineRequest("agentUiSetText", { ...reference, text: args.text });
       }
+      case "ui.submit":
+        return engineRequest("agentUiSubmit", windowReference(args));
       case "ui.selectIndex": {
         const reference = windowReference(args);
         const index = Number(args?.index);
@@ -308,6 +414,22 @@ export function createAgentBridgeConnection({
           throw new ProtocolFault("invalid_arguments", "index must be a non-negative integer");
         }
         return engineRequest("agentUiSelectIndex", { ...reference, index });
+      }
+      case "ui.setValue": {
+        const reference = windowReference(args);
+        const value = Number(args?.value);
+        if (!Number.isInteger(value) || value < -0x80000000 || value > 0x7fffffff) {
+          throw new ProtocolFault("invalid_arguments", "value must be a signed 32-bit integer");
+        }
+        return engineRequest("agentUiSetValue", { ...reference, value });
+      }
+      case "ui.selectTab": {
+        const reference = windowReference(args);
+        const index = Number(args?.index);
+        if (!Number.isInteger(index) || index < 0 || index > 7) {
+          throw new ProtocolFault("invalid_arguments", "index must be an integer from 0 through 7");
+        }
+        return engineRequest("agentUiSelectTab", { ...reference, index });
       }
       case "ui.listItems": {
         const reference = windowReference(args);
@@ -404,6 +526,7 @@ export function createAgentBridgeConnection({
         protocol: AGENT_PROTOCOL,
         token: normalized.token,
         sessionId: normalized.sessionId,
+        playMode: normalized.playMode,
         capabilities: [...CAPABILITIES],
       }));
       publish({ phase: "authenticating", connected: false, lastError: null });
@@ -424,7 +547,8 @@ export function createAgentBridgeConnection({
       }
       if (message?.type === "hello" && message.ok === true
           && message.protocol === AGENT_PROTOCOL
-          && message.sessionId === normalized.sessionId) {
+          && message.sessionId === normalized.sessionId
+          && message.playMode === normalized.playMode) {
         authenticated = true;
         reconnectAttempt = 0;
         publish({ phase: "connected", connected: true, reconnectAttempt: 0, lastError: null });

@@ -21,13 +21,18 @@
 #include "Common/Energy.h"
 #include "Common/MessageStream.h"
 #include "Common/Money.h"
+#include "Common/NameKeyGenerator.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
+#include "Common/Radar.h"
+#include "Common/ScoreKeeper.h"
 #include "Common/SpecialPower.h"
 #include "Common/Team.h"
 #include "Common/ThingTemplate.h"
 #include "Common/Upgrade.h"
 #include "GameClient/ControlBar.h"
+#include "GameClient/Color.h"
+#include "GameClient/DisplayString.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/InGameUI.h"
 #include "GameClient/TerrainVisual.h"
@@ -35,7 +40,13 @@
 #include "GameClient/Gadget.h"
 #include "GameClient/GadgetComboBox.h"
 #include "GameClient/GadgetListBox.h"
+#include "GameClient/GadgetPushButton.h"
+#include "GameClient/GadgetSlider.h"
+#include "GameClient/GadgetStaticText.h"
+#include "GameClient/GadgetTabControl.h"
 #include "GameClient/GadgetTextEntry.h"
+#include "GameClient/GUICallbacks.h"
+#include "GameClient/GameClient.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/View.h"
@@ -73,11 +84,44 @@ constexpr Int kMaxTerrainSamples = 16384;
 std::uint64_t g_snapshot_id = 0;
 std::uint64_t g_world_snapshot_id = 0;
 std::uint64_t g_terrain_query_id = 0;
+std::uint64_t g_minimap_snapshot_id = 0;
 std::unordered_map<ObjectID, std::uint64_t> g_public_object_ids;
 std::uint64_t g_next_public_object_id = 1;
 UnsignedInt g_last_world_frame = 0;
 bool g_have_world_snapshot = false;
 bool g_last_world_playable = false;
+
+enum class RetainedMatchOutcome : Int {
+	NONE = 0,
+	VICTORY = 1,
+	DEFEAT = 2,
+	ENDED = 3,
+};
+
+UnsignedInt g_retained_match_end_frame = 0;
+RetainedMatchOutcome g_retained_match_outcome = RetainedMatchOutcome::NONE;
+
+struct RetainedPlayerScore {
+	Int index;
+	std::string name;
+	std::string side;
+	std::string type;
+	std::string relationship;
+	bool local;
+	bool observer;
+	std::string outcome;
+	Int score;
+	Int units_built;
+	Int units_lost;
+	Int units_destroyed;
+	Int buildings_built;
+	Int buildings_lost;
+	Int buildings_destroyed;
+	Int money_earned;
+	Int money_spent;
+};
+
+std::vector<RetainedPlayerScore> g_retained_scoreboard;
 
 void append_utf8_codepoint(std::string &out, std::uint32_t codepoint)
 {
@@ -206,11 +250,18 @@ void append_actions(std::string &json, UnsignedInt style, bool interactive)
 		append_json_string(json, name);
 	};
 	if (interactive) add("activate");
-	if (interactive && (style & GWS_ENTRY_FIELD) != 0) add("setText");
+	if (interactive && (style & GWS_ENTRY_FIELD) != 0) {
+		add("setText");
+		add("submit");
+	}
 	if (interactive && (style & (GWS_SCROLL_LISTBOX | GWS_COMBO_BOX)) != 0) {
 		add("selectIndex");
 		add("listItems");
 	}
+	if (interactive && (style & (GWS_VERT_SLIDER | GWS_HORZ_SLIDER)) != 0) {
+		add("setValue");
+	}
+	if (interactive && (style & GWS_TAB_CONTROL) != 0) add("selectTab");
 	json += "]";
 }
 
@@ -280,7 +331,9 @@ void append_window(std::string &json, GameWindow *window)
 	json += ",\"style\":" + std::to_string(style);
 
 	bool text_truncated = false;
-	const UnicodeString text = instance != nullptr
+	const UnicodeString text = (style & GWS_STATIC_TEXT) != 0
+		? GadgetStaticTextGetText(window)
+		: instance != nullptr
 		? instance->getText() : UnicodeString::TheEmptyString;
 	json += ",\"text\":";
 	append_json_string(json, unicode_to_utf8(text, &text_truncated));
@@ -293,6 +346,35 @@ void append_window(std::string &json, GameWindow *window)
 	if ((style & GWS_ENTRY_FIELD) != 0) {
 		json += ",\"value\":";
 		append_json_string(json, unicode_to_utf8(GadgetTextEntryGetText(window)));
+	}
+	if ((style & (GWS_CHECK_BOX | GWS_RADIO_BUTTON)) != 0) {
+		json += ",\"checked\":";
+		json += GadgetCheckLikeButtonIsChecked(window) ? "true" : "false";
+	}
+	if ((style & (GWS_VERT_SLIDER | GWS_HORZ_SLIDER)) != 0) {
+		Int minimum = 0;
+		Int maximum = 0;
+		GadgetSliderGetMinMax(window, &minimum, &maximum);
+		json += ",\"slider\":{\"min\":" + std::to_string(minimum);
+		json += ",\"max\":" + std::to_string(maximum);
+		json += ",\"value\":" + std::to_string(GadgetSliderGetPosition(window)) + "}";
+	}
+	if ((style & GWS_PROGRESS_BAR) != 0) {
+		const std::intptr_t progress = reinterpret_cast<std::intptr_t>(window->winGetUserData());
+		json += ",\"progress\":" + std::to_string(progress);
+	}
+	if ((style & GWS_TAB_CONTROL) != 0) {
+		TabControlData *tabs = static_cast<TabControlData *>(window->winGetUserData());
+		if (tabs != nullptr) {
+			json += ",\"tabs\":{\"count\":" + std::to_string(tabs->tabCount);
+			json += ",\"selectedIndex\":" + std::to_string(tabs->activeTab);
+			json += ",\"enabled\":[";
+			for (Int index = 0; index < tabs->tabCount; ++index) {
+				if (index != 0) json += ",";
+				json += tabs->subPaneDisabled[index] ? "false" : "true";
+			}
+			json += "]}";
+		}
 	}
 	if ((style & GWS_SCROLL_LISTBOX) != 0) {
 		const Int row_count = GadgetListBoxGetNumEntries(window);
@@ -613,6 +695,34 @@ Relationship relationship_to_local(const Player *player, const Player *local_pla
 	return local_player->getRelationship(player->getDefaultTeam());
 }
 
+enum class SourceCameraPolicy {
+	UNRESTRICTED,
+	VISIBLE,
+	VISIBLE_OR_SELECTED,
+};
+
+bool source_satisfies_camera_policy(Object *object, SourceCameraPolicy policy)
+{
+	if (policy == SourceCameraPolicy::UNRESTRICTED) return true;
+	if (point_in_camera(*object->getPosition())) return true;
+	return policy == SourceCameraPolicy::VISIBLE_OR_SELECTED
+		&& object->getDrawable()->isSelected();
+}
+
+std::vector<Object *> sorted_game_objects()
+{
+	std::vector<Object *> objects;
+	if (TheGameLogic == nullptr) return objects;
+	for (Object *object = TheGameLogic->getFirstObject(); object != nullptr;
+		object = object->getNextObject()) {
+		objects.push_back(object);
+	}
+	std::sort(objects.begin(), objects.end(), [](const Object *left, const Object *right) {
+		return left->getID() < right->getID();
+	});
+	return objects;
+}
+
 bool is_observable_object(
 	Object *object,
 	Player *local_player,
@@ -673,7 +783,8 @@ Object *resolve_public_object(Int public_id)
 bool parse_public_object_ids(
 	const char *encoded,
 	std::vector<Object *> &objects,
-	std::string &error)
+	std::string &error,
+	SourceCameraPolicy camera_policy)
 {
 	objects.clear();
 	if (encoded == nullptr || encoded[0] == '\0') {
@@ -707,6 +818,12 @@ bool parse_public_object_ids(
 		if (!object->isLocallyControlled() || !object->isSelectable()
 			|| object->getDrawable() == nullptr || object->getContainedBy() != nullptr) {
 			error = "every ordered object must be a visible, selectable, locally controlled world object";
+			return false;
+		}
+		if (!source_satisfies_camera_policy(object, camera_policy)) {
+			error = camera_policy == SourceCameraPolicy::VISIBLE
+				? "camera-bound selection requires every object to be inside the tactical view"
+				: "camera-bound actions require every source object to be inside the tactical view or already selected there";
 			return false;
 		}
 		objects.push_back(object);
@@ -773,9 +890,54 @@ void post_selection(const std::vector<Object *> &objects)
 		TheInGameUI->selectDrawable(object->getDrawable());
 		selection->appendObjectIDArgument(object->getID());
 	}
+	if (TheGameClient != nullptr) {
+		TheGameClient->agentSynchronizeCommandSelection();
+	}
 }
 
-Object *resolve_observable_target(Int public_id, Player *local_player, std::string &error)
+void clear_context_command_modes()
+{
+	TheInGameUI->setGUICommand(nullptr);
+	TheInGameUI->setWaypointMode(FALSE);
+	TheInGameUI->setForceMoveMode(FALSE);
+	TheInGameUI->setForceAttackMode(FALSE);
+	TheInGameUI->setPreferSelectionMode(FALSE);
+	TheInGameUI->clearAttackMoveToMode();
+}
+
+const char *context_message_name(GameMessage::Type type)
+{
+	switch (type) {
+		case GameMessage::MSG_DO_MOVETO: return "move";
+		case GameMessage::MSG_DO_ATTACKMOVETO: return "attackMove";
+		case GameMessage::MSG_DO_FORCEMOVETO: return "forceMove";
+		case GameMessage::MSG_DO_ATTACK_OBJECT: return "attack";
+		case GameMessage::MSG_DO_FORCE_ATTACK_OBJECT: return "forceAttackObject";
+		case GameMessage::MSG_DO_FORCE_ATTACK_GROUND: return "forceAttackGround";
+		case GameMessage::MSG_GET_REPAIRED: return "getRepaired";
+		case GameMessage::MSG_GET_HEALED: return "getHealed";
+		case GameMessage::MSG_DO_REPAIR: return "repair";
+		case GameMessage::MSG_RESUME_CONSTRUCTION: return "resumeConstruction";
+		case GameMessage::MSG_ENTER: return "enter";
+		case GameMessage::MSG_DOCK: return "dock";
+		case GameMessage::MSG_ADD_WAYPOINT: return "waypoint";
+		case GameMessage::MSG_DO_SPECIAL_POWER: return "specialPower";
+		case GameMessage::MSG_DO_SPECIAL_POWER_AT_LOCATION: return "specialPowerAtLocation";
+		case GameMessage::MSG_DO_SPECIAL_POWER_AT_OBJECT: return "specialPowerAtObject";
+		case GameMessage::MSG_DO_SPECIAL_POWER_OVERRIDE_DESTINATION: return "overrideSpecialPowerDestination";
+		case GameMessage::MSG_DO_SALVAGE: return "salvage";
+		case GameMessage::MSG_SET_RALLY_POINT: return "setRallyPoint";
+		case GameMessage::MSG_COMBATDROP_AT_LOCATION: return "combatDropAtLocation";
+		case GameMessage::MSG_COMBATDROP_AT_OBJECT: return "combatDropAtObject";
+		default: return "context";
+	}
+}
+
+Object *resolve_observable_target(
+	Int public_id,
+	Player *local_player,
+	std::string &error,
+	bool camera_bound)
 {
 	Object *target = resolve_public_object(public_id);
 	ObjectShroudStatus shroud = OBJECTSHROUD_INVALID;
@@ -784,6 +946,10 @@ Object *resolve_observable_target(Int public_id, Player *local_player, std::stri
 	if (target == nullptr
 		|| !is_observable_object(target, local_player, shroud, screen, in_camera)) {
 		error = "targetId is stale or is not currently observable";
+		return nullptr;
+	}
+	if (camera_bound && !in_camera) {
+		error = "camera-bound actions require the target object to be inside the tactical view";
 		return nullptr;
 	}
 	return target;
@@ -1448,6 +1614,86 @@ void append_player(std::string &json, Player *player, Player *local_player)
 	json += "}";
 }
 
+void capture_retained_scoreboard()
+{
+	g_retained_scoreboard.clear();
+	if (ThePlayerList == nullptr || TheNameKeyGenerator == nullptr) return;
+	Player *local_player = ThePlayerList->getLocalPlayer();
+	for (Int slot = 0; slot < MAX_SLOTS; ++slot) {
+		AsciiString internal_name;
+		internal_name.format("player%d", slot);
+		Player *player = ThePlayerList->findPlayerWithNameKey(
+			TheNameKeyGenerator->nameToKey(internal_name));
+		if (player == nullptr) continue;
+		ScoreKeeper *score = player->getScoreKeeper();
+		if (score == nullptr) continue;
+		RetainedPlayerScore retained = {
+			player->getPlayerIndex(),
+			unicode_to_utf8(player->getPlayerDisplayName()),
+			player->getSide().str(),
+			player_type_name(player->getPlayerType()),
+			relationship_name(player == local_player
+				? ALLIES : relationship_to_local(player, local_player)),
+			player == local_player,
+			player->isPlayerObserver(),
+			TheVictoryConditions != nullptr && TheVictoryConditions->hasAchievedVictory(player)
+				? "victory"
+				: (TheVictoryConditions != nullptr && TheVictoryConditions->hasBeenDefeated(player)
+					? "defeat" : "ended"),
+			score->calculateScore(),
+			score->getTotalUnitsBuilt(),
+			score->getTotalUnitsLost(),
+			score->getTotalUnitsDestroyed(),
+			score->getTotalBuildingsBuilt(),
+			score->getTotalBuildingsLost(),
+			score->getTotalBuildingsDestroyed(),
+			score->getTotalMoneyEarned(),
+			score->getTotalMoneySpent(),
+		};
+		if (player == local_player) {
+			if (g_retained_match_outcome == RetainedMatchOutcome::VICTORY) {
+				retained.outcome = "victory";
+			} else if (g_retained_match_outcome == RetainedMatchOutcome::DEFEAT) {
+				retained.outcome = "defeat";
+			}
+		}
+		g_retained_scoreboard.push_back(retained);
+	}
+}
+
+void append_retained_scoreboard(std::string &json)
+{
+	json += "[";
+	for (std::size_t i = 0; i < g_retained_scoreboard.size(); ++i) {
+		if (i != 0) json += ",";
+		const RetainedPlayerScore &score = g_retained_scoreboard[i];
+		json += "{\"index\":" + std::to_string(score.index) + ",\"name\":";
+		append_json_string(json, score.name);
+		json += ",\"side\":";
+		append_json_string(json, score.side);
+		json += ",\"type\":";
+		append_json_string(json, score.type);
+		json += ",\"relationship\":";
+		append_json_string(json, score.relationship);
+		json += ",\"local\":";
+		json += score.local ? "true" : "false";
+		json += ",\"observer\":";
+		json += score.observer ? "true" : "false";
+		json += ",\"outcome\":";
+		append_json_string(json, score.outcome);
+		json += ",\"score\":" + std::to_string(score.score)
+			+ ",\"unitsBuilt\":" + std::to_string(score.units_built)
+			+ ",\"unitsLost\":" + std::to_string(score.units_lost)
+			+ ",\"unitsDestroyed\":" + std::to_string(score.units_destroyed)
+			+ ",\"buildingsBuilt\":" + std::to_string(score.buildings_built)
+			+ ",\"buildingsLost\":" + std::to_string(score.buildings_lost)
+			+ ",\"buildingsDestroyed\":" + std::to_string(score.buildings_destroyed)
+			+ ",\"moneyEarned\":" + std::to_string(score.money_earned)
+			+ ",\"moneySpent\":" + std::to_string(score.money_spent) + "}";
+	}
+	json += "]";
+}
+
 void append_object(std::string &json, Object *object, Player *local_player,
 	ObjectShroudStatus shroud, const ICoord2D &screen, bool in_camera)
 {
@@ -1679,6 +1925,26 @@ std::string encode_base64(const std::vector<std::uint8_t> &bytes)
 
 } // namespace
 
+extern "C" void cnc_port_agent_begin_match()
+{
+	g_retained_match_end_frame = 0;
+	g_retained_match_outcome = RetainedMatchOutcome::NONE;
+	g_retained_scoreboard.clear();
+}
+
+extern "C" void cnc_port_agent_record_match_outcome(
+	UnsignedInt end_frame,
+	Bool local_victory,
+	Bool local_defeat)
+{
+	if (g_retained_match_outcome != RetainedMatchOutcome::NONE) return;
+	g_retained_match_end_frame = end_frame;
+	g_retained_match_outcome = local_victory
+		? RetainedMatchOutcome::VICTORY
+		: (local_defeat ? RetainedMatchOutcome::DEFEAT : RetainedMatchOutcome::ENDED);
+	capture_retained_scoreboard();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_snapshot(Int include_hidden)
 {
 	static std::string json;
@@ -1719,6 +1985,169 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_snapshot(Int inclu
 	json += ",\"visitedCount\":" + std::to_string(visited);
 	json += ",\"truncated\":";
 	json += truncated ? "true" : "false";
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_hud_snapshot()
+{
+	static std::string json;
+	if (TheInGameUI == nullptr || TheGameLogic == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "in-game UI is not ready");
+		json += "}";
+		return json.c_str();
+	}
+
+	begin_result(json, true);
+	json += ",\"frame\":" + std::to_string(TheGameLogic->getFrame());
+	json += ",\"messagesVisible\":";
+	json += TheInGameUI->isMessagesOn() ? "true" : "false";
+	json += ",\"messages\":[";
+	const Int message_count = TheInGameUI->agentUIMessageCount();
+	for (Int index = 0; index < message_count; ++index) {
+		if (index != 0) json += ",";
+		json += "{\"text\":";
+		append_json_string(json, unicode_to_utf8(TheInGameUI->agentUIMessageText(index)));
+		json += ",\"frame\":" + std::to_string(TheInGameUI->agentUIMessageFrame(index));
+		json += ",\"color\":" + std::to_string(
+			static_cast<std::uint32_t>(TheInGameUI->agentUIMessageColor(index))) + "}";
+	}
+	json += "]";
+
+	PopupMessageData *popup = TheInGameUI->getPopupMessageData();
+	json += ",\"popup\":";
+	if (popup == nullptr) {
+		json += "null";
+	} else {
+		json += "{\"text\":";
+		append_json_string(json, unicode_to_utf8(popup->message));
+		json += ",\"x\":" + std::to_string(popup->x);
+		json += ",\"y\":" + std::to_string(popup->y);
+		json += ",\"width\":" + std::to_string(popup->width);
+		json += ",\"color\":" + std::to_string(static_cast<std::uint32_t>(popup->textColor));
+		json += ",\"pausesGame\":";
+		json += popup->pause ? "true" : "false";
+		json += ",\"pausesMusic\":";
+		json += popup->pauseMusic ? "true" : "false";
+		json += "}";
+	}
+
+	json += ",\"subtitle\":";
+	if (!TheInGameUI->debugMilitarySubtitleActive()) {
+		json += "null";
+	} else {
+		json += "{\"lines\":[";
+		const UnsignedInt line_count = TheInGameUI->debugMilitarySubtitleCurrentLineCount();
+		for (UnsignedInt line = 0; line < line_count; ++line) {
+			if (line != 0) json += ",";
+			append_json_string(json, unicode_to_utf8(
+				TheInGameUI->debugMilitarySubtitleLine(static_cast<Int>(line))));
+		}
+		json += "]}";
+	}
+
+	const bool timers_visible = TheInGameUI->agentNamedTimersVisible();
+	json += ",\"timersVisible\":";
+	json += timers_visible ? "true" : "false";
+	json += ",\"timers\":[";
+	bool first_timer = true;
+	if (timers_visible) {
+		const NamedTimerMap &timers = TheInGameUI->agentNamedTimers();
+		for (NamedTimerMap::const_iterator timer = timers.begin(); timer != timers.end(); ++timer) {
+			const NamedTimerInfo *info = timer->second;
+			if (info == nullptr || info->displayString == nullptr) continue;
+			if (!first_timer) json += ",";
+			first_timer = false;
+			json += "{\"name\":";
+			append_json_string(json, timer->first.str());
+			json += ",\"text\":";
+			append_json_string(json, unicode_to_utf8(info->displayString->getText()));
+			json += ",\"countdown\":";
+			json += info->isCountdown ? "true" : "false";
+			json += "}";
+		}
+	}
+	json += "]}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_chat_send(
+	const char *utf8_text,
+	const char *audience)
+{
+	static std::string json;
+	if (TheGameLogic == nullptr || !TheGameLogic->isInMultiplayerGame()
+		|| TheGameLogic->isInReplayGame() || ThePlayerList == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_available", "in-game chat requires an active multiplayer match");
+		json += "}";
+		return json.c_str();
+	}
+
+	std::string error;
+	std::vector<WideChar> decoded;
+	if (!decode_utf8(utf8_text, decoded, error)) {
+		begin_result(json, false);
+		append_error(json, "invalid_text", error);
+		json += "}";
+		return json.c_str();
+	}
+	const std::size_t code_units = decoded.empty() ? 0 : decoded.size() - 1;
+	if (code_units == 0 || code_units >= ENTRY_TEXT_LEN) {
+		begin_result(json, false);
+		append_error(json, "invalid_text", "chat text must contain 1 through 255 UTF-16 code units");
+		json += "}";
+		return json.c_str();
+	}
+	for (std::size_t index = 0; index < code_units; ++index) {
+		if (decoded[index] < static_cast<WideChar>(0x20)
+			|| decoded[index] == static_cast<WideChar>(0x7f)) {
+			begin_result(json, false);
+			append_error(json, "invalid_text", "chat text contains a control character");
+			json += "}";
+			return json.c_str();
+		}
+	}
+
+	const std::string requested = audience != nullptr ? audience : "";
+	InGameChatType chat_type = INGAME_CHAT_EVERYONE;
+	if (requested == "allies") {
+		Player *local_player = ThePlayerList->getLocalPlayer();
+		if (local_player == nullptr || !local_player->isPlayerActive()) {
+			begin_result(json, false);
+			append_error(json, "audience_unavailable", "observers cannot send allied chat");
+			json += "}";
+			return json.c_str();
+		}
+		chat_type = INGAME_CHAT_ALLIES;
+	} else if (requested != "everyone") {
+		begin_result(json, false);
+		append_error(json, "invalid_audience", "audience must be everyone or allies");
+		json += "}";
+		return json.c_str();
+	}
+
+	UnicodeString message(decoded.data());
+	message.trim();
+	if (message.isEmpty()) {
+		begin_result(json, false);
+		append_error(json, "invalid_text", "chat text must not be blank");
+		json += "}";
+		return json.c_str();
+	}
+	if (!SendInGameChatMessage(message, chat_type)) {
+		begin_result(json, false);
+		append_error(json, "send_failed", "the original in-game chat path rejected the message");
+		json += "}";
+		return json.c_str();
+	}
+
+	begin_result(json, true);
+	json += ",\"audience\":";
+	append_json_string(json, requested);
+	json += ",\"text\":";
+	append_json_string(json, unicode_to_utf8(message));
 	json += "}";
 	return json.c_str();
 }
@@ -1814,6 +2243,52 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_set_text(
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_submit(
+	Int window_id,
+	const char *expected_name)
+{
+	static std::string json;
+	std::string error;
+	GameWindow *window = resolve_window(window_id, expected_name, error);
+	if (window == nullptr) {
+		begin_result(json, false);
+		append_error(json, error == "window identity changed" ? "stale_window" : "not_found", error);
+		json += "}";
+		return json.c_str();
+	}
+	if (!window_is_interactive(window) || (window->winGetStyle() & GWS_ENTRY_FIELD) == 0) {
+		begin_result(json, false);
+		append_error(json, "not_text_entry", "window is not an interactive text entry");
+		json += "}";
+		return json.c_str();
+	}
+	GameWindow *owner = window->winGetOwner();
+	if (owner == nullptr) {
+		begin_result(json, false);
+		append_error(json, "no_owner", "text entry has no owner to receive submission");
+		json += "}";
+		return json.c_str();
+	}
+
+	TheWindowManager->winSetFocus(window);
+	const WindowMsgHandledType handled = TheWindowManager->winSendSystemMsg(
+		owner, GEM_EDIT_DONE, reinterpret_cast<WindowMsgData>(window), 0);
+	if (handled != MSG_HANDLED) {
+		begin_result(json, false);
+		append_error(json, "submit_unhandled",
+			"text entry owner did not handle the original submit message");
+		json += "}";
+		return json.c_str();
+	}
+
+	begin_result(json, true);
+	json += ",\"windowId\":" + std::to_string(window_id) + ",\"name\":";
+	append_json_string(json, window_name(window));
+	json += ",\"submitted\":true,\"handled\":"
+		+ std::to_string(static_cast<Int>(handled)) + "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_select_index(
 	Int window_id,
 	const char *expected_name,
@@ -1867,6 +2342,94 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_select_index(
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_set_value(
+	Int window_id,
+	const char *expected_name,
+	Int value)
+{
+	static std::string json;
+	std::string error;
+	GameWindow *window = resolve_window(window_id, expected_name, error);
+	if (window == nullptr) {
+		begin_result(json, false);
+		append_error(json, error == "window identity changed" ? "stale_window" : "not_found", error);
+		json += "}";
+		return json.c_str();
+	}
+	if (!window_is_interactive(window)
+		|| (window->winGetStyle() & (GWS_VERT_SLIDER | GWS_HORZ_SLIDER)) == 0) {
+		begin_result(json, false);
+		append_error(json, "not_slider", "window is not an interactive slider");
+		json += "}";
+		return json.c_str();
+	}
+
+	Int minimum = 0;
+	Int maximum = 0;
+	GadgetSliderGetMinMax(window, &minimum, &maximum);
+	if (value < minimum || value > maximum) {
+		begin_result(json, false);
+		append_error(json, "value_out_of_range", "slider value is outside its inclusive range");
+		json += "}";
+		return json.c_str();
+	}
+	GadgetSliderSetPosition(window, value);
+	if (window->winGetOwner() != nullptr) {
+		TheWindowManager->winSendSystemMsg(window->winGetOwner(), GSM_SLIDER_TRACK,
+			reinterpret_cast<WindowMsgData>(window), GadgetSliderGetPosition(window));
+		TheWindowManager->winSendSystemMsg(window->winGetOwner(), GSM_SLIDER_DONE,
+			reinterpret_cast<WindowMsgData>(window), GadgetSliderGetPosition(window));
+	}
+
+	begin_result(json, true);
+	json += ",\"windowId\":" + std::to_string(window_id) + ",\"name\":";
+	append_json_string(json, window_name(window));
+	json += ",\"value\":" + std::to_string(GadgetSliderGetPosition(window)) + "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_select_tab(
+	Int window_id,
+	const char *expected_name,
+	Int index)
+{
+	static std::string json;
+	std::string error;
+	GameWindow *window = resolve_window(window_id, expected_name, error);
+	if (window == nullptr) {
+		begin_result(json, false);
+		append_error(json, error == "window identity changed" ? "stale_window" : "not_found", error);
+		json += "}";
+		return json.c_str();
+	}
+	if (!window_is_interactive(window) || (window->winGetStyle() & GWS_TAB_CONTROL) == 0) {
+		begin_result(json, false);
+		append_error(json, "not_tab_control", "window is not an interactive tab control");
+		json += "}";
+		return json.c_str();
+	}
+	TabControlData *tabs = static_cast<TabControlData *>(window->winGetUserData());
+	if (tabs == nullptr || index < 0 || index >= tabs->tabCount) {
+		begin_result(json, false);
+		append_error(json, "index_out_of_range", "tab index is outside the available panes");
+		json += "}";
+		return json.c_str();
+	}
+	if (tabs->subPaneDisabled[index] || tabs->subPanes[index] == nullptr) {
+		begin_result(json, false);
+		append_error(json, "tab_disabled", "requested tab is disabled or unavailable");
+		json += "}";
+		return json.c_str();
+	}
+	GadgetTabControlShowSubPane(window, index);
+
+	begin_result(json, true);
+	json += ",\"windowId\":" + std::to_string(window_id) + ",\"name\":";
+	append_json_string(json, window_name(window));
+	json += ",\"selectedIndex\":" + std::to_string(tabs->activeTab) + "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_list_items(
 	Int window_id,
 	const char *expected_name,
@@ -1902,10 +2465,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_list_items(
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_select(
-	const char *object_ids)
+	const char *object_ids,
+	Int camera_bound)
 {
 	static std::string json;
 	std::string error;
+	if (camera_bound != 0 && camera_bound != 1) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "camera_bound must be 0 or 1");
+		json += "}";
+		return json.c_str();
+	}
 	if (!gameplay_actions_ready(error)) {
 		begin_result(json, false);
 		append_error(json, "not_ready", error);
@@ -1913,7 +2483,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_select(
 		return json.c_str();
 	}
 	std::vector<Object *> objects;
-	if (!parse_public_object_ids(object_ids, objects, error)) {
+	const SourceCameraPolicy camera_policy = camera_bound != 0
+		? SourceCameraPolicy::VISIBLE
+		: SourceCameraPolicy::UNRESTRICTED;
+	if (!parse_public_object_ids(object_ids, objects, error, camera_policy)) {
 		begin_result(json, false);
 		append_error(json, "invalid_objects", error);
 		json += "}";
@@ -1929,10 +2502,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 	const char *object_ids,
 	Int target_id,
 	Real x,
-	Real y)
+	Real y,
+	Int guard_mode,
+	Int camera_bound)
 {
 	static std::string json;
 	std::string error;
+	if (camera_bound != 0 && camera_bound != 1) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "camera_bound must be 0 or 1");
+		json += "}";
+		return json.c_str();
+	}
 	if (!gameplay_actions_ready(error)) {
 		begin_result(json, false);
 		append_error(json, "not_ready", error);
@@ -1940,7 +2521,10 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 		return json.c_str();
 	}
 	std::vector<Object *> objects;
-	if (!parse_public_object_ids(object_ids, objects, error)) {
+	const SourceCameraPolicy camera_policy = camera_bound != 0
+		? SourceCameraPolicy::VISIBLE_OR_SELECTED
+		: SourceCameraPolicy::UNRESTRICTED;
+	if (!parse_public_object_ids(object_ids, objects, error, camera_policy)) {
 		begin_result(json, false);
 		append_error(json, "invalid_objects", error);
 		json += "}";
@@ -1948,12 +2532,25 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 	}
 	const std::string requested = action != nullptr ? action : "";
 	const bool needs_position = requested == "move" || requested == "attackMove"
-		|| requested == "guardPosition";
-	const bool needs_target = requested == "attack" || requested == "guardObject";
-	if (!needs_position && !needs_target && requested != "stop" && requested != "scatter") {
+		|| requested == "forceMove" || requested == "forceAttackGround"
+		|| requested == "waypoint" || requested == "guardPosition";
+	const bool needs_target = requested == "attack" || requested == "forceAttackObject"
+		|| requested == "guardObject";
+	const bool guard_order = requested == "guardPosition" || requested == "guardObject";
+	if ((!guard_order && guard_mode != GUARDMODE_NORMAL)
+		|| guard_mode < GUARDMODE_NORMAL
+		|| guard_mode > GUARDMODE_GUARD_FLYING_UNITS_ONLY) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments",
+			"guard_mode must be normal, without-pursuit, or flying-only and is only used by guard orders");
+		json += "}";
+		return json.c_str();
+	}
+	if (!needs_position && !needs_target && requested != "stop" && requested != "scatter"
+		&& requested != "formation") {
 		begin_result(json, false);
 		append_error(json, "unsupported_order",
-			"order must be move, attackMove, attack, guardPosition, guardObject, stop, or scatter");
+			"unsupported tactical order");
 		json += "}";
 		return json.c_str();
 	}
@@ -1965,10 +2562,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 		json += "}";
 		return json.c_str();
 	}
+	if (needs_position && camera_bound != 0 && !point_in_camera(position)) {
+		begin_result(json, false);
+		append_error(json, "camera_bound", "camera-bound actions require the target position to be inside the tactical view");
+		json += "}";
+		return json.c_str();
+	}
 	Player *local_player = ThePlayerList->getLocalPlayer();
 	Object *target = nullptr;
 	if (needs_target) {
-		target = resolve_observable_target(target_id, local_player, error);
+		target = resolve_observable_target(target_id, local_player, error, camera_bound != 0);
 		if (target == nullptr) {
 			begin_result(json, false);
 			append_error(json, "invalid_target", error);
@@ -1982,6 +2585,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 			json += "}";
 			return json.c_str();
 		}
+		position = *target->getPosition();
+	}
+	if ((requested == "forceMove" || requested == "forceAttackGround"
+		|| requested == "forceAttackObject" || requested == "waypoint")
+		&& TheGameClient == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "game client is not ready");
+		json += "}";
+		return json.c_str();
 	}
 
 	post_selection(objects);
@@ -1991,23 +2603,160 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_order(
 	} else if (requested == "attackMove") {
 		GameMessage *message = TheMessageStream->appendMessage(GameMessage::MSG_DO_ATTACKMOVETO);
 		message->appendLocationArgument(position);
+	} else if (requested == "forceMove" || requested == "waypoint") {
+		clear_context_command_modes();
+		TheInGameUI->setForceMoveMode(requested == "forceMove");
+		TheInGameUI->setWaypointMode(requested == "waypoint");
+		const GameMessage::Type evaluated = TheGameClient->evaluateContextCommand(
+			nullptr, &position, CommandTranslator::EVALUATE_ONLY);
+		const GameMessage::Type issued = evaluated != GameMessage::MSG_INVALID
+			? TheGameClient->evaluateContextCommand(
+				nullptr, &position, CommandTranslator::DO_COMMAND)
+			: GameMessage::MSG_INVALID;
+		clear_context_command_modes();
+		if (issued == GameMessage::MSG_INVALID) {
+			begin_result(json, false);
+			append_error(json, "order_unavailable",
+				"the selected objects cannot perform this order at the requested position");
+			json += "}";
+			return json.c_str();
+		}
+	} else if (requested == "forceAttackGround" || requested == "forceAttackObject") {
+		Drawable *target_drawable = target != nullptr ? target->getDrawable() : nullptr;
+		const GameMessage::Type evaluated = TheGameClient->agentEvaluateForceAttackCommand(
+			target_drawable, &position, CommandTranslator::EVALUATE_ONLY);
+		const GameMessage::Type issued = evaluated != GameMessage::MSG_INVALID
+			? TheGameClient->agentEvaluateForceAttackCommand(
+				target_drawable, &position, CommandTranslator::DO_COMMAND)
+			: GameMessage::MSG_INVALID;
+		if (issued == GameMessage::MSG_INVALID) {
+			begin_result(json, false);
+			append_error(json, "order_unavailable",
+				"none of the selected objects can force-attack the requested target");
+			json += "}";
+			return json.c_str();
+		}
 	} else if (requested == "attack") {
 		GameMessage *message = TheMessageStream->appendMessage(GameMessage::MSG_DO_ATTACK_OBJECT);
 		message->appendObjectIDArgument(target->getID());
 	} else if (requested == "guardPosition") {
 		GameMessage *message = TheMessageStream->appendMessage(GameMessage::MSG_DO_GUARD_POSITION);
 		message->appendLocationArgument(position);
-		message->appendIntegerArgument(GUARDMODE_NORMAL);
+		message->appendIntegerArgument(guard_mode);
 	} else if (requested == "guardObject") {
 		GameMessage *message = TheMessageStream->appendMessage(GameMessage::MSG_DO_GUARD_OBJECT);
 		message->appendObjectIDArgument(target->getID());
-		message->appendIntegerArgument(GUARDMODE_NORMAL);
+		message->appendIntegerArgument(guard_mode);
 	} else if (requested == "stop") {
 		TheMessageStream->appendMessage(GameMessage::MSG_DO_STOP);
-	} else {
+	} else if (requested == "scatter") {
 		TheMessageStream->appendMessage(GameMessage::MSG_DO_SCATTER);
+	} else {
+		TheMessageStream->appendMessage(GameMessage::MSG_CREATE_FORMATION);
 	}
 	finish_action_result(json, requested.c_str(), objects);
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_context(
+	const char *object_ids,
+	Int target_id,
+	Real x,
+	Real y,
+	Int has_position,
+	Int camera_bound)
+{
+	static std::string json;
+	std::string error;
+	if ((has_position != 0 && has_position != 1)
+		|| (camera_bound != 0 && camera_bound != 1)
+		|| ((target_id != 0) == (has_position != 0))) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments",
+			"provide exactly one targetId or position, and use boolean flags");
+		json += "}";
+		return json.c_str();
+	}
+	if (!gameplay_actions_ready(error) || TheGameClient == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready",
+			error.empty() ? "game client is not ready" : error);
+		json += "}";
+		return json.c_str();
+	}
+
+	std::vector<Object *> objects;
+	const SourceCameraPolicy camera_policy = camera_bound != 0
+		? SourceCameraPolicy::VISIBLE_OR_SELECTED
+		: SourceCameraPolicy::UNRESTRICTED;
+	if (!parse_public_object_ids(object_ids, objects, error, camera_policy)) {
+		begin_result(json, false);
+		append_error(json, "invalid_objects", error);
+		json += "}";
+		return json.c_str();
+	}
+
+	Player *local_player = ThePlayerList->getLocalPlayer();
+	Object *target = nullptr;
+	Coord3D position = {0.0f, 0.0f, 0.0f};
+	if (target_id != 0) {
+		target = resolve_observable_target(target_id, local_player, error, camera_bound != 0);
+		if (target == nullptr || target->getDrawable() == nullptr) {
+			begin_result(json, false);
+			append_error(json, "invalid_target",
+				error.empty() ? "target has no drawable" : error);
+			json += "}";
+			return json.c_str();
+		}
+		position = *target->getPosition();
+	} else {
+		if (!world_position(x, y, position, error)) {
+			begin_result(json, false);
+			append_error(json, "invalid_position", error);
+			json += "}";
+			return json.c_str();
+		}
+		if (camera_bound != 0 && !point_in_camera(position)) {
+			begin_result(json, false);
+			append_error(json, "camera_bound",
+				"camera-bound actions require the target position to be inside the tactical view");
+			json += "}";
+			return json.c_str();
+		}
+	}
+
+	post_selection(objects);
+	clear_context_command_modes();
+	Drawable *target_drawable = target != nullptr ? target->getDrawable() : nullptr;
+	const GameMessage::Type evaluated = TheGameClient->evaluateContextCommand(
+		target_drawable, &position, CommandTranslator::EVALUATE_ONLY);
+	if (evaluated == GameMessage::MSG_INVALID) {
+		begin_result(json, false);
+		append_error(json, "context_unavailable",
+			"the selected objects have no contextual action for this target");
+		json += "}";
+		return json.c_str();
+	}
+	const GameMessage::Type issued = TheGameClient->evaluateContextCommand(
+		target_drawable, &position, CommandTranslator::DO_COMMAND);
+	if (issued == GameMessage::MSG_INVALID) {
+		begin_result(json, false);
+		append_error(json, "context_changed",
+			"the contextual action became unavailable before it could be issued");
+		json += "}";
+		return json.c_str();
+	}
+
+	finish_action_result(json, context_message_name(issued), objects);
+	json.pop_back();
+	json += ",\"messageType\":" + std::to_string(static_cast<Int>(issued));
+	if (target != nullptr) {
+		json += ",\"targetId\":" + std::to_string(public_object_id(target));
+	} else {
+		json += ",\"position\":";
+		append_coord(json, position);
+	}
+	json += "}";
 	return json.c_str();
 }
 
@@ -2018,10 +2767,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 	Real x,
 	Real y,
 	Real angle,
-	Int has_position)
+	Int has_position,
+	Int camera_bound)
 {
 	static std::string json;
 	std::string error;
+	if (camera_bound != 0 && camera_bound != 1) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments", "camera_bound must be 0 or 1");
+		json += "}";
+		return json.c_str();
+	}
 	if (!gameplay_actions_ready(error)) {
 		begin_result(json, false);
 		append_error(json, "not_ready", error);
@@ -2042,10 +2798,24 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 		json += "}";
 		return json.c_str();
 	}
+	if (!source_satisfies_camera_policy(source, camera_bound != 0
+		? SourceCameraPolicy::VISIBLE_OR_SELECTED
+		: SourceCameraPolicy::UNRESTRICTED)) {
+		begin_result(json, false);
+		append_error(json, "camera_bound", "camera-bound actions require the source object to be inside the tactical view or already selected there");
+		json += "}";
+		return json.c_str();
+	}
 	Coord3D position = {0.0f, 0.0f, 0.0f};
 	if (has_position != 0 && !world_position(x, y, position, error)) {
 		begin_result(json, false);
 		append_error(json, "invalid_position", error);
+		json += "}";
+		return json.c_str();
+	}
+	if (has_position != 0 && camera_bound != 0 && !point_in_camera(position)) {
+		begin_result(json, false);
+		append_error(json, "camera_bound", "camera-bound actions require the target position to be inside the tactical view");
 		json += "}";
 		return json.c_str();
 	}
@@ -2058,7 +2828,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_game_command(
 	Player *local_player = ThePlayerList->getLocalPlayer();
 	Object *target = nullptr;
 	if (target_id != 0) {
-		target = resolve_observable_target(target_id, local_player, error);
+		target = resolve_observable_target(target_id, local_player, error, camera_bound != 0);
 		if (target == nullptr) {
 			begin_result(json, false);
 			append_error(json, "invalid_target", error);
@@ -2271,6 +3041,213 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_camera_look_at(Real x
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_camera_set_view(
+	Real angle,
+	Real pitch,
+	Real zoom,
+	Int set_angle,
+	Int set_pitch,
+	Int set_zoom)
+{
+	static std::string json;
+	std::string error;
+	if (!gameplay_actions_ready(error) || TheTacticalView == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", error.empty() ? "tactical view is not ready" : error);
+		json += "}";
+		return json.c_str();
+	}
+	if ((set_angle != 0 && set_angle != 1)
+		|| (set_pitch != 0 && set_pitch != 1)
+		|| (set_zoom != 0 && set_zoom != 1)
+		|| (set_angle == 0 && set_pitch == 0 && set_zoom == 0)
+		|| (set_angle != 0 && !std::isfinite(angle))
+		|| (set_pitch != 0 && !std::isfinite(pitch))
+		|| (set_zoom != 0 && !std::isfinite(zoom))) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments",
+			"provide at least one finite angle, pitch, or zoom with boolean flags");
+		json += "}";
+		return json.c_str();
+	}
+
+	if (set_angle != 0) TheTacticalView->setAngle(angle);
+	if (set_pitch != 0) TheTacticalView->setPitch(pitch);
+	if (set_zoom != 0) TheTacticalView->setZoom(zoom);
+	begin_result(json, true);
+	json += ",\"angle\":";
+	append_real(json, TheTacticalView->getAngle());
+	json += ",\"pitch\":";
+	append_real(json, TheTacticalView->getPitch());
+	json += ",\"zoom\":";
+	append_real(json, TheTacticalView->getZoom());
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_minimap_snapshot(
+	Int columns,
+	Int rows)
+{
+	static std::string json;
+	if (columns < 1 || columns > RADAR_CELL_WIDTH
+		|| rows < 1 || rows > RADAR_CELL_HEIGHT
+		|| columns * rows > kMaxTerrainSamples) {
+		begin_result(json, false);
+		append_error(json, "invalid_arguments",
+			"minimap rows and columns must be 1 through 128 with at most 16384 cells");
+		json += "}";
+		return json.c_str();
+	}
+	if (TheGameLogic == nullptr || TheTerrainLogic == nullptr || ThePartitionManager == nullptr
+		|| ThePlayerList == nullptr || TheRadar == nullptr || TheTacticalView == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "minimap observation subsystems are not ready");
+		json += "}";
+		return json.c_str();
+	}
+	Player *local_player = ThePlayerList->getLocalPlayer();
+	if (local_player == nullptr) {
+		begin_result(json, false);
+		append_error(json, "not_ready", "local player is not ready");
+		json += "}";
+		return json.c_str();
+	}
+
+	const bool forced = TheRadar->isRadarForced();
+	const bool hidden = TheRadar->isRadarHidden();
+	const bool has_radar = local_player->hasRadar();
+	const bool available = forced || (!hidden && has_radar);
+	begin_result(json, true);
+	json += ",\"snapshotId\":" + std::to_string(++g_minimap_snapshot_id);
+	json += ",\"frame\":" + std::to_string(TheGameLogic->getFrame());
+	json += ",\"available\":";
+	json += available ? "true" : "false";
+	json += ",\"forced\":";
+	json += forced ? "true" : "false";
+	json += ",\"hidden\":";
+	json += hidden ? "true" : "false";
+	json += ",\"hasRadar\":";
+	json += has_radar ? "true" : "false";
+	if (!available) {
+		json += ",\"reason\":";
+		append_json_string(json, hidden ? "hidden" : "radarUnavailable");
+		json += "}";
+		return json.c_str();
+	}
+
+	Region3D extent;
+	TheTerrainLogic->getExtent(&extent);
+	json += ",\"bounds\":{\"minX\":";
+	append_real(json, extent.lo.x);
+	json += ",\"minY\":";
+	append_real(json, extent.lo.y);
+	json += ",\"maxX\":";
+	append_real(json, extent.hi.x);
+	json += ",\"maxY\":";
+	append_real(json, extent.hi.y);
+	json += "},\"columns\":" + std::to_string(columns)
+		+ ",\"rows\":" + std::to_string(rows);
+
+	std::vector<std::uint8_t> knowledge(static_cast<std::size_t>(columns * rows), 0);
+	const Real step_x = extent.width() / static_cast<Real>(columns);
+	const Real step_y = extent.height() / static_cast<Real>(rows);
+	Int known_count = 0;
+	Int visible_count = 0;
+	for (Int row = 0; row < rows; ++row) {
+		for (Int column = 0; column < columns; ++column) {
+			Coord3D position = {
+				extent.lo.x + (static_cast<Real>(column) + 0.5f) * step_x,
+				extent.lo.y + (static_cast<Real>(row) + 0.5f) * step_y,
+				0.0f,
+			};
+			const CellShroudStatus shroud = ThePartitionManager->getShroudStatusForPlayer(
+				local_player->getPlayerIndex(), &position);
+			std::uint8_t value = 0;
+			if (shroud != CELLSHROUD_SHROUDED) {
+				value = shroud == CELLSHROUD_CLEAR ? 2 : 1;
+				++known_count;
+				if (value == 2) ++visible_count;
+			}
+			knowledge[static_cast<std::size_t>(row * columns + column)] = value;
+		}
+	}
+	json += ",\"knowledge\":{\"encoding\":\"uint8-base64\",\"layout\":";
+	append_json_string(json, "row-major values: 0 shrouded, 1 explored/fogged, 2 visible");
+	json += ",\"data\":";
+	append_json_string(json, encode_base64(knowledge));
+	json += "},\"knownCount\":" + std::to_string(known_count)
+		+ ",\"visibleCount\":" + std::to_string(visible_count);
+
+	Coord3D corners[4];
+	TheTacticalView->getScreenCornerWorldPointsAtZ(
+		&corners[0], &corners[1], &corners[2], &corners[3], 0.0f);
+	json += ",\"camera\":[";
+	for (Int i = 0; i < 4; ++i) {
+		ICoord2D radar = {0, 0};
+		TheRadar->worldToRadar(&corners[i], &radar);
+		const Int column = (std::min)(columns - 1, radar.x * columns / RADAR_CELL_WIDTH);
+		const Int row = (std::min)(rows - 1, radar.y * rows / RADAR_CELL_HEIGHT);
+		if (i != 0) json += ",";
+		json += "[" + std::to_string(column) + "," + std::to_string(row) + "]";
+	}
+	json += "]";
+
+	const std::vector<Object *> objects = sorted_game_objects();
+	json += ",\"contactFields\":[\"column\",\"row\",\"relationship\",\"priority\",\"color\"]";
+	json += ",\"relationships\":[\"neutral\",\"allies\",\"enemies\"]";
+	json += ",\"priorities\":[\"structure\",\"unit\",\"localUnitOnly\"]";
+	json += ",\"contacts\":[";
+	bool first_contact = true;
+	Int contact_count = 0;
+	bool truncated = false;
+	for (Object *object : objects) {
+		RadarObject *radar_object = object->friend_getRadarData();
+		Drawable *drawable = object->getDrawable();
+		const RadarPriorityType priority = object->getRadarPriority();
+		if (radar_object == nullptr || drawable == nullptr || !TheRadar->isPriorityVisible(priority)
+			|| radar_object->isTemporarilyHidden()
+			|| object->getShroudedStatus(local_player->getPlayerIndex()) > OBJECTSHROUD_PARTIAL_CLEAR) {
+			continue;
+		}
+		if (priority == RADAR_PRIORITY_LOCAL_UNIT_ONLY
+			&& object->getControllingPlayer() != local_player && local_player->isPlayerActive()) {
+			continue;
+		}
+		if (object->testStatus(OBJECT_STATUS_STEALTHED)
+			&& local_player->getRelationship(object->getTeam()) == ENEMIES
+			&& !object->testStatus(OBJECT_STATUS_DETECTED)
+			&& !object->testStatus(OBJECT_STATUS_DISGUISED)) {
+			continue;
+		}
+		if (contact_count >= kMaxWorldObjects) {
+			truncated = true;
+			break;
+		}
+		ICoord2D radar = {0, 0};
+		TheRadar->worldToRadar(object->getPosition(), &radar);
+		const Int column = (std::min)(columns - 1, radar.x * columns / RADAR_CELL_WIDTH);
+		const Int row = (std::min)(rows - 1, radar.y * rows / RADAR_CELL_HEIGHT);
+		bool disguised = false;
+		Player *owner = perceived_owner(object, drawable, disguised);
+		const Relationship relationship = relationship_to_local(owner, local_player);
+		const Int relationship_index = relationship == ALLIES ? 1 : relationship == ENEMIES ? 2 : 0;
+		const Int priority_index = priority == RADAR_PRIORITY_STRUCTURE ? 0
+			: priority == RADAR_PRIORITY_LOCAL_UNIT_ONLY ? 2 : 1;
+		if (!first_contact) json += ",";
+		first_contact = false;
+		json += "[" + std::to_string(column) + "," + std::to_string(row)
+			+ "," + std::to_string(relationship_index)
+			+ "," + std::to_string(priority_index)
+			+ "," + std::to_string(static_cast<UnsignedInt>(radar_object->getColor())) + "]";
+		++contact_count;
+	}
+	json += "],\"contactCount\":" + std::to_string(contact_count) + ",\"truncated\":";
+	json += truncated ? "true" : "false";
+	json += "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 	Int camera_bound,
 	Int tactical_detail,
@@ -2314,8 +3291,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 		|| game_mode == GAME_SKIRMISH || game_mode == GAME_INTERNET;
 	const UnsignedInt frame = TheGameLogic->getFrame();
 	begin_world_identity_scope(frame, playable);
-	const UnsignedInt end_frame = TheVictoryConditions != nullptr
+	const UnsignedInt live_end_frame = TheVictoryConditions != nullptr
 		? TheVictoryConditions->getEndFrame() : 0;
+	const bool retained_outcome = live_end_frame == 0
+		&& g_retained_match_outcome != RetainedMatchOutcome::NONE;
+	const UnsignedInt end_frame = retained_outcome
+		? g_retained_match_end_frame : live_end_frame;
 
 	begin_result(json, true);
 	json += ",\"snapshotId\":" + std::to_string(++g_world_snapshot_id);
@@ -2330,7 +3311,22 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 	json += playable ? "true" : "false";
 	json += ",\"endFrame\":" + std::to_string(end_frame);
 	json += ",\"outcome\":";
-	if (!playable || end_frame == 0 || TheVictoryConditions == nullptr) {
+	if (retained_outcome) {
+		switch (g_retained_match_outcome) {
+			case RetainedMatchOutcome::VICTORY:
+				append_json_string(json, "victory");
+				break;
+			case RetainedMatchOutcome::DEFEAT:
+				append_json_string(json, "defeat");
+				break;
+			case RetainedMatchOutcome::ENDED:
+				append_json_string(json, "ended");
+				break;
+			case RetainedMatchOutcome::NONE:
+				json += "null";
+				break;
+		}
+	} else if (!playable || end_frame == 0 || TheVictoryConditions == nullptr) {
 		json += "null";
 	} else if (TheVictoryConditions->isLocalAlliedVictory()) {
 		append_json_string(json, "victory");
@@ -2339,7 +3335,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 	} else {
 		append_json_string(json, "ended");
 	}
+	json += ",\"outcomeRetained\":";
+	json += retained_outcome ? "true" : "false";
+	json += ",\"scoreboardRetained\":";
+	json += retained_outcome && !g_retained_scoreboard.empty() ? "true" : "false";
 	json += "}";
+	json += ",\"scoreboard\":";
+	append_retained_scoreboard(json);
 
 	Coord3D look_at;
 	TheTacticalView->getPosition(&look_at);
@@ -2388,14 +3390,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_world_snapshot(
 	}
 	json += "]";
 
-	std::vector<Object *> objects;
-	for (Object *object = TheGameLogic->getFirstObject();
-		object != nullptr; object = object->getNextObject()) {
-		objects.push_back(object);
-	}
-	std::sort(objects.begin(), objects.end(), [](const Object *left, const Object *right) {
-		return left->getID() < right->getID();
-	});
+	const std::vector<Object *> objects = sorted_game_objects();
 
 	std::vector<Object *> observed_objects;
 	observed_objects.reserve(std::min(static_cast<std::size_t>(kMaxWorldObjects), objects.size()));

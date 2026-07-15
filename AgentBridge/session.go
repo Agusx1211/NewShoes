@@ -25,6 +25,7 @@ type response struct {
 // Session is one authenticated browser runtime connected to the bridge.
 type Session struct {
 	id           string
+	playMode     string
 	capabilities []string
 	connectedAt  time.Time
 	conn         *websocket.Conn
@@ -43,6 +44,7 @@ type Session struct {
 // SessionInfo is the public REST representation of a connected runtime.
 type SessionInfo struct {
 	ID           string    `json:"id"`
+	PlayMode     string    `json:"playMode"`
 	ConnectedAt  time.Time `json:"connectedAt"`
 	Capabilities []string  `json:"capabilities"`
 }
@@ -50,6 +52,7 @@ type SessionInfo struct {
 func newSession(
 	ctx context.Context,
 	id string,
+	playMode string,
 	capabilities []string,
 	conn *websocket.Conn,
 	eventsConfig eventRuntimeConfig,
@@ -57,6 +60,7 @@ func newSession(
 	readCtx, cancel := context.WithCancel(ctx)
 	session := &Session{
 		id:           id,
+		playMode:     playMode,
 		capabilities: append([]string(nil), capabilities...),
 		connectedAt:  time.Now().UTC(),
 		conn:         conn,
@@ -72,6 +76,7 @@ func newSession(
 func (s *Session) info() SessionInfo {
 	return SessionInfo{
 		ID:           s.id,
+		PlayMode:     s.playMode,
 		ConnectedAt:  s.connectedAt,
 		Capabilities: append([]string(nil), s.capabilities...),
 	}

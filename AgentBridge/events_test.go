@@ -51,7 +51,7 @@ const eventSnapshotCombat = `{
 
 const eventSnapshotVictory = `{
   "ok":true,"snapshotId":3,"frame":30,"observationMode":"camera",
-  "game":{"mode":"skirmish","playable":true,"endFrame":30,"outcome":"victory"},
+  "game":{"mode":"skirmish","playable":true,"endFrame":30,"outcome":"victory","outcomeRetained":false},
   "localPlayerIndex":0,
   "players":[
     {"index":0,"name":"Local","side":"America","local":true,"relationship":"allies","active":true,
@@ -63,6 +63,16 @@ const eventSnapshotVictory = `{
   ],
   "objectCapabilities":{"1":{"commandState":{},"productionQueue":[]}},
   "truncated":false
+}`
+
+const eventSnapshotRetainedVictory = `{
+  "ok":true,"snapshotId":4,"frame":100,"observationMode":"camera",
+  "game":{"mode":"none","playable":false,"endFrame":38047,"outcome":"victory","outcomeRetained":true},
+  "scoreboard":[{"index":0,"name":"Local","side":"America","type":"human","relationship":"allies",
+    "local":true,"observer":false,"outcome":"victory","score":900,"unitsBuilt":4,"unitsLost":1,
+    "unitsDestroyed":8,"buildingsBuilt":3,"buildingsLost":0,"buildingsDestroyed":5,
+    "moneyEarned":5000,"moneySpent":4200}],
+  "localPlayerIndex":0,"players":[],"objects":[],"objectCapabilities":{},"truncated":false
 }`
 
 type sseTestMessage struct {
@@ -106,6 +116,7 @@ func TestTacticalEventStreamIsIdleResumableAndCoalesced(t *testing.T) {
 	bridge, err := NewServer(Config{
 		EngineToken:             "engine-secret",
 		APIToken:                "api-secret",
+		PlayMode:                PlayModeCamera,
 		RequestTimeout:          time.Second,
 		EventPollInterval:       10 * time.Millisecond,
 		EventCapabilityInterval: 10 * time.Millisecond,
@@ -132,7 +143,8 @@ func TestTacticalEventStreamIsIdleResumableAndCoalesced(t *testing.T) {
 	defer conn.CloseNow()
 	if err := wsjson.Write(ctx, conn, protocolMessage{
 		Type: "hello", Protocol: ProtocolVersion, Token: "engine-secret",
-		SessionID: "event-match", Capabilities: []string{"world.snapshot"},
+		SessionID: "event-match", PlayMode: PlayModeCamera,
+		Capabilities: []string{"world.snapshot"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -330,6 +342,30 @@ func TestMissingEnemyIsLostSightNotDestroyed(t *testing.T) {
 	}
 }
 
+func TestRetainedOutcomeIsEmittedFromPostMatchBaseline(t *testing.T) {
+	var snapshot eventWorldSnapshot
+	if err := json.Unmarshal([]byte(eventSnapshotRetainedVictory), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	events := diffEventSnapshots(nil, &snapshot)
+	for _, event := range events {
+		if event.Type != "game.outcome" {
+			continue
+		}
+		if event.Details["outcome"] != "victory" || event.Details["endFrame"] != uint64(38047) ||
+			event.Details["retained"] != true {
+			t.Fatalf("unexpected retained outcome event: %#v", event)
+		}
+		scoreboard, ok := event.Details["scoreboard"].([]eventScoreboardEntry)
+		if !ok || len(scoreboard) != 1 || scoreboard[0].Name != "Local" ||
+			scoreboard[0].Outcome != "victory" || scoreboard[0].UnitsDestroyed != 8 {
+			t.Fatalf("unexpected retained scoreboard: %#v", event.Details["scoreboard"])
+		}
+		return
+	}
+	t.Fatal("post-match baseline omitted retained game outcome")
+}
+
 func TestEventFilterValidationAndMatching(t *testing.T) {
 	bridge, err := NewServer(Config{EngineToken: "engine", APIToken: "api"})
 	if err != nil {
@@ -369,8 +405,67 @@ func TestEventFilterValidationAndMatching(t *testing.T) {
 	if filter.wantsCapabilities() {
 		t.Fatal("combat-only filter unnecessarily requested capability snapshots")
 	}
+	if filter.wantsHUD() {
+		t.Fatal("combat-only filter unnecessarily requested HUD snapshots")
+	}
 	event.Wake = false
 	if filter.accepts(event) {
 		t.Fatal("wake-only filter accepted a non-wake event")
+	}
+	hudRequest := httptest.NewRequest(http.MethodGet, "/events?types=hud.message", nil)
+	hudFilter, err := parseEventFilter(hudRequest)
+	if err != nil || !hudFilter.wantsHUD() || hudFilter.wantsCapabilities() {
+		t.Fatalf("unexpected HUD filter routing: filter=%#v err=%v", hudFilter, err)
+	}
+}
+
+func TestHUDSnapshotDiffEmitsFilteredWakeAndQuietEvents(t *testing.T) {
+	var world eventWorldSnapshot
+	if err := json.Unmarshal([]byte(eventSnapshotCombat), &world); err != nil {
+		t.Fatal(err)
+	}
+	previous := &eventHUDSnapshot{
+		OK: true, Frame: 19, MessagesVisible: true,
+		Messages:      []eventHUDMessage{{Text: "Old", Frame: 18, Color: 1}},
+		TimersVisible: true,
+		Timers:        []eventHUDTimer{{Name: "Mission", Text: "Mission 1:00", Countdown: true}},
+	}
+	current := &eventHUDSnapshot{
+		OK: true, Frame: 20, MessagesVisible: true,
+		Messages: []eventHUDMessage{
+			{Text: "General: Attack now", Frame: 20, Color: 0xff00ffff},
+			{Text: "Old", Frame: 18, Color: 1},
+		},
+		Popup: &eventHUDPopup{Text: "New objective", PausesGame: true},
+		Subtitle: &eventHUDSubtitle{
+			Lines: []string{"We have located the enemy base."},
+		},
+		TimersVisible: true,
+		Timers:        []eventHUDTimer{{Name: "Mission", Text: "Mission 0:59", Countdown: true}},
+	}
+	events := diffHUDSnapshots(previous, current, &world)
+	byType := make(map[string]tacticalEvent, len(events))
+	for _, event := range events {
+		byType[event.Type] = event
+	}
+	message, exists := byType["hud.message"]
+	if !exists || !message.Wake || message.Severity != severityNotice || message.Frame != 20 {
+		t.Fatalf("unexpected HUD message event: %#v", message)
+	}
+	messages, ok := message.Details["messages"].([]eventHUDMessage)
+	if !ok || len(messages) != 1 || messages[0].Text != "General: Attack now" {
+		t.Fatalf("unexpected new-message payload: %#v", message.Details)
+	}
+	popup := byType["hud.popup"]
+	if !popup.Wake || popup.Severity != severityCritical {
+		t.Fatalf("pausing popup did not produce a critical wake event: %#v", popup)
+	}
+	subtitle := byType["hud.subtitle"]
+	if !subtitle.Wake || subtitle.Severity != severityNotice {
+		t.Fatalf("new subtitle did not produce a notice wake event: %#v", subtitle)
+	}
+	timer := byType["hud.timer"]
+	if timer.Wake || timer.Severity != severityInfo {
+		t.Fatalf("timer churn should remain quiet: %#v", timer)
 	}
 }

@@ -45,7 +45,7 @@ async function waitFor(label, operation, accept, timeoutMs = 120000) {
   throw new Error(`${label} timed out: ${JSON.stringify(last)?.slice(0, 1000)}`);
 }
 
-function startBridge({ port, engineToken, apiToken }) {
+function startBridge({ port, engineToken, apiToken, playMode }) {
   const executable = process.env.AGENT_BRIDGE_EXECUTABLE;
   const command = executable || "go";
   const args = [
@@ -54,6 +54,7 @@ function startBridge({ port, engineToken, apiToken }) {
     `-engine-url=ws://127.0.0.1:${port}/engine`,
     `-engine-token=${engineToken}`,
     `-api-token=${apiToken}`,
+    `-play-mode=${playMode}`,
   ];
   const child = spawn(command, args, {
     cwd: resolve(repoRoot, "AgentBridge"),
@@ -81,8 +82,9 @@ async function main() {
   const engineToken = process.env.AGENT_BRIDGE_ENGINE_TOKEN || randomUUID();
   const apiToken = process.env.AGENT_BRIDGE_API_TOKEN || randomUUID();
   const sessionId = process.env.AGENT_BRIDGE_SESSION_ID || `match-${randomUUID()}`;
+  const playMode = process.env.AGENT_BRIDGE_PLAY_MODE || "global";
   const bridgeBase = `http://127.0.0.1:${port}`;
-  const bridge = startBridge({ port, engineToken, apiToken });
+  const bridge = startBridge({ port, engineToken, apiToken, playMode });
   const staticServer = await startStaticServer({ root: wasmRoot, port: 0, host: "127.0.0.1" });
   const profileDir = resolve(wasmRoot, "artifacts/pw-profiles/agent-bridge-match-host");
   const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
@@ -112,6 +114,7 @@ async function main() {
         url: `ws://127.0.0.1:${port}/engine`,
         token: engineToken,
         sessionId,
+        playMode,
       },
     });
     const page = await browser.newPage();
@@ -151,6 +154,7 @@ async function main() {
       bridgeBase,
       apiToken,
       sessionId,
+      playMode,
       renderer,
       pageUrl: pageUrl.href,
     })}\n`);
