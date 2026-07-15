@@ -47,6 +47,66 @@ The main realm owns the browser desktop, launcher, input forwarding, Web Audio
 nodes, media installation, settings, issue capture, and Trystero/WebRTC peer
 discovery and transport.
 
+### Remote agent control
+
+Remote play is an explicitly enabled data-layer path. The engine worker owns
+semantic observations and mutations; the browser main realm only forwards a
+versioned raw WebSocket protocol, and the optional Go process in
+`AgentBridge/` maps authenticated REST calls to connected game sessions. When
+the launcher has no agent configuration, it does not import the adapter or
+create a socket, reconnect timer, or per-frame work.
+
+The `cnc-agent/1` surface exposes the original `GameWindowManager` tree, real
+gadget action paths, fog/stealth-filtered battlefield state, camera-bounded
+visibility, compact tactical object records, and compact terrain grids. The
+engine owns the filtering and uses opaque observation IDs so transport layers
+cannot infer hidden object counts. Reusable template and command-set definitions
+are separated from per-object availability, weapon, cooldown, containment, and
+queue state so a control loop need not repeatedly ingest discovery metadata. It
+also routes selection, tactical orders, production, construction, upgrades,
+special powers, and camera movement through the original deterministic engine
+messages. The independent REST-only full-match acceptance reached an
+authoritative Easy-AI victory at frame 27,791 and is tracked under GitHub issue
+75. See
+[`AgentBridge/README.md`](AgentBridge/README.md) for the wire boundary and local
+usage.
+
+### LLM commanders
+
+The browser desktop also owns a local LLM commander path that does not require
+the remote AgentBridge service. The LLM AI Manager stores named
+OpenAI-compatible profiles and match sessions in IndexedDB, tests provider and
+tool-protocol compatibility, discovers available model names and reported
+context limits, redacts credentials from exports, and publishes saved profile
+names into the original Skirmish and LAN player-template lists.
+Provider requests travel directly from the browser to the endpoint selected by
+the user; the project does not proxy model credentials or gameplay context.
+
+During a playable match, the authoritative browser creates one autonomous
+session per LLM slot. The engine resolves the slot to its real computer
+`Player`, produces a fog- and stealth-filtered player-scoped observation, and
+accepts validated semantic orders through the original game-message paths. An
+LLM skirmish slot holds an exclusive strategy lease: automatic classic building,
+team, upgrade, skill, target, and mission selection is inactive, while the
+original build lists, work orders, production queues, team completion, scripts,
+pathfinding, weapons, and local unit state machines continue executing accepted
+work. Optional classic fallback is an explicit, recorded lease transfer; the two
+strategic controllers never run concurrently. Controller-neutral production and
+force requests are currently restricted to skirmish until they have a synchronized
+multiplayer command.
+
+Routine model input is a hard-bounded strategic summary with deltas, stable squad
+and contact handles, persistent jobs and missions, and a revision for static
+catalogs. Focused entity, build-option, job, and map queries provide deterministic
+filtering and snapshot-bound pagination. Each observation and tool result is
+bounded after serialization. Normal native-tool turns append to a stable prompt;
+before overflow, the runtime creates a structured strategic checkpoint while
+preserving complete tool-call/result groups and a configurable recent suffix.
+The separately selectable structured adapter never activates as a silent retry.
+Sessions retain the full redacted evidence stream and distinguish provider
+requests, model decisions, engine execution, autonomous reactions, ownership
+transitions, and authoritative outcomes.
+
 ### Rendering
 
 The browser exposes a D3D8-shaped device to WW3D. It maps buffers, textures,

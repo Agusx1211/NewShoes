@@ -209,6 +209,12 @@ void AISkirmishPlayer::processBaseBuilding( void )
 					isPriority = true;
 				}
 			}
+			// Under an external strategy lease, only explicitly queued priority
+			// buildings may enter construction. Existing construction maintenance
+			// above remains controller-neutral.
+			if (hasExternalStrategyController()) {
+				continue;
+			}
 			if (curPlan->isKindOf(KINDOF_FS_POWER)) {
 				if (powerPlan==NULL && !curPlan->isKindOf(KINDOF_CASH_GENERATOR)) {
 					if (isUnderPowered || info->isAutomaticBuild()) {
@@ -940,7 +946,7 @@ void AISkirmishPlayer::doTeamBuilding( void )
 		m_teamDelay--;
 		if (m_teamDelay<1) {
 			queueUnits(); // update the queues.
-			if (m_readyToBuildTeam) {
+			if (m_readyToBuildTeam && !hasExternalStrategyController()) {
 				processTeamBuilding();
 			}
 			m_teamDelay = 2*LOGICFRAMES_PER_SECOND; // check again in 5 seconds.
@@ -1235,4 +1241,3 @@ void AISkirmishPlayer::loadPostProcess( void )
 {
 
 }  // end loadPostProcess
-

@@ -49,6 +49,12 @@
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptActions.h"
 #include "GameLogic/VictoryConditions.h"
+
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_capture_llm_ai_player_defeat(Int slot_num);
+extern "C" void cnc_port_capture_llm_ai_terminal_outcomes(void);
+extern "C" void cnc_port_reset_llm_ai_terminal_outcomes(void);
+#endif
 #include "GameNetwork/GameInfo.h"
 #include "GameNetwork/NetworkDefs.h"
 
@@ -149,6 +155,7 @@ void VictoryConditions::update( void )
 	if (!TheRecorder->isMultiplayer() || (m_localSlotNum == -1 && !m_isObserver))
 		return;
 
+	Bool terminalStarted = false;
 	// Check for a single winning alliance
 	if (!m_singleAllianceRemaining)
 	{
@@ -180,6 +187,7 @@ void VictoryConditions::update( void )
 		{
 			m_singleAllianceRemaining = true; // don't check again
 			m_endFrame = TheGameLogic->getFrame();
+			terminalStarted = true;
 		}
 	}
 
@@ -212,6 +220,10 @@ void VictoryConditions::update( void )
 					{
 						DEBUG_LOG(("Marking AI player %s as defeated\n", pName.str()));
 						slot->setLastFrameInGame(TheGameLogic->getFrame());
+#ifdef __EMSCRIPTEN__
+						if (slot->isLlmAi())
+							cnc_port_capture_llm_ai_player_defeat(idx);
+#endif
 					}
 				}
 			}
@@ -237,6 +249,11 @@ void VictoryConditions::update( void )
 			SetInGameChatType( INGAME_CHAT_EVERYONE ); // can't chat to allies after death.  Only to other observers.
 		}
 	}
+
+#ifdef __EMSCRIPTEN__
+	if (terminalStarted)
+		cnc_port_capture_llm_ai_terminal_outcomes();
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -310,6 +327,10 @@ void VictoryConditions::cachePlayerPtrs( void )
 	if (!TheRecorder->isMultiplayer())
 		return;
 
+#ifdef __EMSCRIPTEN__
+	cnc_port_reset_llm_ai_terminal_outcomes();
+#endif
+
 	Int playerCount = 0;
 	const PlayerTemplate *civTemplate = ThePlayerTemplateStore->findPlayerTemplate( NAMEKEY("FactionCivilian") );
 	for (Int i=0; i<MAX_PLAYER_COUNT; ++i)
@@ -365,6 +386,4 @@ Bool VictoryConditions::isLocalDefeat( void )
 
 	return (m_localPlayerDefeated);
 }
-
-
 

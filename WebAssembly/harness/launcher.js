@@ -52,6 +52,7 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
     setup: { title: "Project New Shoes Game Launcher", launcherLogo: true },
     explorer: { title: "My Files", icon: "#i-folder" },
     mods: { title: "Mod Manager", icon: "#i-mod" },
+    llmAi: { title: "LLM AI Manager", icon: "#i-llm-ai" },
     gameData: { title: "Save & Replay Manager", icon: "#i-save" },
     browser: { title: "Project New Shoes Browser", icon: "#i-browser" },
     notepad: { title: "Notepad", icon: "#i-note" },
@@ -370,6 +371,7 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
       settings: "settings",
       explorer: "files",
       mods: "mods",
+      llmAi: "llm_ai",
       gameData: "game_data",
       about: "about",
     }[appId];

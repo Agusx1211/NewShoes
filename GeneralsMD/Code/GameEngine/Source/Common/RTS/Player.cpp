@@ -1235,6 +1235,36 @@ Bool Player::isSkirmishAIPlayer( void )
 	return m_ai ? m_ai->isSkirmishAI() : false; 
 }
 
+//-------------------------------------------------------------------------------------------------
+void Player::setExternalAIStrategyController(Bool enabled)
+{
+	if (m_ai) m_ai->setExternalStrategyController(enabled);
+}
+
+//-------------------------------------------------------------------------------------------------
+Bool Player::hasExternalAIStrategyController(void) const
+{
+	return m_ai ? m_ai->hasExternalStrategyController() : false;
+}
+
+//-------------------------------------------------------------------------------------------------
+UnsignedInt Player::getClassicAIStrategyUpdateCount(void) const
+{
+	return m_ai ? m_ai->getClassicStrategyUpdateCount() : 0;
+}
+
+//-------------------------------------------------------------------------------------------------
+UnsignedInt Player::getControllerNeutralAIUpdateCount(void) const
+{
+	return m_ai ? m_ai->getControllerNeutralUpdateCount() : 0;
+}
+
+//-------------------------------------------------------------------------------------------------
+UnsignedInt Player::getAIStrategyControllerTransitionCount(void) const
+{
+	return m_ai ? m_ai->getStrategyControllerTransitionCount() : 0;
+}
+
 
 //----------------------------------------------------------------------------------------------------------
 /**

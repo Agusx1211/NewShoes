@@ -50,6 +50,39 @@ const progressNode = document.querySelector("#launchStatus");
 const progressSentinel = document.querySelector("#progress");
 const bootSentinel = document.querySelector("#overlay");
 const queryParams = new URLSearchParams(window.location.search);
+
+function publicAgentBridgeEndpoint(value) {
+  try {
+    const endpoint = new URL(String(value));
+    endpoint.username = "";
+    endpoint.password = "";
+    endpoint.search = "";
+    endpoint.hash = "";
+    return endpoint.href;
+  } catch {
+    return "invalid agent bridge URL";
+  }
+}
+
+function diagnosticPageParams() {
+  const params = Object.fromEntries(queryParams);
+  if (Object.hasOwn(params, "agentBridge")) {
+    params.agentBridge = publicAgentBridgeEndpoint(params.agentBridge);
+  }
+  return params;
+}
+
+function initialAgentBridgeConfiguration() {
+  const host = window.CnCPortPlayConfig?.agentBridge;
+  const url = typeof host?.url === "string" ? host.url : "";
+  if (!url) return null;
+  return {
+    url,
+    token: String(host?.token ?? ""),
+    sessionId: String(host?.sessionId ?? ""),
+  };
+}
+let agentBridgeConfiguration = initialAgentBridgeConfiguration();
 const activeModContext = (() => {
   try {
     return loadActiveModContext(window.localStorage);
@@ -1006,7 +1039,7 @@ async function start() {
         supported: threadedSupported,
         mode: threadedMode,
       },
-      pageParams: Object.fromEntries(queryParams),
+      pageParams: diagnosticPageParams(),
       audio: {
         runtime: startAudioRuntime?.browserAudioRuntime ?? startAudioRuntime,
         mixer: startAudioMixer?.browserAudioMixerRuntime ?? startAudioMixer,
@@ -1099,7 +1132,6 @@ async function start() {
         subsystemCount: init.frontier?.subsystemsCompleted,
       },
     });
-
     // The original menu waits for mouse movement before finishing its
     // first-run reveal transition; post two synthetic moves so the buttons
     // appear without the player having to wiggle the cursor first.
@@ -1153,7 +1185,22 @@ async function start() {
       return;
     }
     await runFrameLoop(rpc);
+    // A connected agent may issue input immediately. Wait until both original
+    // initialization and the paced frame loop are live so its first request
+    // cannot race archive mounting or pre-loop input setup.
+    if (agentBridgeConfiguration) {
+      const agentBridge = await window.CnCPort.connectAgentBridge(agentBridgeConfiguration);
+      issueRecorder.setSessionContext({
+        agentBridge: {
+          configured: true,
+          protocol: agentBridge.protocol,
+          endpoint: agentBridge.endpoint,
+          sessionId: agentBridge.sessionId,
+        },
+      });
+    }
   } catch (error) {
+    window.CnCPort.disconnectAgentBridge?.();
     track("game_launch", {
       state: "failed",
       stage: analyticsStage,
@@ -1271,6 +1318,7 @@ async function exitToDesktop() {
       track("game_exit", { kind: "game_to_desktop", result: "failed" });
       return result;
     } finally {
+      window.CnCPort.disconnectAgentBridge?.();
       gameRunning = false;
       renderPerformanceOverlay();
       overlay.hidden = true;
@@ -1978,6 +2026,11 @@ function playConfiguration() {
     shaderTier: effectiveShaderTier(),
     cursorStyle,
     maxCameraHeight: cameraZoomHeight,
+    agentBridge: agentBridgeConfiguration ? {
+      configured: true,
+      url: publicAgentBridgeEndpoint(agentBridgeConfiguration.url),
+      sessionId: agentBridgeConfiguration.sessionId || null,
+    } : { configured: false },
     consoleVisible: !consolePanel.classList.contains("hidden"),
     fullscreen: Boolean(fullscreenElement()),
   };
@@ -1998,6 +2051,18 @@ async function configurePlay(options = {}) {
   }
   if (Object.hasOwn(options, "maxCameraHeight")) {
     cameraZoomHeight = saveCameraZoomHeight(networkStorage, options.maxCameraHeight);
+  }
+  if (Object.hasOwn(options, "agentBridge")) {
+    if (runtimeStarted) {
+      throw new Error("agent bridge configuration must be set before launching the game");
+    }
+    agentBridgeConfiguration = options.agentBridge == null
+      ? null
+      : {
+          url: String(options.agentBridge.url ?? ""),
+          token: String(options.agentBridge.token ?? ""),
+          sessionId: String(options.agentBridge.sessionId ?? ""),
+        };
   }
   if (typeof options.consoleVisible === "boolean") {
     setConsoleVisible(options.consoleVisible);
@@ -2042,6 +2107,7 @@ function installPlayHostApi() {
     setDiagnosticsLevel: setConfiguredDiagLevel,
     setNetworkDiagnostics: setNetworkDiagnosticsEnabled,
     getNetworkDiagnostics: () => window.__cncNetworkDiagnosticsSnapshot?.() ?? null,
+    getAgentBridgeState: () => window.CnCPort.getAgentBridgeState(),
     setConsoleVisible,
     issues: {
       startRecording: (...args) => issueRecorder.startRecording(...args),
