@@ -30,6 +30,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Preserve unrelated cached vertex arrays when transient renderer buffers are released ([PR #103](https://github.com/Agusx1211/NewShoes/pull/103)).
 - Add configurable autonomous LLM commanders with exclusive strategy ownership and durable session evidence ([PR #95](https://github.com/Agusx1211/NewShoes/pull/95)).
 - Add an opt-in semantic remote-play API with global and camera-bound control, tactical events, and a Go bridge ([PR #94](https://github.com/Agusx1211/NewShoes/pull/94)).
+- Complete the audited 0.2.0 release inventory after the final integrated changes ([PR #105](https://github.com/Agusx1211/NewShoes/pull/105)).
 
 ## [0.1.0] - 2026-07-13
 
