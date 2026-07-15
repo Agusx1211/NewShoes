@@ -1,6 +1,7 @@
 import {
   StableQueryPager,
   buildableOptions,
+  coarseKind,
   compactRoutineObservation,
   hasCategory,
   hasSemanticTag,
@@ -9,6 +10,7 @@ import {
   isManagedSquadMember,
   isRelevantStrategicWork,
   isStrategicEntity,
+  managedSquadHandle,
   normalizedEntity,
   terrainKnowledgeRows,
 } from "./llm-ai-strategy.mjs";
@@ -23,6 +25,12 @@ const MISSION_STALL_FRAMES = 15 * 30;
 const MISSION_PROGRESS_DISTANCE = 25;
 const SCOUTING_GRID_SIZE = 16;
 const RECENT_SCOUTING_FRAMES = 60 * 30;
+const SCOUTING_COVERAGE_LEGEND = Object.freeze({
+  "?": "never visible during this LLM session",
+  s: "visible earlier in this LLM session",
+  r: "visible within the last 60 game-seconds",
+  v: "visible now",
+});
 
 function objectValue(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
@@ -55,6 +63,25 @@ function targetIdFromHandle(value) {
   const match = /^(?:contact|unit|facility):(\d+)$/i.exec(value.trim());
   if (!match) throw new TypeError("targetHandle must be a contact:, unit:, or facility: handle");
   return integer(match[1], "target handle ID", 1);
+}
+
+function forceSelectionFromHandle(value) {
+  if (typeof value !== "string") throw new TypeError("force handle must be a string");
+  const handle = value.trim();
+  const squad = /^squad:(\d+)$/i.exec(handle);
+  if (squad) {
+    const teamId = integer(squad[1], "squad team ID", 1);
+    return { handle: `squad:${teamId}`, teamId };
+  }
+  const force = /^force:owned:(infantry|vehicle|aircraft|unit)$/i.exec(handle);
+  if (force) return { handle: `force:owned:${force[1].toLowerCase()}`, kind: force[1].toLowerCase() };
+  throw new TypeError("force handle must be squad:N or an advertised force:owned:<combat-kind> handle");
+}
+
+function scoutingCoverageSymbol(current, lastVisibleFrame, frame) {
+  if (current === "v") return "v";
+  if (!Number.isFinite(lastVisibleFrame)) return "?";
+  return Number.isFinite(frame) && frame - lastVisibleFrame <= RECENT_SCOUTING_FRAMES ? "r" : "s";
 }
 
 function point(value, required = false) {
@@ -195,20 +222,12 @@ export class LlmAiStrategicState {
     const rows = coverage.currentRows.map((currentRow, row) =>
       Array.from(currentRow, (symbol, column) => {
         const lastVisible = coverage.lastVisibleFrames[row * SCOUTING_GRID_SIZE + column];
-        if (symbol === "v") {
-          counts.currentlyVisible += 1;
-          return "v";
-        }
-        if (!Number.isFinite(lastVisible)) {
-          counts.neverVisible += 1;
-          return "?";
-        }
-        if (coverage.frame - lastVisible <= RECENT_SCOUTING_FRAMES) {
-          counts.recentlyVisible += 1;
-          return "r";
-        }
-        counts.stale += 1;
-        return "s";
+        const state = scoutingCoverageSymbol(symbol, lastVisible, coverage.frame);
+        if (state === "v") counts.currentlyVisible += 1;
+        else if (state === "r") counts.recentlyVisible += 1;
+        else if (state === "s") counts.stale += 1;
+        else counts.neverVisible += 1;
+        return state;
       }).join(""));
     const cells = SCOUTING_GRID_SIZE * SCOUTING_GRID_SIZE;
     return {
@@ -224,14 +243,50 @@ export class LlmAiStrategicState {
       recentWindowGameSeconds: RECENT_SCOUTING_FRAMES / 30,
       observedPercent: Math.round((cells - counts.neverVisible) / cells * 1_000) / 10,
       ...counts,
-      legend: {
-        "?": "never visible during this LLM session",
-        s: "visible earlier in this LLM session",
-        r: "visible within the recent window",
-        v: "visible now",
-      },
+      legend: SCOUTING_COVERAGE_LEGEND,
       coverage: rows,
     };
+  }
+
+  sessionCoverageRows(result, currentRows) {
+    const coverage = this.scoutingCoverage;
+    const bounds = result?.bounds;
+    const columns = Number(result?.columns);
+    const rows = Number(result?.rows);
+    if (!coverage || !bounds || !Number.isSafeInteger(columns) || !Number.isSafeInteger(rows)) {
+      return currentRows.map((row) => Array.from(row, (symbol) =>
+        scoutingCoverageSymbol(symbol, null, null)).join(""));
+    }
+    const mapWidth = coverage.bounds.maxX - coverage.bounds.minX;
+    const mapHeight = coverage.bounds.maxY - coverage.bounds.minY;
+    const queryWidth = Number(bounds.maxX) - Number(bounds.minX);
+    const queryHeight = Number(bounds.maxY) - Number(bounds.minY);
+    if (!(mapWidth > 0) || !(mapHeight > 0) || !(queryWidth > 0) || !(queryHeight > 0)) {
+      return currentRows;
+    }
+    const frame = Number(result.frame);
+    const sampled = [];
+    for (let row = 0; row < rows; row += 1) {
+      let line = "";
+      for (let column = 0; column < columns; column += 1) {
+        const x = Number(bounds.minX) + (column + 0.5) / columns * queryWidth;
+        const y = Number(bounds.minY) + (row + 0.5) / rows * queryHeight;
+        const mapColumn = Math.max(0, Math.min(SCOUTING_GRID_SIZE - 1,
+          Math.floor((x - coverage.bounds.minX) / mapWidth * SCOUTING_GRID_SIZE)));
+        const mapRow = Math.max(0, Math.min(SCOUTING_GRID_SIZE - 1,
+          Math.floor((y - coverage.bounds.minY) / mapHeight * SCOUTING_GRID_SIZE)));
+        const index = mapRow * SCOUTING_GRID_SIZE + mapColumn;
+        const current = currentRows[row]?.[column];
+        if (current === "v") {
+          if (Number.isFinite(frame)) coverage.lastVisibleFrames[index] = frame;
+        }
+        const lastVisible = coverage.lastVisibleFrames[index];
+        line += scoutingCoverageSymbol(current, lastVisible, frame);
+      }
+      sampled.push(line);
+    }
+    if (Number.isFinite(frame)) coverage.frame = Math.max(coverage.frame ?? frame, frame);
+    return sampled;
   }
 
   updateJobs() {
@@ -506,9 +561,9 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
     },
     {
       name: "assign_mission",
-      description: "Assign a stable managed squad handle (preferred) or exceptional explicit non-economic unit IDs to defend, scout, capture, harass, attackRegion, escort, or regroup. Managed squads exclude builders and harvesters; use issue_order for deliberate economic-unit movement. Uses original synchronized order, pathfinding, and combat execution. defend, scout, capture, and regroup require position; escort requires an observable targetHandle (preferred) or targetId; harass and attackRegion accept either position or an observable target handle/ID. Returns persistent mission ID/state with exact assigned membership. Freshness: execution frame; one command result.",
+      description: "Assign a stable managed squad handle, an advertised force:owned:<combat-kind> reserve handle, or exceptional explicit non-economic unit IDs to defend, scout, capture, harass, attackRegion, escort, or regroup. A reserve handle resolves its current unassigned combat members when the command executes. Builders and harvesters are excluded; use issue_order for deliberate economic-unit movement. Uses original synchronized order, pathfinding, and combat execution. defend, scout, capture, and regroup require position; escort requires an observable targetHandle (preferred) or targetId; harass and attackRegion accept either position or an observable target handle/ID. Returns persistent mission ID/state with exact assigned membership. Freshness: execution frame; one command result.",
       parameters: { type: "object", properties: {
-        mission: { type: "string", enum: MISSIONS }, squadHandle: { type: "string", pattern: "^squad:[0-9]+$", maxLength: 64 },
+        mission: { type: "string", enum: MISSIONS }, squadHandle: { type: "string", maxLength: 64 },
         objectIds: { type: "array", minItems: 1, maxItems: 128, items: { type: "integer", minimum: 1 } },
         targetHandle: { type: "string", maxLength: 64 }, targetId: { type: "integer", minimum: 1 }, position: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false },
       }, required: ["mission"], additionalProperties: false },
@@ -517,7 +572,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
         const hasSquad = typeof value.squadHandle === "string";
         const hasIds = value.objectIds !== undefined;
         if (hasSquad === hasIds) throw new TypeError("provide exactly one of squadHandle or objectIds");
-        if (hasSquad && !/^squad:\d+$/.test(value.squadHandle)) throw new TypeError("squadHandle is invalid");
+        if (hasSquad) forceSelectionFromHandle(value.squadHandle);
         if (hasIds) ids(value.objectIds);
         if (value.targetHandle !== undefined && value.targetId !== undefined) {
           throw new TypeError("provide targetHandle or targetId, not both");
@@ -538,11 +593,17 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
         this.validate(args);
         const raw = await strategic.focused();
         let objectIds;
+        let squadHandle = null;
         if (args.squadHandle) {
-          const teamId = integer(args.squadHandle.slice("squad:".length), "squad team ID", 1);
-          objectIds = (raw.objects || []).filter((object) => object.owner === raw.localPlayerIndex
-            && object.teamId === teamId && isManagedSquadMember(object, raw.localPlayerIndex)).map((object) => object.id);
-          if (objectIds.length === 0) throw new TypeError("squadHandle has no current managed non-economic members");
+          const selection = forceSelectionFromHandle(args.squadHandle);
+          squadHandle = selection.handle;
+          objectIds = (raw.objects || []).filter((object) => {
+            if (!isManagedSquadMember(object, raw.localPlayerIndex)) return false;
+            if (Number.isInteger(selection.teamId)) return object.teamId === selection.teamId;
+            return !managedSquadHandle(object, raw.localPlayerIndex)
+              && coarseKind(object) === selection.kind;
+          }).map((object) => object.id);
+          if (objectIds.length === 0) throw new TypeError("force handle has no current managed non-economic members");
         } else {
           objectIds = ids(args.objectIds);
           const byId = new Map((raw.objects || []).map((object) => [object.id, object]));
@@ -558,7 +619,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
           : TARGETABLE_OFFENSIVE_MISSIONS.has(args.mission) && targetId ? "attack"
             : ["harass", "attackRegion", "capture"].includes(args.mission) ? "attackMove"
               : args.mission === "defend" ? "guardPosition" : "move";
-        const job = strategic.newJob("mission", { mission: args.mission, squadHandle: args.squadHandle || null, objectIds, targetId: targetId ?? null, position: position.present ? { x: position.x, y: position.y } : null });
+        const job = strategic.newJob("mission", { mission: args.mission, squadHandle, objectIds, targetId: targetId ?? null, position: position.present ? { x: position.x, y: position.y } : null });
         try {
           const result = await call("llmAiGameOrder", { action, objectIds: objectIds.join(","), targetId: targetId ?? 0, x: position.x, y: position.y });
           strategic.supersedeMissions(job);
@@ -605,7 +666,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
     },
     {
       name: "query_map_region",
-      description: `Query a bounded player-perspective map region at coarse 16x16, medium 32x32, or fine 45x45 resolution. visibility returns current engine shroud rows where ? is never engine-explored, e is explored but currently fogged, and v is currently visible. Some maps begin engine-explored everywhere; routine scoutingCoverage separately remembers cells that were actually visible during this LLM session. This read-only query does not reveal fog or return objects. terrain returns encoded heights, route returns traversal flags, and construction returns terrain build-placement flags; construction does not search for structures or objectives. Use inspect_entities for currently observable world objects. Unknown cells stay hidden. Row-major order from minY to maxY; returned frame/bounds/resolution/filter define freshness. No pagination; one terrain query; hard result ${budget} tokens.`,
+      description: `Query a bounded player-perspective map region at coarse 16x16, medium 32x32, or fine 45x45 resolution. knowledge returns honest session-visible coverage where ? was never seen by this commander, s was seen earlier, r was seen within 60 game-seconds, and v is visible now. This read-only query does not scout, reveal fog, or return objects. terrain returns encoded heights, route returns traversal flags, and construction returns terrain build-placement flags; construction does not search for structures or objectives. Use inspect_entities for currently observable world objects. Unknown cells stay hidden. Row-major order from minY to maxY; returned frame/bounds/resolution/filter define freshness. No pagination; one terrain query; hard result ${budget} tokens.`,
       parameters: { type: "object", properties: {
         minX: { type: "number" }, minY: { type: "number" }, maxX: { type: "number" }, maxY: { type: "number" },
         resolution: { type: "string", enum: ["coarse", "medium", "fine"] }, filter: { type: "string", enum: ["visibility", "terrain", "route", "construction"] },
@@ -614,13 +675,20 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
       async execute(args) {
         const size = { coarse: 16, medium: 32, fine: 45 }[args.resolution];
         const result = await call("llmAiTerrainQuery", { mode: "unrestricted", minX: Number(args.minX), minY: Number(args.minY), maxX: Number(args.maxX), maxY: Number(args.maxY), columns: size, rows: size });
-        const { height, flags, ...metadata } = result;
-        const knowledgeRows = terrainKnowledgeRows(result);
+        const {
+          height, flags, knownCount: _knownCount, visibleCount, inCameraCount: _inCameraCount,
+          ...metadata
+        } = result;
+        const currentRows = terrainKnowledgeRows(result);
+        const knowledgeRows = strategic.sessionCoverageRows(result, currentRows);
+        const unobservedDuringSessionCount = knowledgeRows.reduce((total, row) =>
+          total + Array.from(row).filter((symbol) => symbol === "?").length, 0);
         return {
           appliedFilter: args.filter, appliedResolution: args.resolution, order: "row-major", ...metadata,
-          unexploredCount: size * size - Number(result.knownCount || 0),
+          currentlyVisibleSamples: Number(visibleCount || 0),
+          unobservedDuringSessionCount,
           knowledge: {
-            legend: { "?": "unexplored", e: "explored-not-visible", v: "visible" },
+            legend: SCOUTING_COVERAGE_LEGEND,
             rows: knowledgeRows,
           },
           ...(["terrain", "construction"].includes(args.filter) ? { height } : {}),

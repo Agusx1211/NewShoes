@@ -38,6 +38,9 @@ const sessionExportPath = process.env.LLM_AI_MATCH_SESSION_EXPORT
   : null;
 const keepProfile = process.env.LLM_AI_MATCH_KEEP_PROFILE === "1";
 const runTag = Date.now().toString(36);
+const EXPECTED_CONSOLE_ERRORS = [
+  /^Trystero peer error: OperationError: User-Initiated Abort, reason=Close called$/,
+];
 
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
@@ -484,10 +487,12 @@ async function main() {
     const modelDecisions = latest.events.filter((event) => event.type === "model.decision");
     const engineExecutions = latest.events.filter((event) => event.type === "engine.execution");
     const engineReactions = latest.events.filter((event) => event.type === "engine.reaction");
-    if (pageErrors.length > 0 || consoleErrors.length > 0) {
+    const unexpectedConsoleErrors = consoleErrors.filter((message) =>
+      !EXPECTED_CONSOLE_ERRORS.some((pattern) => pattern.test(message)));
+    if (pageErrors.length > 0 || unexpectedConsoleErrors.length > 0) {
       throw new Error(`browser errors occurred during the match: ${JSON.stringify({
         pageErrors,
-        consoleErrors,
+        unexpectedConsoleErrors,
       })}`);
     }
     if (latest.session.turns < 1 || successfulActions.length < 1) {

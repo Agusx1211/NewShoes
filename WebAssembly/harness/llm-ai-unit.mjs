@@ -86,7 +86,7 @@ assert.match(buildLlmAiSystemPrompt(profile), /Classic strategic selection is di
 assert.match(buildLlmAiSystemPrompt(profile), /ready-only build query is empty/);
 assert.match(buildLlmAiSystemPrompt(profile), /GAME MODEL: This is a real-time base-building strategy game/);
 assert.match(buildLlmAiSystemPrompt(profile), /lostContact delta means only/);
-assert.match(buildLlmAiSystemPrompt(profile), /Managed squads exclude builders and harvesters/);
+assert.match(buildLlmAiSystemPrompt(profile), /Managed selections exclude builders and harvesters/);
 assert.match(buildLlmAiSystemPrompt(profile), /non-null missionHandle/);
 assert.match(buildLlmAiSystemPrompt(profile), /results only on the next planning turn/);
 assert.match(buildLlmAiSystemPrompt(profile), /numeric force counts, damage, attrition/);
@@ -94,7 +94,7 @@ assert.match(buildLlmAiSystemPrompt(profile), /feed reinforcements piecemeal/);
 assert.match(buildLlmAiSystemPrompt(profile), /combatProfile metadata/);
 assert.match(buildLlmAiSystemPrompt(profile), /contact:N handle directly as assign_mission.targetHandle/);
 assert.match(buildLlmAiSystemPrompt(profile), /units produced afterward are not assigned automatically/);
-assert.match(buildLlmAiSystemPrompt(profile), /filter visibility returns row-major readable exploration rows/);
+assert.match(buildLlmAiSystemPrompt(profile), /query_map_region returns the same persistent \?\/s\/r\/v/);
 assert.match(buildLlmAiSystemPrompt(profile), /scoutingCoverage is persistent player-visible session memory/);
 
 const exported = exportLlmAiSession({
@@ -520,26 +520,33 @@ const tool = {
   terrainFlags[1] = 1;
   terrainFlags[2] = 2;
   const encodedFlags = btoa(String.fromCharCode(...terrainFlags));
+  const rpc = async (command, payload) => {
+    assert.equal(command, "llmAiTerrainQuery");
+    return { ok: true, result: {
+      ok: true, frame: 90, bounds: { minX: 0, minY: 0, maxX: 1_600, maxY: 1_600 },
+      columns: payload.columns, rows: payload.rows, knownCount: 2, visibleCount: 1,
+      height: { encoding: "uint16le-base64", data: "" },
+      flags: { encoding: "uint8-base64", data: encodedFlags },
+    } };
+  };
+  const state = new LlmAiStrategicState({ rpc, playerIndex: 4, profile });
+  state.scoutingCoverage = {
+    bounds: { minX: 0, minY: 0, maxX: 1_600, maxY: 1_600 },
+    frame: 30,
+    currentRows: Array(16).fill("????????????????"),
+    lastVisibleFrames: [30, ...Array(255).fill(null)],
+  };
   const tools = createLlmAiGameTools({
-    playerIndex: 4,
-    profile,
-    rpc: async (command, payload) => {
-      assert.equal(command, "llmAiTerrainQuery");
-      return { ok: true, result: {
-        ok: true, frame: 90, bounds: { minX: 0, minY: 0, maxX: 1_600, maxY: 1_600 },
-        columns: payload.columns, rows: payload.rows, knownCount: 2, visibleCount: 1,
-        height: { encoding: "uint16le-base64", data: "" },
-        flags: { encoding: "uint8-base64", data: encodedFlags },
-      } };
-    },
+    playerIndex: 4, profile, rpc, state,
   });
   const visibility = await tools.find((entry) => entry.name === "query_map_region").execute({
     minX: 0, minY: 0, maxX: 1_600, maxY: 1_600,
     resolution: "coarse", filter: "visibility",
   });
-  assert.equal(visibility.unexploredCount, 254);
+  assert.equal(visibility.unobservedDuringSessionCount, 254);
   assert.equal(visibility.knowledge.rows.length, 16);
-  assert.match(visibility.knowledge.rows[0], /^\?ev/);
+  assert.match(visibility.knowledge.rows[0], /^r\?v/);
+  assert.equal(visibility.knowledge.legend.s, "visible earlier in this LLM session");
   assert.equal("height" in visibility, false);
   assert.equal("flags" in visibility, false);
 }
@@ -600,6 +607,10 @@ const tool = {
         position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: true } },
       { id: 26, owner: 4, teamId: 9, categories: ["aircraft", "harvester"], construction: -1,
         position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: true } },
+      { id: 27, owner: 4, categories: ["infantry"], construction: -1,
+        position: { x: 20, y: 30 }, capabilities: { orderable: true, mobile: true } },
+      { id: 28, owner: 4, categories: ["vehicle"], construction: -1,
+        position: { x: 40, y: 50 }, capabilities: { orderable: true, mobile: true } },
       { id: 31, owner: 4, categories: ["structure", "barracks"], construction: -1,
         position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: false } },
       { id: 32, owner: 4, template: "RuntimeInfantry", teamId: 10, categories: ["infantry"],
@@ -644,12 +655,23 @@ const tool = {
   state.catalogRevision = "catalog:3";
   const tools = createLlmAiGameTools({ rpc, playerIndex: 4, profile, state });
   const mission = await tools.find((entry) => entry.name === "assign_mission").execute({
-    mission: "attackRegion", squadHandle: "squad:9", targetHandle: "CONTACT:30",
+    mission: "attackRegion", squadHandle: "SQUAD:9", targetHandle: "CONTACT:30",
   });
   assert.equal(mission.ok, true);
   assert.deepEqual(calls.find((entry) => entry.command === "llmAiGameOrder").payload, {
     playerIndex: 4, action: "attack", objectIds: "21,22", targetId: 30, x: 0, y: 0,
   });
+  const reserveMission = await tools.find((entry) => entry.name === "assign_mission").execute({
+    mission: "scout", squadHandle: "FORCE:OWNED:INFANTRY", position: { x: 50, y: 60 },
+  });
+  assert.equal(reserveMission.ok, true);
+  assert.equal(reserveMission.mission.squadHandle, "force:owned:infantry");
+  assert.deepEqual(calls.findLast((entry) => entry.command === "llmAiGameOrder").payload, {
+    playerIndex: 4, action: "move", objectIds: "27", targetId: 0, x: 50, y: 60,
+  });
+  assert.throws(() => tools.find((entry) => entry.name === "assign_mission").validate({
+    mission: "scout", squadHandle: "force:owned:builder", position: { x: 50, y: 60 },
+  }), /advertised force:owned:<combat-kind>/);
   await assert.rejects(() => tools.find((entry) => entry.name === "assign_mission").execute({
     mission: "scout", objectIds: [25], position: { x: 50, y: 60 },
   }), /excludes unavailable, builder, or harvester IDs: 25/);

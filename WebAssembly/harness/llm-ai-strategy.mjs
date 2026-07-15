@@ -215,7 +215,7 @@ export function managedSquadHandle(record, localPlayerIndex) {
     ? `squad:${record.teamId}` : null;
 }
 
-function coarseKind(record) {
+export function coarseKind(record) {
   if (hasCategory(record, "structure")) return "structure";
   if (hasCategory(record, "aircraft")) return "aircraft";
   if (hasCategory(record, "vehicle")) return "vehicle";
