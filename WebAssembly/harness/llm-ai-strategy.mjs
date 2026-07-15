@@ -268,7 +268,7 @@ function summarizeForces(objects, localPlayerIndex) {
     const squadHandle = owner === "self" ? managedSquadHandle(object, localPlayerIndex) : null;
     const handle = squadHandle || `force:${ownership}:${economicRole || coarseKind(object)}`;
     const current = groups.get(handle) || {
-      handle, ownership, count: 0, damaged: 0, incomplete: 0,
+      handle, missionHandle: squadHandle, ownership, count: 0, damaged: 0, incomplete: 0,
       composition: {}, _roles: new Set(), _positions: [],
     };
     current.count += 1;
@@ -293,6 +293,7 @@ function summarizeForces(objects, localPlayerIndex) {
     } : null;
     return {
       handle: group.handle,
+      missionHandle: group.missionHandle,
       ownership: group.ownership,
       kind: kinds.length === 1 ? kinds[0] : "mixed",
       composition: group.composition,
@@ -437,7 +438,8 @@ export function compactRoutineObservation(raw, {
     production: summarizeProduction(relevant, raw.localPlayerIndex),
     missions: jobs.map((job) => ({ id: job.id, type: job.type, state: job.state, blockedReason: job.blockedReason || null })),
     threats: summarizeForces(relevant.filter((object) =>
-      normalizedOwnership(object, raw.localPlayerIndex) === "enemy"), raw.localPlayerIndex),
+      normalizedOwnership(object, raw.localPlayerIndex) === "enemy"
+      && !isEconomicUnit(object)), raw.localPlayerIndex),
     objectives: raw.game?.outcome
       ? [{ handle: "objective:match", state: raw.game.outcome }]
       : summarizeObjectives(relevant, raw.localPlayerIndex),

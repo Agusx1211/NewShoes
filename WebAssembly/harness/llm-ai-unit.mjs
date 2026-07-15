@@ -86,7 +86,8 @@ assert.match(buildLlmAiSystemPrompt(profile), /Classic strategic selection is di
 assert.match(buildLlmAiSystemPrompt(profile), /ready-only build query is empty/);
 assert.match(buildLlmAiSystemPrompt(profile), /GAME MODEL: This is a real-time base-building strategy game/);
 assert.match(buildLlmAiSystemPrompt(profile), /lostContact delta means only/);
-assert.match(buildLlmAiSystemPrompt(profile), /Managed squad handles exclude builders and harvesters/);
+assert.match(buildLlmAiSystemPrompt(profile), /Managed squads exclude builders and harvesters/);
+assert.match(buildLlmAiSystemPrompt(profile), /non-null missionHandle/);
 
 const exported = exportLlmAiSession({
   profile,
@@ -301,11 +302,13 @@ const tool = {
         capabilities: null, position: { x: 400, y: 500 } },
       { id: 103, owner: 5, relationship: "enemy", categories: ["vehicle", "projectile"],
         capabilities: null, position: { x: 450, y: 550 } },
+      { id: 104, owner: 5, relationship: "enemy", categories: ["aircraft", "harvester"],
+        capabilities: null, position: { x: 475, y: 575 } },
     ],
   }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [], previous: previousStrategic });
   assert.deepEqual(transientFiltered.threats.map((force) => force.handle), ["force:enemy:vehicle"]);
   assert.deepEqual(transientFiltered.threats[0].position, { x: 400, y: 500 });
-  assert.deepEqual(transientFiltered.deltas.map((delta) => delta.handle), ["contact:102"]);
+  assert.deepEqual(transientFiltered.deltas.map((delta) => delta.handle), ["contact:102", "contact:104"]);
 
   const safeSquads = compactRoutineObservation({
     snapshotId: 10, frame: 122, localPlayerIndex: 4, game: { outcome: null },
@@ -323,6 +326,10 @@ const tool = {
   ]);
   assert.deepEqual(safeSquads.forces.find((force) => force.handle === "squad:5").composition,
     { infantry: 1 });
+  assert.equal(safeSquads.forces.find((force) => force.handle === "squad:5").missionHandle,
+    "squad:5");
+  assert.equal(safeSquads.forces.find((force) => force.handle === "force:owned:builder").missionHandle,
+    null);
   assert.equal(normalizedEntity({
     id: 202, owner: 4, teamId: 5, categories: ["vehicle", "builder"], construction: -1,
     capabilities: { orderable: true, mobile: true },
