@@ -11,7 +11,7 @@
     "description": "Project New Shoes runs the original Command & Conquer: Generals Zero Hour C++ engine in a desktop web browser through WebAssembly. It is a port of the real engine, not a clone, remake, stream, or emulation layer. Players provide game files from a copy they own; retail assets are not bundled and remain on the player's device.",
     "heroTitle": "The original Zero Hour engine, ported to the web",
     "heroSummary": "Project New Shoes runs the real C++ game engine through WebAssembly. Players bring a complete Generals and Zero Hour copy they own; selection, installation, and play stay in the local browser.",
-    "agentBoundary": "The public site is an interactive browser launcher and game runtime. Reading its public documentation does not grant an agent control, and no agent can choose local files or grant browser permissions. After a person installs their owned game data and explicitly configures the optional authenticated Remote Agent interface, a separate trusted controller can observe and play through its documented contract."
+    "agentBoundary": "The public site is an interactive browser launcher and game runtime. Reading its public documentation does not grant an agent control, and an agent cannot choose local files or grant browser permissions. After a person installs their owned game data and explicitly configures the optional authenticated Remote Agent interface, a separate trusted controller can observe and play through its documented contract."
   },
   "legal": {
     "paragraphs": [
