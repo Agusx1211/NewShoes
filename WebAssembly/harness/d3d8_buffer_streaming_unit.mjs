@@ -310,6 +310,56 @@ assert.equal(cappedSummary.dynamicRangePoolSlots, poolLimit);
 assert.equal(cappedSummary.dynamicRangeSlotsDeleted, 2);
 assert.equal(calls.deletedBuffers.length, deletedBeforePoolTrim + 2);
 
+// Issue #96 diagnostic control: prove direct mode bypasses every streaming
+// range, fence, and whole-object rename while preserving legacy DISCARD
+// orphaning followed by direct bufferSubData uploads.
+const directFake = createFakeGl();
+const directExecutor = createD3D8Executor({
+  canvas: {
+    width: 1,
+    height: 1,
+    addEventListener() {},
+  },
+  gl: directFake.gl,
+  fallbackContext: null,
+  log() {},
+  state: { canvas: {}, graphics: {} },
+  d3d8BufferMode: "direct",
+});
+assert.equal(directExecutor.diag.d3d8PerfSummary().d3d8BufferMode, "direct");
+assert.equal(directExecutor.hooks.cncPortD3D8BufferCreate({
+  kind: 1,
+  id: 10,
+  byteSize: 32,
+  usage: D3DUSAGE_DYNAMIC,
+}), 1);
+const directResource = directExecutor.diag.d3d8Buffers.get("vertex:10");
+const directBuffer = directResource.buffer;
+directResource.gpuReferenced = true;
+assert.equal(directExecutor.hooks.cncPortD3D8BufferUpdate({
+  kind: 1,
+  id: 10,
+  byteOffset: 0,
+  bytes: new Uint8Array(8).fill(11),
+  lockFlags: D3DLOCK_DISCARD,
+}), 1);
+assert.equal(directExecutor.hooks.cncPortD3D8BufferUpdate({
+  kind: 1,
+  id: 10,
+  byteOffset: 8,
+  bytes: new Uint8Array(8).fill(12),
+  lockFlags: D3DLOCK_NOOVERWRITE,
+}), 1);
+assert.equal(directResource.buffer, directBuffer);
+assert.equal(directResource.dynRingPattern, undefined);
+assert.equal(directResource.dynRanges, undefined);
+assert.equal(directFake.calls.bufferSubData.length, 2);
+assert.equal(directFake.calls.fences.length, 0);
+const directSummary = directExecutor.diag.d3d8PerfSummary();
+assert.equal(directSummary.renamedBuffers, 0);
+assert.equal(directSummary.dynamicRangeSlots, 0);
+assert.equal(directSummary.bufferDynamicRedirectedUpdates, 0);
+
 console.log(JSON.stringify({
   ok: true,
   source: "d3d8-buffer-streaming-unit",
@@ -321,4 +371,5 @@ console.log(JSON.stringify({
   flushCount: calls.flushes,
   dynamicRangePoolLimit: poolLimit,
   trimmedDynamicRangeSlots: cappedSummary.dynamicRangeSlotsDeleted,
+  directMode: directSummary.d3d8BufferMode,
 }));

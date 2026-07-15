@@ -90,6 +90,10 @@ const expectParticleVisibilityProbe =
 const particleVisibilityFrames = parsePositiveInt(
   "SKIRMISH_START_PARTICLE_VISIBILITY_FRAMES", 30);
 const distDir = parseDistDir();
+const d3d8BufferMode = String(process.env.SKIRMISH_START_D3D8_BUFFER_MODE ?? "").trim();
+if (d3d8BufferMode && d3d8BufferMode !== "streaming" && d3d8BufferMode !== "direct") {
+  throw new Error(`Invalid SKIRMISH_START_D3D8_BUFFER_MODE: ${d3d8BufferMode}`);
+}
 const replayMenuScreenshotPath = resolve(
   process.env.SKIRMISH_REPLAY_MENU_SCREENSHOT ??
     resolve(screenshotsRoot, "replay-menu-roundtrip.png"));
@@ -1698,6 +1702,7 @@ async function main() {
     const harnessUrl = new URL("harness/index.html", server.url);
     harnessUrl.searchParams.set("dist", distDir);
     if (process.env.SKIRMISH_START_THREADS === "1") harnessUrl.searchParams.set("threads", "1");
+    if (d3d8BufferMode) harnessUrl.searchParams.set("d3d8BufferMode", d3d8BufferMode);
     if (expectLightPulseProbe) {
       // Terrain buffers are created while diagnostics are in lite mode. Keep
       // their CPU mirrors from creation so the probe can compare the original

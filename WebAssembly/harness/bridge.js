@@ -286,6 +286,20 @@ const contextPreserveDrawingBuffer = (() => {
     return true;
   }
 })();
+// Diagnostic A/B for issue #96. The normal streaming path remains the
+// default; ?d3d8BufferMode=direct restores the older direct buffer updates so
+// the affected Apple/ANGLE Metal machine can isolate the corrupt subsystem.
+function selectedD3D8BufferMode() {
+  try {
+    return new URLSearchParams(globalThis.location?.search || "")
+      .get("d3d8BufferMode") === "direct"
+      ? "direct"
+      : "streaming";
+  } catch (_error) {
+    return "streaming";
+  }
+}
+const d3d8BufferMode = selectedD3D8BufferMode();
 // Threaded mode: #viewport must stay CONTEXT-FREE so transferControlToOffscreen
 // can hand it to the engine worker realm (a canvas with any context cannot be
 // transferred). The main-realm executor below is constructed against an
@@ -541,6 +555,7 @@ const { hooks: d3d8Hooks, diag: d3d8Diag } = createD3D8Executor({
   getHeapU32: () => cncPortEmscriptenModule?.HEAPU32 ?? null,
   getHeapF32: () => cncPortEmscriptenModule?.HEAPF32 ?? null,
   getHeapF64: () => cncPortEmscriptenModule?.HEAPF64 ?? null,
+  d3d8BufferMode,
   dom: { stateNode, framesNode },
 });
 const {
@@ -1276,6 +1291,7 @@ function createThreadedEngineController() {
           perfCounters: threadedWorkerPerfCounters(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
+          d3d8BufferMode,
           udpBridge: threadedUdpBridge,
         },
       },

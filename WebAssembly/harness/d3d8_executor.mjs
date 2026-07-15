@@ -36,6 +36,8 @@ import { resolveShaderTier } from "./shader-tier-config.mjs";
 //   getModule       () -> emscripten Module (reserved; EM_JS-side caches live
 //                   on the Module of the engine realm)
 //   preserveDrawingBuffer  optional override for the self-created-context path
+//   d3d8BufferMode optional "streaming" (default) or "direct" diagnostic mode;
+//                   direct restores pre-streaming DISCARD/NOOVERWRITE uploads
 //   dom             optional { stateNode, framesNode, ... } (reserved for the
 //                   worker realm; unused today — DOM access is typeof-guarded)
 //
@@ -77,6 +79,7 @@ export function createD3D8Executor(env) {
   const fallbackContext = env.fallbackContext !== undefined
     ? env.fallbackContext
     : (gl ? null : canvas.getContext("2d", { alpha: false }));
+  const d3d8BufferMode = env.d3d8BufferMode === "direct" ? "direct" : "streaming";
 
 const provokingVertex = gl ? gl.getExtension("WEBGL_provoking_vertex") : null;
 const d3d8HasStencilBuffer = gl ? Boolean(gl.getContextAttributes()?.stencil) : false;
@@ -1057,6 +1060,7 @@ function d3d8PerfSummary() {
     }
   }
   return {
+    d3d8BufferMode,
     countersEnabled: d3d8PerfCountersEnabled,
     timingEnabled: d3d8PerfTimingEnabled,
     vertexArrayCacheEntries: d3d8VertexArrayCacheEntries,
@@ -2947,7 +2951,7 @@ function updateD3D8Buffer(payload = {}) {
   // take the cached whole-mirror refresh path instead (one fresh-storage
   // bufferData per actual change — still no per-draw in-flight sync).
   const discard = Boolean(resource.dynamic && (lockFlags & D3DLOCK_DISCARD));
-  if (resource.dynamic === true &&
+  if (d3d8BufferMode === "streaming" && resource.dynamic === true &&
       (lockFlags & (D3DLOCK_DISCARD | D3DLOCK_NOOVERWRITE)) !== 0) {
     resource.dynRingPattern = true;
   }
@@ -2958,6 +2962,25 @@ function updateD3D8Buffer(payload = {}) {
     if (requiredByteSize > resource.byteSize) {
       resource.byteSize = requiredByteSize;
       resized = true;
+    }
+  } else if (d3d8BufferMode === "direct") {
+    // Diagnostic control: restore the upload behavior from before dynamic
+    // append redirection. DISCARD orphans the logical buffer's storage and
+    // NOOVERWRITE appends directly into that same object. This is deliberately
+    // allowed to reintroduce ANGLE Metal stalls; its purpose is to establish
+    // whether the streaming/renaming subsystem causes long-match corruption.
+    if (resource.target === gl.ARRAY_BUFFER) {
+      bindD3D8ArrayBuffer(resource.buffer);
+    } else {
+      bindD3D8ElementArrayBuffer(resource.buffer);
+    }
+    if (requiredByteSize > resource.byteSize) {
+      gl.bufferData(resource.target, requiredByteSize, resource.glUsage);
+      resource.byteSize = requiredByteSize;
+      resized = true;
+    } else if (discard) {
+      gl.bufferData(resource.target, resource.byteSize, resource.glUsage);
+      orphaned = true;
     }
   } else {
     if (requiredByteSize > resource.byteSize) {
@@ -3010,6 +3033,10 @@ function updateD3D8Buffer(payload = {}) {
   if (dynamicRedirect) {
     noteD3D8DynamicBufferUpdate(resource, byteOffset, bytes.byteLength, discard);
     if (d3d8PerfCountersEnabled) d3d8PerfStats.bufferDynamicRedirectedUpdates += 1;
+  } else if (d3d8BufferMode === "direct") {
+    const subDataStartedAt = perfNow();
+    gl.bufferSubData(resource.target, byteOffset, bytes);
+    subDataMs = perfNow() - subDataStartedAt;
   } else if (orphaned && byteOffset === 0 && bytes.byteLength === resource.byteSize) {
     gl.bufferData(resource.target, bytes, resource.glUsage);
   } else {
