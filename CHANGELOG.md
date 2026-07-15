@@ -6,7 +6,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-07-14
+## [0.2.0] - 2026-07-15
 
 - Replace Arcade with ten themed Windows XP game apps, including five networked Internet games ([PR #55](https://github.com/Agusx1211/NewShoes/pull/55)).
 - Add drag-and-drop, touch controls, animations, difficulty settings, and synthesized audio across the XP games ([PR #55](https://github.com/Agusx1211/NewShoes/pull/55)).
@@ -20,7 +20,16 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Import practical BIG, folder, ZIP, 7z, RAR, NSIS, nested, and Clickteam mod distributions without executing native payloads ([PR #73](https://github.com/Agusx1211/NewShoes/pull/73)).
 - Isolate saves, replays, device transfers, and multiplayer by exact mod composition and transfer installed mod libraries ([PR #73](https://github.com/Agusx1211/NewShoes/pull/73)).
 - Base feature work on `dev` and require completed agent changes to be handed off through signed pull requests ([PR #72](https://github.com/Agusx1211/NewShoes/pull/72)).
-- Finalize version `0.2.0` and its complete release inventory ([PR #77](https://github.com/Agusx1211/NewShoes/pull/77)).
+- Set version `0.2.0` and seed its release inventory ([PR #77](https://github.com/Agusx1211/NewShoes/pull/77)).
+- Select the launcher-compatible Contra X Beta 2 archive set so its custom UI renders correctly ([PR #84](https://github.com/Agusx1211/NewShoes/pull/84)).
+- Generate evidence-backed public project documentation and crawler discovery resources from one canonical record ([PR #82](https://github.com/Agusx1211/NewShoes/pull/82)).
+- Keep browser LAN diagnostics read-only so observation cannot desynchronize multiplayer lockstep ([PR #90](https://github.com/Agusx1211/NewShoes/pull/90)).
+- Avoid synchronous WebGL buffer upload stalls by rotating in-flight dynamic buffer ranges ([PR #98](https://github.com/Agusx1211/NewShoes/pull/98)).
+- Stream large issue-dump serialization in bounded chunks without exceeding JavaScript string limits ([PR #100](https://github.com/Agusx1211/NewShoes/pull/100)).
+- Bound retired WebGL streaming buffers and invalidate dependent vertex arrays before deletion ([PR #101](https://github.com/Agusx1211/NewShoes/pull/101)).
+- Preserve unrelated cached vertex arrays when transient renderer buffers are released ([PR #103](https://github.com/Agusx1211/NewShoes/pull/103)).
+- Add configurable autonomous LLM commanders with exclusive strategy ownership and durable session evidence ([PR #95](https://github.com/Agusx1211/NewShoes/pull/95)).
+- Add an opt-in semantic remote-play API with global and camera-bound control, tactical events, and a Go bridge ([PR #94](https://github.com/Agusx1211/NewShoes/pull/94)).
 
 ## [0.1.0] - 2026-07-13
 
