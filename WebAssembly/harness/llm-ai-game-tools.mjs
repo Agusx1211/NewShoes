@@ -56,6 +56,18 @@ function point(value, required = false) {
   return { present: true, x: finite(position.x, "position.x"), y: finite(position.y, "position.y") };
 }
 
+function readableKnowledgeRows(result) {
+  const encoded = result?.flags?.data;
+  const columns = integer(result?.columns, "terrain columns", 1, 128);
+  const rows = integer(result?.rows, "terrain rows", 1, 128);
+  if (typeof encoded !== "string") throw new TypeError("terrain flags are missing");
+  const binary = atob(encoded);
+  if (binary.length !== columns * rows) throw new TypeError("terrain flags have an unexpected size");
+  const symbols = ["?", "e", "v", "?"];
+  return Array.from({ length: rows }, (_, row) => Array.from({ length: columns }, (_, column) =>
+    symbols[binary.charCodeAt(row * columns + column) & 0x03]).join(""));
+}
+
 function position2d(value) {
   if (Array.isArray(value) && value.length >= 2) return { x: Number(value[0]), y: Number(value[1]) };
   if (value && typeof value === "object") return { x: Number(value.x), y: Number(value.y) };
@@ -505,20 +517,26 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
     },
     {
       name: "query_map_region",
-      description: `Query a bounded fog-filtered terrain region at coarse 16x16, medium 32x32, or fine 45x45 resolution. terrain returns heights, route returns traversal flags, and construction returns terrain build-placement flags; construction does not search for structures or objectives. Use inspect_entities for world objects. Unknown cells stay hidden. Row-major order; returned frame/bounds/resolution/filter define freshness. No pagination; one terrain query; hard result ${budget} tokens.`,
+      description: `Query a bounded player-perspective map region at coarse 16x16, medium 32x32, or fine 45x45 resolution. visibility returns readable row strings where ? is never explored, e is explored but currently fogged, and v is currently visible; use it to measure coverage and avoid repeatedly scouting the same area. terrain returns encoded heights, route returns traversal flags, and construction returns terrain build-placement flags; construction does not search for structures or objectives. Use inspect_entities for world objects. Unknown cells stay hidden. Row-major order from minY to maxY; returned frame/bounds/resolution/filter define freshness. No pagination; one terrain query; hard result ${budget} tokens.`,
       parameters: { type: "object", properties: {
         minX: { type: "number" }, minY: { type: "number" }, maxX: { type: "number" }, maxY: { type: "number" },
-        resolution: { type: "string", enum: ["coarse", "medium", "fine"] }, filter: { type: "string", enum: ["terrain", "route", "construction"] },
+        resolution: { type: "string", enum: ["coarse", "medium", "fine"] }, filter: { type: "string", enum: ["visibility", "terrain", "route", "construction"] },
       }, required: ["minX", "minY", "maxX", "maxY", "resolution", "filter"], additionalProperties: false },
       validate(args) { if (finite(args.minX, "minX") >= finite(args.maxX, "maxX") || finite(args.minY, "minY") >= finite(args.maxY, "maxY")) throw new TypeError("bounds must be ordered"); },
       async execute(args) {
         const size = { coarse: 16, medium: 32, fine: 45 }[args.resolution];
         const result = await call("llmAiTerrainQuery", { mode: "unrestricted", minX: Number(args.minX), minY: Number(args.minY), maxX: Number(args.maxX), maxY: Number(args.maxY), columns: size, rows: size });
         const { height, flags, ...metadata } = result;
+        const knowledgeRows = readableKnowledgeRows(result);
         return {
           appliedFilter: args.filter, appliedResolution: args.resolution, order: "row-major", ...metadata,
-          ...(args.filter !== "route" ? { height } : {}),
-          ...(args.filter !== "terrain" ? { flags } : {}),
+          unexploredCount: size * size - Number(result.knownCount || 0),
+          knowledge: {
+            legend: { "?": "unexplored", e: "explored-not-visible", v: "visible" },
+            rows: knowledgeRows,
+          },
+          ...(["terrain", "construction"].includes(args.filter) ? { height } : {}),
+          ...(["route", "construction"].includes(args.filter) ? { flags } : {}),
         };
       },
     },

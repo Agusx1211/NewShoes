@@ -551,6 +551,8 @@ export function buildableOptions(catalog) {
           && engineBuildings.has(command.product.template)) records.push({
         handle: `build:${command.product.template}`,
         purpose: "structure",
+        roles: semanticRoles(command.product),
+        combatProfile: command.product.combatProfile || null,
         cost: command.product.cost,
         buildFrames: command.product.buildFrames,
         prerequisites: state.availability || "unknown",
@@ -563,6 +565,8 @@ export function buildableOptions(catalog) {
         records.push({
           handle: `produce:${command.product.template}@${source}`,
           purpose: productKind,
+          roles: semanticRoles(command.product),
+          combatProfile: command.product.combatProfile || null,
           cost: command.product.cost,
           buildFrames: command.product.buildFrames,
           prerequisites: state.availability || "unknown",

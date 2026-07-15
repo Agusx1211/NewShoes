@@ -884,6 +884,68 @@ void append_kind_tags(std::string &json, const ThingTemplate *thing_template)
 	json += "]";
 }
 
+const char *weapon_damage_type_name(DamageType type)
+{
+	const char *name = DamageTypeFlags::getNameFromSingleBit(type);
+	return name != nullptr ? name : "UNKNOWN";
+}
+
+void append_weapon_targets(std::string &json, Int anti_mask);
+
+void append_combat_profile(std::string &json, const ThingTemplate *thing_template)
+{
+	if (thing_template == nullptr || !thing_template->canPossiblyHaveAnyWeapon()) {
+		json += "null";
+		return;
+	}
+
+	Int target_mask = 0;
+	KindOfMaskType preferred_targets = KINDOFMASK_NONE;
+	std::vector<std::string> damage_types;
+	Real maximum_range = 0.0f;
+	bool contact_weapon = false;
+	const WeaponTemplateSetVector &sets = thing_template->getWeaponTemplateSets();
+	for (WeaponTemplateSetVector::const_iterator set = sets.begin(); set != sets.end(); ++set) {
+		for (Int slot = 0; slot < WEAPONSLOT_COUNT; ++slot) {
+			const WeaponTemplate *weapon = set->getNth(static_cast<WeaponSlotType>(slot));
+			if (weapon == nullptr) continue;
+			target_mask |= weapon->getAntiMask();
+			preferred_targets.set(set->getNthPreferredAgainstMask(static_cast<WeaponSlotType>(slot)));
+			maximum_range = (std::max)(maximum_range, weapon->getUnmodifiedAttackRange());
+			contact_weapon = contact_weapon || weapon->isContactWeapon();
+			const std::string damage = weapon_damage_type_name(weapon->getDamageType());
+			if (std::find(damage_types.begin(), damage_types.end(), damage) == damage_types.end()) {
+				damage_types.push_back(damage);
+			}
+		}
+	}
+
+	json += "{\"targetDomains\":";
+	append_weapon_targets(json, target_mask);
+	json += ",\"preferredTargets\":[";
+	bool first = true;
+	auto append_preferred_target = [&](KindOfType kind, const char *name) {
+		if (!preferred_targets.test(kind)) return;
+		if (!first) json += ",";
+		first = false;
+		append_json_string(json, name);
+	};
+	append_preferred_target(KINDOF_INFANTRY, "infantry");
+	append_preferred_target(KINDOF_VEHICLE, "vehicle");
+	append_preferred_target(KINDOF_AIRCRAFT, "aircraft");
+	append_preferred_target(KINDOF_STRUCTURE, "structure");
+	json += "],\"damageTypes\":[";
+	for (std::size_t i = 0; i < damage_types.size(); ++i) {
+		if (i != 0) json += ",";
+		append_json_string(json, damage_types[i]);
+	}
+	json += "],\"maximumRange\":";
+	append_real(json, maximum_range);
+	json += ",\"contactWeapon\":";
+	json += contact_weapon ? "true" : "false";
+	json += "}";
+}
+
 const char *command_type_name(GUICommandType type)
 {
 	switch (type) {
@@ -977,6 +1039,8 @@ void append_command(std::string &json, const CommandButton *command, Object *sou
 		append_json_string(json, product->getName().str());
 		json += ",\"categories\":";
 		append_kind_tags(json, product);
+		json += ",\"combatProfile\":";
+		append_combat_profile(json, product);
 		Player *player = source->getControllingPlayer();
 		json += ",\"cost\":" + std::to_string(product->calcCostToBuild(player));
 		json += ",\"buildFrames\":" + std::to_string(product->calcTimeToBuild(player));
@@ -1076,6 +1140,8 @@ void append_command_definition(
 		append_json_string(json, product->getName().str());
 		json += ",\"categories\":";
 		append_kind_tags(json, product);
+		json += ",\"combatProfile\":";
+		append_combat_profile(json, product);
 		json += ",\"cost\":" + std::to_string(product->calcCostToBuild(player));
 		json += ",\"buildFrames\":" + std::to_string(product->calcTimeToBuild(player));
 		json += "}";
@@ -1237,8 +1303,7 @@ void append_weapons(std::string &json, Object *object)
 		json += ",\"damageRadius\":";
 		append_real(json, weapon_template->getPrimaryDamageRadius(base_bonus));
 		json += ",\"damageType\":";
-		const char *damage_name = DamageTypeFlags::getNameFromSingleBit(weapon->getDamageType());
-		append_json_string(json, damage_name != nullptr ? damage_name : "UNKNOWN");
+		append_json_string(json, weapon_damage_type_name(weapon->getDamageType()));
 		json += ",\"targets\":";
 		append_weapon_targets(json, weapon->getAntiMask());
 		json += ",\"clipSize\":" + std::to_string(weapon->getClipSize());

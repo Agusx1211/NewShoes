@@ -91,6 +91,9 @@ assert.match(buildLlmAiSystemPrompt(profile), /non-null missionHandle/);
 assert.match(buildLlmAiSystemPrompt(profile), /results only on the next planning turn/);
 assert.match(buildLlmAiSystemPrompt(profile), /numeric force counts, damage, attrition/);
 assert.match(buildLlmAiSystemPrompt(profile), /feed reinforcements piecemeal/);
+assert.match(buildLlmAiSystemPrompt(profile), /combatProfile metadata/);
+assert.match(buildLlmAiSystemPrompt(profile), /contact:N handle identifies observable targetId N/);
+assert.match(buildLlmAiSystemPrompt(profile), /filter visibility returns row-major readable exploration rows/);
 
 const exported = exportLlmAiSession({
   profile,
@@ -430,7 +433,10 @@ const tool = {
         template: "RuntimePowerPlant", categories: ["structure"], cost: 800, buildFrames: 300,
       } }],
       RuntimeBarracks: [{ name: "TrainInfantry", type: "produce", product: {
-        template: "RuntimeInfantry", categories: ["InFaNtRy"], cost: 200, buildFrames: 90,
+        template: "RuntimeInfantry", categories: ["InFaNtRy", "Combat"],
+        combatProfile: { targetDomains: ["ground"], preferredTargets: ["vehicle"],
+          damageTypes: ["armorPiercing"], maximumRange: 150, contactWeapon: false },
+        cost: 200, buildFrames: 90,
       } }],
     },
     objectCapabilities: {
@@ -449,6 +455,13 @@ const tool = {
   assert.equal(options.find((option) => option.handle === "build:RuntimePowerPlant")?.ready, true);
   assert.equal(options.find((option) =>
     option.handle === "produce:RuntimeInfantry@facility:8")?.purpose, "infantry");
+  assert.deepEqual(options.find((option) =>
+    option.handle === "produce:RuntimeInfantry@facility:8")?.roles, ["combat"]);
+  assert.deepEqual(options.find((option) =>
+    option.handle === "produce:RuntimeInfantry@facility:8")?.combatProfile, {
+    targetDomains: ["ground"], preferredTargets: ["vehicle"],
+    damageTypes: ["armorPiercing"], maximumRange: 150, contactWeapon: false,
+  });
   assert.equal(options.find((option) => option.handle === "force:RuntimeAttackTeam")?.prerequisites,
     "validated-on-request");
 
@@ -464,6 +477,37 @@ const tool = {
   const boundedPage = boundLlmPayload(oversizedPage, 256);
   assert(conservativeLlmTokens(boundedPage.value) <= 256);
   assert.match(JSON.stringify(boundedPage.value), /contact:77/, "an oversized paginated record retains its stable handle");
+}
+
+// Player-perspective terrain knowledge is decoded into rows an LLM can reason
+// about instead of exposing only an opaque base64 bit field.
+{
+  const terrainFlags = new Uint8Array(16 * 16);
+  terrainFlags[1] = 1;
+  terrainFlags[2] = 2;
+  const encodedFlags = btoa(String.fromCharCode(...terrainFlags));
+  const tools = createLlmAiGameTools({
+    playerIndex: 4,
+    profile,
+    rpc: async (command, payload) => {
+      assert.equal(command, "llmAiTerrainQuery");
+      return { ok: true, result: {
+        ok: true, frame: 90, bounds: { minX: 0, minY: 0, maxX: 1_600, maxY: 1_600 },
+        columns: payload.columns, rows: payload.rows, knownCount: 2, visibleCount: 1,
+        height: { encoding: "uint16le-base64", data: "" },
+        flags: { encoding: "uint8-base64", data: encodedFlags },
+      } };
+    },
+  });
+  const visibility = await tools.find((entry) => entry.name === "query_map_region").execute({
+    minX: 0, minY: 0, maxX: 1_600, maxY: 1_600,
+    resolution: "coarse", filter: "visibility",
+  });
+  assert.equal(visibility.unexploredCount, 254);
+  assert.equal(visibility.knowledge.rows.length, 16);
+  assert.match(visibility.knowledge.rows[0], /^\?ev/);
+  assert.equal("height" in visibility, false);
+  assert.equal("flags" in visibility, false);
 }
 
 // Pagination is deterministic, filter/order-bound, and stable across state changes.
