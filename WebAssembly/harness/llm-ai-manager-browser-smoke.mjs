@@ -9,7 +9,9 @@ import { startStaticServer } from "./static-server.mjs";
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const screenshotPath = process.env.LLM_AI_MANAGER_SCREENSHOT || "/tmp/new-shoes-llm-ai-manager.png";
+const sessionScreenshotPath = process.env.LLM_AI_MANAGER_SESSION_SCREENSHOT || "/tmp/new-shoes-llm-ai-manager-session.png";
 await mkdir(dirname(screenshotPath), { recursive: true });
+await mkdir(dirname(sessionScreenshotPath), { recursive: true });
 
 const provider = createServer((request, response) => {
   response.setHeader("Access-Control-Allow-Origin", "*");
@@ -156,28 +158,147 @@ try {
 
   const created = await page.evaluate(async () => {
     const [profile] = await window.ZeroHLlmAi.store.listProfiles();
+    const startedAt = Date.now() - 12_000;
     const session = {
       id: "browser-session-1",
       profileId: profile.id,
       profileSnapshot: { ...(await window.ZeroHLlmAi.listProfiles())[0] },
       status: "completed",
       outcome: "victory",
-      startedAt: Date.now() - 12_000,
+      startedAt,
       endedAt: Date.now(),
       updatedAt: Date.now(),
-      turns: 3,
-      toolCalls: 5,
-      failures: 0,
+      turns: 1,
+      toolCalls: 2,
+      failures: 1,
+      providerRequests: 1,
+      providerLatencyMs: 842,
+      cachedTokens: 768,
       totalTokens: 1_234,
     };
     await window.ZeroHLlmAi.store.createSession(session);
-    await window.ZeroHLlmAi.store.appendEvent({
-      sessionId: session.id,
-      sequence: 1,
-      timestamp: Date.now(),
-      type: "model.decision",
-      data: { authorization: "Bearer browser-ultra-secret", result: "victory" },
-    });
+    const events = [
+      {
+        type: "session.started",
+        data: { profile: { name: "Browser General", model: "browser-smoke-model" }, metadata: { map: "Cairo Commandos" } },
+      },
+      {
+        type: "environment.observation",
+        data: {
+          reason: "match-start",
+          observation: {
+            frame: 7,
+            time: { gameSeconds: 0.2 },
+            economy: { money: 8_500, powerSufficient: true },
+            forces: [{
+              handle: "force:owned:builder",
+              count: 1,
+              composition: { infantry: 1 },
+              roles: ["builder", "harvester"],
+              position: { x: 2630.5, y: 2940.5 },
+            }],
+            facilities: [{
+              handle: "facility:28",
+              roles: ["commandcenter", "factory"],
+              health: 100,
+              construction: { state: "complete" },
+              position: { x: 2712.5, y: 2968.8 },
+            }],
+            missions: [],
+            threats: [],
+            objectives: [],
+            deltas: [],
+          },
+        },
+      },
+      { type: "model.request", data: { turn: 1 } },
+      { type: "model.response", data: { responseId: "browser-response-1" } },
+      {
+        type: "model.decision",
+        data: {
+          authorization: "Bearer browser-ultra-secret",
+          protocol: "native",
+          responseId: "browser-response-1",
+          latencyMs: 842,
+          usage: { promptTokens: 992, cachedTokens: 768, completionTokens: 242, reasoningTokens: 128, totalTokens: 1_234 },
+          finishReason: "tool_calls",
+          reasoningContent: "The opening economy is healthy. Queue a worker first, then test whether the reported squad is available for scouting.",
+          calls: [
+            {
+              id: "call-produce",
+              name: "request_production",
+              arguments: { type: "unit", name: "GLAInfantryWorker", count: 1, facilityHandle: "facility:28" },
+            },
+            {
+              id: "call-mission",
+              name: "assign_mission",
+              arguments: { squadHandle: "squad:99", mission: "scout", target: { x: 1750, y: 1750 } },
+            },
+          ],
+        },
+      },
+      { type: "tool.called", data: { callId: "call-produce", name: "request_production" } },
+      {
+        type: "tool.result",
+        data: {
+          callId: "call-produce",
+          name: "request_production",
+          ok: true,
+          result: { ok: true, job: { id: "job:41", state: "queued", type: "unit", name: "GLAInfantryWorker" } },
+        },
+      },
+      { type: "engine.execution", data: { callId: "call-produce", name: "request_production", ok: true, jobId: "job:41", state: "queued" } },
+      { type: "tool.called", data: { callId: "call-mission", name: "assign_mission" } },
+      {
+        type: "tool.result",
+        data: {
+          callId: "call-mission",
+          name: "assign_mission",
+          ok: false,
+          result: { ok: false, error: "Unknown squad handle squad:99; use a missionHandle from the force list." },
+        },
+      },
+      {
+        type: "engine.reaction",
+        data: {
+          frame: 332,
+          outcome: null,
+          deltas: [{ type: "appeared", handle: "unit:32", owner: "self", kind: "infantry" }],
+          missions: [],
+          production: [{ facility: "facility:28", queue: [{ type: "unit", name: "GLAInfantryWorker", progress: 83.9 }] }],
+        },
+      },
+      {
+        type: "environment.observation",
+        data: {
+          reason: "planning-interval",
+          observation: {
+            frame: 340,
+            time: { gameSeconds: 11.3 },
+            economy: { money: 8_300, powerSufficient: true },
+            forces: [{ handle: "force:owned:builder", count: 2, composition: { infantry: 2 }, roles: ["builder", "harvester"] }],
+            facilities: [{ handle: "facility:28", roles: ["commandcenter", "factory"], health: 100, construction: { state: "complete" } }],
+            missions: [],
+            threats: [{ handle: "contact:404", kind: "vehicle", count: 2, position: { x: 2010, y: 1800 } }],
+            objectives: [{ handle: "objective:supply:4", type: "supply", position: { x: 1880, y: 1650 } }],
+            deltas: [
+              { type: "appeared", handle: "unit:32", owner: "self", kind: "infantry" },
+              { type: "appeared", handle: "contact:404", owner: "enemy", kind: "vehicle" },
+            ],
+          },
+        },
+      },
+      { type: "match.outcome", data: { outcome: "victory", frame: 360, gameSeconds: 12 } },
+      { type: "session.completed", data: { outcome: "victory", turns: 1, toolCalls: 2 } },
+    ];
+    for (const [index, event] of events.entries()) {
+      await window.ZeroHLlmAi.store.appendEvent({
+        sessionId: session.id,
+        sequence: index + 1,
+        timestamp: startedAt + (index * 800),
+        ...event,
+      });
+    }
     return { profileId: profile.id, sessionId: session.id };
   });
 
@@ -200,13 +321,30 @@ try {
   await page.locator('[data-llm-ai-view="sessions"]').click();
   await page.waitForFunction(() => document.querySelectorAll(".llm-ai-session-card").length === 1);
   await page.locator(".llm-ai-session-card").click();
-  await page.waitForFunction(() => document.querySelectorAll("#llmAiSessionEvents li").length === 1);
+  await page.waitForFunction(() => document.querySelectorAll(".llm-ai-transcript-card").length >= 6);
   assert.match(await page.locator("#llmAiSessionSummary").textContent(), /victory/i);
+  assert.equal(await page.locator(".llm-ai-transcript-card.is-turn").count(), 1);
+  assert.equal(await page.locator(".llm-ai-tool-call").count(), 2);
+  assert.equal(await page.locator(".llm-ai-tool-call.is-success").count(), 1);
+  assert.equal(await page.locator(".llm-ai-tool-call.is-error").count(), 1);
+  assert.match(await page.locator(".llm-ai-transcript-card.is-turn").textContent(), /Turn 1.*Request production.*Assign mission.*Unknown squad handle/is);
+  assert.match(await page.locator(".llm-ai-transcript-card.is-observation").last().textContent(), /Money.*8,300.*Threats.*1.*contact:404/is);
+  assert.equal(await page.locator(".llm-ai-raw-details").count() >= 6, true);
+  assert.equal(await page.locator(".llm-ai-raw-details[open]").count(), 0);
+  const turnRaw = page.locator(".llm-ai-transcript-card.is-turn > .llm-ai-raw-details");
+  assert.equal(await turnRaw.locator("pre").textContent(), "", "raw JSON should render lazily");
+  await turnRaw.locator("summary").click();
+  await page.waitForFunction(() => document.querySelector(".llm-ai-transcript-card.is-turn > .llm-ai-raw-details pre")?.textContent.includes("[redacted]"));
+  assert.match(await turnRaw.locator("pre").textContent(), /"authorization": "\[redacted\]"/);
+  await turnRaw.locator("summary").click();
   assert.equal(await page.locator("#llmAiSessionEvents").textContent().then((text) => text.includes("browser-ultra-secret")), false);
+  await page.locator(".llm-ai-transcript-card.is-turn").scrollIntoViewIfNeeded();
+  await page.locator("#llmAiWindow").screenshot({ path: sessionScreenshotPath });
   assert.deepEqual(pageErrors, []);
 
   console.log("LLM AI manager browser smoke: PASS", {
     screenshotPath,
+    sessionScreenshotPath,
     profileId: created.profileId,
     sessionId: created.sessionId,
   });

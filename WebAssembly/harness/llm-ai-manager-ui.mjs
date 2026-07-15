@@ -280,7 +280,364 @@ function renderSessions() {
 }
 
 function eventLabel(type) {
-  return type.replaceAll(".", " › ");
+  return readableLabel(type.replaceAll(".", " › "));
+}
+
+function transcriptElement(tag, className = "", text = null) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text !== null) element.textContent = String(text);
+  return element;
+}
+
+function readableLabel(value) {
+  return String(value)
+    .replaceAll("_", " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function formatClock(seconds) {
+  if (!Number.isFinite(seconds)) return null;
+  const wholeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(wholeSeconds / 60);
+  return `${minutes}:${String(wholeSeconds % 60).padStart(2, "0")}`;
+}
+
+function formatRelativeTime(timestamp, startedAt) {
+  if (!Number.isFinite(timestamp) || !Number.isFinite(startedAt)) return "";
+  const seconds = Math.max(0, Math.round((timestamp - startedAt) / 100) / 10);
+  return `+${seconds.toFixed(1)}s`;
+}
+
+function compactValue(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (typeof value === "number") return Number.isInteger(value)
+    ? value.toLocaleString()
+    : value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "none";
+    if (value.every((item) => ["string", "number", "boolean"].includes(typeof item))) {
+      return value.map(compactValue).join(", ");
+    }
+    return `${value.length} item${value.length === 1 ? "" : "s"}`;
+  }
+  if (Number.isFinite(value.x) && Number.isFinite(value.y)) {
+    return `${Math.round(value.x)}, ${Math.round(value.y)}`;
+  }
+  const identity = [value.handle, value.id, value.name, value.type, value.state]
+    .filter((item, index, values) => item !== undefined && values.indexOf(item) === index);
+  if (identity.length > 0) return identity.map(compactValue).join(" · ");
+  const serialized = JSON.stringify(value);
+  return serialized.length > 180 ? `${serialized.slice(0, 177)}…` : serialized;
+}
+
+function appendChips(parent, entries) {
+  const visible = entries.filter(([, value]) => value !== null && value !== undefined && value !== "");
+  if (visible.length === 0) return;
+  const chips = transcriptElement("div", "llm-ai-transcript-chips");
+  for (const [label, value, tone = ""] of visible) {
+    const chip = transcriptElement("span", `llm-ai-transcript-chip${tone ? ` is-${tone}` : ""}`);
+    chip.append(
+      transcriptElement("small", "", label),
+      transcriptElement("strong", "", compactValue(value)),
+    );
+    chips.append(chip);
+  }
+  parent.append(chips);
+}
+
+function appendKeyValues(parent, record, { omit = [], limit = 10 } = {}) {
+  if (!record || typeof record !== "object") return;
+  const entries = Object.entries(record)
+    .filter(([key, value]) => !omit.includes(key) && value !== undefined)
+    .slice(0, limit);
+  if (entries.length === 0) return;
+  const list = transcriptElement("dl", "llm-ai-transcript-fields");
+  for (const [key, value] of entries) {
+    list.append(
+      transcriptElement("dt", "", readableLabel(key)),
+      transcriptElement("dd", "", compactValue(value)),
+    );
+  }
+  parent.append(list);
+}
+
+function rawEventDetails(event) {
+  const details = transcriptElement("details", "llm-ai-raw-details");
+  const pre = transcriptElement("pre");
+  details.append(transcriptElement("summary", "", `Raw event data · #${event.sequence} ${event.type}`), pre);
+  details.addEventListener("toggle", () => {
+    if (details.open && !pre.textContent) pre.textContent = JSON.stringify(event.data, null, 2);
+  });
+  return details;
+}
+
+function transcriptCard(event, kind, title, subtitle, startedAt) {
+  const row = transcriptElement("li", `llm-ai-transcript-card is-${kind}`);
+  row.dataset.eventType = event.type;
+  const header = transcriptElement("header", "llm-ai-transcript-header");
+  const heading = transcriptElement("div");
+  heading.append(transcriptElement("strong", "", title));
+  if (subtitle) heading.append(transcriptElement("span", "", subtitle));
+  header.append(
+    heading,
+    transcriptElement("time", "", formatRelativeTime(event.timestamp, startedAt)),
+  );
+  row.append(header);
+  return row;
+}
+
+function toolResultSummary(event) {
+  if (!event) return { ok: null, message: "No result recorded" };
+  const data = event.data || {};
+  const result = data.result || {};
+  const ok = data.ok ?? result.ok ?? null;
+  const message = result.error || data.error || result.message
+    || (result.job ? `Job ${result.job.id || "queued"} · ${result.job.state || result.job.type || "accepted"}` : null)
+    || (result.mission ? `Mission ${result.mission.id || result.mission.handle || "accepted"}` : null)
+    || (ok === true ? "Completed successfully" : ok === false ? "Action failed" : "Result recorded");
+  return { ok, message, result };
+}
+
+function renderToolCall(call, resultEvent, index) {
+  const result = toolResultSummary(resultEvent);
+  const item = transcriptElement("section", `llm-ai-tool-call${result.ok === false ? " is-error" : result.ok === true ? " is-success" : ""}`);
+  const header = transcriptElement("header");
+  const number = transcriptElement("span", "llm-ai-tool-order", index + 1);
+  const name = transcriptElement("strong", "", readableLabel(call.name || "Tool call"));
+  const handle = transcriptElement("code", "", call.name || "unknown_tool");
+  const statusText = result.ok === false ? "Failed" : result.ok === true ? "Succeeded" : "Pending";
+  header.append(number, name, handle, transcriptElement("span", "llm-ai-tool-status", statusText));
+  item.append(header);
+  appendKeyValues(item, call.arguments, { limit: 12 });
+  const outcome = transcriptElement("div", "llm-ai-tool-result", result.message);
+  item.append(outcome);
+  if (result.result && typeof result.result === "object") {
+    const details = transcriptElement("details", "llm-ai-tool-result-details");
+    details.append(transcriptElement("summary", "", "Result details"));
+    appendKeyValues(details, result.result, { omit: ["ok", "error", "message"], limit: 12 });
+    if (details.childElementCount > 1) item.append(details);
+  }
+  return item;
+}
+
+function renderDecisionEvent(event, turn, resultByCallId, startedAt) {
+  const data = event.data || {};
+  const calls = Array.isArray(data.calls) ? data.calls : [];
+  const row = transcriptCard(
+    event,
+    "turn",
+    `Turn ${turn}`,
+    calls.length === 0 ? "No strategic action" : `${calls.length} action${calls.length === 1 ? "" : "s"}, executed in order`,
+    startedAt,
+  );
+  const usage = data.usage || {};
+  appendChips(row, [
+    ["Provider", data.latencyMs === undefined ? null : `${Number(data.latencyMs).toLocaleString()} ms`],
+    ["Tokens", usage.totalTokens],
+    ["Cached", usage.cachedTokens],
+    ["Reasoning", usage.reasoningTokens],
+    ["Finish", data.finishReason],
+  ]);
+  if (data.reasoningContent || data.action?.note) {
+    const reasoning = transcriptElement("details", "llm-ai-reasoning");
+    reasoning.append(
+      transcriptElement("summary", "", "Model reasoning"),
+      transcriptElement("div", "", data.reasoningContent || data.action.note),
+    );
+    row.append(reasoning);
+  }
+  if (calls.length > 0) {
+    const callList = transcriptElement("div", "llm-ai-tool-calls");
+    calls.forEach((call, index) => callList.append(renderToolCall(call, resultByCallId.get(call.id), index)));
+    row.append(callList);
+  } else if (data.action) {
+    const action = transcriptElement("section", "llm-ai-tool-call");
+    action.append(transcriptElement("strong", "", readableLabel(data.action.tool || data.action.action || "Decision")));
+    appendKeyValues(action, data.action.arguments || data.action);
+    row.append(action);
+  }
+  row.append(rawEventDetails(event));
+  return row;
+}
+
+function forceCount(forces) {
+  return (forces || []).reduce((total, force) => total + (Number(force.count) || 0), 0);
+}
+
+function renderCollection(parent, label, values, describe) {
+  if (!Array.isArray(values) || values.length === 0) return;
+  const section = transcriptElement("section", "llm-ai-state-collection");
+  section.append(transcriptElement("strong", "", `${label} (${values.length})`));
+  const list = transcriptElement("ul");
+  for (const value of values) list.append(transcriptElement("li", "", describe(value)));
+  section.append(list);
+  parent.append(section);
+}
+
+function describeForce(force) {
+  const composition = Object.entries(force.composition || {})
+    .map(([kind, count]) => `${count} ${kind}`).join(", ");
+  return [force.handle, composition || `${force.count || 0} units`, force.roles?.join("/"), force.position ? `at ${compactValue(force.position)}` : null]
+    .filter(Boolean).join(" · ");
+}
+
+function describeFacility(facility) {
+  const construction = facility.construction?.state === "constructing"
+    ? `${compactValue(facility.construction.percent)}% built`
+    : facility.construction?.state;
+  return [facility.handle, facility.roles?.join("/"), `${compactValue(facility.health)}% health`, construction, facility.position ? `at ${compactValue(facility.position)}` : null]
+    .filter(Boolean).join(" · ");
+}
+
+function describeContact(contact) {
+  return [contact.handle, contact.kind || contact.type, contact.count ? `${contact.count} units` : null, contact.position ? `at ${compactValue(contact.position)}` : null]
+    .filter(Boolean).join(" · ");
+}
+
+function describeDelta(delta) {
+  const change = delta.amount ?? delta.delta ?? delta.healthDelta;
+  return [readableLabel(delta.type || "change"), delta.handle, delta.owner, delta.kind, change === undefined ? null : compactValue(change), delta.position ? `at ${compactValue(delta.position)}` : null]
+    .filter(Boolean).join(" · ");
+}
+
+function appendDeltas(parent, deltas) {
+  if (!Array.isArray(deltas) || deltas.length === 0) return;
+  const group = transcriptElement("div", "llm-ai-state-deltas");
+  group.append(transcriptElement("strong", "", "Changes since the previous view"));
+  const list = transcriptElement("ul");
+  for (const delta of deltas) list.append(transcriptElement("li", `is-${delta.type || "change"}`, describeDelta(delta)));
+  group.append(list);
+  parent.append(group);
+}
+
+function renderObservationEvent(event, startedAt) {
+  const data = event.data || {};
+  const observation = data.observation || data;
+  const reason = data.reason || observation.reason;
+  const title = reason === "match-start" ? "Match start" : "State seen by the model";
+  const gameClock = formatClock(observation.time?.gameSeconds);
+  const row = transcriptCard(event, "observation", title, [gameClock ? `Game ${gameClock}` : null, observation.frame === undefined ? null : `frame ${observation.frame}`].filter(Boolean).join(" · "), startedAt);
+  const economy = observation.economy || {};
+  appendChips(row, [
+    ["Money", economy.money],
+    ["Power", economy.powerSufficient === undefined ? null : economy.powerSufficient ? "sufficient" : "shortage", economy.powerSufficient === false ? "warning" : ""],
+    ["Units", forceCount(observation.forces)],
+    ["Facilities", observation.facilities?.length ?? 0],
+    ["Threats", observation.threats?.length ?? 0, observation.threats?.length ? "warning" : ""],
+    ["Missions", observation.missions?.length ?? 0],
+    ["Objectives", observation.objectives?.length ?? 0],
+  ]);
+  appendDeltas(row, observation.deltas);
+  const hasState = [observation.forces, observation.facilities, observation.threats, observation.objectives]
+    .some((values) => Array.isArray(values) && values.length > 0);
+  if (hasState) {
+    const details = transcriptElement("details", "llm-ai-state-details");
+    details.append(transcriptElement("summary", "", "State details available to the model"));
+    renderCollection(details, "Forces", observation.forces, describeForce);
+    renderCollection(details, "Facilities", observation.facilities, describeFacility);
+    renderCollection(details, "Threats", observation.threats, describeContact);
+    renderCollection(details, "Objectives", observation.objectives, describeContact);
+    row.append(details);
+  }
+  row.append(rawEventDetails(event));
+  return row;
+}
+
+function renderReactionEvent(event, startedAt) {
+  const data = event.data || {};
+  const gameClock = Number.isFinite(data.frame) ? formatClock(data.frame / 30) : null;
+  const row = transcriptCard(event, "reaction", "Engine update", [gameClock ? `Game ${gameClock}` : null, data.frame === undefined ? null : `frame ${data.frame}`].filter(Boolean).join(" · "), startedAt);
+  appendDeltas(row, data.deltas);
+  appendChips(row, [
+    ["Active missions", data.missions?.length],
+    ["Production queues", data.production?.length],
+    ["Outcome", data.outcome],
+  ]);
+  row.append(rawEventDetails(event));
+  return row;
+}
+
+function renderGenericEvent(event, startedAt) {
+  const isError = event.type.includes("error") || event.type.includes("recovery");
+  const row = transcriptCard(event, isError ? "error" : "lifecycle", eventLabel(event.type), null, startedAt);
+  if (event.type === "session.started") {
+    appendChips(row, [
+      ["Commander", event.data?.profile?.name],
+      ["Model", event.data?.profile?.model],
+      ["Map", event.data?.metadata?.map],
+      ["Slot", event.data?.metadata?.slot],
+    ]);
+  } else {
+    appendKeyValues(row, event.data, { omit: ["profile", "metadata"], limit: 10 });
+  }
+  row.append(rawEventDetails(event));
+  return row;
+}
+
+function renderFoldedEvents(events, startedAt) {
+  if (events.length === 0) return null;
+  const representative = events[0];
+  const row = transcriptCard(
+    representative,
+    "transport",
+    "Low-level transport log",
+    `${events.length} request, response, dispatch, and execution event${events.length === 1 ? "" : "s"} folded into the readable turns above`,
+    startedAt,
+  );
+  const details = transcriptElement("details", "llm-ai-raw-details llm-ai-raw-transport");
+  const pre = transcriptElement("pre");
+  details.append(transcriptElement("summary", "", "Open complete low-level event data"), pre);
+  details.addEventListener("toggle", () => {
+    if (details.open && !pre.textContent) {
+      pre.textContent = JSON.stringify(events.map(({ sequence, timestamp, type, data }) => ({ sequence, timestamp, type, data })), null, 2);
+    }
+  });
+  row.append(details);
+  return row;
+}
+
+const FOLDED_EVENT_TYPES = new Set([
+  "model.request",
+  "model.response",
+  "tool.called",
+  "tool.result",
+  "engine.execution",
+  "environment.query",
+]);
+
+function renderTranscript(events, session, sessionProfile) {
+  const eventList = byId("llmAiSessionEvents");
+  eventList.replaceChildren();
+  const safeEvents = events.map((event) => ({
+    ...event,
+    data: redactLlmAiData(event.data, sessionProfile),
+  }));
+  const resultByCallId = new Map(safeEvents
+    .filter((event) => event.type === "tool.result" && event.data?.callId)
+    .map((event) => [event.data.callId, event]));
+  let turn = 0;
+  const foldedEvents = [];
+  for (const event of safeEvents) {
+    if (FOLDED_EVENT_TYPES.has(event.type)) {
+      foldedEvents.push(event);
+      continue;
+    }
+    if (event.type === "model.decision") {
+      eventList.append(renderDecisionEvent(event, ++turn, resultByCallId, session.startedAt));
+    } else if (event.type === "environment.observation") {
+      eventList.append(renderObservationEvent(event, session.startedAt));
+    } else if (event.type === "engine.reaction") {
+      eventList.append(renderReactionEvent(event, session.startedAt));
+    } else {
+      eventList.append(renderGenericEvent(event, session.startedAt));
+    }
+  }
+  const foldedLog = renderFoldedEvents(foldedEvents, session.startedAt);
+  if (foldedLog) eventList.append(foldedLog);
 }
 
 async function selectSession(id) {
@@ -310,16 +667,7 @@ async function selectSession(id) {
     const span = document.createElement("span"); span.textContent = label;
     card.append(strong, span); metrics.append(card);
   }
-  const eventList = byId("llmAiSessionEvents");
-  eventList.replaceChildren();
-  for (const event of events) {
-    const row = document.createElement("li");
-    const label = document.createElement("strong");
-    label.textContent = `${event.sequence}. ${eventLabel(event.type)}`;
-    const detail = document.createElement("pre");
-    detail.textContent = JSON.stringify(redactLlmAiData(event.data, sessionProfile), null, 2);
-    row.append(label, detail); eventList.append(row);
-  }
+  renderTranscript(events, session, sessionProfile);
 }
 
 async function refresh() {
