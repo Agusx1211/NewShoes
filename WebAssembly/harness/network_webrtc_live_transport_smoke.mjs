@@ -75,6 +75,13 @@ async function waitForPeer(client, peerId) {
   return result;
 }
 
+async function reconnectClient(client, peerId) {
+  const result = await client.page.evaluate(() =>
+    window.CnCPort.rpc("browserWebRtcEndpointReconnect"));
+  expect(result.ok === true && result.runtime?.reconnectCount === 1,
+    `${peerId} did not accept a reconnect request`, result);
+}
+
 async function waitForDatagram(client) {
   for (let attempt = 0; attempt < 100; ++attempt) {
     const result = await client.page.evaluate(() =>
@@ -120,19 +127,19 @@ try {
       destination: destinationReady.runtime.endpoint.localIp,
     });
 
-  const reconnectResult = await destination.page.evaluate(() =>
-    window.CnCPort.rpc("browserWebRtcEndpointReconnect"));
-  expect(reconnectResult.ok === true
-      && reconnectResult.runtime?.reconnectCount === 1,
-  "destination endpoint did not accept a reconnect request", reconnectResult);
-  const [sourceRecovered, destinationRecovered] = await Promise.all([
-    waitForPeer(source, "source after destination reconnect"),
-    waitForPeer(destination, "destination after reconnect"),
-  ]);
-  expect(sourceRecovered.runtime?.endpoint?.openPeers === 1
-      && destinationRecovered.runtime?.endpoint?.openPeers === 1,
-  "both WebRTC endpoints did not recover their peer channel",
-  { sourceRecovered, destinationRecovered });
+  for (const [reconnecting, waiting, reconnectingId, waitingId]
+    of [[destination, source, "destination", "source"],
+      [source, destination, "source", "destination"]]) {
+    await reconnectClient(reconnecting, reconnectingId);
+    const [reconnectingState, waitingState] = await Promise.all([
+      waitForPeer(reconnecting, `${reconnectingId} after reconnect`),
+      waitForPeer(waiting, `${waitingId} after ${reconnectingId} reconnect`),
+    ]);
+    expect(reconnectingState.runtime?.endpoint?.openPeers === 1
+        && waitingState.runtime?.endpoint?.openPeers === 1,
+    "both WebRTC endpoints did not recover their peer channel",
+    { reconnectingState, waitingState });
+  }
 
   const sendResult = await source.page.evaluate(() =>
     window.CnCPort.rpc("browserNetworkTransportWebRtcSendProbe"));

@@ -347,12 +347,7 @@ export class WebRtcUdpEndpoint {
   }
 
   peerMetadata() {
-    return [...this.peers.values()].map((peer) => ({
-      peerId: peer.peerId,
-      requestedPeerId: peer.requestedPeerId,
-      displayName: peer.displayName,
-      virtualIp: peer.virtualIp >>> 0,
-    }));
+    return [...this.knownPeerMetadata.values()];
   }
 
   validateRemoteMetadata(transportPeerId, value) {
@@ -462,6 +457,7 @@ export class WebRtcUdpEndpoint {
       return;
     }
     this.pendingPeerMetadata.delete(peerId);
+    this.knownPeerMetadata.set(peerId, metadata);
     const peer = {
       ...metadata,
       connection,
