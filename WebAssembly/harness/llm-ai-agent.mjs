@@ -8,8 +8,9 @@ import { completeLlmAiTurn, LlmAiProviderError } from "./llm-ai-openai-client.mj
 import { boundLlmPayload } from "./llm-ai-strategy.mjs";
 
 const INFORMATIONAL_TOOLS = new Set([
-  "query_buildable_options", "inspect_entities", "inspect_job", "query_map_region", "wait_for_tick",
+  "set_priorities", "query_buildable_options", "inspect_entities", "inspect_job", "query_map_region", "wait_for_tick",
 ]);
+const ACTIVE_JOB_STATES = new Set(["queued", "assembling", "moving", "engaged"]);
 const PROVIDER_CONTRACT_ERRORS = new Set([
   "invalid_action", "invalid_arguments", "invalid_json", "invalid_stream", "invalid_tool_call",
   "missing_message", "missing_stream", "missing_tool_call", "unknown_tool",
@@ -249,7 +250,8 @@ export class LlmAiAgentRuntime {
       excludedFailedTool: this.recoveryBlockedTool,
       toolsAvailableThisTurn: tools.map((tool) => tool.name),
       catalogRevision: this.lastObservation?.catalogRevision ?? null,
-      activeMissions: this.lastObservation?.missions ?? [],
+      activeMissions: (this.lastObservation?.missions ?? [])
+        .filter((mission) => ACTIVE_JOB_STATES.has(mission.state)),
     };
     this.messages.push({
       role: "user",

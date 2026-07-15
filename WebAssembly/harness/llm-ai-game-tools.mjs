@@ -2,13 +2,21 @@ import {
   StableQueryPager,
   buildableOptions,
   compactRoutineObservation,
+  hasCategory,
+  hasSemanticTag,
   internalNameFromHandle,
+  isConstructionComplete,
   normalizedEntity,
 } from "./llm-ai-strategy.mjs";
 
 const PRIORITIES = Object.freeze(["economy", "production", "technology", "defense", "scouting", "aggression"]);
 const MISSIONS = Object.freeze(["defend", "scout", "capture", "harass", "attackRegion", "escort", "regroup"]);
 const ORDERS = Object.freeze(["move", "attackMove", "attack", "guardPosition", "guardObject", "stop", "scatter"]);
+const TARGETABLE_OFFENSIVE_MISSIONS = new Set(["harass", "attackRegion"]);
+const TERMINAL_JOB_STATES = new Set(["blocked", "complete", "failed"]);
+const MISSION_ARRIVAL_RADIUS = 250;
+const MISSION_STALL_FRAMES = 15 * 30;
+const MISSION_PROGRESS_DISTANCE = 25;
 
 function objectValue(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
@@ -45,6 +53,34 @@ function point(value, required = false) {
   return { present: true, x: finite(position.x, "position.x"), y: finite(position.y, "position.y") };
 }
 
+function position2d(value) {
+  if (Array.isArray(value) && value.length >= 2) return { x: Number(value[0]), y: Number(value[1]) };
+  if (value && typeof value === "object") return { x: Number(value.x), y: Number(value.y) };
+  return null;
+}
+
+function missionTarget(job, raw) {
+  if (job.position) return position2d(job.position);
+  if (!Number.isInteger(job.targetId)) return null;
+  return position2d((raw.objects || []).find((object) => object.id === job.targetId)?.position);
+}
+
+function missionDistance(job, members, raw) {
+  const target = missionTarget(job, raw);
+  const positions = members.map((member) => position2d(member.position))
+    .filter((position) => position && Number.isFinite(position.x) && Number.isFinite(position.y));
+  if (!target || positions.length === 0 || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return null;
+  const distances = positions.map((position) => Math.hypot(position.x - target.x, position.y - target.y))
+    .sort((left, right) => left - right);
+  return distances[Math.floor(distances.length / 2)];
+}
+
+function isOrderableMissionMember(object, playerIndex) {
+  return object.owner === playerIndex && !hasCategory(object, "structure")
+    && object.capabilities?.orderable === true && object.capabilities?.mobile === true
+    && isConstructionComplete(object);
+}
+
 function engineError(reply, command) {
   const detail = reply?.result?.error ?? reply?.error;
   const error = new Error((typeof detail === "string" ? detail : detail?.message) || `${command} was rejected`);
@@ -67,11 +103,11 @@ export class LlmAiStrategicState {
     this.rpc = rpc;
     this.playerIndex = integer(playerIndex, "playerIndex", 0, 63);
     this.profile = profile;
-    this.previousRaw = null;
+    this.lastObservedRaw = null;
     this.raw = null;
     this.catalog = null;
     this.catalogRevision = null;
-    this.facilitySignature = "";
+    this.catalogSignature = "";
     this.priorities = Object.fromEntries(PRIORITIES.map((name) => [name, 50]));
     this.jobs = new Map();
     this.serial = 0;
@@ -82,9 +118,20 @@ export class LlmAiStrategicState {
   acquire() { return this.call("llmAiStrategyController", { controller: "llm" }); }
   release() { return this.call("llmAiStrategyController", { controller: "classic" }); }
 
-  facilitySet(raw) {
-    return (raw.objects || []).filter((object) => object.owner === raw.localPlayerIndex && object.categories?.includes("STRUCTURE"))
-      .map((object) => `${object.id}:${object.template}`).sort().join("|");
+  catalogSourceSignature(raw) {
+    return (raw.objects || []).filter((object) => object.owner === raw.localPlayerIndex
+      && (hasCategory(object, "structure") || hasCategory(object, "builder")
+        || (object.capabilities?.commands || []).some((command) => command.product || command.upgrade)))
+      .map((object) => {
+        const commands = (object.capabilities?.commands || []).map((command) => [
+          command.name,
+          command.product?.template || null,
+          command.product?.availability || null,
+          command.upgrade?.name || null,
+          command.upgrade?.complete ?? null,
+        ]);
+        return JSON.stringify([object.id, object.template, object.capabilities?.commandSet || null, commands]);
+      }).sort().join("|");
   }
 
   async refreshCatalog() {
@@ -99,22 +146,48 @@ export class LlmAiStrategicState {
   updateJobs() {
     if (!this.raw) return;
     for (const job of this.jobs.values()) {
-      if (["complete", "failed"].includes(job.state)) continue;
+      if (TERMINAL_JOB_STATES.has(job.state)) continue;
       if (job.type === "mission") {
         const members = (this.raw.objects || []).filter((object) => job.objectIds.includes(object.id));
+        const distance = missionDistance(job, members, this.raw);
         if (members.length === 0) {
           job.state = "failed"; job.blockedReason = "no assigned squad members remain observable";
-        } else if (members.some((object) => /attack|combat|fire/i.test(object.motion?.ai?.state || ""))) job.state = "engaged";
-        else if (members.some((object) => /move|path/i.test(object.motion?.ai?.state || ""))) job.state = "moving";
+        } else if (members.some((object) => /attack|combat|fire/i.test(object.motion?.ai?.state || "")
+            || hasSemanticTag(object, "status", "attacking") || hasSemanticTag(object, "status", "firing"))) {
+          job.state = "engaged"; job.blockedReason = null;
+          job._lastProgressFrame = this.raw.frame;
+        } else if (members.some((object) => /move|path/i.test(object.motion?.ai?.state || ""))) {
+          job.state = "moving"; job.blockedReason = null;
+          job._lastProgressFrame = this.raw.frame;
+          if (Number.isFinite(distance)) job._bestDistance = Math.min(job._bestDistance ?? Infinity, distance);
+        } else if (Number.isFinite(distance) && distance <= MISSION_ARRIVAL_RADIUS) {
+          job.state = "complete"; job.blockedReason = null;
+        } else if (Number.isFinite(distance)
+            && distance < (job._bestDistance ?? Infinity) - MISSION_PROGRESS_DISTANCE) {
+          job.state = "moving"; job.blockedReason = null;
+          job._bestDistance = distance;
+          job._lastProgressFrame = this.raw.frame;
+        } else if (this.raw.frame - (job._lastProgressFrame ?? job.createdFrame) >= MISSION_STALL_FRAMES) {
+          job.state = "blocked"; job.blockedReason = "assigned members are idle before reaching the mission destination";
+        }
       } else if (job.type === "production" && job.internalName) {
+        if (job.optionHandle?.startsWith("upgrade:")) {
+          const option = buildableOptions(this.catalog)
+            .find((candidate) => candidate.handle === job.optionHandle);
+          if (option?.prerequisites === "complete") job.state = "complete";
+          else if (option) job.state = "assembling";
+          job.updatedFrame = this.raw.frame;
+          continue;
+        }
+        const preexisting = new Set(job.preexistingObjectIds || []);
         const produced = (this.raw.objects || []).filter((object) => object.owner === this.raw.localPlayerIndex
-          && object.template === job.internalName && object.id !== job.preexistingObjectId);
-        if (produced.some((object) => Number(object.construction) >= 1)) job.state = "complete";
+          && object.template === job.internalName && !preexisting.has(object.id));
+        if (produced.some(isConstructionComplete)) job.state = "complete";
         else if (produced.length > 0) job.state = "assembling";
       } else if (job.type === "force" && Number.isInteger(job.teamId)) {
         const members = (this.raw.objects || []).filter((object) => object.owner === this.raw.localPlayerIndex
           && object.teamId === job.teamId);
-        if (members.length > 0 && members.every((object) => Number(object.construction) >= 1)) job.state = "complete";
+        if (members.length > 0 && members.every(isConstructionComplete)) job.state = "complete";
         else if (members.length > 0) job.state = "assembling";
       }
       job.updatedFrame = this.raw.frame;
@@ -123,19 +196,20 @@ export class LlmAiStrategicState {
 
   async observe({ assignment, match, reason }) {
     const raw = await this.call("llmAiWorldSnapshot", { mode: "unrestricted", detail: "full", includeCapabilities: false });
-    const signature = this.facilitySet(raw);
-    if (!this.catalog || signature !== this.facilitySignature) {
+    const signature = this.catalogSourceSignature(raw);
+    if (!this.catalog || signature !== this.catalogSignature) {
       await this.refreshCatalog();
-      this.facilitySignature = signature;
+      this.catalogSignature = signature;
     }
-    this.previousRaw = this.raw;
     this.raw = raw;
     this.updateJobs();
-    return compactRoutineObservation(raw, {
-      assignment, match, reason, previous: this.previousRaw, priorities: this.priorities,
+    const observation = compactRoutineObservation(raw, {
+      assignment, match, reason, previous: this.lastObservedRaw, priorities: this.priorities,
       jobs: [...this.jobs.values()], catalogRevision: this.catalogRevision,
       maxTokens: this.profile.routineObservationTokens,
     });
+    this.lastObservedRaw = raw;
+    return observation;
   }
 
   async focused() {
@@ -150,8 +224,27 @@ export class LlmAiStrategicState {
       type, state: type === "mission" ? "moving" : "queued", blockedReason: null,
       createdFrame: this.raw?.frame ?? 0, updatedFrame: this.raw?.frame ?? 0, ...details,
     };
+    if (type === "mission" && this.raw) {
+      const members = (this.raw.objects || []).filter((object) => job.objectIds.includes(object.id));
+      const distance = missionDistance(job, members, this.raw);
+      if (Number.isFinite(distance)) job._bestDistance = distance;
+      job._lastProgressFrame = job.createdFrame;
+    }
     this.jobs.set(job.id, job);
     return job;
+  }
+
+  supersedeMissions(replacement) {
+    const replacementIds = new Set(replacement.objectIds || []);
+    for (const job of this.jobs.values()) {
+      if (job === replacement || job.type !== "mission" || ["complete", "failed"].includes(job.state)) continue;
+      const sameSquad = replacement.squadHandle && replacement.squadHandle === job.squadHandle;
+      const sharedMember = (job.objectIds || []).some((id) => replacementIds.has(id));
+      if (!sameSquad && !sharedMember) continue;
+      job.state = "failed";
+      job.blockedReason = `superseded by ${replacement.id}`;
+      job.updatedFrame = this.raw?.frame ?? job.updatedFrame;
+    }
   }
 
   checkpointState() {
@@ -165,14 +258,22 @@ export class LlmAiStrategicState {
       forcesAndMissions: jobs.filter((job) => job.type === "mission").map(publicJob),
       productionPlan: jobs.filter((job) => job.type !== "mission").map(publicJob),
       threats: null,
-      unresolvedErrors: jobs.filter((job) => job.blockedReason).map((job) => ({ id: job.id, reason: job.blockedReason })),
-      liveIds: jobs.map((job) => job.id), frame: this.raw?.frame ?? null,
+      unresolvedErrors: jobs.filter((job) => job.blockedReason && !job.blockedReason.startsWith("superseded by "))
+        .map((job) => ({ id: job.id, reason: job.blockedReason })),
+      liveIds: jobs.filter((job) => !TERMINAL_JOB_STATES.has(job.state)).map((job) => job.id),
+      frame: this.raw?.frame ?? null,
     };
   }
 }
 
 function publicJob(job) {
-  const { internalName: _internalName, preexistingObjectId: _preexisting, ...visible } = job;
+  const {
+    internalName: _internalName,
+    preexistingObjectIds: _preexisting,
+    _bestDistance,
+    _lastProgressFrame,
+    ...visible
+  } = job;
   return visible;
 }
 
@@ -190,7 +291,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
   return [
     {
       name: "set_priorities",
-      description: "Set any strategic priority from 0 to 100: economy, production, technology, defense, scouting, aggression. Omitted fields retain their values. Freshness: current session. Cost: no engine query and one small bounded result.",
+      description: "Record planning weights from 0 to 100 for economy, production, technology, defense, scouting, and aggression. This updates controller memory but does not itself queue engine work; follow it with production, force, or mission actions. Omitted fields retain their values. Freshness: current session. Cost: no engine query and one small bounded result.",
       parameters: { type: "object", minProperties: 1, properties: Object.fromEntries(PRIORITIES.map((name) => [name, { type: "integer", minimum: 0, maximum: 100 }])), additionalProperties: false },
       validate(args) {
         const value = objectValue(args, "set_priorities arguments");
@@ -204,7 +305,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
     },
     {
       name: "query_buildable_options",
-      description: `Query revisioned buildable options filtered by purpose, maxCost, prerequisite state, exact production source, and readyOnly. Prerequisite states: ready, blocked, complete, unknown, validated-on-request. Sort handle|cost asc|desc; default handle asc, stable handle-asc tie-break. Page 1-64, default 24. Cursor binds exact catalog snapshot, filters, and ordering. Returns appliedFilters/order/snapshot/count/total/nextCursor. Refreshes when facilities change. Hard result limit ${budget} tokens.`,
+      description: `Query revisioned structure, infantry, vehicle, aircraft, technology, and force options filtered by purpose, maxCost, prerequisite state, exact production source, and readyOnly. Prerequisite states: ready, blocked, complete, unknown, validated-on-request. Force archetypes are validated-on-request, so discover them with readyOnly false. If a ready-only query is empty, retry without that filter before concluding nothing can be built. Sort handle|cost asc|desc; default handle asc, stable handle-asc tie-break. Page 1-64, default 24. Cursor binds exact catalog snapshot, filters, and ordering. Returns appliedFilters/order/snapshot/count/total/nextCursor. Refreshes when production sources or their availability change. Hard result limit ${budget} tokens.`,
       parameters: { type: "object", properties: {
         purpose: { type: "string", enum: ["any", "structure", "infantry", "vehicle", "aircraft", "technology", "force"] },
         maxCost: { type: "integer", minimum: 0 }, readyOnly: { type: "boolean" },
@@ -225,34 +326,53 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
           readyOnly: args.readyOnly === true,
         };
         const field = args.sort || "handle"; const direction = args.direction || "asc";
-        const records = buildableOptions(strategic.catalog).filter((record) =>
+        const available = buildableOptions(strategic.catalog);
+        const matchesStableFilters = (record) =>
           (filters.purpose === "any" || record.purpose === filters.purpose)
           && (filters.maxCost === null || record.cost === null || record.cost <= filters.maxCost)
           && (filters.prerequisite === "any" || prerequisiteState(record) === filters.prerequisite)
-          && (filters.source === null || record.source === filters.source)
+          && (filters.source === null || record.source === filters.source);
+        const records = available.filter((record) => matchesStableFilters(record)
           && (!filters.readyOnly || record.ready));
         records.sort((left, right) => {
           const comparison = field === "cost" ? (left.cost ?? Number.MAX_SAFE_INTEGER) - (right.cost ?? Number.MAX_SAFE_INTEGER)
             : left.handle.localeCompare(right.handle);
           return (direction === "desc" ? -comparison : comparison) || left.handle.localeCompare(right.handle);
         });
-        return strategic.pager.page(records, pageOptions(args, filters, field, direction, strategic.catalogRevision));
+        const page = strategic.pager.page(records, pageOptions(args, filters, field, direction, strategic.catalogRevision));
+        if (filters.readyOnly && page.total === 0 && available.some(matchesStableFilters)) {
+          page.hint = "Matching options exist but are not currently marked ready; retry with readyOnly false to inspect blocked or validated-on-request choices.";
+        }
+        return page;
       },
     },
     {
       name: "request_production",
-      description: "Request a structure or technology by stable build:/upgrade: optionHandle. The original engine owns prerequisites, payment, work queues, and legal placement. Returns a stable job with queued/assembling/blocked/complete/failed state. Freshness: execution frame; one engine request; bounded result.",
+      description: "Request a structure, unit, or technology by stable build:/produce:/upgrade: optionHandle. The original engine owns prerequisites, payment, work queues, and legal placement. Returns a stable job with queued/assembling/blocked/complete/failed state. Freshness: catalog revision and execution frame; one engine request; bounded result.",
       parameters: { type: "object", properties: { optionHandle: { type: "string", maxLength: 320 } }, required: ["optionHandle"], additionalProperties: false },
       validate(args) { objectValue(args, "request_production arguments"); },
       async execute(args) {
         const option = buildableOptions(strategic.catalog).find((candidate) => candidate.handle === args.optionHandle);
         if (!option) throw new TypeError("optionHandle is not in the current catalog revision");
-        const upgrade = args.optionHandle.startsWith("upgrade:");
-        const internalName = internalNameFromHandle(args.optionHandle, upgrade ? "upgrade" : "build");
-        const existing = strategic.raw?.objects?.find((object) => object.owner === strategic.playerIndex && object.template === internalName);
-        const job = strategic.newJob("production", { optionHandle: args.optionHandle, internalName, preexistingObjectId: existing?.id ?? null });
+        const [productHandle] = args.optionHandle.split("@facility:");
+        const upgrade = productHandle.startsWith("upgrade:");
+        const unit = productHandle.startsWith("produce:");
+        const internalName = internalNameFromHandle(productHandle, upgrade ? "upgrade" : unit ? "produce" : "build");
+        const preexistingObjectIds = (strategic.raw?.objects || [])
+          .filter((object) => object.owner === strategic.playerIndex && object.template === internalName)
+          .map((object) => object.id);
+        const job = strategic.newJob("production", {
+          optionHandle: args.optionHandle, internalName, preexistingObjectIds,
+        });
         try {
-          const result = await call("llmAiEngineRequest", { action: upgrade ? "buildUpgrade" : "buildBuilding", name: internalName, value: 0 });
+          const result = unit
+            ? await call("llmAiGameCommand", {
+                sourceId: integer(internalNameFromHandle(option.source, "facility"), "production source ID", 1),
+                command: option.command, targetId: 0, x: 0, y: 0, angle: 0, hasPosition: false,
+              })
+            : await call("llmAiEngineRequest", {
+                action: upgrade ? "buildUpgrade" : "buildBuilding", name: internalName, value: 0,
+              });
           return { ok: true, job: publicJob(job), engine: result };
         } catch (error) {
           job.state = "blocked"; job.blockedReason = error?.message || String(error);
@@ -286,7 +406,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
     },
     {
       name: "assign_mission",
-      description: "Assign a stable squad handle (preferred) or exceptional explicit object IDs to defend, scout, capture, harass, attackRegion, escort, or regroup. Uses original synchronized order, pathfinding, and combat execution. position is required except escort uses targetId. Returns persistent mission ID/state. Freshness: execution frame; one command result.",
+      description: "Assign a stable squad handle (preferred) or exceptional explicit object IDs to defend, scout, capture, harass, attackRegion, escort, or regroup. Uses original synchronized order, pathfinding, and combat execution. defend, scout, capture, and regroup require position; escort requires targetId; harass and attackRegion accept either position or an observable targetId. Returns persistent mission ID/state. Freshness: execution frame; one command result.",
       parameters: { type: "object", properties: {
         mission: { type: "string", enum: MISSIONS }, squadHandle: { type: "string", pattern: "^squad:[0-9]+$", maxLength: 64 },
         objectIds: { type: "array", minItems: 1, maxItems: 128, items: { type: "integer", minimum: 1 } },
@@ -299,7 +419,14 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
         if (hasSquad === hasIds) throw new TypeError("provide exactly one of squadHandle or objectIds");
         if (hasSquad && !/^squad:\d+$/.test(value.squadHandle)) throw new TypeError("squadHandle is invalid");
         if (hasIds) ids(value.objectIds);
-        if (value.mission === "escort") integer(value.targetId, "targetId", 1); else point(value.position, true);
+        if (value.mission === "escort") integer(value.targetId, "targetId", 1);
+        else if (TARGETABLE_OFFENSIVE_MISSIONS.has(value.mission)) {
+          if (value.targetId === undefined && value.position === undefined) {
+            throw new TypeError(`${value.mission} requires position or targetId`);
+          }
+          if (value.targetId !== undefined) integer(value.targetId, "targetId", 1);
+          if (value.position !== undefined) point(value.position, true);
+        } else point(value.position, true);
       },
       async execute(args) {
         this.validate(args);
@@ -308,15 +435,18 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
           const raw = await strategic.focused();
           const teamId = integer(args.squadHandle.slice("squad:".length), "squad team ID", 1);
           objectIds = (raw.objects || []).filter((object) => object.owner === raw.localPlayerIndex
-            && object.teamId === teamId && !object.categories?.includes("STRUCTURE")).map((object) => object.id);
-          if (objectIds.length === 0) throw new TypeError("squadHandle has no current controllable members");
+            && object.teamId === teamId && isOrderableMissionMember(object, raw.localPlayerIndex)).map((object) => object.id);
+          if (objectIds.length === 0) throw new TypeError("squadHandle has no current orderable mobile members");
         } else objectIds = ids(args.objectIds);
         const position = point(args.position);
-        const action = args.mission === "escort" ? "guardObject" : ["harass", "attackRegion", "capture"].includes(args.mission)
-          ? "attackMove" : args.mission === "defend" ? "guardPosition" : "move";
+        const action = args.mission === "escort" ? "guardObject"
+          : TARGETABLE_OFFENSIVE_MISSIONS.has(args.mission) && args.targetId ? "attack"
+            : ["harass", "attackRegion", "capture"].includes(args.mission) ? "attackMove"
+              : args.mission === "defend" ? "guardPosition" : "move";
         const job = strategic.newJob("mission", { mission: args.mission, squadHandle: args.squadHandle || null, objectIds, targetId: args.targetId ?? null, position: position.present ? { x: position.x, y: position.y } : null });
         try {
           const result = await call("llmAiGameOrder", { action, objectIds: objectIds.join(","), targetId: args.targetId ?? 0, x: position.x, y: position.y });
+          strategic.supersedeMissions(job);
           return { ok: true, mission: publicJob(job), engine: result };
         } catch (error) {
           job.state = "blocked"; job.blockedReason = error?.message || String(error);
@@ -342,21 +472,24 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
       async execute(args) {
         const raw = args.cursor ? strategic.raw : await strategic.focused();
         const filters = { scope: args.scope || "any", owner: args.owner || "any", kind: args.kind || "any", handles: args.handles || [] }; const direction = args.direction || "asc";
-        let records = (raw?.objects || []).filter((object) => object.owner === raw.localPlayerIndex || ["allies", "enemies"].includes(object.relationship))
-          .map((object) => normalizedEntity(object, raw.localPlayerIndex)).filter((record) =>
+        let records = (raw?.objects || []).map((object) => normalizedEntity(object, raw.localPlayerIndex))
+          .filter((record) => ["self", "allied", "enemy"].includes(record.owner)).filter((record) =>
             (filters.owner === "any" || record.owner === filters.owner) && (filters.kind === "any" || record.kind === filters.kind)
             && (filters.handles.length === 0 || filters.handles.includes(record.handle) || filters.handles.includes(record.squadHandle)));
         if (filters.scope === "squad") records = records.filter((record) => record.owner === "self" && record.kind !== "structure");
         if (filters.scope === "contact") records = records.filter((record) => record.owner !== "self");
         if (["base", "facility"].includes(filters.scope)) records = records.filter((record) => record.owner === "self" && record.kind === "structure");
-        if (filters.scope === "objective") records = [{ handle: "objective:match", kind: "objective", owner: "self", state: raw?.game?.outcome || "playing", frame: raw?.frame }];
+        if (filters.scope === "objective") {
+          records = records.filter((record) => record.owner === "enemy" && record.kind === "structure");
+          if (raw?.game?.outcome) records.unshift({ handle: "objective:match", kind: "objective", owner: "self", state: raw.game.outcome, frame: raw.frame });
+        }
         records.sort((left, right) => (direction === "desc" ? -1 : 1) * left.handle.localeCompare(right.handle));
         return strategic.pager.page(records, pageOptions(args, filters, "handle", direction, `world:${raw?.snapshotId}`));
       },
     },
     {
       name: "query_map_region",
-      description: `Query a bounded fog-filtered region at coarse 16x16, medium 32x32, or fine 45x45 resolution for terrain|route|construction. Unknown cells stay hidden. Row-major order; returned frame/bounds/resolution/filter define freshness. No pagination; one terrain query; hard result ${budget} tokens.`,
+      description: `Query a bounded fog-filtered terrain region at coarse 16x16, medium 32x32, or fine 45x45 resolution. terrain returns heights, route returns traversal flags, and construction returns terrain build-placement flags; construction does not search for structures or objectives. Use inspect_entities for world objects. Unknown cells stay hidden. Row-major order; returned frame/bounds/resolution/filter define freshness. No pagination; one terrain query; hard result ${budget} tokens.`,
       parameters: { type: "object", properties: {
         minX: { type: "number" }, minY: { type: "number" }, maxX: { type: "number" }, maxY: { type: "number" },
         resolution: { type: "string", enum: ["coarse", "medium", "fine"] }, filter: { type: "string", enum: ["terrain", "route", "construction"] },

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
+import { canonicalSemanticValue } from "./llm-ai-strategy.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -400,7 +401,8 @@ async function main() {
       competition.peakOwnedObjects = Math.max(competition.peakOwnedObjects,
         objects.filter((object) => object.owner === assignment.playerIndex).length);
       competition.peakVisibleEnemies = Math.max(competition.peakVisibleEnemies,
-        objects.filter((object) => object.relationship === "enemies").length);
+        objects.filter((object) => ["enemy", "enemies", "hostile"]
+          .includes(canonicalSemanticValue(object.relationship))).length);
       competition.peakMoney = Math.max(competition.peakMoney, player?.economy?.money ?? 0);
       competition.successfulActions = latest.events.filter((event) => event.type === "tool.result"
         && event.data?.ok === true && ![

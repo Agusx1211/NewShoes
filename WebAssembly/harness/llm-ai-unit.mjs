@@ -22,7 +22,11 @@ import {
 import {
   StableQueryPager,
   boundLlmPayload,
+  buildableOptions,
   compactRoutineObservation,
+  hasCategory,
+  isConstructionComplete,
+  normalizedEntity,
 } from "./llm-ai-strategy.mjs";
 import { MemoryLlmAiStore } from "./llm-ai-store.mjs";
 import { createLlmAiGameTools, LlmAiGameCoordinator } from "./llm-ai-game-runtime.mjs";
@@ -78,6 +82,8 @@ assert.equal(publicLlmAiProfile(profile).apiKey, undefined);
 assert.equal(publicLlmAiProfile(profile).hasApiKey, true);
 assert.match(buildLlmAiSystemPrompt(profile), /exclusively own strategic policy/);
 assert.match(buildLlmAiSystemPrompt(profile), /Classic strategic selection is disabled/);
+assert.match(buildLlmAiSystemPrompt(profile), /ready-only build query is empty/);
+assert.match(buildLlmAiSystemPrompt(profile), /GAME MODEL: This is a real-time base-building strategy game/);
 
 const exported = exportLlmAiSession({
   profile,
@@ -256,7 +262,7 @@ const tool = {
 {
   const objects = Array.from({ length: 200 }, (_, id) => ({
     id: id + 1, owner: id % 2 ? 4 : 5, relationship: id % 2 ? "allies" : "enemies",
-    categories: [id % 3 ? "VEHICLE" : "STRUCTURE"], position: [id, id, 0],
+    categories: [id % 3 ? "vehicle" : "structure"], position: [id, id, 0],
     health: [100 - (id % 20), 100], construction: 1, status: [], template: `Internal${id}`,
   }));
   const observation = compactRoutineObservation({
@@ -271,7 +277,7 @@ const tool = {
     snapshotId: 10, frame: 120, localPlayerIndex: 4, game: { outcome: null },
     terrain: { extent: { lo: [0, 0, 0], hi: [3_000, 3_000, 100] } },
     players: [{ index: 4, local: true, economy: { money: 1_000 } }],
-    objects: [{ id: 91, owner: 5, relationship: "enemies", categories: ["STRUCTURE"],
+    objects: [{ id: 91, owner: 5, relationship: "EnEmIeS", categories: ["StRuCt-UrE"],
       position: [2_500, 2_800, 0], health: [750, 1_000], construction: 1 }],
   }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [], previous: previousStrategic });
   assert.deepEqual(strategic.time, { logicFramesPerSecond: 30, gameSeconds: 4,
@@ -280,6 +286,48 @@ const tool = {
   assert.deepEqual(strategic.objectives, [{ handle: "contact:91", kind: "structure",
     position: [2_500, 2_800, 0], health: 75,
     construction: { state: "constructing", percent: 1 } }]);
+  assert.equal(strategic.deltas.find((delta) => delta.handle === "contact:91")?.owner, "enemy");
+
+  assert.equal(hasCategory({ categories: ["STRUC_ture"] }, "structure"), true);
+  assert.equal(isConstructionComplete({ construction: -1, status: [] }), true);
+  assert.equal(isConstructionComplete({ construction: 25, status: ["UNDER_construction"] }), false);
+  assert.deepEqual(normalizedEntity({
+    id: 92, owner: 5, relationship: "ENEMIES", categories: ["VeHiClE", "Can-Attack"],
+    capabilities: { mobile: true, attack: true, weaponRange: 150 }, position: [1, 2, 0],
+  }, 4), {
+    handle: "contact:92", kind: "vehicle", owner: "enemy", squadHandle: null,
+    roles: ["canattack"], position: [1, 2, 0], health: undefined,
+    construction: undefined, status: undefined,
+    capabilities: { mobile: true, attack: true, weaponRange: 150 }, motion: null,
+  });
+
+  const options = buildableOptions({
+    commandSets: {
+      RuntimeDozer: [{ name: "BuildPower", type: "construct", product: {
+        template: "RuntimePowerPlant", categories: ["structure"], cost: 800, buildFrames: 300,
+      } }],
+      RuntimeBarracks: [{ name: "TrainInfantry", type: "produce", product: {
+        template: "RuntimeInfantry", categories: ["InFaNtRy"], cost: 200, buildFrames: 90,
+      } }],
+    },
+    objectCapabilities: {
+      7: { commandSet: "RuntimeDozer", commandState: {
+        BuildPower: { availability: "available" },
+      } },
+      8: { commandSet: "RuntimeBarracks", commandState: {
+        TrainInfantry: { availability: "available" },
+      } },
+    },
+    engineServices: {
+      availableBuildingTemplates: ["RuntimePowerPlant"], availableUpgrades: [],
+      teamPrototypes: ["RuntimeAttackTeam"],
+    },
+  });
+  assert.equal(options.find((option) => option.handle === "build:RuntimePowerPlant")?.ready, true);
+  assert.equal(options.find((option) =>
+    option.handle === "produce:RuntimeInfantry@facility:8")?.purpose, "infantry");
+  assert.equal(options.find((option) => option.handle === "force:RuntimeAttackTeam")?.prerequisites,
+    "validated-on-request");
 
   const huge = { ok: true, items: [{ handle: "contact:77", detail: "z".repeat(100_000) }] };
   const bounded = boundLlmPayload(huge, 256);
@@ -339,8 +387,20 @@ const tool = {
   const world = {
     snapshotId: 3, frame: 40, localPlayerIndex: 4,
     objects: [
-      { id: 21, owner: 4, teamId: 9, categories: ["VEHICLE"] },
-      { id: 22, owner: 4, teamId: 9, categories: ["INFANTRY"] },
+      { id: 21, owner: 4, teamId: 9, categories: ["vehicle"], construction: -1,
+        position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: true }, motion: { ai: { state: "Moving" } } },
+      { id: 22, owner: 4, teamId: 9, categories: ["InFaNtRy"], construction: -1,
+        position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: true }, motion: { ai: { state: "Pathfind" } } },
+      { id: 23, owner: 4, teamId: 9, categories: ["structure"], construction: -1,
+        position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: false } },
+      { id: 24, owner: 4, teamId: 9, categories: ["vehicle"], construction: 50,
+        position: { x: 0, y: 0 }, capabilities: { orderable: false, mobile: true } },
+      { id: 31, owner: 4, categories: ["structure", "barracks"], construction: -1,
+        position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: false } },
+      { id: 32, owner: 4, template: "RuntimeInfantry", teamId: 10, categories: ["infantry"],
+        construction: -1, position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: true } },
+      { id: 30, owner: 5, relationship: "ENEMIES", categories: ["structure"], construction: -1,
+        position: { x: 500, y: 600 }, health: [500, 1_000] },
     ],
   };
   const rpc = async (command, payload) => {
@@ -351,19 +411,150 @@ const tool = {
   };
   const state = new LlmAiStrategicState({ rpc, playerIndex: 4, profile });
   state.raw = world;
-  state.catalog = { engineServices: { teamPrototypes: ["attack-force"] }, commandSets: {}, objectCapabilities: {} };
+  state.catalog = {
+    engineServices: {
+      teamPrototypes: ["attack-force"], availableBuildingTemplates: [],
+      availableUpgrades: ["UpgradeRuntimeArmor"],
+    },
+    commandSets: { RuntimeBarracks: [
+      { name: "TrainInfantry", type: "produce", product: {
+        template: "RuntimeInfantry", categories: ["INFANTRY"], cost: 200, buildFrames: 90,
+      } },
+      { name: "UpgradeArmor", type: "playerUpgrade", upgrade: {
+        name: "UpgradeRuntimeArmor", cost: 500, buildFrames: 300,
+      } },
+    ] },
+    objectCapabilities: { 31: { commandSet: "RuntimeBarracks", commandState: {
+      TrainInfantry: { availability: "available" },
+      UpgradeArmor: { complete: false },
+    } } },
+  };
   state.catalogRevision = "catalog:3";
   const tools = createLlmAiGameTools({ rpc, playerIndex: 4, profile, state });
   const mission = await tools.find((entry) => entry.name === "assign_mission").execute({
-    mission: "attackRegion", squadHandle: "squad:9", position: { x: 100, y: 200 },
+    mission: "attackRegion", squadHandle: "squad:9", targetId: 30,
   });
   assert.equal(mission.ok, true);
-  assert.equal(calls.find((entry) => entry.command === "llmAiGameOrder").payload.objectIds, "21,22");
+  assert.deepEqual(calls.find((entry) => entry.command === "llmAiGameOrder").payload, {
+    playerIndex: 4, action: "attack", objectIds: "21,22", targetId: 30, x: 0, y: 0,
+  });
+  state.jobs.get(mission.mission.id).state = "blocked";
+  state.jobs.get(mission.mission.id).blockedReason = "simulated earlier stall";
+
+  const replacement = await tools.find((entry) => entry.name === "assign_mission").execute({
+    mission: "regroup", squadHandle: "squad:9", position: { x: 1_000, y: 1_000 },
+  });
+  assert.equal(state.jobs.get(mission.mission.id).state, "failed");
+  assert.equal(state.jobs.get(mission.mission.id).blockedReason, `superseded by ${replacement.mission.id}`);
+  state.raw = { ...world, frame: 200, objects: world.objects.map((object) => object.owner === 4
+    ? { ...object, position: { x: 600, y: 600 }, motion: { ai: { state: "Idle" } } } : object) };
+  state.updateJobs();
+  assert.equal(state.jobs.get(replacement.mission.id).state, "moving");
+  state.raw = { ...state.raw, frame: 700 };
+  state.updateJobs();
+  assert.equal(state.jobs.get(replacement.mission.id).state, "blocked");
+  const arrived = await tools.find((entry) => entry.name === "assign_mission").execute({
+    mission: "regroup", squadHandle: "squad:9", position: { x: 100, y: 200 },
+  });
+  assert.equal(state.jobs.get(replacement.mission.id).state, "failed");
+  assert.equal(state.jobs.get(replacement.mission.id).blockedReason, `superseded by ${arrived.mission.id}`);
+  state.raw = { ...world, frame: 800, objects: world.objects.map((object) => object.owner === 4
+    ? { ...object, position: { x: 100, y: 200 }, motion: { ai: { state: "Idle" } } } : object) };
+  state.updateJobs();
+  assert.equal(state.jobs.get(arrived.mission.id).state, "complete");
+
+  const enemyStructures = await tools.find((entry) => entry.name === "inspect_entities").execute({
+    owner: "enemy", kind: "structure", scope: "objective",
+  });
+  assert.equal(enemyStructures.total, 1);
+  assert.equal(enemyStructures.items[0].handle, "contact:30");
+
+  const readyForces = await tools.find((entry) => entry.name === "query_buildable_options").execute({
+    purpose: "force", readyOnly: true,
+  });
+  assert.equal(readyForces.total, 0);
+  assert.match(readyForces.hint, /readyOnly false/);
+  const allForces = await tools.find((entry) => entry.name === "query_buildable_options").execute({
+    purpose: "force", readyOnly: false,
+  });
+  assert.equal(allForces.total, 1);
+
+  const infantry = await tools.find((entry) => entry.name === "query_buildable_options").execute({
+    purpose: "infantry", readyOnly: true,
+  });
+  assert.equal(infantry.total, 1);
+  assert.equal(infantry.items[0].handle, "produce:RuntimeInfantry@facility:31");
+  const production = await tools.find((entry) => entry.name === "request_production").execute({
+    optionHandle: infantry.items[0].handle,
+  });
+  assert.equal(production.ok, true);
+  assert.deepEqual(calls.findLast((entry) => entry.command === "llmAiGameCommand").payload, {
+    playerIndex: 4, sourceId: 31, command: "TrainInfantry", targetId: 0,
+    x: 0, y: 0, angle: 0, hasPosition: false,
+  });
+  state.raw = { ...world, frame: 210, objects: [...world.objects, {
+    id: 41, owner: 4, template: "RuntimeInfantry", categories: ["infantry"], construction: 35,
+  }] };
+  state.updateJobs();
+  assert.equal(state.jobs.get(production.job.id).state, "assembling");
+  state.raw.objects.at(-1).construction = -1;
+  state.updateJobs();
+  assert.equal(state.jobs.get(production.job.id).state, "complete");
+
+  const technology = await tools.find((entry) => entry.name === "query_buildable_options").execute({
+    purpose: "technology", readyOnly: true,
+  });
+  assert.equal(technology.total, 1);
+  const upgrade = await tools.find((entry) => entry.name === "request_production").execute({
+    optionHandle: technology.items[0].handle,
+  });
+  assert.equal(upgrade.ok, true);
+  state.catalog.objectCapabilities[31].commandState.UpgradeArmor.complete = true;
+  state.updateJobs();
+  assert.equal(state.jobs.get(upgrade.job.id).state, "complete");
+
   const force = await tools.find((entry) => entry.name === "request_force").execute({
     archetypeHandle: "force:attack-force", mode: "assemble",
   });
   assert.equal(force.job.squadHandle, "squad:12");
   assert.equal(force.job.state, "assembling");
+  state.raw = { ...world, frame: 240, objects: [{
+    id: 40, owner: 4, teamId: 12, categories: ["vehicle"], construction: -1,
+  }] };
+  state.updateJobs();
+  assert.equal(state.jobs.get(force.job.id).state, "complete");
+}
+
+// Focused detail snapshots must not erase the elapsed time between routine
+// observations; model inference and queries occur while simulation continues.
+{
+  const frames = [30, 120, 180];
+  const rpc = async (command) => {
+    assert.equal(command, "llmAiWorldSnapshot");
+    const frame = frames.shift();
+    return { ok: true, result: {
+      ok: true, snapshotId: frame, frame, localPlayerIndex: 4,
+      players: [{ index: 4, local: true, economy: { money: 1_000 } }],
+      objects: [], game: { outcome: null },
+    } };
+  };
+  const state = new LlmAiStrategicState({ rpc, playerIndex: 4, profile });
+  state.catalog = { commandSets: {}, objectCapabilities: {}, engineServices: {} };
+  state.catalogRevision = "catalog:runtime";
+  const catalogSources = state.catalogSourceSignature({ localPlayerIndex: 4, objects: [
+    { id: 1, owner: 4, template: "Command", categories: ["STRUCTURE"], capabilities: { commandSet: "CommandSet" } },
+    { id: 2, owner: 4, template: "Dozer", categories: ["builder"], capabilities: { commandSet: "DozerSet" } },
+    { id: 3, owner: 4, template: "Tank", categories: ["vehicle"], capabilities: { commandSet: "TankSet" } },
+  ] });
+  assert.match(catalogSources, /Command/);
+  assert.match(catalogSources, /Dozer/);
+  assert.doesNotMatch(catalogSources, /Tank/);
+  const first = await state.observe({ assignment: { playerIndex: 4 }, match: {}, reason: "first" });
+  assert.equal(first.time.sincePrevious.frames, 0);
+  await state.focused();
+  const second = await state.observe({ assignment: { playerIndex: 4 }, match: {}, reason: "second" });
+  assert.deepEqual(second.time.sincePrevious, { frames: 150, gameSeconds: 5 });
+  assert.equal(frames.length, 0);
 }
 
 // Provider overflow creates a coherent semantic checkpoint and retries exactly once.

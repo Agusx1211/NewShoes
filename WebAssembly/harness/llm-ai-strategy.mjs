@@ -148,31 +148,79 @@ export class StableQueryPager {
   }
 }
 
-function categories(record) {
-  return Array.isArray(record?.categories) ? record.categories : [];
+export function canonicalSemanticValue(value) {
+  return typeof value === "string" ? value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "") : "";
+}
+
+function tags(record, field) {
+  return Array.isArray(record?.[field]) ? record[field] : [];
+}
+
+export function hasSemanticTag(record, field, expected) {
+  const wanted = canonicalSemanticValue(expected);
+  return wanted !== "" && tags(record, field).some((value) => canonicalSemanticValue(value) === wanted);
+}
+
+export function hasCategory(record, expected) {
+  return hasSemanticTag(record, "categories", expected);
+}
+
+export function isConstructionComplete(record) {
+  const value = record?.construction;
+  const progress = Number(value);
+  if (value !== null && value !== undefined && Number.isFinite(progress)) return progress < 0 || progress >= 100;
+  return !hasSemanticTag(record, "status", "underConstruction");
 }
 
 function coarseKind(record) {
-  const tags = categories(record);
-  if (tags.includes("STRUCTURE")) return "structure";
-  if (tags.includes("AIRCRAFT")) return "aircraft";
-  if (tags.includes("VEHICLE")) return "vehicle";
-  if (tags.includes("INFANTRY")) return "infantry";
+  if (hasCategory(record, "structure")) return "structure";
+  if (hasCategory(record, "aircraft")) return "aircraft";
+  if (hasCategory(record, "vehicle")) return "vehicle";
+  if (hasCategory(record, "infantry")) return "infantry";
   return "unit";
 }
 
 function semanticHandle(record, localPlayerIndex) {
   const prefix = record.owner === localPlayerIndex
-    ? (categories(record).includes("STRUCTURE") ? "facility" : "unit") : "contact";
+    ? (hasCategory(record, "structure") ? "facility" : "unit") : "contact";
   return `${prefix}:${record.id}`;
+}
+
+function normalizedOwnership(record, localPlayerIndex) {
+  if (record?.owner === localPlayerIndex) return "self";
+  const relationship = canonicalSemanticValue(record?.relationship);
+  if (["enemy", "enemies", "hostile"].includes(relationship)) return "enemy";
+  if (["ally", "allies", "allied", "friendly"].includes(relationship)) return "allied";
+  return relationship || "neutral";
+}
+
+function semanticRoles(record) {
+  const kindTags = new Set(["structure", "aircraft", "vehicle", "infantry"]);
+  return [...new Set(tags(record, "categories")
+    .map(canonicalSemanticValue).filter((tag) => tag && !kindTags.has(tag)))];
+}
+
+function normalizedCapabilities(record) {
+  const capabilities = record?.capabilities;
+  if (!capabilities || typeof capabilities !== "object") return null;
+  const result = {};
+  for (const name of ["selectable", "orderable", "mobile", "attack", "production"]) {
+    if (typeof capabilities[name] === "boolean") result[name] = capabilities[name];
+  }
+  for (const name of ["weaponRange", "visionRange"]) {
+    const value = capabilities[name];
+    if (value !== null && value !== undefined && Number.isFinite(Number(value))) result[name] = Number(value);
+  }
+  return Object.keys(result).length > 0 ? result : null;
 }
 
 function summarizeForces(objects, localPlayerIndex) {
   const groups = new Map();
   for (const object of objects) {
-    if (!["allies", "enemies"].includes(object.relationship)) continue;
+    const owner = normalizedOwnership(object, localPlayerIndex);
+    if (!["self", "allied", "enemy"].includes(owner)) continue;
     if (coarseKind(object) === "structure") continue;
-    const ownership = object.owner === localPlayerIndex ? "owned" : object.relationship === "enemies" ? "enemy" : "allied";
+    const ownership = owner === "self" ? "owned" : owner;
     const handle = ownership === "owned" && Number.isInteger(object.teamId)
       ? `squad:${object.teamId}` : `force:${ownership}:${coarseKind(object)}`;
     const key = `${handle}:${coarseKind(object)}`;
@@ -183,9 +231,7 @@ function summarizeForces(objects, localPlayerIndex) {
     const health = Array.isArray(object.health)
       ? { current: object.health[0], max: object.health[1] } : object.health;
     if (health?.max > 0 && health.current < health.max * 0.7) current.damaged += 1;
-    // The original engine uses -1 for a completed object and 0..100 while
-    // construction is in progress.
-    if (Number(object.construction) >= 0) current.incomplete += 1;
+    if (!isConstructionComplete(object)) current.incomplete += 1;
     groups.set(key, current);
   }
   return [...groups.values()].sort((left, right) =>
@@ -205,18 +251,18 @@ function summarizeProduction(objects, localPlayerIndex) {
   return result.sort((left, right) => left.facility.localeCompare(right.facility));
 }
 
-function summarizeObjectives(objects) {
-  return objects.filter((object) => object.relationship === "enemies"
+function summarizeObjectives(objects, localPlayerIndex) {
+  return objects.filter((object) => normalizedOwnership(object, localPlayerIndex) === "enemy"
       && coarseKind(object) === "structure")
     .map((object) => {
       const health = Array.isArray(object.health)
         ? { current: object.health[0], max: object.health[1] } : object.health;
       return {
-        handle: semanticHandle(object),
+        handle: semanticHandle(object, localPlayerIndex),
         kind: "structure",
         position: object.position,
         health: health?.max > 0 ? Math.round(100 * health.current / health.max) : null,
-        construction: Number(object.construction) < 0
+        construction: isConstructionComplete(object)
           ? { state: "complete" }
           : { state: "constructing", percent: object.construction },
       };
@@ -231,17 +277,32 @@ function objectDelta(previous, current, localPlayerIndex) {
   const deltas = [];
   for (const object of current.objects || []) {
     const prior = before.get(object.id);
-    if (!prior) deltas.push({ type: "appeared", handle: semanticHandle(object, localPlayerIndex), kind: coarseKind(object) });
+    if (!prior) deltas.push({
+      type: "appeared",
+      handle: semanticHandle(object, localPlayerIndex),
+      owner: normalizedOwnership(object, localPlayerIndex),
+      kind: coarseKind(object),
+    });
     else {
       const oldHealth = Array.isArray(prior.health) ? prior.health[0] : prior.health?.current;
       const newHealth = Array.isArray(object.health) ? object.health[0] : object.health?.current;
       if (Number.isFinite(oldHealth) && Number.isFinite(newHealth) && newHealth < oldHealth) {
-        deltas.push({ type: "damaged", handle: semanticHandle(object, localPlayerIndex), healthLost: Math.round(oldHealth - newHealth) });
+        deltas.push({
+          type: "damaged",
+          handle: semanticHandle(object, localPlayerIndex),
+          owner: normalizedOwnership(object, localPlayerIndex),
+          healthLost: Math.round(oldHealth - newHealth),
+        });
       }
     }
   }
   for (const object of previous.objects || []) {
-    if (!after.has(object.id)) deltas.push({ type: "disappeared", handle: semanticHandle(object, localPlayerIndex), kind: coarseKind(object) });
+    if (!after.has(object.id)) deltas.push({
+      type: "disappeared",
+      handle: semanticHandle(object, localPlayerIndex),
+      owner: normalizedOwnership(object, localPlayerIndex),
+      kind: coarseKind(object),
+    });
   }
   return deltas.sort((left, right) => left.handle.localeCompare(right.handle));
 }
@@ -252,7 +313,7 @@ export function compactRoutineObservation(raw, {
 } = {}) {
   const local = (raw.players || []).find((player) => player.index === raw.localPlayerIndex || player.local);
   const relevant = (raw.objects || []).filter((object) =>
-    object.owner === raw.localPlayerIndex || ["allies", "enemies"].includes(object.relationship));
+    ["self", "allied", "enemy"].includes(normalizedOwnership(object, raw.localPlayerIndex)));
   const previousFrame = Number(previous?.frame);
   const elapsedFrames = Number.isFinite(previousFrame)
     ? Math.max(0, raw.frame - previousFrame) : 0;
@@ -279,10 +340,11 @@ export function compactRoutineObservation(raw, {
     forces: summarizeForces(relevant, raw.localPlayerIndex),
     production: summarizeProduction(relevant, raw.localPlayerIndex),
     missions: jobs.map((job) => ({ id: job.id, type: job.type, state: job.state, blockedReason: job.blockedReason || null })),
-    threats: summarizeForces(relevant.filter((object) => object.relationship === "enemies"), raw.localPlayerIndex),
+    threats: summarizeForces(relevant.filter((object) =>
+      normalizedOwnership(object, raw.localPlayerIndex) === "enemy"), raw.localPlayerIndex),
     objectives: raw.game?.outcome
       ? [{ handle: "objective:match", state: raw.game.outcome }]
-      : summarizeObjectives(relevant),
+      : summarizeObjectives(relevant, raw.localPlayerIndex),
     deltas: objectDelta(previous, raw, raw.localPlayerIndex),
     catalogRevision,
     detailTools: ["inspect_entities", "inspect_job", "query_buildable_options", "query_map_region"],
@@ -297,13 +359,15 @@ export function normalizedEntity(record, localPlayerIndex) {
   return {
     handle: semanticHandle(record, localPlayerIndex),
     kind: coarseKind(record),
-    owner: record.owner === localPlayerIndex ? "self" : record.relationship,
+    owner: normalizedOwnership(record, localPlayerIndex),
     squadHandle: record.owner === localPlayerIndex && Number.isInteger(record.teamId)
       ? `squad:${record.teamId}` : null,
+    roles: semanticRoles(record),
     position: record.position,
     health,
     construction: record.construction,
     status: record.status,
+    capabilities: normalizedCapabilities(record),
     motion: record.motion?.ai ? {
       state: record.motion.ai.state,
       goal: record.motion.ai.goalObjectId ? `contact:${record.motion.ai.goalObjectId}` : null,
@@ -322,17 +386,31 @@ export function buildableOptions(catalog) {
     const commands = definitions[capability?.commandSet] || [];
     for (const command of commands) {
       const state = capability?.commandState?.[command.name] || {};
-      if (command.product && categories(command.product).includes("STRUCTURE")
+      const source = `facility:${sourceId}`;
+      if (command.product && hasCategory(command.product, "structure")
           && engineBuildings.has(command.product.template)) records.push({
         handle: `build:${command.product.template}`,
-        purpose: categories(command.product).includes("STRUCTURE") ? "structure" : coarseKind(command.product),
+        purpose: "structure",
         cost: command.product.cost,
         buildFrames: command.product.buildFrames,
         prerequisites: state.availability || "unknown",
         ready: state.availability === "available",
-        source: `facility:${sourceId}`,
+        source,
         command: command.name,
       });
+      const productKind = command.product ? coarseKind(command.product) : null;
+      if (command.type === "produce" && ["infantry", "vehicle", "aircraft"].includes(productKind)) {
+        records.push({
+          handle: `produce:${command.product.template}@${source}`,
+          purpose: productKind,
+          cost: command.product.cost,
+          buildFrames: command.product.buildFrames,
+          prerequisites: state.availability || "unknown",
+          ready: state.availability === "available",
+          source,
+          command: command.name,
+        });
+      }
       if (command.upgrade && engineUpgrades.has(command.upgrade.name)) records.push({
         handle: `upgrade:${command.upgrade.name}`,
         purpose: "technology",
@@ -340,7 +418,7 @@ export function buildableOptions(catalog) {
         buildFrames: command.upgrade.buildFrames,
         prerequisites: state.complete ? "complete" : "available",
         ready: !state.complete,
-        source: `facility:${sourceId}`,
+        source,
         command: command.name,
       });
     }
