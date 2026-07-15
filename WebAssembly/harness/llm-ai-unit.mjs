@@ -97,6 +97,8 @@ assert.match(buildLlmAiSystemPrompt(profile), /contact:N handle directly as assi
 assert.match(buildLlmAiSystemPrompt(profile), /units produced afterward are not assigned automatically/);
 assert.match(buildLlmAiSystemPrompt(profile), /query_map_region returns the same persistent \?\/s\/r\/v/);
 assert.match(buildLlmAiSystemPrompt(profile), /scoutingCoverage is persistent player-visible session memory/);
+assert.match(buildLlmAiSystemPrompt(profile), /commands lists currently observed executable non-production abilities/);
+assert.match(buildLlmAiSystemPrompt(profile), /playerCombatSinceStart is player-wide/);
 
 const exported = exportLlmAiSession({
   profile,
@@ -365,6 +367,12 @@ const tool = {
     objects: [{ id: 93, owner: 4, categories: ["structure", "barracks"],
       position: { x: 100, y: 200 }, health: { current: 750, max: 1_000 }, capabilities: {
       productionQueue: [{ type: "unit", name: "ObservedInfantry", progress: 42 }],
+      commands: [
+        { name: "TrainObservedInfantry", type: "produce", product: { template: "ObservedInfantry" } },
+        { name: "Command_ObservedPower", type: "specialPower", needsPosition: true,
+          needsObject: false, specialPower: { name: "ObservedPower", ready: false,
+            percentReady: 0.75, readyFrame: 421 } },
+      ],
     } }],
   }, { maxTokens: 2_048, assignment: { playerIndex: 4 }, jobs: [] });
   assert.deepEqual(producing.production, [{ facility: "facility:93", queue: [{
@@ -373,6 +381,11 @@ const tool = {
   assert.deepEqual(producing.facilities, [{
     handle: "facility:93", roles: ["barracks"], health: 75,
     construction: { state: "complete" }, position: { x: 100, y: 200 },
+  }]);
+  assert.deepEqual(producing.commands, [{
+    source: "facility:93", sourceId: 93, command: "Command_ObservedPower",
+    type: "specialPower", targeting: "position", power: "ObservedPower",
+    ready: false, percentReady: 0.75, readyInGameSeconds: 10, sourceCount: 1,
   }]);
 
   const lostContact = compactRoutineObservation({
@@ -389,7 +402,10 @@ const tool = {
 
   const currentWork = compactRoutineObservation({
     snapshotId: 13, frame: 2_000, localPlayerIndex: 4, game: { outcome: null },
-    players: [{ index: 4, local: true }], objects: [
+    players: [{ index: 4, local: true, combatRecord: {
+      unitsBuilt: 12, unitsLost: 4, enemyUnitsDestroyed: 5,
+      structuresBuilt: 6, structuresLost: 1, enemyStructuresDestroyed: 2,
+    } }], objects: [
       { id: 301, owner: 4, teamId: 7, categories: ["infantry", "combat"], construction: -1,
         capabilities: { orderable: true, mobile: true } },
       { id: 302, owner: 4, teamId: 7, categories: ["vehicle", "combat"], construction: -1,
@@ -405,7 +421,10 @@ const tool = {
     { id: "job:blocked", type: "force", state: "blocked", updatedFrame: 1_980,
       archetypeHandle: "force:CurrentTeam", blockedReason: "insufficient funds" },
     { id: "mission:1", type: "mission", state: "moving", updatedFrame: 1_995,
+      createdFrame: 1_700,
       squadHandle: "squad:7", objectIds: [301, 302, 399],
+      _combatAtStart: { unitsBuilt: 8, unitsLost: 1, enemyUnitsDestroyed: 3,
+        structuresBuilt: 5, structuresLost: 1, enemyStructuresDestroyed: 1 },
       mission: "attackRegion", position: { x: 900, y: 800 } },
     { id: "mission:old", type: "mission", state: "failed", updatedFrame: 1_990,
       squadHandle: "squad:7", mission: "scout", blockedReason: "superseded by mission:1" },
@@ -421,6 +440,14 @@ const tool = {
     assignedAtStart: 3, survivingAssigned: 2,
     survivingComposition: { infantry: 1, vehicle: 1 },
     position: { x: 900, y: 800 }, target: null, blockedReason: null,
+    progress: {
+      elapsedGameSeconds: 10, assignedLost: 1, currentSquadCount: 3,
+      reinforcementsAwaitingAssignment: 1,
+      playerCombatSinceStart: {
+        ownedUnitsLost: 3, confirmedEnemyUnitsDestroyed: 2,
+        confirmedEnemyStructuresDestroyed: 1,
+      },
+    },
   }]);
 
   const scoredCombat = compactRoutineObservation({

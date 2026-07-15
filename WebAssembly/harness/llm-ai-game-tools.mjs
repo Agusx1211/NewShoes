@@ -11,6 +11,8 @@ import {
   isRelevantStrategicWork,
   isStrategicEntity,
   managedSquadHandle,
+  missionDistance,
+  missionProgressSummary,
   normalizedEntity,
   terrainKnowledgeRows,
 } from "./llm-ai-strategy.mjs";
@@ -104,22 +106,6 @@ function position2d(value) {
   if (Array.isArray(value) && value.length >= 2) return { x: Number(value[0]), y: Number(value[1]) };
   if (value && typeof value === "object") return { x: Number(value.x), y: Number(value.y) };
   return null;
-}
-
-function missionTarget(job, raw) {
-  if (job.position) return position2d(job.position);
-  if (!Number.isInteger(job.targetId)) return null;
-  return position2d((raw.objects || []).find((object) => object.id === job.targetId)?.position);
-}
-
-function missionDistance(job, members, raw) {
-  const target = missionTarget(job, raw);
-  const positions = members.map((member) => position2d(member.position))
-    .filter((position) => position && Number.isFinite(position.x) && Number.isFinite(position.y));
-  if (!target || positions.length === 0 || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return null;
-  const distances = positions.map((position) => Math.hypot(position.x - target.x, position.y - target.y))
-    .sort((left, right) => left - right);
-  return distances[Math.floor(distances.length / 2)];
 }
 
 function engineError(reply, command) {
@@ -382,7 +368,13 @@ export class LlmAiStrategicState {
     if (type === "mission" && this.raw) {
       const members = (this.raw.objects || []).filter((object) => job.objectIds.includes(object.id));
       const distance = missionDistance(job, members, this.raw);
-      if (Number.isFinite(distance)) job._bestDistance = distance;
+      if (Number.isFinite(distance)) {
+        job._bestDistance = distance;
+        job._initialDistance = distance;
+      }
+      const local = (this.raw.players || []).find((player) =>
+        player.index === this.raw.localPlayerIndex || player.local);
+      if (local?.combatRecord) job._combatAtStart = structuredClone(local.combatRecord);
       job._lastProgressFrame = job.createdFrame;
     }
     this.jobs.set(job.id, job);
@@ -411,7 +403,9 @@ export class LlmAiStrategicState {
       decisions: { priorities: this.priorities },
       basesAndRegions: { catalogRevision: this.catalogRevision },
       economy: local?.economy || null,
-      forcesAndMissions: relevantJobs.filter((job) => job.type === "mission").map(publicJob),
+      forcesAndMissions: relevantJobs.filter((job) => job.type === "mission").map((job) => ({
+        ...publicJob(job), progress: missionProgressSummary(job, this.raw),
+      })),
       productionPlan: relevantJobs.filter((job) => job.type !== "mission").map(publicJob),
       threats: null,
       unresolvedErrors: relevantJobs.filter((job) => job.blockedReason)
@@ -426,7 +420,9 @@ function publicJob(job) {
   const {
     internalName: _internalName,
     preexistingObjectIds: _preexisting,
+    _combatAtStart,
     _bestDistance,
+    _initialDistance,
     _lastProgressFrame,
     ...visible
   } = job;
@@ -748,7 +744,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
     },
     {
       name: "use_command",
-      description: "Exceptional exact facility command using sourceId and command from the current catalog. Ordinary construction/technology belongs in request_production, whose engine service owns legal placement. Direct construction requires a queried position and real availability. One bounded command result.",
+      description: "Execute an exact currently observed non-production ability using sourceId and command from the routine commands list. Supply position or targetId exactly when its targeting field requires one, and respect its ready state. Ordinary construction/technology belongs in request_production, whose engine service owns legal placement. One bounded command result.",
       parameters: { type: "object", properties: {
         sourceId: { type: "integer", minimum: 1 }, command: { type: "string", minLength: 1, maxLength: 256 }, targetId: { type: "integer", minimum: 0 },
         position: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false }, angle: { type: "number" },

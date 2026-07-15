@@ -296,11 +296,19 @@ try {
                 confirmedEnemyUnitsDestroyed: 0, confirmedEnemyStructuresDestroyed: 0 } },
             forces: [{ handle: "force:owned:builder", count: 2, composition: { infantry: 2 }, roles: ["builder", "harvester"] }],
             facilities: [{ handle: "facility:28", roles: ["commandcenter", "factory"], health: 100, construction: { state: "complete" } }],
+            commands: [{ source: "facility:28", sourceId: 28,
+              command: "Command_TestStrike", type: "specialPower",
+              targeting: "position", ready: true, sourceCount: 1 }],
             jobs: [{ id: "job:41", type: "production", state: "assembling",
               optionHandle: "produce:GLAInfantryWorker@facility:28", squadHandle: null, blockedReason: null }],
             missions: [{ id: "mission:42", squadHandle: "squad:5", mission: "scout",
               state: "moving", assignedAtStart: 4, survivingAssigned: 3,
               survivingComposition: { infantry: 3 },
+              progress: { elapsedGameSeconds: 8.4, assignedLost: 1,
+                currentSquadCount: 5, reinforcementsAwaitingAssignment: 2,
+                playerCombatSinceStart: { ownedUnitsLost: 1,
+                  confirmedEnemyUnitsDestroyed: 2,
+                  confirmedEnemyStructuresDestroyed: 1 } },
               position: { x: 1750, y: 1750 }, target: null, blockedReason: null }],
             threats: [{ handle: "contact:404", kind: "vehicle", count: 2, position: { x: 2010, y: 1800 } }],
             objectives: [{ handle: "objective:supply:4", type: "supply", position: { x: 1880, y: 1650 } }],
@@ -352,7 +360,7 @@ try {
   assert.equal(await page.locator(".llm-ai-tool-call.is-error").count(), 1);
   assert.match(await page.locator(".llm-ai-transcript-card.is-turn").textContent(), /Turn 1.*Request production.*Assign mission.*Unknown squad handle/is);
   const observationText = await page.locator(".llm-ai-transcript-card.is-observation").last().textContent();
-  assert.match(observationText, /Money.*8,300.*Threats.*1.*Recent losses.*1.*Match losses.*3.*Enemy units destroyed.*4.*Enemy structures destroyed.*1.*Map observed.*25%.*job:41.*mission:42.*3\/4 assigned survive.*contact:404/is);
+  assert.match(observationText, /Money.*8,300.*Threats.*1.*Recent losses.*1.*Match losses.*3.*Enemy units destroyed.*4.*Enemy structures destroyed.*1.*Map observed.*25%.*Command_TestStrike.*sourceId 28.*job:41.*mission:42.*3\/4 assigned survive.*2 reinforcements await assignment.*since start: lost 1, destroyed 2 units \/ 1 structures.*contact:404/is);
   assert.match(observationText, /Scouting coverage.*192 cells never visible/is);
   assert.equal(await page.locator(".llm-ai-raw-details").count() >= 6, true);
   assert.equal(await page.locator(".llm-ai-raw-details[open]").count(), 0);
@@ -363,7 +371,9 @@ try {
   assert.match(await turnRaw.locator("pre").textContent(), /"authorization": "\[redacted\]"/);
   await turnRaw.locator("summary").click();
   assert.equal(await page.locator("#llmAiSessionEvents").textContent().then((text) => text.includes("browser-ultra-secret")), false);
-  await page.locator(".llm-ai-transcript-card.is-turn").scrollIntoViewIfNeeded();
+  const latestObservation = page.locator(".llm-ai-transcript-card.is-observation").last();
+  await latestObservation.locator(".llm-ai-state-details > summary").click();
+  await latestObservation.scrollIntoViewIfNeeded();
   await page.locator("#llmAiWindow").screenshot({ path: sessionScreenshotPath });
   assert.deepEqual(pageErrors, []);
 

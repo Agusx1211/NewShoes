@@ -508,6 +508,9 @@ function describeWork(work) {
   const composition = work.survivingComposition
     && Object.keys(work.survivingComposition).length > 0
     ? compactValue(work.survivingComposition) : null;
+  const progress = work.progress || {};
+  const combat = progress.playerCombatSinceStart;
+  const combatSummary = combat ? `since start: lost ${compactValue(combat.ownedUnitsLost)}, destroyed ${compactValue(combat.confirmedEnemyUnitsDestroyed)} units / ${compactValue(combat.confirmedEnemyStructuresDestroyed)} structures` : null;
   return [
     work.id,
     work.mission || work.optionHandle || work.type,
@@ -515,10 +518,24 @@ function describeWork(work) {
     work.state,
     assigned,
     composition,
+    progress.elapsedGameSeconds === undefined ? null : `${compactValue(progress.elapsedGameSeconds)} game-seconds`,
+    progress.reinforcementsAwaitingAssignment
+      ? `${compactValue(progress.reinforcementsAwaitingAssignment)} reinforcements await assignment` : null,
+    combatSummary,
     work.position ? `at ${compactValue(work.position)}` : null,
     work.target ? `target ${work.target}` : null,
     work.blockedReason,
   ].filter(Boolean).join(" · ");
+}
+
+function describeCommand(command) {
+  const readiness = command.ready === undefined ? null
+    : command.ready ? "ready" : `charging${command.readyInGameSeconds === undefined
+      ? "" : ` (${compactValue(command.readyInGameSeconds)} game-seconds)`}`;
+  return [command.command, command.source, `sourceId ${command.sourceId}`,
+    command.targeting ? `target ${command.targeting}` : null, readiness,
+    command.sourceCount > 1 ? `${command.sourceCount} equivalent sources` : null]
+    .filter(Boolean).join(" · ");
 }
 
 function describeDelta(delta) {
@@ -579,7 +596,7 @@ function renderObservationEvent(event, startedAt) {
     ["Objectives", observation.objectives?.length ?? 0],
   ]);
   appendDeltas(row, observation.deltas);
-  const hasState = [observation.forces, observation.facilities, observation.jobs,
+  const hasState = [observation.forces, observation.facilities, observation.commands, observation.jobs,
     observation.missions, observation.threats, observation.objectives]
     .some((values) => Array.isArray(values) && values.length > 0)
     || Array.isArray(observation.scoutingCoverage?.coverage);
@@ -588,6 +605,7 @@ function renderObservationEvent(event, startedAt) {
     details.append(transcriptElement("summary", "", "State details available to the model"));
     renderCollection(details, "Forces", observation.forces, describeForce);
     renderCollection(details, "Facilities", observation.facilities, describeFacility);
+    renderCollection(details, "Commands", observation.commands, describeCommand);
     renderCollection(details, "Jobs", observation.jobs, describeWork);
     renderCollection(details, "Missions", observation.missions, describeWork);
     renderCollection(details, "Threats", observation.threats, describeContact);

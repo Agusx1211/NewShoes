@@ -2,6 +2,14 @@ import { conservativeLlmTokens } from "./llm-ai-profile.mjs";
 
 const LOGIC_FRAMES_PER_SECOND = 30;
 const RECENT_WORK_FRAMES = 30 * LOGIC_FRAMES_PER_SECOND;
+const ROUTINE_COMMAND_TYPES = new Set([
+  "fireweapon",
+  "hackinternet",
+  "shortcutspecialpower",
+  "specialpower",
+  "switchweapon",
+  "toggleovercharge",
+]);
 
 function serializedTokens(value, tokenizer) {
   return conservativeLlmTokens(value, { tokenizer });
@@ -377,6 +385,50 @@ function summarizeProduction(objects, localPlayerIndex) {
   return result.sort((left, right) => left.facility.localeCompare(right.facility));
 }
 
+function summarizeCommands(objects, localPlayerIndex, frame) {
+  const grouped = new Map();
+  for (const object of objects) {
+    if (object.owner !== localPlayerIndex) continue;
+    for (const command of object.capabilities?.commands || []) {
+      const type = canonicalSemanticValue(command.type);
+      if (!ROUTINE_COMMAND_TYPES.has(type) || typeof command.name !== "string") continue;
+      const specialPower = command.specialPower && typeof command.specialPower === "object"
+        ? command.specialPower : null;
+      const targeting = command.needsObject ? "object" : command.needsPosition ? "position" : "none";
+      const candidate = {
+        source: semanticHandle(object, localPlayerIndex),
+        sourceId: object.id,
+        command: command.name,
+        type: command.type,
+        targeting,
+        ...(specialPower?.name ? { power: specialPower.name } : {}),
+        ...(typeof specialPower?.ready === "boolean" ? { ready: specialPower.ready } : {}),
+        ...(specialPower?.percentReady !== null && specialPower?.percentReady !== undefined
+          && Number.isFinite(Number(specialPower.percentReady))
+          ? { percentReady: Number(specialPower.percentReady) } : {}),
+        ...(specialPower?.readyFrame !== null && specialPower?.readyFrame !== undefined
+          && Number.isFinite(Number(specialPower.readyFrame)) ? {
+          readyInGameSeconds: Math.max(0, Math.round(
+            (Number(specialPower.readyFrame) - frame) / LOGIC_FRAMES_PER_SECOND * 10,
+          ) / 10),
+        } : {}),
+        sourceCount: 1,
+      };
+      const key = [candidate.command, candidate.type, candidate.targeting, candidate.power || ""].join("|");
+      const current = grouped.get(key);
+      if (!current) {
+        grouped.set(key, candidate);
+        continue;
+      }
+      candidate.sourceCount = current.sourceCount + 1;
+      const candidateIsBetter = candidate.ready === true && current.ready !== true;
+      grouped.set(key, candidateIsBetter ? candidate : { ...current, sourceCount: candidate.sourceCount });
+    }
+  }
+  return [...grouped.values()].sort((left, right) =>
+    left.command.localeCompare(right.command) || left.sourceId - right.sourceId);
+}
+
 function summarizeObjectives(objects, localPlayerIndex) {
   return objects.filter((object) => normalizedOwnership(object, localPlayerIndex) === "enemy"
       && coarseKind(object) === "structure")
@@ -505,6 +557,73 @@ function composition(records) {
   }, {});
 }
 
+function playerCombatRecord(raw) {
+  return (raw.players || []).find((player) =>
+    player.index === raw.localPlayerIndex || player.local)?.combatRecord || null;
+}
+
+export function missionDistance(job, records, raw) {
+  const target = job.position ? position2d(job.position)
+    : Number.isInteger(job.targetId)
+      ? position2d((raw.objects || []).find((record) => record.id === job.targetId)?.position) : null;
+  const distances = records.map((record) => position2d(record.position))
+    .filter((position) => position && target
+      && Number.isFinite(position.x) && Number.isFinite(position.y)
+      && Number.isFinite(target.x) && Number.isFinite(target.y))
+    .map((position) => Math.hypot(position.x - target.x, position.y - target.y))
+    .sort((left, right) => left - right);
+  return distances.length > 0 ? distances[Math.floor(distances.length / 2)] : null;
+}
+
+function missionTargetHandle(job, raw) {
+  if (!Number.isInteger(job.targetId)) return null;
+  const target = (raw.objects || []).find((record) => record.id === job.targetId);
+  return target ? semanticHandle(target, raw.localPlayerIndex) : `contact:${job.targetId}`;
+}
+
+export function missionProgressSummary(job, raw, surviving = missionMembers(job, raw)) {
+  const assigned = new Set(job.objectIds || []);
+  const squadMatch = /^squad:(\d+)$/i.exec(job.squadHandle || "");
+  const currentSquad = squadMatch
+    ? (raw.objects || []).filter((object) => object.teamId === Number(squadMatch[1])
+      && isManagedSquadMember(object, raw.localPlayerIndex)) : null;
+  const currentRecord = playerCombatRecord(raw);
+  const startRecord = job._combatAtStart || null;
+  const target = Number.isInteger(job.targetId)
+    ? (raw.objects || []).find((object) => object.id === job.targetId) : null;
+  const distance = missionDistance(job, surviving, raw);
+  return {
+    elapsedGameSeconds: Math.max(0, Math.round(
+      (raw.frame - (job.createdFrame ?? raw.frame)) / LOGIC_FRAMES_PER_SECOND * 10,
+    ) / 10),
+    assignedLost: Math.max(0, assigned.size - surviving.length),
+    ...(currentSquad ? {
+      currentSquadCount: currentSquad.length,
+      reinforcementsAwaitingAssignment: currentSquad.filter((member) => !assigned.has(member.id)).length,
+    } : {}),
+    ...(Number.isFinite(distance) ? {
+      distanceToDestination: Math.round(distance * 10) / 10,
+    } : {}),
+    ...(Number.isFinite(job._initialDistance) ? {
+      initialDistanceToDestination: Math.round(job._initialDistance * 10) / 10,
+    } : {}),
+    ...(startRecord && currentRecord ? { playerCombatSinceStart: {
+      ownedUnitsLost: nonnegativeDifference(currentRecord.unitsLost, startRecord.unitsLost, 0),
+      confirmedEnemyUnitsDestroyed: nonnegativeDifference(
+        currentRecord.enemyUnitsDestroyed, startRecord.enemyUnitsDestroyed, 0,
+      ),
+      confirmedEnemyStructuresDestroyed: nonnegativeDifference(
+        currentRecord.enemyStructuresDestroyed, startRecord.enemyStructuresDestroyed, 0,
+      ),
+    } } : {}),
+    ...(Number.isInteger(job.targetId) ? { target: {
+      handle: missionTargetHandle(job, raw),
+      observable: Boolean(target),
+      ...(target ? { health: healthPercent(target) } : {}),
+    } } : {}),
+  };
+}
+
 function routineWork(jobs, raw) {
   const frame = raw.frame;
   const relevant = jobs.filter((job) => isRelevantStrategicWork(job, frame));
@@ -520,7 +639,8 @@ function routineWork(jobs, raw) {
         survivingAssigned: surviving.length,
         survivingComposition: composition(surviving),
         position: job.position || null,
-        target: Number.isInteger(job.targetId) ? `contact:${job.targetId}` : null,
+        target: missionTargetHandle(job, raw),
+        progress: missionProgressSummary(job, raw, surviving),
         blockedReason: job.blockedReason || null,
       };
     }),
@@ -577,6 +697,7 @@ export function compactRoutineObservation(raw, {
       local?.combatRecord, previousLocal?.combatRecord),
     facilities: summarizeFacilities(relevant, raw.localPlayerIndex),
     production: summarizeProduction(relevant, raw.localPlayerIndex),
+    commands: summarizeCommands(relevant, raw.localPlayerIndex, raw.frame),
     jobs: work.jobs,
     missions: work.missions,
     threats: summarizeForces(relevant.filter((object) =>
