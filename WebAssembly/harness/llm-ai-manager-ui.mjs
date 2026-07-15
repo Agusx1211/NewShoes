@@ -533,6 +533,20 @@ function appendDeltas(parent, deltas) {
   parent.append(group);
 }
 
+function appendScoutingCoverage(parent, coverage) {
+  if (!coverage || !Array.isArray(coverage.coverage)) return;
+  const group = transcriptElement("div", "llm-ai-state-collection");
+  group.append(transcriptElement("strong", "", "Scouting coverage"));
+  group.append(transcriptElement("p", "", [
+    `${compactValue(coverage.observedPercent)}% observed`,
+    `${compactValue(coverage.neverVisible)} cells never visible`,
+    `rows ${coverage.order || "minY to maxY"}`,
+  ].join(" · ")));
+  group.append(transcriptElement("pre", "llm-ai-scouting-grid",
+    coverage.coverage.join("\n")));
+  parent.append(group);
+}
+
 function renderObservationEvent(event, startedAt) {
   const data = event.data || {};
   const observation = data.observation || data;
@@ -554,6 +568,8 @@ function renderObservationEvent(event, startedAt) {
       observation.combat?.cumulative?.unitsLost ? "warning" : ""],
     ["Enemy units destroyed", observation.combat?.cumulative?.enemyUnitsDestroyed],
     ["Enemy structures destroyed", observation.combat?.cumulative?.enemyStructuresDestroyed],
+    ["Map observed", observation.scoutingCoverage?.observedPercent === undefined
+      ? null : `${compactValue(observation.scoutingCoverage.observedPercent)}%`],
     ["Jobs", observation.jobs?.length ?? 0],
     ["Missions", observation.missions?.length ?? 0],
     ["Objectives", observation.objectives?.length ?? 0],
@@ -561,7 +577,8 @@ function renderObservationEvent(event, startedAt) {
   appendDeltas(row, observation.deltas);
   const hasState = [observation.forces, observation.facilities, observation.jobs,
     observation.missions, observation.threats, observation.objectives]
-    .some((values) => Array.isArray(values) && values.length > 0);
+    .some((values) => Array.isArray(values) && values.length > 0)
+    || Array.isArray(observation.scoutingCoverage?.coverage);
   if (hasState) {
     const details = transcriptElement("details", "llm-ai-state-details");
     details.append(transcriptElement("summary", "", "State details available to the model"));
@@ -571,6 +588,7 @@ function renderObservationEvent(event, startedAt) {
     renderCollection(details, "Missions", observation.missions, describeWork);
     renderCollection(details, "Threats", observation.threats, describeContact);
     renderCollection(details, "Objectives", observation.objectives, describeContact);
+    appendScoutingCoverage(details, observation.scoutingCoverage);
     row.append(details);
   }
   row.append(rawEventDetails(event));

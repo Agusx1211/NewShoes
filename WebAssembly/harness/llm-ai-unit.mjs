@@ -95,6 +95,7 @@ assert.match(buildLlmAiSystemPrompt(profile), /combatProfile metadata/);
 assert.match(buildLlmAiSystemPrompt(profile), /contact:N handle directly as assign_mission.targetHandle/);
 assert.match(buildLlmAiSystemPrompt(profile), /units produced afterward are not assigned automatically/);
 assert.match(buildLlmAiSystemPrompt(profile), /filter visibility returns row-major readable exploration rows/);
+assert.match(buildLlmAiSystemPrompt(profile), /scoutingCoverage is persistent player-visible session memory/);
 
 const exported = exportLlmAiSession({
   profile,
@@ -793,11 +794,23 @@ const tool = {
 // observations; model inference and queries occur while simulation continues.
 {
   const frames = [30, 120, 180];
+  let coverageSamples = 0;
   const rpc = async (command) => {
+    if (command === "llmAiTerrainQuery") {
+      const flags = new Uint8Array(16 * 16);
+      flags.fill(1);
+      flags[coverageSamples === 0 ? 0 : flags.length - 1] = 2;
+      coverageSamples += 1;
+      return { ok: true, result: {
+        ok: true, columns: 16, rows: 16,
+        flags: { data: btoa(String.fromCharCode(...flags)) },
+      } };
+    }
     assert.equal(command, "llmAiWorldSnapshot");
     const frame = frames.shift();
     return { ok: true, result: {
       ok: true, snapshotId: frame, frame, localPlayerIndex: 4,
+      terrain: { extent: { lo: { x: 0, y: 0 }, hi: { x: 3_200, y: 3_200 } } },
       players: [{ index: 4, local: true, economy: { money: 1_000 } }],
       objects: [], game: { outcome: null },
     } };
@@ -815,9 +828,16 @@ const tool = {
   assert.doesNotMatch(catalogSources, /Tank/);
   const first = await state.observe({ assignment: { playerIndex: 4 }, match: {}, reason: "first" });
   assert.equal(first.time.sincePrevious.frames, 0);
+  assert.equal(first.scoutingCoverage.coverage[0][0], "v");
+  assert.equal(first.scoutingCoverage.neverVisible, 255);
   await state.focused();
   const second = await state.observe({ assignment: { playerIndex: 4 }, match: {}, reason: "second" });
   assert.deepEqual(second.time.sincePrevious, { frames: 150, gameSeconds: 5 });
+  assert.equal(second.scoutingCoverage.coverage[0][0], "r");
+  assert.equal(second.scoutingCoverage.coverage.at(-1).at(-1), "v");
+  assert.equal(second.scoutingCoverage.neverVisible, 254);
+  assert.equal(second.scoutingCoverage.observedPercent, 0.8);
+  assert.equal(coverageSamples, 2);
   assert.equal(frames.length, 0);
 }
 

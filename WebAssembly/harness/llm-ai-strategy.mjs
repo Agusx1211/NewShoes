@@ -166,6 +166,25 @@ export function hasCategory(record, expected) {
   return hasSemanticTag(record, "categories", expected);
 }
 
+export function terrainKnowledgeRows(result) {
+  const columns = Number(result?.columns);
+  const rows = Number(result?.rows);
+  const encoded = result?.flags?.data;
+  if (!Number.isSafeInteger(columns) || columns < 1 || columns > 128
+      || !Number.isSafeInteger(rows) || rows < 1 || rows > 128
+      || typeof encoded !== "string") {
+    throw new TypeError("terrain visibility payload is invalid");
+  }
+  const binary = atob(encoded);
+  if (binary.length !== columns * rows) {
+    throw new TypeError("terrain flags have an unexpected size");
+  }
+  const symbols = ["?", "e", "v", "?"];
+  return Array.from({ length: rows }, (_, row) =>
+    Array.from({ length: columns }, (_, column) =>
+      symbols[binary.charCodeAt(row * columns + column) & 0x03]).join(""));
+}
+
 export function isConstructionComplete(record) {
   const value = record?.construction;
   const progress = Number(value);
@@ -497,7 +516,7 @@ function routineWork(jobs, raw) {
 
 export function compactRoutineObservation(raw, {
   assignment, match, reason, previous = null, priorities = {}, jobs = [], catalogRevision = null,
-  maxTokens = 8_192, tokenizer,
+  scoutingCoverage = null, maxTokens = 8_192, tokenizer,
 } = {}) {
   const local = (raw.players || []).find((player) => player.index === raw.localPlayerIndex || player.local);
   const relevant = (raw.objects || []).filter((object) =>
@@ -527,6 +546,7 @@ export function compactRoutineObservation(raw, {
     match,
     game: raw.game,
     terrain: raw.terrain?.extent ? { extent: raw.terrain.extent } : null,
+    scoutingCoverage,
     strategyController: raw.strategyController || assignment?.strategyController || "llm",
     economy: local?.economy || null,
     priorities,

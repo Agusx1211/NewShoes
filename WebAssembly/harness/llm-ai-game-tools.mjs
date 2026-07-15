@@ -10,6 +10,7 @@ import {
   isRelevantStrategicWork,
   isStrategicEntity,
   normalizedEntity,
+  terrainKnowledgeRows,
 } from "./llm-ai-strategy.mjs";
 
 const PRIORITIES = Object.freeze(["economy", "production", "technology", "defense", "scouting", "aggression"]);
@@ -20,6 +21,8 @@ const TERMINAL_JOB_STATES = new Set(["blocked", "complete", "failed"]);
 const MISSION_ARRIVAL_RADIUS = 250;
 const MISSION_STALL_FRAMES = 15 * 30;
 const MISSION_PROGRESS_DISTANCE = 25;
+const SCOUTING_GRID_SIZE = 16;
+const RECENT_SCOUTING_FRAMES = 60 * 30;
 
 function objectValue(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
@@ -61,18 +64,6 @@ function point(value, required = false) {
   }
   const position = objectValue(value, "position");
   return { present: true, x: finite(position.x, "position.x"), y: finite(position.y, "position.y") };
-}
-
-function readableKnowledgeRows(result) {
-  const encoded = result?.flags?.data;
-  const columns = integer(result?.columns, "terrain columns", 1, 128);
-  const rows = integer(result?.rows, "terrain rows", 1, 128);
-  if (typeof encoded !== "string") throw new TypeError("terrain flags are missing");
-  const binary = atob(encoded);
-  if (binary.length !== columns * rows) throw new TypeError("terrain flags have an unexpected size");
-  const symbols = ["?", "e", "v", "?"];
-  return Array.from({ length: rows }, (_, row) => Array.from({ length: columns }, (_, column) =>
-    symbols[binary.charCodeAt(row * columns + column) & 0x03]).join(""));
 }
 
 function position2d(value) {
@@ -124,6 +115,7 @@ export class LlmAiStrategicState {
     this.catalog = null;
     this.catalogRevision = null;
     this.catalogSignature = "";
+    this.scoutingCoverage = null;
     this.priorities = Object.fromEntries(PRIORITIES.map((name) => [name, 50]));
     this.jobs = new Map();
     this.serial = 0;
@@ -161,6 +153,85 @@ export class LlmAiStrategicState {
     this.raw = raw;
     this.updateJobs();
     return raw;
+  }
+
+  async refreshScoutingCoverage(raw) {
+    const lo = position2d(raw?.terrain?.extent?.lo);
+    const hi = position2d(raw?.terrain?.extent?.hi);
+    if (!lo || !hi || !Number.isFinite(lo.x) || !Number.isFinite(lo.y)
+        || !Number.isFinite(hi.x) || !Number.isFinite(hi.y)
+        || lo.x >= hi.x || lo.y >= hi.y) {
+      this.scoutingCoverage = null;
+      return;
+    }
+    const bounds = { minX: lo.x, minY: lo.y, maxX: hi.x, maxY: hi.y };
+    const signature = JSON.stringify(bounds);
+    if (this.scoutingCoverage?.signature !== signature) {
+      this.scoutingCoverage = {
+        signature, bounds,
+        lastVisibleFrames: Array(SCOUTING_GRID_SIZE * SCOUTING_GRID_SIZE).fill(null),
+      };
+    }
+    const result = await this.call("llmAiTerrainQuery", {
+      mode: "unrestricted", ...bounds,
+      columns: SCOUTING_GRID_SIZE, rows: SCOUTING_GRID_SIZE,
+    });
+    const rows = terrainKnowledgeRows(result);
+    for (let row = 0; row < SCOUTING_GRID_SIZE; row += 1) {
+      for (let column = 0; column < SCOUTING_GRID_SIZE; column += 1) {
+        if (rows[row][column] === "v") {
+          this.scoutingCoverage.lastVisibleFrames[row * SCOUTING_GRID_SIZE + column] = raw.frame;
+        }
+      }
+    }
+    this.scoutingCoverage.frame = raw.frame;
+    this.scoutingCoverage.currentRows = rows;
+  }
+
+  publicScoutingCoverage() {
+    const coverage = this.scoutingCoverage;
+    if (!coverage?.currentRows || !Number.isFinite(coverage.frame)) return null;
+    const counts = { currentlyVisible: 0, recentlyVisible: 0, stale: 0, neverVisible: 0 };
+    const rows = coverage.currentRows.map((currentRow, row) =>
+      Array.from(currentRow, (symbol, column) => {
+        const lastVisible = coverage.lastVisibleFrames[row * SCOUTING_GRID_SIZE + column];
+        if (symbol === "v") {
+          counts.currentlyVisible += 1;
+          return "v";
+        }
+        if (!Number.isFinite(lastVisible)) {
+          counts.neverVisible += 1;
+          return "?";
+        }
+        if (coverage.frame - lastVisible <= RECENT_SCOUTING_FRAMES) {
+          counts.recentlyVisible += 1;
+          return "r";
+        }
+        counts.stale += 1;
+        return "s";
+      }).join(""));
+    const cells = SCOUTING_GRID_SIZE * SCOUTING_GRID_SIZE;
+    return {
+      frame: coverage.frame,
+      bounds: coverage.bounds,
+      columns: SCOUTING_GRID_SIZE,
+      rows: SCOUTING_GRID_SIZE,
+      cellSize: {
+        x: (coverage.bounds.maxX - coverage.bounds.minX) / SCOUTING_GRID_SIZE,
+        y: (coverage.bounds.maxY - coverage.bounds.minY) / SCOUTING_GRID_SIZE,
+      },
+      order: "row-major minY to maxY",
+      recentWindowGameSeconds: RECENT_SCOUTING_FRAMES / 30,
+      observedPercent: Math.round((cells - counts.neverVisible) / cells * 1_000) / 10,
+      ...counts,
+      legend: {
+        "?": "never visible during this LLM session",
+        s: "visible earlier in this LLM session",
+        r: "visible within the recent window",
+        v: "visible now",
+      },
+      coverage: rows,
+    };
   }
 
   updateJobs() {
@@ -223,9 +294,11 @@ export class LlmAiStrategicState {
     }
     this.raw = raw;
     this.updateJobs();
+    await this.refreshScoutingCoverage(raw);
     const observation = compactRoutineObservation(raw, {
       assignment, match, reason, previous: this.lastObservedRaw, priorities: this.priorities,
       jobs: [...this.jobs.values()], catalogRevision: this.catalogRevision,
+      scoutingCoverage: this.publicScoutingCoverage(),
       maxTokens: this.profile.routineObservationTokens,
     });
     this.lastObservedRaw = raw;
@@ -532,7 +605,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
     },
     {
       name: "query_map_region",
-      description: `Query a bounded player-perspective map region at coarse 16x16, medium 32x32, or fine 45x45 resolution. visibility returns readable row strings where ? is never explored, e is explored but currently fogged, and v is currently visible; use it to measure coverage and avoid repeatedly scouting the same area. terrain returns encoded heights, route returns traversal flags, and construction returns terrain build-placement flags; construction does not search for structures or objectives. Use inspect_entities for world objects. Unknown cells stay hidden. Row-major order from minY to maxY; returned frame/bounds/resolution/filter define freshness. No pagination; one terrain query; hard result ${budget} tokens.`,
+      description: `Query a bounded player-perspective map region at coarse 16x16, medium 32x32, or fine 45x45 resolution. visibility returns current engine shroud rows where ? is never engine-explored, e is explored but currently fogged, and v is currently visible. Some maps begin engine-explored everywhere; routine scoutingCoverage separately remembers cells that were actually visible during this LLM session. This read-only query does not reveal fog or return objects. terrain returns encoded heights, route returns traversal flags, and construction returns terrain build-placement flags; construction does not search for structures or objectives. Use inspect_entities for currently observable world objects. Unknown cells stay hidden. Row-major order from minY to maxY; returned frame/bounds/resolution/filter define freshness. No pagination; one terrain query; hard result ${budget} tokens.`,
       parameters: { type: "object", properties: {
         minX: { type: "number" }, minY: { type: "number" }, maxX: { type: "number" }, maxY: { type: "number" },
         resolution: { type: "string", enum: ["coarse", "medium", "fine"] }, filter: { type: "string", enum: ["visibility", "terrain", "route", "construction"] },
@@ -542,7 +615,7 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
         const size = { coarse: 16, medium: 32, fine: 45 }[args.resolution];
         const result = await call("llmAiTerrainQuery", { mode: "unrestricted", minX: Number(args.minX), minY: Number(args.minY), maxX: Number(args.maxX), maxY: Number(args.maxY), columns: size, rows: size });
         const { height, flags, ...metadata } = result;
-        const knowledgeRows = readableKnowledgeRows(result);
+        const knowledgeRows = terrainKnowledgeRows(result);
         return {
           appliedFilter: args.filter, appliedResolution: args.resolution, order: "row-major", ...metadata,
           unexploredCount: size * size - Number(result.knownCount || 0),

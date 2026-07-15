@@ -118,7 +118,9 @@
 .llm-ai-state-details[open] { display: grid; gap: 8px; }
 .llm-ai-state-collection { display: grid; gap: 4px; padding: 7px 8px; border: 1px solid #dbe4e7; background: #f8fafb; }
 .llm-ai-state-collection > strong { color: #466674; font-size: 8px; }
+.llm-ai-state-collection > p { margin: 0; color: #617781; }
 .llm-ai-state-collection li { color: #617781; font: 8px/1.4 Consolas, monospace; overflow-wrap: anywhere; }
+.llm-ai-scouting-grid { width: fit-content; margin: 0; color: #345b6b; font: 8px/1.15 Consolas, monospace; letter-spacing: 1px; }
 .llm-ai-raw-details { padding-top: 2px; border-top: 1px solid #e3e9eb; }
 .llm-ai-raw-details summary { margin-top: 6px; color: #8a999f; font-weight: normal; }
 .llm-ai-raw-details pre { max-height: 260px; overflow: auto; margin: 7px 0 0; padding: 8px; color: #627780; border: 1px solid #dbe4e7; background: #f5f8f9; font: 7px/1.45 Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
