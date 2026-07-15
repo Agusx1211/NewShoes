@@ -120,6 +120,20 @@ try {
       destination: destinationReady.runtime.endpoint.localIp,
     });
 
+  const reconnectResult = await destination.page.evaluate(() =>
+    window.CnCPort.rpc("browserWebRtcEndpointReconnect"));
+  expect(reconnectResult.ok === true
+      && reconnectResult.runtime?.reconnectCount === 1,
+  "destination endpoint did not accept a reconnect request", reconnectResult);
+  const [sourceRecovered, destinationRecovered] = await Promise.all([
+    waitForPeer(source, "source after destination reconnect"),
+    waitForPeer(destination, "destination after reconnect"),
+  ]);
+  expect(sourceRecovered.runtime?.endpoint?.openPeers === 1
+      && destinationRecovered.runtime?.endpoint?.openPeers === 1,
+  "both WebRTC endpoints did not recover their peer channel",
+  { sourceRecovered, destinationRecovered });
+
   const sendResult = await source.page.evaluate(() =>
     window.CnCPort.rpc("browserNetworkTransportWebRtcSendProbe"));
   expect(sendResult.ok === true

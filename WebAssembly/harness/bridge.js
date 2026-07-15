@@ -847,6 +847,7 @@ const browserWebRtcUdpEndpointRuntime = {
   eventLog: [],
   lastError: null,
   configuration: null,
+  peerMetadata: [],
   connectionGeneration: 0,
   peerGeneration: 0,
   reconnectCount: 0,
@@ -3394,7 +3395,15 @@ function resetBrowserWebRtcUdpEndpointRuntime({
   preserveStatus = false,
 } = {}) {
   const preservedError = preserveStatus ? browserWebRtcUdpEndpointRuntime.lastError : null;
-  const closePromise = browserWebRtcUdpEndpointRuntime.endpoint?.close() ?? Promise.resolve();
+  const endpoint = browserWebRtcUdpEndpointRuntime.endpoint;
+  if (!preserveConfiguration
+      || (endpoint && endpoint.room !== browserWebRtcUdpEndpointRuntime.configuration?.room)) {
+    browserWebRtcUdpEndpointRuntime.peerMetadata = [];
+  } else if (endpoint) {
+    const metadata = endpoint.peerMetadata();
+    if (metadata.length > 0) browserWebRtcUdpEndpointRuntime.peerMetadata = metadata;
+  }
+  const closePromise = endpoint?.close() ?? Promise.resolve();
   browserWebRtcUdpEndpointRuntime.enabled = false;
   browserWebRtcUdpEndpointRuntime.endpoint = null;
   browserWebRtcUdpEndpointRuntime.incoming = [];
@@ -3462,6 +3471,7 @@ async function connectBrowserWebRtcUdpEndpoint({
   relayUrls,
   timeoutMs = 20000,
 }) {
+  const previousRoom = browserWebRtcUdpEndpointRuntime.configuration?.room ?? null;
   const configuration = {
     room: String(room ?? "").trim(),
     peerId: peerId == null ? null : String(peerId),
@@ -3470,12 +3480,14 @@ async function connectBrowserWebRtcUdpEndpoint({
     relayUrls: Array.isArray(relayUrls) ? [...relayUrls] : null,
     timeoutMs: Number(timeoutMs) || 20000,
   };
+  if (previousRoom !== configuration.room) browserWebRtcUdpEndpointRuntime.peerMetadata = [];
   browserWebRtcUdpEndpointRuntime.configuration = configuration;
   await resetBrowserWebRtcUdpEndpointRuntime({ preserveConfiguration: true });
   browserWebRtcUdpEndpointRuntime.lastError = null;
   publishBrowserWebRtcNativeStatus({ phase: "connecting" });
   const endpoint = createWebRtcUdpEndpoint({
     ...configuration,
+    knownPeerMetadata: browserWebRtcUdpEndpointRuntime.peerMetadata,
     onDatagram: (datagram) => {
       if (threadedUdpBridge) {
         if (!enqueueSharedUdpDatagram(threadedUdpBridge.incoming, datagram)) {
