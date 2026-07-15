@@ -16,6 +16,7 @@ function createFakeGl() {
     bufferData: [],
     bufferSubData: [],
     deletedBuffers: [],
+    deletedVertexArrays: [],
     fences: [],
     flushes: 0,
   };
@@ -69,7 +70,7 @@ function createFakeGl() {
     deleteSync() {},
     flush() { calls.flushes += 1; },
     bindVertexArray() {},
-    deleteVertexArray() {},
+    deleteVertexArray(vertexArray) { calls.deletedVertexArrays.push(vertexArray); },
     getExtension() { return null; },
     getContextAttributes() { return { stencil: true }; },
   };
@@ -88,6 +89,31 @@ const { hooks, diag } = createD3D8Executor({
   log() {},
   state: { canvas: {}, graphics: {} },
 });
+
+function vertexArrayKey(vertexBufferId) {
+  return {
+    vertexBufferId,
+    vertexByteOffset: 0,
+    vertexStride: 16,
+    positionAttrib: 0,
+    normalAttrib: -1,
+    diffuseAttrib: -1,
+    specularAttrib: -1,
+    texCoord0Attrib: -1,
+    texCoord1Attrib: -1,
+    positionComponents: 3,
+    pretransformed: 0,
+    normalOffset: -1,
+    diffuseOffset: -1,
+    specularOffset: -1,
+    canSampleTexture0: 0,
+    texture0UsesVertexTexCoord: 0,
+    texture0Offset: -1,
+    canSampleTexture1: 0,
+    texture1UsesVertexTexCoord: 0,
+    texture1Offset: -1,
+  };
+}
 
 assert.equal(hooks.cncPortD3D8BufferCreate({
   kind: 1,
@@ -122,6 +148,44 @@ assert.deepEqual(calls.bufferData.at(-1), {
   usage: gl.STATIC_DRAW,
 });
 assert.equal(calls.deletedBuffers.includes(initialStaticBuffer), true);
+
+assert.equal(hooks.cncPortD3D8BufferCreate({
+  kind: 1,
+  id: 4,
+  byteSize: 16,
+  usage: D3DUSAGE_WRITEONLY,
+}), 1);
+assert.equal(hooks.cncPortD3D8BufferUpdate({
+  kind: 1,
+  id: 4,
+  byteOffset: 0,
+  bytes: new Uint8Array(16).fill(9),
+}), 1);
+const cachedResource = diag.d3d8Buffers.get("vertex:4");
+const cachedVertexArray = { id: "renamed-buffer-vao" };
+const unrelatedVertexArray = { id: "unrelated-vao" };
+diag.rememberD3D8VertexArray(
+  vertexArrayKey(cachedResource.bindingId),
+  91,
+  cachedVertexArray,
+  { id: "index-91" },
+);
+diag.rememberD3D8VertexArray(
+  vertexArrayKey(92),
+  93,
+  unrelatedVertexArray,
+  { id: "index-93" },
+);
+cachedResource.gpuReferenced = true;
+assert.equal(hooks.cncPortD3D8BufferUpdate({
+  kind: 1,
+  id: 4,
+  byteOffset: 0,
+  bytes: new Uint8Array(16).fill(10),
+}), 1);
+assert.equal(calls.deletedVertexArrays.includes(cachedVertexArray), true);
+assert.equal(calls.deletedVertexArrays.includes(unrelatedVertexArray), false);
+assert.equal(diag.d3d8PerfSummary().vertexArrayCacheEntries, 1);
 
 assert.equal(hooks.cncPortD3D8BufferCreate({
   kind: 1,
@@ -228,6 +292,24 @@ for (let index = 0; index < 64; index += 1) {
 }
 assert.equal(calls.flushes, flushesBeforeRetirementBatch + 2);
 
+for (const sync of calls.fences) {
+  sync.status = gl.ALREADY_SIGNALED;
+}
+diag.drainD3D8BufferRetirements();
+const poolLimit = diag.d3d8PerfSummary().dynamicRangePoolLimitPerTarget;
+const cappedSlots = [];
+for (let index = 0; index < poolLimit + 2; index += 1) {
+  cappedSlots.push(diag.acquireD3D8DynamicRangeSlot(gl.ARRAY_BUFFER));
+}
+const deletedBeforePoolTrim = calls.deletedBuffers.length;
+diag.retireD3D8BufferSlots(cappedSlots);
+calls.fences.at(-1).status = gl.ALREADY_SIGNALED;
+diag.drainD3D8BufferRetirements();
+const cappedSummary = diag.d3d8PerfSummary();
+assert.equal(cappedSummary.dynamicRangePoolSlots, poolLimit);
+assert.equal(cappedSummary.dynamicRangeSlotsDeleted, 2);
+assert.equal(calls.deletedBuffers.length, deletedBeforePoolTrim + 2);
+
 console.log(JSON.stringify({
   ok: true,
   source: "d3d8-buffer-streaming-unit",
@@ -237,4 +319,6 @@ console.log(JSON.stringify({
   bufferSubDataCalls: calls.bufferSubData.length,
   fenceCount: calls.fences.length,
   flushCount: calls.flushes,
+  dynamicRangePoolLimit: poolLimit,
+  trimmedDynamicRangeSlots: cappedSummary.dynamicRangeSlotsDeleted,
 }));

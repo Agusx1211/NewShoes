@@ -176,14 +176,15 @@
       "name": "Configure and diagnose the runtime",
       "status": "supported",
       "summary": "The launcher exposes display, shader, camera, cursor, performance, multiplayer, storage, hardware, and issue-capture interfaces.",
-      "reviewedAt": "2026-07-14",
+      "reviewedAt": "2026-07-15",
       "details": [
         "The desktop exposes resolution, windowed or fullscreen presentation, enhanced or classic shaders, camera zoom, original game cursors, performance overlay options, graphics diagnostics, multiplayer diagnostics, browser storage, and a live browser and hardware capability report.",
-        "The issue recorder can capture a screenshot, annotations, browser and runtime logs, input and state evidence, and an optional short video into a .cncdump.json package. Diagnostics remain local until the user explicitly saves or uploads a dump.",
+        "The issue recorder can capture a screenshot, annotations, browser and runtime logs, input and state evidence, and an optional short video into a .cncdump.json package. Long captures are serialized in bounded chunks instead of one giant JavaScript string. Diagnostics remain local until the user explicitly saves or uploads a dump.",
         "Detailed multiplayer capture is opt-in because it can be large. Credentials and discovery secrets are excluded from dumps. Reports should never include retail archives, disc images, product keys, or private credentials."
       ],
       "evidence": [
         "WebAssembly/harness/issue-recorder.mjs",
+        "WebAssembly/harness/issue_recorder_unit.mjs",
         "WebAssembly/harness/issue_recorder_ui_smoke.mjs",
         "WebAssembly/harness/launcher-hardware-info.js"
       ]
