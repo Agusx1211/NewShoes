@@ -51,6 +51,7 @@
 #include "GameClient/Gadget.h"
 #include "GameClient/GadgetListBox.h"
 #include "GameClient/GadgetPushButton.h"
+#include "GameClient/GadgetStaticText.h"
 #include "GameClient/GadgetTextEntry.h"
 #include "WW3D2/assetmgr.h"
 #include "WW3D2/texture.h"
@@ -4811,7 +4812,9 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 			GadgetTextEntryGetText(window))) + "\"";
 	}
 	if (inst_data != NULL) {
-		UnicodeString text = inst_data->getText();
+		UnicodeString text = (style & GWS_STATIC_TEXT) != 0
+			? GadgetStaticTextGetText(window)
+			: inst_data->getText();
 		json += ",\"text\":\"" + json_escape(unicode_to_debug_ascii(text)) + "\"";
 		json += ",\"textLength\":" + std::to_string(static_cast<long long>(text.getLength()));
 		json += ",\"textLabel\":\"" + json_escape(inst_data->m_textLabelString.str()) + "\"";
