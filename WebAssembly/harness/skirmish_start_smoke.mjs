@@ -12,6 +12,7 @@ const artifactsRoot = resolve(wasmRoot, "artifacts/skirmish");
 
 const GAME_SKIRMISH = 2;
 const WIN_STATUS_IMAGE = 0x80;
+const D3DTOP_DISABLE = 1;
 const WM_MOUSEMOVE = 0x0200;
 const WM_LBUTTONDOWN = 0x0201;
 const WM_LBUTTONUP = 0x0202;
@@ -58,6 +59,8 @@ const loadingScreenshotPath = resolve(
 const textEntryScreenshotPath = resolve(
   process.env.SKIRMISH_TEXT_ENTRY_SCREENSHOT ??
     resolve(screenshotsRoot, "skirmish-text-entry-smoke.png"));
+const requestedMenuScreenshot = String(process.env.SKIRMISH_MENU_SCREENSHOT ?? "").trim();
+const menuScreenshotPath = requestedMenuScreenshot ? resolve(requestedMenuScreenshot) : null;
 const outputPath = resolve(
   process.env.SKIRMISH_START_OUTPUT ??
     resolve(artifactsRoot, "skirmish-start-smoke.json"));
@@ -82,6 +85,10 @@ const expectLightPulseProbe = process.env.SKIRMISH_START_LIGHT_PULSE_PROBE === "
 const expectReplayRoundTrip = process.env.SKIRMISH_START_REPLAY_ROUNDTRIP === "1";
 const retailReplayFixture = String(process.env.SKIRMISH_REPLAY_FIXTURE ?? "").trim();
 const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
+const expectParticleVisibilityProbe =
+  process.env.SKIRMISH_START_PARTICLE_VISIBILITY_PROBE === "1";
+const particleVisibilityFrames = parsePositiveInt(
+  "SKIRMISH_START_PARTICLE_VISIBILITY_FRAMES", 30);
 const distDir = parseDistDir();
 const replayMenuScreenshotPath = resolve(
   process.env.SKIRMISH_REPLAY_MENU_SCREENSHOT ??
@@ -90,6 +97,19 @@ const replayPlaybackScreenshotPath = resolve(
   process.env.SKIRMISH_REPLAY_PLAYBACK_SCREENSHOT ??
     resolve(screenshotsRoot, "replay-playback-roundtrip.png"));
 const browserProfileDir = String(process.env.SKIRMISH_START_PROFILE_DIR ?? "").trim();
+const requestedModPackage = String(process.env.SKIRMISH_START_MOD_PACKAGE ?? "").trim();
+const requestedModName = String(process.env.SKIRMISH_START_MOD_NAME ?? "").trim();
+const requestedModLocalPath = String(process.env.SKIRMISH_START_MOD_LOCAL_PATH ?? "").trim();
+const requestedModLocalDir = String(process.env.SKIRMISH_START_MOD_LOCAL_DIR ?? "").trim();
+if (requestedModPackage && !/^[A-Za-z0-9_.-]+\.(?:zip|7z|rar|exe|big)$/i.test(requestedModPackage)) {
+  throw new Error(`Invalid SKIRMISH_START_MOD_PACKAGE: ${requestedModPackage}`);
+}
+if ((requestedModLocalPath || requestedModLocalDir) && !requestedModPackage) {
+  throw new Error("Local mod input requires SKIRMISH_START_MOD_PACKAGE");
+}
+if (requestedModLocalPath && requestedModLocalDir) {
+  throw new Error("Choose either SKIRMISH_START_MOD_LOCAL_PATH or SKIRMISH_START_MOD_LOCAL_DIR");
+}
 
 function parsePositiveInt(name, fallback) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
@@ -996,10 +1016,17 @@ async function waitForSkirmishMatch(page) {
   let framesAdvanced = 0;
   while (framesAdvanced < maxStartFrames) {
     const frames = Math.min(frameChunk, maxStartFrames - framesAdvanced);
+    const startedAt = performance.now();
     const result = await runSummary(page, frames, "skirmish match wait");
+    const wallMs = performance.now() - startedAt;
     framesAdvanced += frames;
     const gameplay = result.frame?.gameplay;
-    const sample = compactGameplay(result.frame);
+    const sample = {
+      ...compactGameplay(result.frame),
+      requestedFrames: frames,
+      wallMs,
+      wallMsPerFrame: wallMs / frames,
+    };
     samples.push(sample);
     if (gameplay?.gameMode === GAME_SKIRMISH &&
         gameplay?.inGame === true &&
@@ -1023,9 +1050,16 @@ async function runPostActiveFrames(page, totalFrames, chunkSize) {
   let last = null;
   while (framesAdvanced < totalFrames) {
     const frames = Math.min(chunkSize, totalFrames - framesAdvanced);
+    const startedAt = performance.now();
     last = await runSummary(page, frames, "skirmish post-active wait");
+    const wallMs = performance.now() - startedAt;
     framesAdvanced += frames;
-    samples.push(compactGameplay(last.frame));
+    samples.push({
+      ...compactGameplay(last.frame),
+      requestedFrames: frames,
+      wallMs,
+      wallMsPerFrame: wallMs / frames,
+    });
   }
   return { result: last, framesAdvanced, samples };
 }
@@ -1327,6 +1361,176 @@ async function driveScorchProbe(page) {
   return { target: target.name, position, trigger: trigger.result, scorchDraws, screenshot };
 }
 
+function particleEffectDraws(frame) {
+  const labels = new Map(
+    (locateNested(frame?.frame, ["textureDiagnostics"])?.labels ?? [])
+      .map((label) => [Number(label.id), label.name || label.path || ""]),
+  );
+  return lightProbeDrawHistory(frame)
+    .map((draw) => ({
+      label: labels.get(Number(draw.texture0?.id ?? 0)) ?? "",
+      sequence: draw.drawSequence,
+      indexCount: draw.indexCount,
+      stage0: {
+        colorOp: draw.renderState?.textureStage0?.colorOp ?? null,
+        alphaOp: draw.renderState?.textureStage0?.alphaOp ?? null,
+      },
+      stage1: {
+        colorOp: draw.renderState?.textureStage1?.colorOp ?? null,
+        alphaOp: draw.renderState?.textureStage1?.alphaOp ?? null,
+      },
+      projectedVertices: draw.vertexSummary?.projected?.visible ?? 0,
+    }))
+    .filter((draw) => /cloud|smoke|dust/i.test(draw.label));
+}
+
+async function inspectGraphics(page) {
+  return page.evaluate(() => {
+    const canvas = document.querySelector("#viewport");
+    const context = canvas?.getContext("webgl2");
+    const debugInfo = context?.getExtension("WEBGL_debug_renderer_info");
+    return {
+      renderer: context?.getParameter(
+        debugInfo?.UNMASKED_RENDERER_WEBGL ?? context?.RENDERER,
+      ) ?? null,
+      contextLost: context?.isContextLost() ?? true,
+      contextLossBanner: Boolean(document.querySelector("#webglContextLostBanner")),
+    };
+  });
+}
+
+async function driveParticleVisibilityProbe(page) {
+  const screenshot = resolve(screenshotsRoot, "particle-visibility-smoke.png");
+  await rpc(page, "revealLocalMap", { permanent: true });
+  await runFrames(page, 2, "particle visibility reveal settle");
+
+  const drawables = await rpc(page, "queryDrawables");
+  const target = (drawables?.result?.drawables ?? []).find((drawable) =>
+    drawable.localOwned === true && drawable.onScreen === true &&
+    drawable.hidden !== true && drawable.worldPos);
+  expect(Boolean(target),
+    "particle visibility probe could not find a visible local target", drawables?.result);
+
+  const before = await runSummary(page, 1, "particle visibility baseline");
+  const beforeParticleCount = Number(before?.frame?.particles?.particleCount ?? 0);
+  const beforeOnScreenCount = Number(before?.frame?.particles?.onScreenParticleCount ?? 0);
+  await page.evaluate(() => {
+    window.__cncSetD3D8PerfCounters?.(true);
+    window.__cncSetD3D8SceneDrawHistoryLimit?.(4096);
+  });
+
+  const systems = ["MOABDustWave", "SubExplosionSmoke02"];
+  const triggers = [];
+  for (const name of systems) {
+    const trigger = await rpc(page, "realEngineSpawnParticleSystem", {
+      name,
+      ...target.worldPos,
+      useViewPosition: false,
+      clampToTerrain: true,
+    });
+    expect(trigger?.ok === true, "particle visibility system trigger failed", { name, trigger });
+    triggers.push(trigger.result);
+  }
+
+  const frames = [];
+  const maxFrames = particleVisibilityFrames + 120;
+  for (let advanced = 1; advanced <= maxFrames && frames.length < particleVisibilityFrames;
+    ++advanced) {
+    const beforePerf = await page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? {});
+    const frame = await runSummary(page, 1, "particle visibility continuity");
+    const afterPerf = await page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? {});
+    const particleCount = Number(frame?.frame?.particles?.particleCount ?? 0);
+    const onScreenParticleCount = Number(
+      frame?.frame?.particles?.onScreenParticleCount ?? 0);
+    if (particleCount <= beforeParticleCount + 10 ||
+        onScreenParticleCount <= beforeOnScreenCount + 10) {
+      continue;
+    }
+
+    const activeFrame = frames.length + 1;
+    const sample = {
+      advanced,
+      activeFrame,
+      particleCount,
+      onScreenParticleCount,
+      particleProgramDraws: Number(afterPerf.particleProgramDraws ?? 0) -
+        Number(beforePerf.particleProgramDraws ?? 0),
+      effectDraws: null,
+    };
+
+    // Full draw history synchronizes the GPU once per draw. Sample it at
+    // intervals while the lightweight counter checks every continuity frame.
+    if (activeFrame === 1 || activeFrame % 10 === 0) {
+      await page.evaluate(() => {
+        window.__cncClearD3D8SceneDrawHistory?.();
+        window.__cncSetDiagLevel?.("full");
+      });
+      const diagnostic = await runSummary(page, 1, "particle visibility draw-state sample");
+      sample.effectDraws = particleEffectDraws(diagnostic);
+      await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+    }
+    frames.push(sample);
+
+    if (activeFrame === 8) {
+      await page.locator("#viewport").screenshot({ path: screenshot });
+    }
+  }
+
+  if (frames.length < 8) {
+    await page.locator("#viewport").screenshot({ path: screenshot });
+  }
+
+  const missingProgramFrames = frames.filter((frame) => frame.particleProgramDraws <= 0);
+  const diagnosticFrames = frames.filter((frame) => frame.effectDraws !== null);
+  const missingDrawFrames = diagnosticFrames.filter((frame) => frame.effectDraws.length === 0);
+  const missingTextureFrames = diagnosticFrames.filter((frame) =>
+    !frame.effectDraws.some((draw) => /excloud01/i.test(draw.label)) ||
+    !frame.effectDraws.some((draw) => /exsmokepuff/i.test(draw.label)));
+  const sampledDraws = diagnosticFrames.flatMap((frame) => frame.effectDraws);
+  const staleStageDraws = sampledDraws.filter((draw) =>
+    draw.stage1.colorOp !== D3DTOP_DISABLE || draw.stage1.alphaOp !== D3DTOP_DISABLE);
+  const offscreenDraws = sampledDraws
+    .filter((draw) => draw.projectedVertices === 0);
+  const graphics = await inspectGraphics(page);
+  const expectedRenderer = String(
+    process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
+
+  expect(frames.length === particleVisibilityFrames,
+    "spawned smoke and dust did not stay visibly active long enough", {
+      beforeParticleCount,
+      beforeOnScreenCount,
+      frames,
+    });
+  expect(missingProgramFrames.length === 0,
+    "visible smoke or dust intermittently missed the particle renderer", missingProgramFrames);
+  expect(missingDrawFrames.length === 0,
+    "visible smoke or dust intermittently lost its renderer draw", missingDrawFrames);
+  expect(missingTextureFrames.length === 0,
+    "sampled frames did not contain both shipped smoke and dust textures",
+    missingTextureFrames);
+  expect(staleStageDraws.length === 0,
+    "particle draws inherited a stale stage-one texture combiner", staleStageDraws);
+  expect(offscreenDraws.length === 0,
+    "sampled particle draws did not project into the viewport", offscreenDraws);
+  expect(graphics.contextLost === false && graphics.contextLossBanner === false,
+    "particle visibility run lost its WebGL context", graphics);
+  if (expectedRenderer) {
+    expect(String(graphics.renderer ?? "").toLowerCase().includes(expectedRenderer),
+      "particle visibility run used an unexpected GPU renderer", graphics);
+  }
+
+  return {
+    target: { name: target.name, worldPos: target.worldPos, screenPos: target.screenPos },
+    systems,
+    triggers,
+    beforeParticleCount,
+    beforeOnScreenCount,
+    frames,
+    graphics,
+    screenshot,
+  };
+}
+
 // Tree-lighting discriminator: read the baked per-vertex diffuse of the tree
 // draw pass (FVF XYZ|NORMAL|DIFFUSE|TEX1 = 0x152, stride 36) from the draw
 // history. If diffuse is ~white the CPU bake is wrong (sun-direction/light data
@@ -1399,6 +1603,9 @@ async function driveTreeDiffuseProbe(page) {
 async function main() {
   await mkdir(dirname(screenshotPath), { recursive: true });
   await mkdir(dirname(outputPath), { recursive: true });
+  if (menuScreenshotPath) {
+    await mkdir(dirname(menuScreenshotPath), { recursive: true });
+  }
   if (browserProfileDir) {
     await rm(browserProfileDir, { recursive: true, force: true });
     await mkdir(browserProfileDir, { recursive: true });
@@ -1434,6 +1641,60 @@ async function main() {
       }
     });
 
+    let activeMod = null;
+    if (requestedModPackage) {
+      console.error(`[skirmish-start] import mod ${requestedModPackage}`);
+      await page.goto(new URL("harness/play.html", server.url).href, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => Boolean(window.ZeroHModManager?.store));
+      const displayName = requestedModName || requestedModPackage.replace(/\.[^.]+$/, "");
+      if (requestedModLocalPath || requestedModLocalDir) {
+        const before = await page.evaluate(() => window.ZeroHModManager.store.list().length);
+        await page.locator('.desktop-icon[data-open="mods"]').click();
+        await page.waitForSelector("#modsWindow.is-open");
+        await page.locator("#modImportName").fill(displayName);
+        const inputSelector = requestedModLocalDir
+          ? "#modImportFolderInput"
+          : "#modImportPackageInput";
+        const localInput = resolve(requestedModLocalDir || requestedModLocalPath);
+        await page.locator(inputSelector).setInputFiles(localInput);
+        await page.waitForFunction((count) => {
+          const progress = document.querySelector("#modImportProgress")?.textContent || "";
+          return window.ZeroHModManager.store.list().length === count + 1
+            || progress.startsWith("Import failed:");
+        }, before, { timeout: 30 * 60_000 });
+        const progress = await page.locator("#modImportProgress").textContent();
+        if (progress.startsWith("Import failed:")) {
+          throw new Error(`${requestedModPackage}: ${progress}`);
+        }
+      } else {
+        const importUrl = new URL(
+          `artifacts/mod-packages/${encodeURIComponent(requestedModPackage)}`, server.url).href;
+        await page.evaluate(async ({ url, fileName, name }) => {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Mod package fetch failed (${response.status})`);
+          const file = new File([await response.blob()], fileName);
+          await window.ZeroHModManager.store.importFiles([file], { name });
+        }, {
+          url: importUrl,
+          fileName: requestedModPackage,
+          name: displayName,
+        });
+      }
+      activeMod = await page.evaluate(async () => {
+        const imported = window.ZeroHModManager.store.list().at(-1);
+        const context = await window.ZeroHModManager.store.apply([imported.id]);
+        return {
+          id: imported.id,
+          name: imported.name,
+          archiveCount: imported.archives.filter((archive) => archive.enabled).length,
+          totalBytes: imported.totalBytes,
+          contentHash: imported.contentHash,
+          contextId: context.id,
+        };
+      });
+      console.error(`[skirmish-start] imported ${activeMod.name}: ${activeMod.archiveCount} enabled archives`);
+    }
+
     const harnessUrl = new URL("harness/index.html", server.url);
     harnessUrl.searchParams.set("dist", distDir);
     if (process.env.SKIRMISH_START_THREADS === "1") harnessUrl.searchParams.set("threads", "1");
@@ -1446,6 +1707,12 @@ async function main() {
     await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
     await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
     await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+    const modMountPlan = activeMod
+      ? await page.evaluate(async () => {
+        const { activeModMountPlan, loadActiveModContext } = await import("./mod-context.mjs");
+        return activeModMountPlan(loadActiveModContext(window.localStorage));
+      })
+      : [];
 
     let audioSetup = null;
     if (expectMenuMusicStop) {
@@ -1472,17 +1739,28 @@ async function main() {
       path: "/assets/skirmish-start",
       verifyEach: false,
       archives: buildArchives(server.url),
+      mods: modMountPlan,
     });
     expect(mount?.archiveSet?.archiveCount === archiveSpecs.length,
       "failed to mount runtime archives", mount?.archiveSet ?? mount);
+    if (activeMod) {
+      expect(mount?.modSet?.archiveCount === activeMod.archiveCount
+          && mount?.modSet?.modCount === 1,
+      "failed to mount imported mod archives", mount?.modSet ?? mount);
+    }
 
     console.error("[skirmish-start] real init");
     const init = await rpc(page, "realEngineInit", {
       runDirectory: "/assets/skirmish-start",
       shellMap: true,
+      modDirectory: mount.modDirectory ?? "",
     });
     expect(init?.ok === true && init?.aborted === false && init?.frontier?.initReturned === true,
       "real engine init failed", init?.frontier ?? init);
+    if (activeMod) {
+      expect(init.frontier.commandLine?.includes("-mod /assets/cnc-mods-active"),
+        "real engine did not receive the imported mod directory", init.frontier);
+    }
 
     if (expectReplayRoundTrip) {
       const existingReplays = await rpc(page, "listReplays");
@@ -1504,14 +1782,16 @@ async function main() {
         "main menu available",
         (clientState) => clientState.shell?.topIsMainMenu === true &&
           clientState.shell?.topHidden === false,
-        120);
+        activeMod ? 1200 : 120);
     }
     expect(frame.frame?.clientState?.mainMenu?.buttonSinglePlayer?.found === true,
       "main menu Single Player button geometry is unavailable",
       frame.frame?.clientState?.mainMenu?.buttonSinglePlayer);
-
     console.error("[skirmish-start] reveal main menu");
     const revealed = await revealMainMenu(page);
+    if (menuScreenshotPath) {
+      await page.locator("#viewport").screenshot({ path: menuScreenshotPath });
+    }
     const menuMusic = expectMenuMusicStop
       ? await waitForActiveMusic(page, "main menu music")
       : null;
@@ -1750,6 +2030,12 @@ async function main() {
       scorchProbe = await driveScorchProbe(page);
       console.error("[skirmish-start] scorchProbe:", JSON.stringify(scorchProbe));
     }
+    let particleVisibilityProbe = null;
+    if (expectParticleVisibilityProbe) {
+      particleVisibilityProbe = await driveParticleVisibilityProbe(page);
+      console.error("[skirmish-start] particleVisibilityProbe:",
+        JSON.stringify(particleVisibilityProbe));
+    }
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
     expect(renderProbe.ok === true,
@@ -1925,6 +2211,10 @@ async function main() {
       ok: true,
       source: "skirmish-start-smoke",
       distDir,
+      activeMod,
+      modSet: mount.modSet ?? null,
+      engineCommandLine: init.frontier?.commandLine ?? null,
+      engineUserDataHome: init.frontier?.userDataHome ?? null,
       archiveCount: mount.archiveSet.archiveCount,
       requestedMap: requestedSkirmishMap || null,
       selectedMap: mapCache?.probe?.skirmishGameInfo?.map
@@ -1957,6 +2247,7 @@ async function main() {
       escMenuResume,
       rallyProbe,
       scorchProbe,
+      particleVisibilityProbe,
       lightPulseProbe,
       replayRoundTrip,
       renderProbe,

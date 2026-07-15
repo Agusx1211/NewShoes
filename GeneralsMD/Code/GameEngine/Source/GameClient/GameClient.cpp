@@ -336,6 +336,12 @@ void GameClient::init( void )
 	// create the mouse
 	TheMouse = createMouse();
 	TheMouse->parseIni();
+#if defined(__EMSCRIPTEN__)
+	// Browser cursors are composited by the user agent, outside the transferred
+	// game canvas.  Keep the original Win32/ANI cursor path active so the wasm
+	// platform adapter can present the engine-selected cursor through CSS.
+	TheMouse->setRedrawMode(Mouse::RM_WINDOWS);
+#endif
 	TheMouse->initCursorResources();
  	TheMouse->setName("TheMouse");
 
@@ -1068,6 +1074,23 @@ GameMessage::Type GameClient::evaluateContextCommand( Drawable *draw,
 		return GameMessage::MSG_INVALID;
 
 }  // end evaluateContextCommand
+
+#ifdef __EMSCRIPTEN__
+void GameClient::agentSynchronizeCommandSelection( void )
+{
+	if( m_commandTranslator )
+		m_commandTranslator->agentSynchronizeSelection();
+}
+
+GameMessage::Type GameClient::agentEvaluateForceAttackCommand( Drawable *draw,
+	const Coord3D *pos,
+	CommandTranslator::CommandEvaluateType cmdType )
+{
+	if( m_commandTranslator )
+		return m_commandTranslator->evaluateForceAttack( draw, pos, cmdType );
+	return GameMessage::MSG_INVALID;
+}
+#endif
 
 //-------------------------------------------------------------------------------------------------
 /** Get the ray effect data for a drawable */

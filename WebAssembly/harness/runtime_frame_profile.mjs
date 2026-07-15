@@ -786,6 +786,17 @@ async function enterSkirmishScene(page) {
     await runUiSummary(page, 1, "profile skirmish map apply settle");
   }
 
+  const requestedTemplate = String(process.env.PERF_PROFILE_SKIRMISH_TEMPLATE ?? "").trim();
+  let skirmishTemplateSet = null;
+  if (requestedTemplate) {
+    skirmishTemplateSet = await rpc(page, "realEngineSetSkirmishLocalTemplate", {
+      templateName: requestedTemplate,
+    });
+    expect(skirmishTemplateSet?.ok === true && skirmishTemplateSet.result?.applied,
+      "profile requested skirmish player template was not applied", skirmishTemplateSet);
+    await runUiSummary(page, 1, "profile skirmish template apply settle");
+  }
+
   await clickButton(
     page,
     skirmishMenu.buttonStart,
@@ -812,6 +823,8 @@ async function enterSkirmishScene(page) {
   return {
     requestedMap: requestedMap || null,
     skirmishMapSet: skirmishMapSet?.result ?? null,
+    requestedTemplate: requestedTemplate || null,
+    skirmishTemplateSet: skirmishTemplateSet?.result ?? null,
     activeFramesAdvanced: active.framesAdvanced,
     activeSamples: active.samples.slice(-12),
     activeGameplay,

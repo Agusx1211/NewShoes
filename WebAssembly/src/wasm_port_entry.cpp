@@ -4671,7 +4671,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_input()
 	const SHORT f6_second = GetAsyncKeyState(VK_F6);
 	const SHORT delete_state = GetAsyncKeyState(VK_DELETE);
 
-	char buffer[700];
+	// The nested raw input snapshot includes the full key and queue state. Keep
+	// enough room for it so callers always receive valid JSON rather than a
+	// silently truncated string that cannot be decoded on the engine thread.
+	char buffer[4096];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"browser_win32_input_shim\","
 		"\"cursor\":{\"ok\":%s,\"x\":%ld,\"y\":%ld},"

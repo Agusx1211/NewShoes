@@ -59,6 +59,19 @@ async function seedSenderInstall(page) {
       });
       totalBytes += bytes.byteLength;
     }
+    const cursorBytes = new Uint8Array(96);
+    cursorBytes.fill(0x5a);
+    const cursorHandle = await install.getFileHandle("OriginalCursors.big", { create: true });
+    const cursorWriter = await cursorHandle.createWritable();
+    await cursorWriter.write(cursorBytes);
+    await cursorWriter.close();
+    const cursorAsset = {
+      name: "OriginalCursors.big",
+      bytes: cursorBytes.byteLength,
+      entryCount: 52,
+      opfsPath: `${installRoot}/OriginalCursors.big`,
+    };
+    totalBytes += cursorBytes.byteLength;
     localStorage.setItem("zeroh-installed-library.v5", JSON.stringify({
       version: 5,
       game: "zeroHour",
@@ -68,8 +81,57 @@ async function seedSenderInstall(page) {
       includeVideos: false,
       archives,
       videos: [],
+      cursorAsset,
     }));
-    return { archiveCount: archives.length, totalBytes, first: archives[0], last: archives.at(-1) };
+    return {
+      archiveCount: archives.length,
+      totalBytes,
+      first: archives[0],
+      last: archives.at(-1),
+      cursorAsset,
+    };
+  });
+}
+
+async function seedSenderMod(page) {
+  return page.evaluate(async () => {
+    const hex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const digest = async (value) => hex(new Uint8Array(await crypto.subtle.digest("SHA-256", value)));
+    const id = "mod-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const name = "001-device-transfer.big";
+    const opfsPath = `cnc-mods/${id}/archives/${name}`;
+    const bytes = new Uint8Array(96);
+    bytes.set(new TextEncoder().encode("BIGF transferred mod smoke"));
+    for (let index = 28; index < bytes.length; index += 1) bytes[index] = (index * 13) & 0xff;
+    const root = await navigator.storage.getDirectory();
+    const mods = await root.getDirectoryHandle("cnc-mods", { create: true });
+    await mods.removeEntry(id, { recursive: true }).catch(() => {});
+    const mod = await mods.getDirectoryHandle(id, { create: true });
+    const archives = await mod.getDirectoryHandle("archives", { create: true });
+    const handle = await archives.getFileHandle(name, { create: true });
+    const writer = await handle.createWritable();
+    await writer.write(bytes);
+    await writer.close();
+    const sha256 = await digest(bytes);
+    const contentHash = await digest(new TextEncoder().encode(JSON.stringify({
+      schema: 1,
+      archives: [{ name: name.toLowerCase(), size: bytes.byteLength, sha256 }],
+    })));
+    localStorage.setItem("cncPortModLibrary.v1", JSON.stringify({
+      schema: 1,
+      mods: [{
+        id,
+        name: "Device Transfer Smoke Mod",
+        version: "1.0",
+        sourceName: "DeviceTransferSmoke.zip",
+        contentHash,
+        archives: [{ opfsPath, name, size: bytes.byteLength, sha256, enabled: true }],
+        warnings: [],
+        installedAt: new Date().toISOString(),
+      }],
+    }));
+    const context = await window.ZeroHModManager.store.apply([id]);
+    return { id, name, bytes: bytes.byteLength, sha256, contentHash, contextId: context.id };
   });
 }
 
@@ -97,6 +159,7 @@ let receiverB;
 try {
   sender = await openClient("sender");
   const seeded = await seedSenderInstall(sender.page);
+  const seededMod = await seedSenderMod(sender.page);
   await sender.page.reload({ waitUntil: "domcontentloaded" });
   await sender.page.waitForFunction(() => Boolean(window.ZeroHAssetLibrary?.installedLibrary()));
   await sender.page.evaluate((url) => { window.__cncTestTransferRelayUrls = [url]; }, relay.url);
@@ -105,6 +168,7 @@ try {
   await sender.page.locator("#transferChooseSend").click();
   assert.equal(await sender.page.locator("#transferStartSend").isDisabled(), true);
   await sender.page.locator("#transferSendOwnership").check();
+  assert.equal(await sender.page.locator("#transferIncludeMods").isChecked(), true);
   await sender.page.locator("#transferStartSend").click();
   await sender.page.locator('[data-transfer-screen="send-live"]:visible').waitFor();
   const formattedPin = (await sender.page.locator("#transferSenderPin").textContent()).trim();
@@ -114,6 +178,7 @@ try {
     openClient("receiver-a", { width: 768, height: 1024 }),
     openClient("receiver-b"),
   ]);
+  await seedSenderMod(receiverB.page);
   await Promise.all([
     startReceiver(receiverA, formattedPin),
     startReceiver(receiverB, formattedPin),
@@ -137,11 +202,32 @@ try {
       }
       const first = await (await directory.getFileHandle(installed.archives[0].name)).getFile();
       const last = await (await directory.getFileHandle(installed.archives.at(-1).name)).getFile();
+      const mod = window.ZeroHModManager.store.list()[0];
+      const active = window.ZeroHModManager.store.active();
+      let modFile = null;
+      if (mod) {
+        let modDirectory = await navigator.storage.getDirectory();
+        const parts = mod.archives[0].opfsPath.split("/");
+        const name = parts.pop();
+        for (const part of parts) {
+          modDirectory = await modDirectory.getDirectoryHandle(part, { create: false });
+        }
+        modFile = await (await modDirectory.getFileHandle(name, { create: false })).getFile();
+      }
+      const cursor = await (await directory.getFileHandle(installed.cursorAsset.name)).getFile();
       return {
         archiveCount: installed.archives.length,
         totalBytes: installed.totalBytes,
         firstByte: new Uint8Array(await first.slice(0, 1).arrayBuffer())[0],
         lastByte: new Uint8Array(await last.slice(0, 1).arrayBuffer())[0],
+        mods: window.ZeroHModManager.store.list().length,
+        modName: mod?.name ?? null,
+        modBytes: modFile?.size ?? 0,
+        modFirstByte: modFile ? new Uint8Array(await modFile.slice(0, 1).arrayBuffer())[0] : null,
+        activeModContext: active.id,
+        cursorBytes: cursor.size,
+        cursorFirstByte: new Uint8Array(await cursor.slice(0, 1).arrayBuffer())[0],
+        cursorEntryCount: installed.cursorAsset.entryCount,
         transfer: window.ZeroHDeviceTransfer.snapshot(),
       };
     });
@@ -155,6 +241,14 @@ try {
     assert.equal(verified.totalBytes, seeded.totalBytes);
     assert.equal(verified.firstByte, 17);
     assert.equal(verified.lastByte, (seeded.archiveCount - 1 + 17) & 0xff);
+    assert.equal(verified.mods, 1);
+    assert.equal(verified.modName, "Device Transfer Smoke Mod");
+    assert.equal(verified.modBytes, seededMod.bytes);
+    assert.equal(verified.modFirstByte, "B".charCodeAt(0));
+    assert.equal(verified.activeModContext, seededMod.contextId);
+    assert.equal(verified.cursorBytes, seeded.cursorAsset.bytes);
+    assert.equal(verified.cursorFirstByte, 0x5a);
+    assert.equal(verified.cursorEntryCount, 52);
   }
   assert.equal(await sender.page.locator(".transfer-peer").count(), 2);
   assert.equal(events.filter((event) => event.type === "pageerror").length, 0,
@@ -197,6 +291,8 @@ try {
     receivers: 2,
     receiverViewport: "768x1024 portrait",
     archiveCount: seeded.archiveCount,
+    modsPerReceiver: 1,
+    activeModContext: seededMod.contextId,
     bytesPerReceiver: seeded.totalBytes,
     signalingPayloadCarriesGameData: false,
     screenshots: [senderScreenshot, receiverScreenshot],

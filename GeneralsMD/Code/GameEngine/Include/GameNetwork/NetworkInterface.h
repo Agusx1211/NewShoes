@@ -139,6 +139,8 @@ public:
 	virtual Int getBrowserDiagnosticRelayedCommands() { return 0; }
 	virtual Int getBrowserDiagnosticTransportIncoming() { return 0; }
 	virtual Int getBrowserDiagnosticTransportOutgoing() { return 0; }
+	// Unlike getExecutionFrame(), this observer must not advance lockstep state.
+	virtual Int getBrowserDiagnosticExecutionFrame() { return -1; }
 	virtual Int getBrowserDiagnosticFrameGrouping(Int) { return -1; }
 	virtual Int getBrowserDiagnosticConnectionQueue(Int) { return -1; }
 	virtual Int getBrowserDiagnosticFrameCommands(Int, UnsignedInt) { return -1; }

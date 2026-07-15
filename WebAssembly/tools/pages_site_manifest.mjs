@@ -6,6 +6,14 @@ export const PAGES_TEMPLATE_FILES = Object.freeze([
   "legal.html",
 ]);
 
+export const PAGES_GENERATED_PROJECT_FILES = Object.freeze([
+  "llms.txt",
+  "project-info.json",
+  "project.md",
+  "robots.txt",
+  "sitemap.xml",
+]);
+
 export const PAGES_HARNESS_FILES = Object.freeze([
   "analytics.mjs",
   "assets/brand/project-new-shoes-apple-touch.png",
@@ -13,6 +21,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "assets/brand/project-new-shoes-icon-512.png",
   "assets/brand/project-new-shoes.ico",
   "assets/launcher-logo.webp",
+  "assets/games/card-back-war.webp",
   "assets/zeroh-autumn-offensive-1440p.webp",
   "assets/zeroh-autumn-offensive-swatch.webp",
   "assets/zeroh-azul-armada-1440p.webp",
@@ -22,13 +31,21 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "assets/zeroh-command-desert.webp",
   "assets/zeroh-red-moon-front-1440p.webp",
   "assets/zeroh-red-moon-front-swatch.webp",
+  "bink_decode_worker.mjs",
+  "bink_decoder.mjs",
+  "bink_direct_runtime.mjs",
   "bink_runtime.mjs",
   "bridge.js",
+  "agent_bridge.mjs",
   "camera-zoom-config.mjs",
+  "clickteam-installer.mjs",
+  "crash-diagnostics.mjs",
+  "cursor-style-config.mjs",
   "d3d8_executor.mjs",
   "device-transfer-protocol.mjs",
   "engine_realm_boot.mjs",
   "gdi_executor.mjs",
+  "game-data-store.mjs",
   "harness.css",
   "io_worker.mjs",
   "issue-recorder.mjs",
@@ -39,16 +56,33 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "launcher-desktop-apps.js",
   "launcher-device-transfer.mjs",
   "launcher-entry.mjs",
+  "launcher-games.css",
+  "launcher-games.mjs",
   "launcher-hardware-info.js",
   "launcher-os-shutdown.mjs",
   "launcher-retail-presentation.mjs",
   "launcher-runtime.css",
   "launcher.css",
   "launcher.js",
+  "llm-ai-agent.mjs",
+  "llm-ai-game-runtime.mjs",
+  "llm-ai-game-tools.mjs",
+  "llm-ai-manager-ui.mjs",
+  "llm-ai-manager.css",
+  "llm-ai-openai-client.mjs",
+  "llm-ai-profile.mjs",
+  "llm-ai-store.mjs",
+  "llm-ai-strategy.mjs",
   "manifest.webmanifest",
   "multiplayer_identity.mjs",
   "multiplayer_launch_policy.mjs",
+  "mod-context.mjs",
+  "mod-package-format.mjs",
+  "mod-package-worker.mjs",
+  "mod-package-store.mjs",
+  "mod-manager-ui.mjs",
   "network-diagnostics.mjs",
+  "original-cursor-assets.mjs",
   "opfs_realm_files.mjs",
   "play.mjs",
   "replay-file-store.mjs",
@@ -61,15 +95,33 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "vendor/pako.es5.min.js",
   "vendor/noble-secp256k1-LICENSE.txt",
   "vendor/primer-octicons-LICENSE.txt",
+  "vendor/cicdec-LICENSE.txt",
+  "vendor/seek-bzip-LICENSE.txt",
+  "vendor/seek-bzip.min.mjs",
   "vendor/trystero-LICENSE.txt",
   "vendor/trystero-nostr.min.mjs",
   "webrtc-udp-endpoint.mjs",
+]);
+
+export const PAGES_DEPENDENCY_FILES = Object.freeze([
+  "harness/vendor/7z-wasm/7zz.es6.js",
+  "harness/vendor/7z-wasm/7zz.wasm",
+  "harness/vendor/7z-wasm/License.txt",
+  "harness/vendor/7z-wasm/unRarLicense.txt",
+  "harness/vendor/7z-wasm/README.md",
+  "harness/vendor/7z-wasm/package.json",
 ]);
 
 export const PAGES_RUNTIME_FILES = Object.freeze([
   "cnc-port.js",
   "cnc-port.wasm",
   "cnc-port.worker.js",
+]);
+
+export const PAGES_VIDEO_RUNTIME_FILES = Object.freeze([
+  "video-runtime/bink-decoder.wasm",
+  "video-runtime/bink-decoder-manifest.json",
+  "video-runtime/bink-decoder-SOURCE.txt",
 ]);
 
 export const PAGES_ROOT_LAUNCHER_FILES = Object.freeze([
@@ -81,9 +133,12 @@ export const PAGES_OUTPUT_FILES = Object.freeze([
   ".nojekyll",
   "LICENSE.md",
   ...PAGES_TEMPLATE_FILES,
+  ...PAGES_GENERATED_PROJECT_FILES,
   ...PAGES_ROOT_LAUNCHER_FILES,
   ...PAGES_HARNESS_FILES.map((name) => `harness/${name}`),
+  ...PAGES_DEPENDENCY_FILES,
   "harness/build-info.json",
   "harness/play.html",
   ...PAGES_RUNTIME_FILES.map((name) => `dist-threaded-release/${name}`),
+  ...PAGES_VIDEO_RUNTIME_FILES,
 ].sort());

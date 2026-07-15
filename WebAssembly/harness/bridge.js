@@ -1,10 +1,26 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
-import { createBinkVideoRuntime } from "./bink_runtime.mjs";
+import {
+  BINK_VIDEO_MANIFEST_URL,
+  binkVideoPolicy,
+  buildPreparedBinkManifest,
+  createBinkVideoRuntime,
+  loadBinkVideoManifest,
+} from "./bink_runtime.mjs";
+import { createBinkDecoderSourceRegistry } from "./bink_decoder.mjs";
+import { createBinkDirectVideoRuntime } from "./bink_direct_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
+import { createGameDataStore } from "./game-data-store.mjs";
+import { loadCursorStyle } from "./cursor-style-config.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
 import { createReplayFileStore } from "./replay-file-store.mjs";
 import { createTransferUserDataStore } from "./transfer-user-data-store.mjs";
+import {
+  CNC_PORT_MOD_DATA_ROOT,
+  loadActiveModContext,
+  modContextPaths,
+  vanillaModContext,
+} from "./mod-context.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
 import { networkDiagnostics } from "./network-diagnostics.mjs";
 import {
@@ -385,6 +401,27 @@ async function cncPortRuntimeCacheToken(distDir) {
 let cncPortEmscriptenModule = null;
 // Why loadWasmModule returned null (surfaced in mount errors).
 let cncPortModuleLoadError = null;
+let llmAiProfileCatalog = [];
+
+function normalizeLlmAiProfileCatalog(value) {
+  if (!Array.isArray(value)) throw new TypeError("profiles must be an array");
+  if (value.length > 64) throw new TypeError("at most 64 LLM AI profiles are supported");
+  const ids = new Set();
+  return value.map((entry) => {
+    const id = String(entry?.id ?? "").trim();
+    const name = String(entry?.name ?? "").trim();
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(id)) throw new TypeError("invalid LLM AI profile ID");
+    if (!name || [...name].length > 64) throw new TypeError("invalid LLM AI profile name");
+    if (ids.has(id)) throw new TypeError("duplicate LLM AI profile ID");
+    ids.add(id);
+    return Object.freeze({ id, name });
+  });
+}
+
+function packLlmAiProfileCatalog(profiles = llmAiProfileCatalog) {
+  return profiles.map(({ id, name }) =>
+    `${encodeURIComponent(id)}=${encodeURIComponent(name)}`).join("&");
+}
 
 const D3DCLEAR_TARGET = 0x00000001;
 
@@ -943,6 +980,7 @@ function createThreadedEngineController() {
   let lastLoopError = null;
   let mssHandlers = null;
   let binkRuntime = null;
+  let binkSources = null;
 
   function threadedLog(message, data) {
     recordLog(`threaded ${message}`, data);
@@ -997,14 +1035,45 @@ function createThreadedEngineController() {
 
   function binkVideoRuntime() {
     if (!binkRuntime) {
-      binkRuntime = createBinkVideoRuntime({
+      const common = {
         log: (message, data) => threadedLog(message, data),
+        onPreparation: (detail) => publishBinkPreparation(detail),
         sendFrame: ({ handle, frameNum, width, height, bytes }) => {
           sendPortCommand({ cmd: "binkFrame", handle, frameNum, width, height, bytes }, [bytes.buffer]);
         },
-      });
+      };
+      binkRuntime = binkVideoPolicy() === "direct"
+        ? createBinkDirectVideoRuntime({
+          ...common,
+          resolveSource: (payload, options) => binkSourceRegistry().sourceFor(payload, options),
+          audioContext: () => ensureBrowserAudioRuntimeContext("bink-direct-playback"),
+        })
+        : createBinkVideoRuntime(common);
     }
     return binkRuntime;
+  }
+
+  function publishBinkPreparation(detail) {
+    try {
+      window.dispatchEvent(new CustomEvent("cncport:binkprepare", { detail }));
+    } catch { /* DOM event support is optional in focused harnesses */ }
+  }
+
+  function binkSourceRegistry() {
+    if (!binkSources) {
+      binkSources = createBinkDecoderSourceRegistry({
+        log: (message, data) => threadedLog(message, data),
+      });
+    }
+    return binkSources;
+  }
+
+  function registerBinkSources(sources) {
+    binkSourceRegistry().registerSources(sources);
+  }
+
+  function cancelBinkPreparation() {
+    return binkRuntime?.cancelActive?.() === true;
   }
 
   function handleBinkMessage(msg) {
@@ -1095,6 +1164,14 @@ function createThreadedEngineController() {
         return;
       case "status":
         applyThreadedStatus(msg);
+        return;
+      case "browserCursor":
+        harnessState.browserInput = {
+          ...(harnessState.browserInput ?? {}),
+          cursorSet: msg.cursorSet === true,
+          cursorFile: typeof msg.cursorFile === "string" ? msg.cursorFile : null,
+        };
+        syncBrowserCursor(harnessState.browserInput);
         return;
       case "live":
         threadedLog("engine thread live");
@@ -1377,6 +1454,12 @@ function createThreadedEngineController() {
 
   async function engineInit(payload = {}) {
     await startEngineThread();
+    const llmAiProfiles = await engineCall(
+      "cnc_port_real_engine_set_llm_ai_profiles", "string", ["string"],
+      [packLlmAiProfileCatalog()]);
+    if (llmAiProfiles?.ok !== true) {
+      throw new Error(`LLM AI profile catalog rejected: ${llmAiProfiles?.error ?? "unknown"}`);
+    }
     const traceStart = harnessState.logs.length;
     const onProgress = (step) => {
       harnessState.realEngineInitProgress = step;
@@ -1398,6 +1481,8 @@ function createThreadedEngineController() {
         maxCameraHeight: payload.maxCameraHeight,
         stepBudgetMs: payload.stepBudgetMs,
         commanderName: payload.commanderName,
+        modDirectory: payload.modDirectory,
+        userDataHome: CNC_PORT_USER_DATA_HOME,
       }, {
         // SwiftShader full boots take minutes; each init slice posts progress
         // which re-arms this deadline, so a genuine hang is what times out.
@@ -1483,6 +1568,7 @@ function createThreadedEngineController() {
     cncPortMssCacheDropNotifier = null;
     binkRuntime?.shutdown();
     binkRuntime = null;
+    binkSources = null;
     inputOutbox.length = 0;
     for (const [, entry] of pending) {
       if (entry.timer) clearTimeout(entry.timer);
@@ -1609,6 +1695,8 @@ function createThreadedEngineController() {
     forwardInput,
     sendCommand,
     postCommand,
+    registerBinkSources,
+    cancelBinkPreparation,
     get lastStatus() { return lastStatus; },
     get lastLoopError() { return lastLoopError; },
     get engineThreadStarted() { return engineThreadStarted; },
@@ -1695,6 +1783,11 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "readReplay",
   "importReplay",
   "deleteReplay",
+  "listGameData",
+  "readGameData",
+  "importGameData",
+  "copyGameDataOverride",
+  "deleteGameData",
   // WebRTC signaling and RTCDataChannels live in the window realm. Their
   // datagrams cross into the engine worker through threadedUdpBridge.
   "browserWebRtcEndpointConnect",
@@ -1706,6 +1799,7 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   // allocation is pure browser storage work; mounting registers the prepared
   // paths while the main runtime still owns wasm, just like mountArchives.
   "allocateArchiveNamespace",
+  "realEngineSetLlmAiProfiles",
 ]);
 
 async function threadedRpc(command, payload = {}) {
@@ -2105,6 +2199,382 @@ async function threadedRpc(command, payload = {}) {
       });
       return { ok: true, command, forwarded: true, threaded: true, state: snapshotState() };
     }
+    case "agentUiSnapshot": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_snapshot", "string", ["number"],
+          [payload.includeHidden === true ? 1 : 0]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentHudSnapshot": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_hud_snapshot", "string", [], []);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentChatSend": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_chat_send", "string", ["string", "string"],
+          [String(payload.text ?? ""), String(payload.audience ?? "everyone")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentWorldSnapshot": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_world_snapshot", "string", ["number", "number", "number"],
+          [
+            payload.mode === "camera" ? 1 : 0,
+            payload.detail === "tactical" ? 1 : 0,
+            payload.includeCapabilities === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentTerrainQuery": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_terrain_query", "string",
+          ["number", "number", "number", "number", "number", "number", "number"],
+          [
+            payload.mode === "camera" ? 1 : 0,
+            Number(payload.minX),
+            Number(payload.minY),
+            Number(payload.maxX),
+            Number(payload.maxY),
+            Number(payload.columns),
+            Number(payload.rows),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentMinimapSnapshot": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_minimap_snapshot", "string", ["number", "number"],
+          [Number(payload.columns), Number(payload.rows)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameSelect": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_select", "string", ["string", "number"],
+          [String(payload.objectIds ?? ""), payload.cameraBound === true ? 1 : 0]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameOrder": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_order", "string",
+          ["string", "string", "number", "number", "number", "number", "number"],
+          [
+            String(payload.action ?? ""), String(payload.objectIds ?? ""),
+            Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+            Number(payload.guardMode ?? 0),
+            payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameContext": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_context", "string",
+          ["string", "number", "number", "number", "number", "number"],
+          [
+            String(payload.objectIds ?? ""), Number(payload.targetId ?? 0),
+            Number(payload.x ?? 0), Number(payload.y ?? 0),
+            payload.hasPosition === true ? 1 : 0,
+            payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameCommand": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_command", "string",
+          ["number", "string", "number", "number", "number", "number", "number", "number"],
+          [
+            Number(payload.sourceId), String(payload.command ?? ""),
+            Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+            Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+            payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGamePlayerCommand": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_player_command", "string",
+          ["string", "string", "number", "number", "number", "number", "number", "number"],
+          [
+            String(payload.commandSet ?? ""), String(payload.command ?? ""),
+            Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+            Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+            payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameProduction": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_cancel_production", "string",
+          ["number", "number", "string", "number"],
+          [
+            Number(payload.sourceId), Number(payload.productionId ?? 0),
+            String(payload.upgrade ?? ""), payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameContainer": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_exit_container", "string",
+          ["number", "number", "number"],
+          [
+            Number(payload.containerId), Number(payload.passengerId),
+            payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentGameBeacon": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_game_beacon", "string",
+          ["string", "number", "number", "number", "string", "number"],
+          [
+            String(payload.action ?? ""), Number(payload.beaconId ?? 0),
+            Number(payload.x ?? 0), Number(payload.y ?? 0), String(payload.text ?? ""),
+            payload.cameraBound === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "llmAiWorldSnapshot": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_world_snapshot", "string",
+          ["number", "number", "number", "number"],
+          [
+            Number(payload.playerIndex), payload.mode === "camera" ? 1 : 0,
+            payload.detail === "tactical" ? 1 : 0,
+            payload.includeCapabilities === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "llmAiTerrainQuery": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_terrain_query", "string",
+          ["number", "number", "number", "number", "number", "number", "number", "number"],
+          [
+            Number(payload.playerIndex), payload.mode === "camera" ? 1 : 0,
+            Number(payload.minX), Number(payload.minY), Number(payload.maxX), Number(payload.maxY),
+            Number(payload.columns), Number(payload.rows),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "llmAiStrategyController": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_strategy_controller", "string",
+          ["number", "number"],
+          [Number(payload.playerIndex), payload.controller === "llm" ? 1 : 0]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "llmAiGameOrder": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_game_order", "string",
+          ["number", "string", "string", "number", "number", "number"],
+          [
+            Number(payload.playerIndex), String(payload.action ?? ""),
+            String(payload.objectIds ?? ""), Number(payload.targetId ?? 0),
+            Number(payload.x ?? 0), Number(payload.y ?? 0),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "llmAiGameCommand": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_game_command", "string",
+          ["number", "number", "string", "number", "number", "number", "number", "number"],
+          [
+            Number(payload.playerIndex), Number(payload.sourceId), String(payload.command ?? ""),
+            Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+            Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "llmAiEngineRequest": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_llm_ai_engine_request", "string",
+          ["number", "string", "string", "number"],
+          [
+            Number(payload.playerIndex), String(payload.action ?? ""),
+            String(payload.name ?? ""), Number(payload.value ?? 0),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentCameraLookAt": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_camera_look_at", "string", ["number", "number"],
+          [Number(payload.x), Number(payload.y)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentCameraSetView": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_camera_set_view", "string",
+          ["number", "number", "number", "number", "number", "number"],
+          [
+            Number(payload.angle ?? 0), Number(payload.pitch ?? 0), Number(payload.zoom ?? 0),
+            payload.setAngle === true ? 1 : 0,
+            payload.setPitch === true ? 1 : 0,
+            payload.setZoom === true ? 1 : 0,
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiActivate": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_activate", "string", ["number", "string"],
+          [Number(payload.windowId), String(payload.name ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiSetText": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_set_text", "string", ["number", "string", "string"],
+          [Number(payload.windowId), String(payload.name ?? ""), String(payload.text ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiSubmit": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_submit", "string", ["number", "string"],
+          [Number(payload.windowId), String(payload.name ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiSelectIndex": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_select_index", "string", ["number", "string", "number"],
+          [Number(payload.windowId), String(payload.name ?? ""), Number(payload.index)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiSetValue": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_set_value", "string", ["number", "string", "number"],
+          [Number(payload.windowId), String(payload.name ?? ""), Number(payload.value)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiSelectTab": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_select_tab", "string", ["number", "string", "number"],
+          [Number(payload.windowId), String(payload.name ?? ""), Number(payload.index)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "agentUiListItems": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_agent_ui_list_items", "string",
+          ["number", "string", "number", "number"],
+          [
+            Number(payload.windowId),
+            String(payload.name ?? ""),
+            Number(payload.offset ?? 0),
+            Number(payload.limit ?? 64),
+          ]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "realEngineDumpWindows": {
       try {
         const windows = await threadedEngine.engineCall(
@@ -2201,6 +2671,15 @@ async function threadedRpc(command, payload = {}) {
         const state = await threadedEngine.engineCall(
           "cnc_port_real_engine_lan_state", "string", [], []);
         return { ok: true, command, lan: state, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineLlmAiAssignments": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_llm_ai_assignments", "string", [], []);
+        return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
@@ -4875,8 +5354,11 @@ let originalCursorAnimation = {
 
 function loadOriginalCursorManifest() {
   if (!originalCursorManifestPromise) {
-    originalCursorManifestPromise = fetch(originalCursorManifestUrl, { cache: "no-store" })
-      .then((response) => {
+    originalCursorManifestPromise = Promise.resolve()
+      .then(async () => {
+        const prepared = await window.ZeroHAssetLibrary?.originalCursorManifestForLaunch?.();
+        if (prepared) return prepared;
+        const response = await fetch(originalCursorManifestUrl, { cache: "no-store" });
         if (!response.ok) {
           throw new Error(`cursor manifest fetch failed (${response.status})`);
         }
@@ -4894,11 +5376,6 @@ function loadOriginalCursorManifest() {
   }
   return originalCursorManifestPromise;
 }
-
-// Start this small fetch before the engine and SwiftShader begin competing
-// for the local machine. Cursor selection happens during real init, so the
-// manifest is normally ready by the first SetCursor call.
-loadOriginalCursorManifest().catch(() => {});
 
 function originalCursorKey(cursorFile) {
   const normalized = String(cursorFile ?? "").replaceAll("\\", "/");
@@ -4966,6 +5443,7 @@ async function startOriginalCursorAnimation(cursorFile) {
         step,
         stepCount: cursor.sequence.length,
         frameUrl,
+        assetSource: manifest.source ?? "developer_cursor_artifacts",
       };
       const rate = Math.max(1, cursor.rates?.[step] ?? 1);
       step = (step + 1) % cursor.sequence.length;
@@ -4992,6 +5470,19 @@ async function startOriginalCursorAnimation(cursorFile) {
 }
 
 function syncBrowserCursor(input = harnessState.browserInput) {
+  if (loadCursorStyle() === "system") {
+    stopOriginalCursorAnimation();
+    const css = "default";
+    canvas.style.cursor = css;
+    harnessState.browserCursor = {
+      source: "system_cursor_setting",
+      cursorSet: Boolean(input?.cursorSet),
+      cursorFile: typeof input?.cursorFile === "string" ? input.cursorFile : null,
+      css,
+      visible: true,
+    };
+    return;
+  }
   if (!input) {
     const css = canvas.style.cursor || "auto";
     harnessState.browserCursor = {
@@ -5033,6 +5524,20 @@ function syncBrowserCursor(input = harnessState.browserInput) {
     visible: true,
   };
 }
+
+window.addEventListener("cncport:cursorstylechange", () => {
+  syncBrowserCursor();
+});
+
+window.addEventListener("cncport:cursorassetschange", () => {
+  originalCursorManifestPromise = null;
+  const cursorFile = harnessState.browserInput?.cursorFile;
+  if (loadCursorStyle() === "game" && cursorFile) {
+    startOriginalCursorAnimation(cursorFile);
+  } else {
+    syncBrowserCursor();
+  }
+});
 
 const HARNESS_LOG_LIMIT = 512;
 
@@ -5151,8 +5656,8 @@ const { cncGdiMeasure, cncGdiRasterizeGlyph } = createGdiHooks();
 // code path: raw fopen/fwrite against a path built from
 //   getPath_UserData()  ==  "$HOME/<UserDataLeafName>/"
 // and getSaveDirectory() appends "Save/". In the browser build:
-//   - HOME is pinned to CNC_PORT_USER_DATA_HOME (see preRun) so the path is
-//     deterministic and stable across reloads.
+//   - the real-init bridge sets HOME to the exact active context before the
+//     original GlobalData constructor resolves CSIDL_PERSONAL;
 //   - <UserDataLeafName> defaults to "Command and Conquer Generals Zero Hour
 //     Data" (GlobalData.cpp, the registry lookup fails in the shim).
 // We mount IDBFS on the whole user-data directory so the engine's own
@@ -5161,10 +5666,23 @@ const { cncGdiMeasure, cncGdiRasterizeGlyph } = createGdiHooks();
 // Xfer/Snapshot serialization changes — this only re-targets where the bytes
 // physically live.
 // ---------------------------------------------------------------------------
-const CNC_PORT_USER_DATA_HOME = "/home/web_user";
+const CNC_PORT_IDBFS_HOME = "/home/web_user";
 const CNC_PORT_USER_DATA_LEAF = "Command and Conquer Generals Zero Hour Data";
-const CNC_PORT_USER_DATA_DIR = `${CNC_PORT_USER_DATA_HOME}/${CNC_PORT_USER_DATA_LEAF}`;
-const CNC_PORT_SAVE_DIR = `${CNC_PORT_USER_DATA_DIR}/Save`;
+const CNC_PORT_USER_DATA_DIR = `${CNC_PORT_IDBFS_HOME}/${CNC_PORT_USER_DATA_LEAF}`;
+const CNC_PORT_MOD_STORAGE = (() => {
+  try { return globalThis.localStorage; } catch { return null; }
+})();
+const CNC_PORT_ACTIVE_MOD_CONTEXT = (() => {
+  try {
+    return loadActiveModContext(CNC_PORT_MOD_STORAGE);
+  } catch (error) {
+    recordLog("mod context storage error", { error: error?.message ?? String(error) });
+    return vanillaModContext();
+  }
+})();
+const CNC_PORT_ACTIVE_CONTEXT_PATHS = modContextPaths(CNC_PORT_ACTIVE_MOD_CONTEXT);
+const CNC_PORT_USER_DATA_HOME = CNC_PORT_ACTIVE_CONTEXT_PATHS.home;
+const CNC_PORT_SAVE_DIR = CNC_PORT_ACTIVE_CONTEXT_PATHS.saveDir;
 
 // Set once mountSaveFilesystem succeeds; guards persist/read calls.
 let cncPortSaveFsMounted = false;
@@ -5233,7 +5751,11 @@ function mountSaveFilesystem(m) {
       if (err) {
         recordLog("saveFsSyncInError", { error: String(err) });
       } else {
-        recordLog("saveFsMounted", { path: CNC_PORT_SAVE_DIR });
+        recordLog("saveFsMounted", {
+          path: CNC_PORT_SAVE_DIR,
+          modContextId: CNC_PORT_ACTIVE_MOD_CONTEXT.id,
+          modContextLabel: CNC_PORT_ACTIVE_MOD_CONTEXT.label,
+        });
       }
       if (typeof m.removeRunDependency === "function") {
         m.removeRunDependency("cnc-port-idbfs");
@@ -5282,13 +5804,39 @@ const replayFileStore = createReplayFileStore({
   ready: () => wasmModulePromise,
   getModule: () => cncPortEmscriptenModule,
   persist: (reason) => persistSaveFilesystem(reason),
+  directory: CNC_PORT_ACTIVE_CONTEXT_PATHS.replayDir,
+});
+
+const gameDataStore = createGameDataStore({
+  ready: () => wasmModulePromise,
+  getModule: () => cncPortEmscriptenModule,
+  persist: (reason) => persistSaveFilesystem(reason),
+  storage: CNC_PORT_MOD_STORAGE,
 });
 
 const transferUserDataStore = createTransferUserDataStore({
   ready: () => wasmModulePromise,
   getModule: () => cncPortEmscriptenModule,
   persist: (reason) => persistSaveFilesystem(reason),
+  userDataDirectory: CNC_PORT_ACTIVE_CONTEXT_PATHS.userDataDir,
 });
+
+function transferUserDataStoreForContext(contextId) {
+  const id = String(contextId ?? CNC_PORT_ACTIVE_MOD_CONTEXT.id);
+  if (id === CNC_PORT_ACTIVE_MOD_CONTEXT.id) return transferUserDataStore;
+  if (id !== "vanilla" && !/^[a-f0-9]{64}$/.test(id)) {
+    throw new Error("Transfer user-data mod configuration identity is invalid");
+  }
+  const userDataDirectory = id === "vanilla"
+    ? modContextPaths(vanillaModContext()).userDataDir
+    : `${CNC_PORT_MOD_DATA_ROOT}/${id}/Home/${CNC_PORT_USER_DATA_LEAF}`;
+  return createTransferUserDataStore({
+    ready: () => wasmModulePromise,
+    getModule: () => cncPortEmscriptenModule,
+    persist: (reason) => persistSaveFilesystem(reason),
+    userDataDirectory,
+  });
+}
 
 function bytesToBase64(bytes) {
   let binary = "";
@@ -5387,16 +5935,8 @@ async function loadWasmModule() {
       cncGdiRasterizeGlyph,
       // Persist the in-game save directory to IndexedDB via IDBFS so ".sav"
       // files written by the real GameState / XferSave path survive a reload.
-      // HOME is pinned so getPath_UserData() ("$HOME/<leaf>/") is deterministic
-      // JS-side; the real engine still creates the leaf/Save dirs itself.
       preRun: [
         (m) => {
-          try {
-            m.ENV = m.ENV || {};
-            m.ENV.HOME = CNC_PORT_USER_DATA_HOME;
-          } catch (envError) {
-            recordLog("saveFsEnvError", { error: String(envError) });
-          }
           mountSaveFilesystem(m);
         },
       ],
@@ -5559,9 +6099,24 @@ async function loadWasmModule() {
       realEngineInit: module.cwrap("cnc_port_real_engine_init", "string", ["string", "number"]),
       realEngineInitBegin: module.cwrap("cnc_port_real_engine_init_begin", "string", ["string", "number"]),
       realEngineInitStep: module.cwrap("cnc_port_real_engine_init_step", "string", ["number"]),
+      realEngineSetModDirectory: module.cwrap(
+        "cnc_port_real_engine_set_mod_directory",
+        "number",
+        ["string"],
+      ),
+      realEngineSetUserDataHome: module.cwrap(
+        "cnc_port_real_engine_set_user_data_home",
+        "number",
+        ["string"],
+      ),
       realEngineFrontier: module.cwrap("cnc_port_real_engine_frontier", "string", []),
       realEngineSetCommanderName: module.cwrap(
         "cnc_port_real_engine_set_commander_name",
+        "string",
+        ["string"],
+      ),
+      realEngineSetLlmAiProfiles: module.cwrap(
+        "cnc_port_real_engine_set_llm_ai_profiles",
         "string",
         ["string"],
       ),
@@ -5582,6 +6137,11 @@ async function loadWasmModule() {
         ["number", "number"],
       ),
       realEngineLanState: module.cwrap("cnc_port_real_engine_lan_state", "string", []),
+      realEngineLlmAiAssignments: module.cwrap(
+        "cnc_port_real_engine_llm_ai_assignments",
+        "string",
+        [],
+      ),
       realEngineLanCommand: module.cwrap(
         "cnc_port_real_engine_lan_command",
         "string",
@@ -5732,6 +6292,151 @@ async function loadWasmModule() {
         "cnc_port_query_window_by_name",
         "string",
         ["string"],
+      ),
+      agentUiSnapshot: module.cwrap(
+        "cnc_port_agent_ui_snapshot",
+        "string",
+        ["number"],
+      ),
+      agentHudSnapshot: module.cwrap(
+        "cnc_port_agent_hud_snapshot",
+        "string",
+        [],
+      ),
+      agentChatSend: module.cwrap(
+        "cnc_port_agent_chat_send",
+        "string",
+        ["string", "string"],
+      ),
+      agentWorldSnapshot: module.cwrap(
+        "cnc_port_agent_world_snapshot",
+        "string",
+        ["number", "number", "number"],
+      ),
+      agentTerrainQuery: module.cwrap(
+        "cnc_port_agent_terrain_query",
+        "string",
+        ["number", "number", "number", "number", "number", "number", "number"],
+      ),
+      agentMinimapSnapshot: module.cwrap(
+        "cnc_port_agent_minimap_snapshot",
+        "string",
+        ["number", "number"],
+      ),
+      agentGameSelect: module.cwrap(
+        "cnc_port_agent_game_select",
+        "string",
+        ["string", "number"],
+      ),
+      agentGameOrder: module.cwrap(
+        "cnc_port_agent_game_order",
+        "string",
+        ["string", "string", "number", "number", "number", "number", "number"],
+      ),
+      agentGameContext: module.cwrap(
+        "cnc_port_agent_game_context",
+        "string",
+        ["string", "number", "number", "number", "number", "number"],
+      ),
+      agentGameCommand: module.cwrap(
+        "cnc_port_agent_game_command",
+        "string",
+        ["number", "string", "number", "number", "number", "number", "number", "number"],
+      ),
+      agentGamePlayerCommand: module.cwrap(
+        "cnc_port_agent_game_player_command",
+        "string",
+        ["string", "string", "number", "number", "number", "number", "number", "number"],
+      ),
+      agentGameProduction: module.cwrap(
+        "cnc_port_agent_game_cancel_production",
+        "string",
+        ["number", "number", "string", "number"],
+      ),
+      agentGameContainer: module.cwrap(
+        "cnc_port_agent_game_exit_container",
+        "string",
+        ["number", "number", "number"],
+      ),
+      agentGameBeacon: module.cwrap(
+        "cnc_port_agent_game_beacon",
+        "string",
+        ["string", "number", "number", "number", "string", "number"],
+      ),
+      llmAiWorldSnapshot: module.cwrap(
+        "cnc_port_llm_ai_world_snapshot",
+        "string",
+        ["number", "number", "number", "number"],
+      ),
+      llmAiTerrainQuery: module.cwrap(
+        "cnc_port_llm_ai_terrain_query",
+        "string",
+        ["number", "number", "number", "number", "number", "number", "number", "number"],
+      ),
+      llmAiStrategyController: module.cwrap(
+        "cnc_port_llm_ai_strategy_controller",
+        "string",
+        ["number", "number"],
+      ),
+      llmAiGameOrder: module.cwrap(
+        "cnc_port_llm_ai_game_order",
+        "string",
+        ["number", "string", "string", "number", "number", "number"],
+      ),
+      llmAiGameCommand: module.cwrap(
+        "cnc_port_llm_ai_game_command",
+        "string",
+        ["number", "number", "string", "number", "number", "number", "number", "number"],
+      ),
+      llmAiEngineRequest: module.cwrap(
+        "cnc_port_llm_ai_engine_request",
+        "string",
+        ["number", "string", "string", "number"],
+      ),
+      agentCameraLookAt: module.cwrap(
+        "cnc_port_agent_camera_look_at",
+        "string",
+        ["number", "number"],
+      ),
+      agentCameraSetView: module.cwrap(
+        "cnc_port_agent_camera_set_view",
+        "string",
+        ["number", "number", "number", "number", "number", "number"],
+      ),
+      agentUiActivate: module.cwrap(
+        "cnc_port_agent_ui_activate",
+        "string",
+        ["number", "string"],
+      ),
+      agentUiSetText: module.cwrap(
+        "cnc_port_agent_ui_set_text",
+        "string",
+        ["number", "string", "string"],
+      ),
+      agentUiSubmit: module.cwrap(
+        "cnc_port_agent_ui_submit",
+        "string",
+        ["number", "string"],
+      ),
+      agentUiSelectIndex: module.cwrap(
+        "cnc_port_agent_ui_select_index",
+        "string",
+        ["number", "string", "number"],
+      ),
+      agentUiSetValue: module.cwrap(
+        "cnc_port_agent_ui_set_value",
+        "string",
+        ["number", "string", "number"],
+      ),
+      agentUiSelectTab: module.cwrap(
+        "cnc_port_agent_ui_select_tab",
+        "string",
+        ["number", "string", "number"],
+      ),
+      agentUiListItems: module.cwrap(
+        "cnc_port_agent_ui_list_items",
+        "string",
+        ["number", "string", "number", "number"],
       ),
       realEngineLastUpdateTarget: module.cwrap(
         "cnc_port_real_engine_last_update_target",
@@ -10352,6 +11057,13 @@ async function realEngineInit(payload = {}) {
   let frontier = null;
   let aborted = false;
   let abortMessage = null;
+  if (typeof wasmModule.realEngineSetLlmAiProfiles !== "function") {
+    return { ok: false, command: "realEngineInit", error: "LLM AI profile catalog export unavailable" };
+  }
+  const llmAiProfiles = JSON.parse(wasmModule.realEngineSetLlmAiProfiles(packLlmAiProfileCatalog()));
+  if (llmAiProfiles?.ok !== true) {
+    return { ok: false, command: "realEngineInit", error: "LLM AI profile catalog rejected" };
+  }
   // Boot render resolution: hand the page's target (dynamic canvas-fit or the
   // persisted fixed setting) to the engine BEFORE init so GameEngine's
   // INIT_STEP_GLOBAL_DATA applies it and the device is created directly at the
@@ -10379,6 +11091,15 @@ async function realEngineInit(payload = {}) {
     if (identity?.ok !== true) {
       return { ok: false, command: "realEngineInit", error: "commander identity rejected" };
     }
+  }
+  if (typeof wasmModule.realEngineSetUserDataHome !== "function"
+      || wasmModule.realEngineSetUserDataHome(CNC_PORT_USER_DATA_HOME) !== 1) {
+    return { ok: false, command: "realEngineInit", error: "user-data home rejected" };
+  }
+  const modDirectory = String(payload.modDirectory ?? "");
+  if (typeof wasmModule.realEngineSetModDirectory === "function"
+      && wasmModule.realEngineSetModDirectory(modDirectory) !== 1) {
+    return { ok: false, command: "realEngineInit", error: "mod directory rejected" };
   }
   const useStepped = payload.stepped === true
     && typeof wasmModule.realEngineInitBegin === "function"
@@ -10705,18 +11426,11 @@ async function registerOpfsInterceptPrefix(prefix) {
   return { ok: true };
 }
 
-const BINK_MANIFEST_URL = new URL(
-  "../artifacts/browser-video/bink/bink-browser-video-manifest.json",
-  import.meta.url,
-).href;
-
-async function binkRuntimeFiles() {
-  const response = await fetch(BINK_MANIFEST_URL, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Bink video manifest fetch failed (${response.status})`);
-  const manifest = await response.json();
-  if (manifest?.ok !== true || !Array.isArray(manifest.payloads) || manifest.payloads.length === 0) {
-    throw new Error("Bink video manifest is incomplete");
-  }
+async function binkRuntimeFiles(preparedVideos = []) {
+  const policy = binkVideoPolicy();
+  const manifest = policy === "direct"
+    ? buildPreparedBinkManifest(preparedVideos)
+    : await loadBinkVideoManifest({ policy });
   const files = manifest.payloads.map((payload) => {
     const sourceFile = String(payload?.sourceFile ?? "");
     if (!/^[A-Za-z0-9_.-]+\.bik$/i.test(sourceFile)) {
@@ -10725,7 +11439,8 @@ async function binkRuntimeFiles() {
     return {
       name: sourceFile,
       sourceFile,
-      url: new URL(`../artifacts/real-assets/${encodeURIComponent(sourceFile)}`, import.meta.url).href,
+      url: policy === "direct" ? null
+        : new URL(`../artifacts/real-assets/${encodeURIComponent(sourceFile)}`, import.meta.url).href,
       // The original BinkVideoPlayer always appends the lowercase VIDEO_EXT
       // ("bik"). Win32 was case-insensitive even when the cabinet entry was
       // named EA_LOGO.BIK; the OPFS path map must preserve that behavior.
@@ -10741,16 +11456,30 @@ async function binkRuntimeFiles() {
   }
   files.push({
     name: "bink-browser-video-manifest.json",
-    url: BINK_MANIFEST_URL,
+    url: policy === "direct" ? null : BINK_VIDEO_MANIFEST_URL,
+    content: policy === "direct" ? `${JSON.stringify(manifest, null, 2)}\n` : null,
     enginePath: "artifacts/browser-video/bink/bink-browser-video-manifest.json",
   });
-  return { files, manifest };
+  return { files, manifest, policy };
 }
 
 async function stageBinkRuntimeFiles(
   wasmModule, namespace, baseDirectory, stageMap, preparedVideos = [],
 ) {
-  const runtime = await binkRuntimeFiles();
+  let runtime;
+  try {
+    runtime = await binkRuntimeFiles(preparedVideos);
+  } catch (error) {
+    const reason = error?.message ?? String(error);
+    harnessState.binkVideoAssets = {
+      ready: false,
+      unavailable: true,
+      reason,
+      files: [],
+    };
+    recordLog("Bink runtime files unavailable; continuing without optional movies", { reason });
+    return [];
+  }
   const files = [];
   const stagedSources = new Map();
   const preparedByName = new Map(preparedVideos.map((video) =>
@@ -10797,7 +11526,19 @@ async function stageBinkRuntimeFiles(
         });
         continue;
       }
-      const { bytesWritten } = await fetchArchiveToOpfsOffThread(file.url, opfsPath);
+      if (file.sourceFile && !file.url) {
+        throw new Error(`Selected movie source is unavailable: ${file.sourceFile}`);
+      }
+      let sourceUrl = file.url;
+      if (file.content != null) {
+        sourceUrl = URL.createObjectURL(new Blob([file.content], { type: "application/json" }));
+      }
+      let bytesWritten;
+      try {
+        ({ bytesWritten } = await fetchArchiveToOpfsOffThread(sourceUrl, opfsPath));
+      } finally {
+        if (file.content != null) URL.revokeObjectURL(sourceUrl);
+      }
       ensureMemfsDirectory(wasmModule.fs, parentDirectory(enginePath));
       wasmModule.fs.writeFile(enginePath, new Uint8Array(0));
       stageMap[enginePath] = opfsPath;
@@ -10818,9 +11559,13 @@ async function stageBinkRuntimeFiles(
   }
   harnessState.binkVideoAssets = {
     ready: files.every((file) => file.ok),
+    mode: runtime.policy,
     payloadCount: runtime.manifest.payloads.length,
     files,
   };
+  if (runtime.policy === "direct" && harnessState.binkVideoAssets.ready) {
+    threadedEngine?.registerBinkSources(preparedVideos);
+  }
   recordLog("Bink runtime files staged", {
     ready: harnessState.binkVideoAssets.ready,
     files: files.map((file) => ({ name: file.name, ok: file.ok, bytes: file.bytes })),
@@ -10834,6 +11579,56 @@ function skipBinkRuntimeFiles() {
     skipped: true,
     reason: "optional videos were not selected during library preparation",
     files: [],
+  };
+}
+
+function stageManagedModArchives(wasmModule, inputs, stageMap, command) {
+  const modDirectory = "/assets/cnc-mods-active";
+  const archives = [];
+  const modIds = new Set();
+  for (const input of Array.isArray(inputs) ? inputs : []) {
+    const name = String(input?.name ?? "");
+    const opfsPath = String(input?.opfsPath ?? "").replace(/^\/+/, "");
+    const modId = String(input?.modId ?? "");
+    const bytes = Number(input?.size ?? input?.bytes ?? 0);
+    if (!/^\d{3}-\d{3}-[A-Za-z0-9_.-]+\.big$/i.test(name)
+        || !/^mod-[a-f0-9-]{8,64}$/.test(modId)
+        || opfsPath.includes("..")
+        || !Number.isSafeInteger(bytes)
+        || bytes <= 4) {
+      return { error: `Invalid prepared mod archive: ${name || opfsPath}`, command };
+    }
+    const expectedPath = new RegExp(`^cnc-mods/${modId}/archives/[A-Za-z0-9._ -]+\\.big$`, "i");
+    if (!expectedPath.test(opfsPath)) {
+      return { error: `Invalid prepared mod archive: ${name || opfsPath}`, command };
+    }
+    const enginePath = `${modDirectory}/${name}`;
+    ensureMemfsDirectory(wasmModule.fs, parentDirectory(enginePath));
+    wasmModule.fs.writeFile(enginePath, new Uint8Array(0));
+    stageMap[enginePath] = opfsPath;
+    modIds.add(modId);
+    archives.push({
+      name,
+      modId,
+      modName: String(input?.modName ?? modId),
+      path: enginePath,
+      bytes,
+      expectedBytes: bytes,
+      bytesMatch: true,
+      reader: "mod manager prepared OPFS",
+      opfsPath,
+    });
+  }
+  return { archives, modIds, modDirectory: archives.length > 0 ? modDirectory : "" };
+}
+
+function managedModSet(staged) {
+  return {
+    path: staged.modDirectory || null,
+    archiveCount: staged.archives.length,
+    totalBytes: staged.archives.reduce((sum, archive) => sum + archive.bytes, 0),
+    modCount: staged.modIds.size,
+    archives: staged.archives,
   };
 }
 
@@ -10950,6 +11745,11 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
     });
   }
 
+  const stagedMods = stageManagedModArchives(wasmModule, payload.mods, stageMap, "mountArchives");
+  if (stagedMods.error) {
+    return { ok: false, command: stagedMods.command, error: stagedMods.error, archives };
+  }
+
   if (payload.includeVideos === true) {
     await stageBinkRuntimeFiles(wasmModule, namespace, baseDirectory, stageMap);
   } else {
@@ -10960,6 +11760,12 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
   const registered = await registerOpfsInterceptPrefix(prefix);
   if (!registered.ok) {
     return { ok: false, command: "mountArchives", error: registered.error, archives };
+  }
+  if (stagedMods.archives.length > 0) {
+    const registeredMods = await registerOpfsInterceptPrefix(`${stagedMods.modDirectory}/`);
+    if (!registeredMods.ok) {
+      return { ok: false, command: "mountArchives", error: registeredMods.error, archives };
+    }
   }
 
   let staging = null;
@@ -11025,6 +11831,8 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
     archiveCount: archives.length,
     totalBytes,
     ok,
+    modArchiveCount: stagedMods.archives.length,
+    modCount: stagedMods.modIds.size,
   });
 
   return {
@@ -11032,6 +11840,8 @@ async function mountArchivesToOpfs(wasmModule, payload, archiveInputs, baseDirec
     command: "mountArchives",
     state: snapshotState(),
     archiveSet,
+    modSet: managedModSet(stagedMods),
+    modDirectory: stagedMods.modDirectory,
   };
 }
 
@@ -11103,6 +11913,15 @@ async function mountPreparedArchives(payload = {}) {
     });
   }
 
+  // Mod packages are managed independently from the retail installation and
+  // staged outside runDirectory. The original engine receives this directory
+  // through its -mod command line and applies ArchiveFileSystem::loadMods().
+  const stagedMods = stageManagedModArchives(
+    moduleResult.wasmModule, payload.mods, stageMap, "mountPreparedArchives");
+  if (stagedMods.error) {
+    return { ok: false, command: stagedMods.command, error: stagedMods.error, archives };
+  }
+
   const preparedVideos = [];
   for (const input of Array.isArray(payload.videos) ? payload.videos : []) {
     const name = String(input?.name ?? "");
@@ -11128,7 +11947,19 @@ async function mountPreparedArchives(payload = {}) {
     if (!Number.isSafeInteger(bytes) || bytes <= 48) {
       return { ok: false, command: "mountPreparedArchives", error: `Invalid prepared video size: ${name}` };
     }
-    preparedVideos.push({ name, opfsPath, bytes });
+    preparedVideos.push({
+      name,
+      opfsPath,
+      bytes,
+      signature: String(input?.signature ?? ""),
+      headerHex: String(input?.headerHex ?? ""),
+      frames: Number(input?.frames),
+      width: Number(input?.width),
+      height: Number(input?.height),
+      fpsNum: Number(input?.fpsNum),
+      fpsDen: Number(input?.fpsDen),
+      audioTracks: Number(input?.audioTracks ?? 0),
+    });
   }
 
   if (payload.includeVideos === true) {
@@ -11146,6 +11977,12 @@ async function mountPreparedArchives(payload = {}) {
   const registered = await registerOpfsInterceptPrefix(prefix);
   if (!registered.ok) {
     return { ok: false, command: "mountPreparedArchives", error: registered.error, archives };
+  }
+  if (stagedMods.archives.length > 0) {
+    const registeredMods = await registerOpfsInterceptPrefix(`${stagedMods.modDirectory}/`);
+    if (!registeredMods.ok) {
+      return { ok: false, command: "mountPreparedArchives", error: registeredMods.error, archives };
+    }
   }
   let staging;
   try {
@@ -11196,8 +12033,17 @@ async function mountPreparedArchives(payload = {}) {
     archiveCount: archives.length,
     totalBytes,
     ok,
+    modArchiveCount: stagedMods.archives.length,
+    modCount: stagedMods.modIds.size,
   });
-  return { ok, command: "mountPreparedArchives", state: snapshotState(), archiveSet };
+  return {
+    ok,
+    command: "mountPreparedArchives",
+    state: snapshotState(),
+    archiveSet,
+    modSet: managedModSet(stagedMods),
+    modDirectory: stagedMods.modDirectory,
+  };
 }
 
 async function mountArchives(payload = {}) {
@@ -11218,6 +12064,14 @@ async function mountArchives(payload = {}) {
 
   if (opfsArchiveMountEnabled()) {
     return mountArchivesToOpfs(moduleResult.wasmModule, payload, archiveInputs, baseDirectory);
+  }
+
+  if (Array.isArray(payload.mods) && payload.mods.length > 0) {
+    return {
+      ok: false,
+      command: "mountArchives",
+      error: "Managed mods require the threaded OPFS runtime",
+    };
   }
 
   // MEMFS mounts survive ONLY as the harness/index.html legacy-boot surface
@@ -11399,6 +12253,27 @@ async function rpc(command, payload = {}) {
       return mountPreparedArchives(payload);
     case "realEngineInit":
       return realEngineInit(payload);
+    case "realEngineSetLlmAiProfiles":
+      {
+        try {
+          llmAiProfileCatalog = normalizeLlmAiProfileCatalog(payload.profiles ?? []);
+          harnessState.llmAiProfileCatalog = llmAiProfileCatalog.map((profile) => ({ ...profile }));
+          const packed = packLlmAiProfileCatalog();
+          if (cncPortThreadedMode && threadedEngine?.engineThreadStarted) {
+            const result = await threadedEngine.engineCall(
+              "cnc_port_real_engine_set_llm_ai_profiles", "string", ["string"], [packed]);
+            return { ok: result?.ok === true, command, applied: true, result };
+          }
+          const wasmModule = await wasmModulePromise;
+          if (typeof wasmModule?.realEngineSetLlmAiProfiles !== "function") {
+            return { ok: false, command, applied: false, error: "LLM AI profile catalog export unavailable" };
+          }
+          const result = JSON.parse(wasmModule.realEngineSetLlmAiProfiles(packed));
+          return { ok: result?.ok === true, command, applied: true, result };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
     case "persistSaves":
       // Flush MEMFS -> IndexedDB so newly written ".sav" files survive a reload.
       // Call this after the in-game Save dialog reports success.
@@ -11465,6 +12340,60 @@ async function rpc(command, payload = {}) {
             allowLastReplay: payload.allowLastReplay === true,
           });
           return { command, ...result };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "listGameData":
+      {
+        try {
+          return { command, ...await gameDataStore.list() };
+        } catch (error) {
+          return { ok: false, command, contexts: [], error: error?.message ?? String(error) };
+        }
+      }
+    case "readGameData":
+      {
+        try {
+          const bytes = await gameDataStore.read(payload.contextId, payload.kind, payload.name);
+          return { ok: true, command, bytesBase64: bytesToBase64(bytes) };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "importGameData":
+      {
+        try {
+          return {
+            command,
+            ...await gameDataStore.importFile(
+              payload.contextId,
+              payload.kind,
+              payload.name,
+              base64ToBytes(payload.bytesBase64),
+            ),
+          };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "copyGameDataOverride":
+      {
+        try {
+          return { command, ...await gameDataStore.copyWithCompatibilityOverride(payload) };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "deleteGameData":
+      {
+        try {
+          return {
+            command,
+            ...await gameDataStore.remove(payload.contextId, payload.kind, payload.name, {
+              allowActiveLastReplay: payload.allowActiveLastReplay === true,
+            }),
+          };
         } catch (error) {
           return { ok: false, command, error: error?.message ?? String(error) };
         }
@@ -11611,6 +12540,19 @@ async function rpc(command, payload = {}) {
             lan: JSON.parse(moduleResult.wasmModule.realEngineLanState()),
             state: snapshotState(),
           };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "realEngineLlmAiAssignments":
+      {
+        const moduleResult = await getWasmModuleForArchives(command);
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const result = JSON.parse(moduleResult.wasmModule.realEngineLlmAiAssignments());
+          return { ok: result?.ok === true, command, result, state: snapshotState() };
         } catch (error) {
           return { ok: false, command, error: error?.message ?? String(error) };
         }
@@ -12478,6 +13420,183 @@ async function rpc(command, payload = {}) {
           result,
           state: snapshotState(),
         };
+      }
+    case "agentUiSnapshot":
+    case "agentHudSnapshot":
+    case "agentChatSend":
+    case "agentWorldSnapshot":
+    case "agentTerrainQuery":
+    case "agentMinimapSnapshot":
+    case "agentGameSelect":
+    case "agentGameOrder":
+    case "agentGameContext":
+    case "agentGameCommand":
+    case "agentGamePlayerCommand":
+    case "agentGameProduction":
+    case "agentGameContainer":
+    case "agentGameBeacon":
+    case "agentCameraLookAt":
+    case "agentCameraSetView":
+    case "agentUiActivate":
+    case "agentUiSetText":
+    case "agentUiSubmit":
+    case "agentUiSelectIndex":
+    case "agentUiSetValue":
+    case "agentUiSelectTab":
+    case "agentUiListItems":
+      {
+        const moduleResult = await getWasmModuleForArchives(command);
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        let result = null;
+        try {
+          const module = moduleResult.wasmModule;
+          let raw = null;
+          if (command === "agentUiSnapshot") {
+            raw = module.agentUiSnapshot(payload.includeHidden === true ? 1 : 0);
+          } else if (command === "agentHudSnapshot") {
+            raw = module.agentHudSnapshot();
+          } else if (command === "agentChatSend") {
+            raw = module.agentChatSend(
+              String(payload.text ?? ""), String(payload.audience ?? "everyone"));
+          } else if (command === "agentWorldSnapshot") {
+            raw = module.agentWorldSnapshot(
+              payload.mode === "camera" ? 1 : 0,
+              payload.detail === "tactical" ? 1 : 0,
+              payload.includeCapabilities === true ? 1 : 0,
+            );
+          } else if (command === "agentTerrainQuery") {
+            raw = module.agentTerrainQuery(
+              payload.mode === "camera" ? 1 : 0,
+              Number(payload.minX), Number(payload.minY),
+              Number(payload.maxX), Number(payload.maxY),
+              Number(payload.columns), Number(payload.rows));
+          } else if (command === "agentMinimapSnapshot") {
+            raw = module.agentMinimapSnapshot(Number(payload.columns), Number(payload.rows));
+          } else if (command === "agentGameSelect") {
+            raw = module.agentGameSelect(
+              String(payload.objectIds ?? ""), payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGameOrder") {
+            raw = module.agentGameOrder(
+              String(payload.action ?? ""), String(payload.objectIds ?? ""),
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+              Number(payload.guardMode ?? 0),
+              payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGameContext") {
+            raw = module.agentGameContext(
+              String(payload.objectIds ?? ""), Number(payload.targetId ?? 0),
+              Number(payload.x ?? 0), Number(payload.y ?? 0),
+              payload.hasPosition === true ? 1 : 0,
+              payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGameCommand") {
+            raw = module.agentGameCommand(
+              Number(payload.sourceId), String(payload.command ?? ""),
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+              Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+              payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGamePlayerCommand") {
+            raw = module.agentGamePlayerCommand(
+              String(payload.commandSet ?? ""), String(payload.command ?? ""),
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+              Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0,
+              payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGameProduction") {
+            raw = module.agentGameProduction(
+              Number(payload.sourceId), Number(payload.productionId ?? 0),
+              String(payload.upgrade ?? ""), payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGameContainer") {
+            raw = module.agentGameContainer(
+              Number(payload.containerId), Number(payload.passengerId),
+              payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentGameBeacon") {
+            raw = module.agentGameBeacon(
+              String(payload.action ?? ""), Number(payload.beaconId ?? 0),
+              Number(payload.x ?? 0), Number(payload.y ?? 0), String(payload.text ?? ""),
+              payload.cameraBound === true ? 1 : 0);
+          } else if (command === "agentCameraLookAt") {
+            raw = module.agentCameraLookAt(Number(payload.x), Number(payload.y));
+          } else if (command === "agentCameraSetView") {
+            raw = module.agentCameraSetView(
+              Number(payload.angle ?? 0), Number(payload.pitch ?? 0), Number(payload.zoom ?? 0),
+              payload.setAngle === true ? 1 : 0,
+              payload.setPitch === true ? 1 : 0,
+              payload.setZoom === true ? 1 : 0);
+          } else if (command === "agentUiActivate") {
+            raw = module.agentUiActivate(Number(payload.windowId), String(payload.name ?? ""));
+          } else if (command === "agentUiSetText") {
+            raw = module.agentUiSetText(
+              Number(payload.windowId), String(payload.name ?? ""), String(payload.text ?? ""));
+          } else if (command === "agentUiSubmit") {
+            raw = module.agentUiSubmit(Number(payload.windowId), String(payload.name ?? ""));
+          } else if (command === "agentUiSelectIndex") {
+            raw = module.agentUiSelectIndex(
+              Number(payload.windowId), String(payload.name ?? ""), Number(payload.index));
+          } else if (command === "agentUiSetValue") {
+            raw = module.agentUiSetValue(
+              Number(payload.windowId), String(payload.name ?? ""), Number(payload.value));
+          } else if (command === "agentUiSelectTab") {
+            raw = module.agentUiSelectTab(
+              Number(payload.windowId), String(payload.name ?? ""), Number(payload.index));
+          } else {
+            raw = module.agentUiListItems(
+              Number(payload.windowId), String(payload.name ?? ""),
+              Number(payload.offset ?? 0), Number(payload.limit ?? 64));
+          }
+          result = JSON.parse(raw);
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+        return { ok: result?.ok === true, command, result, state: snapshotState() };
+      }
+    case "llmAiWorldSnapshot":
+    case "llmAiTerrainQuery":
+    case "llmAiStrategyController":
+    case "llmAiGameOrder":
+    case "llmAiGameCommand":
+    case "llmAiEngineRequest":
+      {
+        const moduleResult = await getWasmModuleForArchives(command);
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const module = moduleResult.wasmModule;
+          const playerIndex = Number(payload.playerIndex);
+          let raw = null;
+          if (command === "llmAiWorldSnapshot") {
+            raw = module.llmAiWorldSnapshot(
+              playerIndex, payload.mode === "camera" ? 1 : 0,
+              payload.detail === "tactical" ? 1 : 0,
+              payload.includeCapabilities === true ? 1 : 0);
+          } else if (command === "llmAiTerrainQuery") {
+            raw = module.llmAiTerrainQuery(
+              playerIndex, payload.mode === "camera" ? 1 : 0,
+              Number(payload.minX), Number(payload.minY),
+              Number(payload.maxX), Number(payload.maxY),
+              Number(payload.columns), Number(payload.rows));
+          } else if (command === "llmAiStrategyController") {
+            raw = module.llmAiStrategyController(
+              playerIndex, payload.controller === "llm" ? 1 : 0);
+          } else if (command === "llmAiGameOrder") {
+            raw = module.llmAiGameOrder(
+              playerIndex, String(payload.action ?? ""), String(payload.objectIds ?? ""),
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0));
+          } else if (command === "llmAiGameCommand") {
+            raw = module.llmAiGameCommand(
+              playerIndex, Number(payload.sourceId), String(payload.command ?? ""),
+              Number(payload.targetId ?? 0), Number(payload.x ?? 0), Number(payload.y ?? 0),
+              Number(payload.angle ?? 0), payload.hasPosition === true ? 1 : 0);
+          } else {
+            raw = module.llmAiEngineRequest(
+              playerIndex, String(payload.action ?? ""), String(payload.name ?? ""),
+              Number(payload.value ?? 0));
+          }
+          const result = JSON.parse(raw);
+          return { ok: result?.ok === true, command, result, state: snapshotState() };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
       }
     case "startMainLoop":
       {
@@ -23243,23 +24362,77 @@ setInterval(() => {
   }
 }, 5000);
 
+// The agent transport is absent from normal launches.  Its module, socket,
+// timers, and status listener are created only after an explicit pre-launch
+// configuration calls this function.
+let agentBridgeController = null;
+let agentBridgePagehideBound = false;
+async function connectAgentBridge(config) {
+  if (agentBridgeController) return agentBridgeController.snapshot();
+  if (harnessState.realEngineInit?.frontier?.initReturned !== true) {
+    throw new Error("agent bridge connection requires a successfully initialized engine");
+  }
+  const { createAgentBridgeConnection } = await import("./agent_bridge.mjs");
+  agentBridgeController = createAgentBridgeConnection({
+    config,
+    rpc,
+    onStatus: (status) => {
+      harnessState.agentBridge = status;
+      try {
+        window.dispatchEvent(new CustomEvent("cncport:agentbridge", { detail: status }));
+      } catch (_error) {
+        // State remains available in DOM-limited harnesses.
+      }
+    },
+  });
+  if (!agentBridgePagehideBound) {
+    agentBridgePagehideBound = true;
+    window.addEventListener("pagehide", () => agentBridgeController?.stop(), { once: true });
+  }
+  return agentBridgeController.snapshot();
+}
+
+function disconnectAgentBridge() {
+  if (!agentBridgeController) return { configured: false, phase: "stopped" };
+  agentBridgeController.stop();
+  const finalState = agentBridgeController.snapshot();
+  agentBridgeController = null;
+  return finalState;
+}
+
 window.CnCPort = {
   rpc,
   state: harnessState,
+  connectAgentBridge,
+  disconnectAgentBridge,
+  getAgentBridgeState: () => agentBridgeController?.snapshot() ?? {
+    configured: false,
+    phase: "disabled",
+    connected: false,
+  },
   d3d8BridgeCallbacks,
   persistSaves: persistSaveFilesystem,
   persistScheduledSaves: persistScheduledSaveFilesystem,
   persistFinalSaves: persistFinalSaveFilesystem,
   stopSavePersistenceScheduling,
+  cancelBinkPreparation: () => threadedEngine?.cancelBinkPreparation() === true,
   listSaves: listSaveFiles,
   listReplays: () => replayFileStore.list(),
   readReplay: (name) => replayFileStore.read(name),
   importReplay: (name, bytes) => replayFileStore.importFile(name, bytes),
   deleteReplay: (name, options) => replayFileStore.remove(name, options),
+  listGameData: () => gameDataStore.list(),
+  readGameData: (contextId, kind, name) => gameDataStore.read(contextId, kind, name),
+  importGameData: (contextId, kind, name, bytes) =>
+    gameDataStore.importFile(contextId, kind, name, bytes),
+  copyGameDataOverride: (options) => gameDataStore.copyWithCompatibilityOverride(options),
+  deleteGameData: (contextId, kind, name, options) =>
+    gameDataStore.remove(contextId, kind, name, options),
   listTransferUserFiles: (options) => transferUserDataStore.list(options),
   readTransferUserFileChunk: (file, offset, length) =>
     transferUserDataStore.readChunk(file, offset, length),
-  beginTransferUserDataImport: (files) => transferUserDataStore.beginImport(files),
+  beginTransferUserDataImport: (files, contextId) =>
+    transferUserDataStoreForContext(contextId).beginImport(files),
   // Raw emscripten Module accessor for harness diagnostics (threaded mode:
   // lets a probe read atomic counters / last-step markers FROM THE MAIN
   // THREAD while the engine thread is busy inside a long wasm call and the

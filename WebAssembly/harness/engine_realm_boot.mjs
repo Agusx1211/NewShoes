@@ -639,6 +639,20 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
             throw new Error("commander identity rejected");
           }
         }
+        const userDataHome = String(request.userDataHome ?? "");
+        const homeAccepted = cwrapFor(
+          "cnc_port_real_engine_set_user_data_home", "number", ["string"],
+        )(userDataHome);
+        if (homeAccepted !== 1) {
+          throw new Error("user-data home rejected");
+        }
+        const modDirectory = String(request.modDirectory ?? "");
+        const modAccepted = cwrapFor(
+          "cnc_port_real_engine_set_mod_directory", "number", ["string"],
+        )(modDirectory);
+        if (modAccepted !== 1) {
+          throw new Error("mod directory rejected");
+        }
         if (request.stepped === false) {
           // ?initstep=0 fallback: the monolithic init call — blocks this
           // worker (not the page) for the whole init.
@@ -718,6 +732,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     quitRequested: false,
   };
   let framePacedFn = null;
+  let lastBrowserCursorKey = null;
 
   function runPacedFrame(runLogic) {
     try {
@@ -846,6 +861,17 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     }
     loop.clientFrames += 1;
     loop.lastResult = result;
+    const browserCursor = result.browserCursor;
+    if (browserCursor && typeof browserCursor === "object") {
+      const cursorSet = browserCursor.cursorSet === true;
+      const cursorFile = typeof browserCursor.cursorFile === "string"
+        ? browserCursor.cursorFile : null;
+      const cursorKey = `${cursorSet ? 1 : 0}\u0000${cursorFile ?? ""}`;
+      if (cursorKey !== lastBrowserCursorKey) {
+        lastBrowserCursorKey = cursorKey;
+        postToMain({ cmd: "browserCursor", cursorSet, cursorFile });
+      }
+    }
     loop.pacingSamples.push({ t: stamp, logic: logicToRun });
     if (loop.pacingSamples.length > 900) {
       loop.pacingSamples.splice(0, loop.pacingSamples.length - 900);
@@ -1026,6 +1052,8 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
           maxCameraHeight: msg.maxCameraHeight,
           stepBudgetMs: msg.stepBudgetMs,
           commanderName: String(msg.commanderName ?? ""),
+          modDirectory: String(msg.modDirectory ?? ""),
+          userDataHome: String(msg.userDataHome ?? ""),
         };
         init.respond = respond;
         return;

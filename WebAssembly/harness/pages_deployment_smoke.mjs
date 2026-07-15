@@ -6,6 +6,7 @@ import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
 import { chromium } from "playwright";
+import { verifyAgentResources } from "./agent_resources_smoke.mjs";
 
 const root = resolve(process.argv[2] || "pages-dist");
 const expectedBuildInfo = JSON.parse(await readFile(resolve(root, "harness/build-info.json"), "utf8"));
@@ -28,11 +29,14 @@ const mime = new Map([
   [".ico", "image/x-icon"],
   [".js", "text/javascript; charset=utf-8"],
   [".json", "application/json; charset=utf-8"],
+  [".md", "text/markdown; charset=utf-8"],
   [".mjs", "text/javascript; charset=utf-8"],
   [".png", "image/png"],
+  [".txt", "text/plain; charset=utf-8"],
   [".wasm", "application/wasm"],
   [".webmanifest", "application/manifest+json; charset=utf-8"],
   [".webp", "image/webp"],
+  [".xml", "application/xml; charset=utf-8"],
 ]);
 
 function inside(parent, child) {
@@ -131,6 +135,7 @@ try {
   if (!Object.values(isolation).every(Boolean)) {
     throw new Error(`Pages isolation/launcher checks failed: ${JSON.stringify(isolation)}`);
   }
+  const agentResources = await verifyAgentResources(page);
   if (!navigationHeaders.some((headers) => !headers["cross-origin-opener-policy"])
       || !navigationHeaders.some((headers) => headers["cross-origin-opener-policy"] === "same-origin"
         && headers["cross-origin-embedder-policy"] === "require-corp")) {
@@ -155,12 +160,67 @@ try {
     throw new Error(`Wasm delivery check failed: ${JSON.stringify(wasm)}`);
   }
 
-  // An empty mount is rejected after module/realm preparation. Reaching the
-  // threadedMode state proves the actual Emscripten pthread worker accepted
-  // the transferred viewport OffscreenCanvas; no proprietary assets are used.
-  const prep = await page.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
-  if (prep.ok !== false || !/Missing archive list/.test(prep.error || "")) {
-    throw new Error(`Unexpected empty-mount result: ${JSON.stringify(prep)}`);
+  await page.waitForFunction(() => window.ZeroHDesktop?.videoSupport?.checking === false);
+  const videoSupport = await page.evaluate(() => ({
+    policy: document.documentElement.dataset.binkVideoSidecars,
+    support: window.ZeroHDesktop.videoSupport,
+    disabled: document.querySelector("#includeVideosToggle")?.disabled,
+    description: document.querySelector("#includeVideosDescription")?.textContent || "",
+  }));
+  if (videoSupport.policy !== "direct"
+      || videoSupport.support?.available !== true
+      || videoSupport.support?.mode !== "direct"
+      || videoSupport.disabled !== false
+      || !/play original movies directly/i.test(videoSupport.description)) {
+    throw new Error(`Hosted optional-video support failed: ${JSON.stringify(videoSupport)}`);
+  }
+  const videoRuntime = await page.evaluate(async () => {
+    const base = new URL("../video-runtime/", document.baseURI);
+    const manifestResponse = await fetch(new URL("bink-decoder-manifest.json", base));
+    const manifest = await manifestResponse.json();
+    const response = await fetch(new URL(manifest.wasmFile, base));
+    const bytes = await response.arrayBuffer();
+    const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+      .map((value) => value.toString(16).padStart(2, "0")).join("");
+    return { manifestOk: manifestResponse.ok, wasmOk: response.ok, manifest, bytes: bytes.byteLength, digest };
+  });
+  if (!videoRuntime.manifestOk || !videoRuntime.wasmOk
+      || videoRuntime.bytes !== videoRuntime.manifest.wasmBytes
+      || videoRuntime.bytes > 128 * 1024
+      || videoRuntime.digest !== videoRuntime.manifest.wasmSha256) {
+    throw new Error(`Hosted video runtime delivery failed: ${JSON.stringify(videoRuntime)}`);
+  }
+
+  // The empty mount validates before worker startup, so prepare the realm
+  // explicitly afterward. Reaching threadedMode proves the actual Emscripten
+  // pthread worker accepted the transferred viewport OffscreenCanvas.
+  const emptyMount = await page.evaluate(() => window.CnCPort.rpc("mountArchives", { archives: [] }));
+  if (emptyMount.ok !== false || !/Missing archive list/.test(emptyMount.error || "")) {
+    throw new Error(`Unexpected empty-mount result: ${JSON.stringify(emptyMount)}`);
+  }
+  const prep = await page.evaluate(() => window.CnCPort.rpc("threadedStatus", {}));
+  if (prep.ok !== true || prep.threaded !== true) {
+    throw new Error(`Threaded realm preparation failed: ${JSON.stringify(prep)}`);
+  }
+  const videoFallbackMount = await page.evaluate(async () => {
+    const bytes = new Uint8Array(64);
+    bytes.set(new TextEncoder().encode("BIGF"));
+    const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+    return window.CnCPort.rpc("mountArchives", {
+      path: "/assets/deployment-video-fallback",
+      verifyEach: false,
+      includeVideos: true,
+      archives: [{
+        name: "DeploymentVideoFallback.big",
+        url: `data:application/octet-stream;base64,${btoa(binary)}`,
+        expectedBytes: bytes.byteLength,
+      }],
+    });
+  });
+  if (videoFallbackMount.ok !== true
+      || videoFallbackMount.archiveSet?.archiveCount !== 1
+      || videoFallbackMount.state?.binkVideoAssets?.unavailable !== true) {
+    throw new Error(`Missing optional-video sources blocked archive mounting: ${JSON.stringify(videoFallbackMount)}`);
   }
   await page.waitForFunction(() => window.CnCPort?.state?.threadedMode === true, null, { timeout: 30000 });
   const runtime = await page.evaluate(() => ({
@@ -447,7 +507,10 @@ try {
     ok: true,
     baseUrl,
     isolation,
+    agentResources,
     wasm,
+    videoSupport,
+    videoRuntime: { bytes: videoRuntime.bytes, abiVersion: videoRuntime.manifest.abiVersion },
     runtime,
     canonicalPath: { first: firstPathname, reload: reloadPathname },
     domainRootCanonical: true,

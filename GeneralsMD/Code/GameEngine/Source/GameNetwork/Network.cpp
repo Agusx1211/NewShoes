@@ -190,6 +190,7 @@ public:
 	Int getBrowserDiagnosticRelayedCommands() { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticRelayedCommands() : 0; }
 	Int getBrowserDiagnosticTransportIncoming() { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticTransportIncoming() : 0; }
 	Int getBrowserDiagnosticTransportOutgoing() { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticTransportOutgoing() : 0; }
+	Int getBrowserDiagnosticExecutionFrame() { return m_lastExecutionFrame; }
 	Int getBrowserDiagnosticFrameGrouping(Int slot) { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticFrameGrouping(slot) : -1; }
 	Int getBrowserDiagnosticConnectionQueue(Int slot) { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticConnectionQueue(slot) : -1; }
 	Int getBrowserDiagnosticFrameCommands(Int slot, UnsignedInt frame) { return m_conMgr != NULL ? m_conMgr->getBrowserDiagnosticFrameCommands(slot, frame) : -1; }

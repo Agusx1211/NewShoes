@@ -6,6 +6,32 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-15
+
+- Replace Arcade with ten themed Windows XP game apps, including five networked Internet games ([PR #55](https://github.com/Agusx1211/NewShoes/pull/55)).
+- Add drag-and-drop, touch controls, animations, difficulty settings, and synthesized audio across the XP games ([PR #55](https://github.com/Agusx1211/NewShoes/pull/55)).
+- Fix stale sorted particle shader replay state that intermittently hid smoke and dust effects ([PR #65](https://github.com/Agusx1211/NewShoes/pull/65)).
+- Replace the hosted FFmpeg runtime with a lazy 104 KiB direct classic-Bink decoder ([PR #70](https://github.com/Agusx1211/NewShoes/pull/70)).
+- Add bounded Bink video, audio, and seek playback with integrity, size, source, and deployment guards ([PR #70](https://github.com/Agusx1211/NewShoes/pull/70)).
+- Restore original animated Zero Hour cursors through the threaded browser runtime with a system-pointer setting ([PR #74](https://github.com/Agusx1211/NewShoes/pull/74)).
+- Preserve derived cursor packs through browser installation and encrypted device transfer ([PR #74](https://github.com/Agusx1211/NewShoes/pull/74)).
+- Add a failure-only Windows-style crash dialog and downloadable diagnostics reports with no steady-state reporter work ([PR #69](https://github.com/Agusx1211/NewShoes/pull/69)).
+- Add a browser mod manager with ordered content identities and original-engine `-mod` mounting ([PR #73](https://github.com/Agusx1211/NewShoes/pull/73)).
+- Import practical BIG, folder, ZIP, 7z, RAR, NSIS, nested, and Clickteam mod distributions without executing native payloads ([PR #73](https://github.com/Agusx1211/NewShoes/pull/73)).
+- Isolate saves, replays, device transfers, and multiplayer by exact mod composition and transfer installed mod libraries ([PR #73](https://github.com/Agusx1211/NewShoes/pull/73)).
+- Base feature work on `dev` and require completed agent changes to be handed off through signed pull requests ([PR #72](https://github.com/Agusx1211/NewShoes/pull/72)).
+- Set version `0.2.0` and seed its release inventory ([PR #77](https://github.com/Agusx1211/NewShoes/pull/77)).
+- Select the launcher-compatible Contra X Beta 2 archive set so its custom UI renders correctly ([PR #84](https://github.com/Agusx1211/NewShoes/pull/84)).
+- Generate evidence-backed public project documentation and crawler discovery resources from one canonical record ([PR #82](https://github.com/Agusx1211/NewShoes/pull/82)).
+- Keep browser LAN diagnostics read-only so observation cannot desynchronize multiplayer lockstep ([PR #90](https://github.com/Agusx1211/NewShoes/pull/90)).
+- Avoid synchronous WebGL buffer upload stalls by rotating in-flight dynamic buffer ranges ([PR #98](https://github.com/Agusx1211/NewShoes/pull/98)).
+- Stream large issue-dump serialization in bounded chunks without exceeding JavaScript string limits ([PR #100](https://github.com/Agusx1211/NewShoes/pull/100)).
+- Bound retired WebGL streaming buffers and invalidate dependent vertex arrays before deletion ([PR #101](https://github.com/Agusx1211/NewShoes/pull/101)).
+- Preserve unrelated cached vertex arrays when transient renderer buffers are released ([PR #103](https://github.com/Agusx1211/NewShoes/pull/103)).
+- Add configurable autonomous LLM commanders with exclusive strategy ownership and durable session evidence ([PR #95](https://github.com/Agusx1211/NewShoes/pull/95)).
+- Add an opt-in semantic remote-play API with global and camera-bound control, tactical events, and a Go bridge ([PR #94](https://github.com/Agusx1211/NewShoes/pull/94)).
+- Complete the audited 0.2.0 release inventory after the final integrated changes ([PR #105](https://github.com/Agusx1211/NewShoes/pull/105)).
+
 ## [0.1.0] - 2026-07-13
 
 - Establish `dev` as the integration branch and preserve trusted PR previews ([PR #45](https://github.com/Agusx1211/NewShoes/pull/45)).

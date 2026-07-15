@@ -4136,6 +4136,34 @@ void InGameUI::removeMilitarySubtitle( void )
 }
 
 #if defined(__EMSCRIPTEN__)
+Int InGameUI::agentUIMessageCount( void ) const
+{
+	if (!m_messagesOn) {
+		return 0;
+	}
+	Int count = 0;
+	while (count < MAX_UI_MESSAGES && m_uiMessages[count].displayString != NULL) {
+		++count;
+	}
+	return count;
+}
+
+UnicodeString InGameUI::agentUIMessageText( Int index ) const
+{
+	return index >= 0 && index < agentUIMessageCount()
+		? m_uiMessages[index].fullText : UnicodeString::TheEmptyString;
+}
+
+UnsignedInt InGameUI::agentUIMessageFrame( Int index ) const
+{
+	return index >= 0 && index < agentUIMessageCount() ? m_uiMessages[index].timestamp : 0;
+}
+
+Color InGameUI::agentUIMessageColor( Int index ) const
+{
+	return index >= 0 && index < agentUIMessageCount() ? m_uiMessages[index].color : 0;
+}
+
 Bool InGameUI::debugMilitarySubtitleActive( void ) const
 {
 	return m_militarySubtitle != NULL;

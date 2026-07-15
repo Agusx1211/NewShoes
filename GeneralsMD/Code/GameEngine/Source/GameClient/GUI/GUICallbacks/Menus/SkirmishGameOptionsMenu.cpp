@@ -907,7 +907,16 @@ static void handlePlayerSelection(int index)
 		GameSlot * slot = myGame->getSlot(index);
     if(!slot)
       return;
-    slot->setState(SlotState(playerType), title);
+		if (IsLlmAiComboData(playerType))
+		{
+			const LlmAiProfileInfo *profile = GetLlmAiProfile(LlmAiProfileIndexFromComboData(playerType));
+			if (profile != NULL)
+				slot->setLlmAi(profile->m_id, profile->m_name);
+		}
+		else
+		{
+			slot->setState(SlotState(playerType), title);
+		}
     
 	}
   //skirmishUpdateSlotList();
@@ -1141,6 +1150,17 @@ void InitSkirmishGameGadgets( void )
       GadgetComboBoxSetItemData(comboBoxPlayer[i], 3, (void *)SLOT_MED_AI);
 			GadgetComboBoxAddEntry(comboBoxPlayer[i],TheGameText->fetch("GUI:HardAI"),white);
       GadgetComboBoxSetItemData(comboBoxPlayer[i], 4, (void *)SLOT_BRUTAL_AI);
+			for (Int profileIndex = 0; profileIndex < GetLlmAiProfileCount(); ++profileIndex)
+			{
+				const LlmAiProfileInfo *profile = GetLlmAiProfile(profileIndex);
+				if (profile == NULL)
+					continue;
+				UnicodeString label;
+				label.format(L"LLM: %ls", profile->m_name.str());
+				Int entry = GadgetComboBoxAddEntry(comboBoxPlayer[i], label, white);
+				GadgetComboBoxSetItemData(comboBoxPlayer[i], entry,
+					(void *)LlmAiComboDataFromProfileIndex(profileIndex));
+			}
 			GadgetComboBoxSetSelectedPos(comboBoxPlayer[i],0);
 
 		}
@@ -1180,7 +1200,14 @@ void InitSkirmishGameGadgets( void )
 	{
 		PopulateColorComboBox(i, comboBoxColor, TheSkirmishGameInfo );
 		GadgetComboBoxSetSelectedPos(comboBoxColor[i], 0);
-		PopulatePlayerTemplateComboBox(i, comboBoxPlayerTemplate, TheSkirmishGameInfo, FALSE );
+		// Let the local browser watch autonomous AI matches without adding an
+		// idle human army.  Computer slots remain normal playable factions.
+#ifdef __EMSCRIPTEN__
+		const Bool allowObserver = i == 0;
+#else
+		const Bool allowObserver = FALSE;
+#endif
+		PopulatePlayerTemplateComboBox(i, comboBoxPlayerTemplate, TheSkirmishGameInfo, allowObserver );
 		PopulateTeamComboBox(i, comboBoxTeam, TheSkirmishGameInfo );
 
 //		if (buttonStartPosition[i])

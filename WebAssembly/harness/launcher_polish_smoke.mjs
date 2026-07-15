@@ -208,6 +208,9 @@ function syntheticPeIcon() {
     readFile(new URL("./launcher-entry.mjs", import.meta.url), "utf8"),
   ]);
   assert.match(html, /data-open-settings="game"/);
+  assert.match(html, /data-bink-video-sidecars="auto"/);
+  assert.match(html, /id="includeVideosToggle"[^>]*disabled/);
+  assert.match(html, /id="includeVideosDescription">Checking video playback support/);
   assert.match(html, /I purchased and installed it online/);
   assert.match(html, /I own the original discs/);
   assert.match(html, /id="pickFolderFallbackButton"/);
@@ -226,6 +229,8 @@ function syntheticPeIcon() {
   assert.match(buildInfoSource, /new URL\("\.\/build-info\.json", import\.meta\.url\)/);
   assert.match(buildInfoSource, /PROJECT_URL = "https:\/\/github\.com\/Agusx1211\/NewShoes"/);
   assert.match(buildInfoSource, /\$\{PROJECT_URL\}\/commit\/\$\{commit\}/);
+  assert.match(launcherSource, /probeBinkVideoSupport/);
+  assert.match(launcherSource, /Zero Hour will launch without movies/);
   assert.match(html, /data-retail-banner/);
   assert.match(html, /data-retail-icon/);
   assert.doesNotMatch(html, /data-retail-presentation(?:\s|=)/);

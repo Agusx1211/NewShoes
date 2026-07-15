@@ -12,6 +12,7 @@ import {
   normalizeCameraZoomHeight,
   saveCameraZoomHeight,
 } from "./camera-zoom-config.mjs";
+import { loadCursorStyle, saveCursorStyle } from "./cursor-style-config.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import {
   runRuntimeShutdownSequence,
@@ -27,6 +28,12 @@ import {
   registerP2pBestEffort,
   shouldAutoConnectP2p,
 } from "./multiplayer_launch_policy.mjs";
+import {
+  activeModMountPlan,
+  deriveMultiplayerRoom,
+  loadActiveModContext,
+  vanillaModContext,
+} from "./mod-context.mjs";
 
 const analytics = window.ZeroHAnalytics;
 const track = (name, params) => analytics?.track(name, params);
@@ -43,6 +50,82 @@ const progressNode = document.querySelector("#launchStatus");
 const progressSentinel = document.querySelector("#progress");
 const bootSentinel = document.querySelector("#overlay");
 const queryParams = new URLSearchParams(window.location.search);
+
+function publicAgentBridgeEndpoint(value) {
+  try {
+    const endpoint = new URL(String(value));
+    endpoint.username = "";
+    endpoint.password = "";
+    endpoint.search = "";
+    endpoint.hash = "";
+    return endpoint.href;
+  } catch {
+    return "invalid agent bridge URL";
+  }
+}
+
+function diagnosticPageParams() {
+  const params = Object.fromEntries(queryParams);
+  if (Object.hasOwn(params, "agentBridge")) {
+    params.agentBridge = publicAgentBridgeEndpoint(params.agentBridge);
+  }
+  return params;
+}
+
+const hostAgentBridgeConfiguration = window.CnCPortPlayConfig?.agentBridge;
+let agentBridgeConfigurationError = "";
+
+function normalizeAgentBridgeConfiguration(config) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new TypeError("agent bridge configuration must be an object");
+  }
+  const rawUrl = String(config.url ?? "");
+  if (rawUrl.length === 0 || rawUrl.length > 4096) {
+    throw new TypeError("agent bridge URL must be a non-empty string of at most 4096 characters");
+  }
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new TypeError("agent bridge URL is invalid");
+  }
+  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+    throw new TypeError("agent bridge URL must use ws: or wss:");
+  }
+  const token = String(config.token ?? "");
+  if (token.length === 0 || token.length > 4096) {
+    throw new TypeError("agent bridge token must be a non-empty string of at most 4096 characters");
+  }
+  const rawSessionId = String(config.sessionId ?? "");
+  const sessionId = rawSessionId || window.crypto.randomUUID();
+  if (sessionId.length > 128 || !/^[A-Za-z0-9._-]+$/.test(sessionId)) {
+    throw new TypeError("agent bridge session ID may contain only letters, numbers, dot, underscore, and hyphen (128 characters maximum)");
+  }
+  const playMode = String(config.playMode ?? "global");
+  if (playMode !== "global" && playMode !== "camera") {
+    throw new TypeError("agent bridge play mode must be global or camera");
+  }
+  return Object.freeze({ url: url.href, token, sessionId, playMode });
+}
+
+function initialAgentBridgeConfiguration() {
+  const host = hostAgentBridgeConfiguration;
+  if (host == null) return null;
+  try {
+    return normalizeAgentBridgeConfiguration(host);
+  } catch (error) {
+    agentBridgeConfigurationError = error?.message ?? String(error);
+    return null;
+  }
+}
+let agentBridgeConfiguration = initialAgentBridgeConfiguration();
+const activeModContext = (() => {
+  try {
+    return loadActiveModContext(window.localStorage);
+  } catch {
+    return vanillaModContext();
+  }
+})();
 const performanceOverlayNode = document.querySelector("#performanceOverlay");
 const performanceGraphNode = document.querySelector("#performanceGraph");
 const performanceClientFpsNode = document.querySelector("#performanceClientFps");
@@ -58,6 +141,12 @@ const networkIceUsernameNode = document.querySelector("#networkIceUsername");
 const networkIceCredentialNode = document.querySelector("#networkIceCredential");
 const networkStatusNode = document.querySelector("#networkStatus");
 const networkDiagnosticsToggleNode = document.querySelector("#networkDiagnosticsToggle");
+const binkPreparationOverlay = document.querySelector("#binkPreparationOverlay");
+const binkPreparationName = document.querySelector("#binkPreparationName");
+const binkPreparationProgress = document.querySelector("#binkPreparationProgress");
+const binkPreparationFill = document.querySelector("#binkPreparationFill");
+const binkPreparationDetail = document.querySelector("#binkPreparationDetail");
+const binkPreparationCancel = document.querySelector("#binkPreparationCancel");
 const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
 let networkStorage = null;
 try {
@@ -65,6 +154,56 @@ try {
 } catch {
   // Privacy settings can make the localStorage property itself throw.
 }
+let cursorStyle = loadCursorStyle(networkStorage);
+
+function binkPreparationPercent(detail) {
+  const progress = Number.isFinite(Number(detail?.progress))
+    ? Math.max(0, Math.min(1, Number(detail.progress))) : 0;
+  if (detail?.phase === "runtime") return 5 + progress * 20;
+  if (detail?.phase === "video") return 25 + progress * 60;
+  if (detail?.phase === "audio") return 85 + progress * 14;
+  if (detail?.phase === "ready") return 100;
+  return 2;
+}
+
+function updateBinkPreparation(event) {
+  if (!binkPreparationOverlay) return;
+  const detail = event.detail ?? {};
+  const terminal = detail.phase === "ready" || detail.phase === "cancelled";
+  if (terminal) {
+    binkPreparationOverlay.hidden = true;
+    return;
+  }
+  binkPreparationOverlay.hidden = false;
+  const sourceName = String(detail.sourcePath ?? "").replaceAll("\\", "/").split("/").pop();
+  if (sourceName && binkPreparationName) binkPreparationName.textContent = sourceName;
+  const percent = Math.round(binkPreparationPercent(detail));
+  if (binkPreparationFill) binkPreparationFill.style.width = `${percent}%`;
+  binkPreparationProgress?.setAttribute("aria-valuenow", String(percent));
+  if (binkPreparationDetail) {
+    binkPreparationDetail.textContent = detail.phase === "error"
+      ? `Could not prepare this movie: ${detail.error || "unknown error"}`
+      : detail.detail || "Preparing this movie locally. Nothing is uploaded.";
+  }
+  if (binkPreparationCancel) {
+    binkPreparationCancel.disabled = false;
+    binkPreparationCancel.textContent = detail.phase === "error" ? "Dismiss" : "Skip movie";
+    binkPreparationCancel.dataset.action = detail.phase === "error" ? "dismiss" : "cancel";
+  }
+}
+
+window.addEventListener("cncport:binkprepare", updateBinkPreparation);
+binkPreparationCancel?.addEventListener("click", () => {
+  if (binkPreparationCancel.dataset.action === "dismiss") {
+    binkPreparationOverlay.hidden = true;
+    return;
+  }
+  const cancelled = window.CnCPort?.cancelBinkPreparation?.() === true;
+  if (cancelled) {
+    binkPreparationCancel.disabled = true;
+    binkPreparationCancel.textContent = "Skipping…";
+  }
+});
 
 function loadNetworkDiagnosticsEnabled() {
   const queryValue = queryParams.get("networkDiagnostics");
@@ -344,6 +483,14 @@ const issueRecorder = createIssueRecorder({
 const recorderReady = issueRecorder.init();
 window.CnCIssueRecorder = issueRecorder;
 
+function showRuntimeCrash(failure) {
+  gameRunning = false;
+  renderPerformanceOverlay();
+  void import("./crash-diagnostics.mjs")
+    .then(({ showCrashDiagnostics }) => showCrashDiagnostics(issueRecorder, failure))
+    .catch((error) => console.error("[play] crash diagnostics unavailable", error));
+}
+
 function report(message) {
   progressNode.textContent = message;
   if (progressSentinel) progressSentinel.textContent = message;
@@ -562,9 +709,14 @@ if (threadedUnavailable) {
   }
 }
 
-function fail(message, detail) {
+function fail(message, detail, {
+  kind = runtimeStarted ? "runtime-failure" : "launch-failure",
+  stage = issueRecorder.session?.phase ?? null,
+  error = null,
+} = {}) {
   console.error("[play]", message, detail ?? "");
   issueRecorder.noteFailure(message, detail);
+  showRuntimeCrash({ kind, stage, message, detail, error });
   let detailText = "";
   try {
     detailText = typeof detail === "string" ? detail
@@ -786,7 +938,10 @@ async function runThreadedFrameLoop(rpc, clientFps, logicFps) {
     previous = { now: status.now, clientFrames: loop.clientFrames, logicFrames: loop.logicFrames };
   });
   window.addEventListener("cncport:threadedlooperror", (event) => {
-    fail("engine thread frame loop failed", event.detail?.error ?? event.detail);
+    fail("engine thread frame loop failed", event.detail?.error ?? event.detail, {
+      kind: "engine-loop",
+      stage: issueRecorder.session?.phase ?? "running",
+    });
   });
 }
 
@@ -813,9 +968,15 @@ async function start() {
     activeRpc = rpc;
     const networkSettings = networkSettingsFromInputs();
     saveNetworkSettings(networkSettings);
+    const discoveryRoom = deriveMultiplayerRoom(networkSettings.room, activeModContext);
     let networkRuntime = null;
-    if (shouldAutoConnectP2p(networkSettings.room)) {
-      networkRuntime = { status: "registering", room: networkSettings.room };
+    if (shouldAutoConnectP2p(discoveryRoom)) {
+      networkRuntime = {
+        status: "registering",
+        room: networkSettings.room,
+        discoveryRoom,
+        modContextId: activeModContext.id,
+      };
       if (networkStatusNode) {
         networkStatusNode.textContent = "Discovering peers in the background; game launch will continue offline until connected.";
       }
@@ -828,13 +989,16 @@ async function start() {
         : [];
       void registerP2pBestEffort({
         rpc,
-        room: networkSettings.room,
+        room: discoveryRoom,
         peerId: networkSettings.name || null,
         displayName: networkSettings.name || null,
         iceServers,
       }).then((registration) => {
         if (registration.ok) {
           networkRuntime = registration.runtime;
+          networkRuntime.room = networkSettings.room;
+          networkRuntime.discoveryRoom = discoveryRoom;
+          networkRuntime.modContextId = activeModContext.id;
           const endpoint = networkRuntime?.endpoint;
           const virtualIp = endpoint?.localIp >>> 0;
           const ipText = [24, 16, 8, 0]
@@ -848,6 +1012,8 @@ async function start() {
           networkRuntime = {
             status: "offline",
             room: networkSettings.room,
+            discoveryRoom,
+            modContextId: activeModContext.id,
             error: registration.error,
           };
           if (networkStatusNode) {
@@ -909,7 +1075,7 @@ async function start() {
         supported: threadedSupported,
         mode: threadedMode,
       },
-      pageParams: Object.fromEntries(queryParams),
+      pageParams: diagnosticPageParams(),
       audio: {
         runtime: startAudioRuntime?.browserAudioRuntime ?? startAudioRuntime,
         mixer: startAudioMixer?.browserAudioMixerRuntime ?? startAudioMixer,
@@ -929,6 +1095,7 @@ async function start() {
       videos: window.ZeroHAssetLibrary?.preparedVideos ?? [],
       includeVideos: queryParams.get("videos") === "1"
         || window.ZeroHAssetLibrary?.includeVideos === true,
+      mods: activeModMountPlan(activeModContext),
     });
     if (mount?.archiveSet?.archiveCount !== archives.length) {
       throw launchFailure("archive mount failed", mount?.error ?? mount?.archiveSet);
@@ -982,6 +1149,7 @@ async function start() {
         maxCameraHeight: cameraZoomHeight,
         bootWidth: bootResolution?.width,
         bootHeight: bootResolution?.height,
+        modDirectory: mount.modDirectory ?? "",
       });
     } finally {
       window.removeEventListener("cncport:initprogress", onInitProgress);
@@ -1000,7 +1168,6 @@ async function start() {
         subsystemCount: init.frontier?.subsystemsCompleted,
       },
     });
-
     // The original menu waits for mouse movement before finishing its
     // first-run reveal transition; post two synthetic moves so the buttons
     // appear without the player having to wiggle the cursor first.
@@ -1032,6 +1199,7 @@ async function start() {
     // From here onward the engine can be resumed without running init again,
     // even if display setup or the first paced-loop start needs a retry.
     runtimeStarted = true;
+    syncAgentBridgeApp();
     gameRunning = true;
     renderPerformanceOverlay();
     issueRecorder.setSessionContext({ phase: "running" });
@@ -1054,13 +1222,33 @@ async function start() {
       return;
     }
     await runFrameLoop(rpc);
+    // A connected agent may issue input immediately. Wait until both original
+    // initialization and the paced frame loop are live so its first request
+    // cannot race archive mounting or pre-loop input setup.
+    if (agentBridgeConfiguration) {
+      const agentBridge = await window.CnCPort.connectAgentBridge(agentBridgeConfiguration);
+      issueRecorder.setSessionContext({
+        agentBridge: {
+          configured: true,
+          protocol: agentBridge.protocol,
+          endpoint: agentBridge.endpoint,
+          sessionId: agentBridge.sessionId,
+          playMode: agentBridge.playMode,
+        },
+      });
+    }
   } catch (error) {
+    window.CnCPort.disconnectAgentBridge?.();
     track("game_launch", {
       state: "failed",
       stage: analyticsStage,
       duration: analytics?.bucketDuration(Date.now() - Number(window.__newShoesLaunchStartedAt || Date.now()), "launch") || "unknown",
     });
-    fail(error?.message ?? String(error), error?.launchDetail ?? error);
+    fail(error?.message ?? String(error), error?.launchDetail ?? error, {
+      kind: "launch-failure",
+      stage: analyticsStage,
+      error,
+    });
     throw error;
   }
 }
@@ -1168,11 +1356,13 @@ async function exitToDesktop() {
       track("game_exit", { kind: "game_to_desktop", result: "failed" });
       return result;
     } finally {
+      window.CnCPort.disconnectAgentBridge?.();
       gameRunning = false;
       renderPerformanceOverlay();
       overlay.hidden = true;
       overlay.classList.remove("is-running");
       runtimeStarted = false;
+      syncAgentBridgeApp();
       runtimeClosed = true;
       runtimeClosing = false;
       activeRpc = null;
@@ -1735,6 +1925,8 @@ function syncDesktopGameSettings() {
   const cameraZoomOutput = document.querySelector("#cameraZoomHeightValue");
   if (cameraZoomInput) cameraZoomInput.value = String(cameraZoomHeight);
   if (cameraZoomOutput) cameraZoomOutput.value = String(cameraZoomHeight);
+  const gameCursorToggle = document.querySelector("#gameCursorToggle");
+  if (gameCursorToggle) gameCursorToggle.checked = cursorStyle === "game";
   const fullscreenButton = document.querySelector("#fullscreenButton");
   if (fullscreenButton) {
     fullscreenButton.hidden = !fullscreenSupported();
@@ -1802,6 +1994,17 @@ function bindDesktopGameSettings() {
     syncDesktopGameSettings();
     track("setting_changed", { category: "gameplay", setting: "camera_zoom", value: String(cameraZoomHeight) });
   });
+  document.querySelector("#gameCursorToggle")?.addEventListener("change", (event) => {
+    cursorStyle = saveCursorStyle(networkStorage, event.currentTarget.checked ? "game" : "system");
+    window.dispatchEvent(new CustomEvent("cncport:cursorstylechange", {
+      detail: { style: cursorStyle },
+    }));
+    track("setting_changed", {
+      category: "display",
+      setting: "cursor_style",
+      value: cursorStyle === "game" ? "original" : "system",
+    });
+  });
   document.querySelector("#performanceOverlayToggle")?.addEventListener("change", (event) => {
     setPerformanceOverlay({ enabled: event.currentTarget.checked });
     track("setting_changed", { category: "performance", setting: "performance_overlay", value: event.currentTarget.checked ? "enabled" : "disabled" });
@@ -1854,13 +2057,196 @@ function setShaderTier(tier, { reload = false } = {}) {
   };
 }
 
+let agentBridgeApp = null;
+
+function populateAgentBridgeForm(config) {
+  if (!agentBridgeApp) return;
+  agentBridgeApp.url.value = String(config?.url ?? "ws://127.0.0.1:18888/engine");
+  agentBridgeApp.token.value = String(config?.token ?? "");
+  agentBridgeApp.session.value = String(config?.sessionId ?? "game-1") || "game-1";
+  const mode = String(config?.playMode ?? "global");
+  agentBridgeApp.mode.value = mode === "camera" ? "camera" : "global";
+  agentBridgeApp.token.type = "password";
+  agentBridgeApp.reveal.textContent = "Show";
+  agentBridgeApp.reveal.setAttribute("aria-pressed", "false");
+}
+
+function agentBridgeStatusPresentation() {
+  const enabled = agentBridgeApp?.enabled.checked === true;
+  if (agentBridgeApp?.error) {
+    return {
+      state: "error",
+      title: "Configuration needs attention",
+      detail: "Correct the highlighted connection details, then apply again.",
+    };
+  }
+  if (!runtimeStarted) {
+    if (!enabled) {
+      return {
+        state: "disabled",
+        title: "Remote Agent is disabled",
+        detail: agentBridgeApp?.dirty
+          ? "Apply to keep the next launch free of agent bridge activity."
+          : "Enable it and apply a connection before launching the game.",
+      };
+    }
+    if (agentBridgeApp?.dirty || !agentBridgeConfiguration) {
+      return {
+        state: "ready",
+        title: "Connection details are not applied yet",
+        detail: "Apply this configuration before launching Zero Hour.",
+      };
+    }
+    return {
+      state: "ready",
+      title: "Ready for the next launch",
+      detail: `${publicAgentBridgeEndpoint(agentBridgeConfiguration.url)} · ${agentBridgeConfiguration.playMode} mode · ${agentBridgeConfiguration.sessionId}`,
+    };
+  }
+  if (!agentBridgeConfiguration) {
+    return {
+      state: "disabled",
+      title: "This game started without a remote agent",
+      detail: "No agent bridge module, socket, polling, or reconnect timer is active.",
+    };
+  }
+  const state = window.CnCPort?.getAgentBridgeState?.() ?? { phase: "disabled" };
+  if (state.phase === "connected" && state.connected === true) {
+    return {
+      state: "connected",
+      title: "Remote agent connected",
+      detail: `${state.endpoint ?? publicAgentBridgeEndpoint(agentBridgeConfiguration.url)} · ${state.playMode ?? agentBridgeConfiguration.playMode} mode · ${state.sessionId ?? agentBridgeConfiguration.sessionId}`,
+    };
+  }
+  if (state.phase === "reconnecting" || state.phase === "disconnected") {
+    return {
+      state: "error",
+      title: "Remote agent disconnected",
+      detail: "The browser is retrying. Check that the bridge process is running and its browser token matches.",
+    };
+  }
+  if (state.phase === "stopped") {
+    return {
+      state: "error",
+      title: "Remote agent connection stopped",
+      detail: "Reload the page before starting another connected game.",
+    };
+  }
+  const title = state.phase === "authenticating"
+    ? "Authenticating with the bridge"
+    : state.phase === "connecting"
+      ? "Connecting to the bridge"
+      : "Waiting for engine initialization";
+  return {
+    state: "connecting",
+    title,
+    detail: "The authenticated connection becomes available after the real engine frame loop starts.",
+  };
+}
+
+function syncAgentBridgeApp({ configurationChanged = false } = {}) {
+  if (!agentBridgeApp) return;
+  if (configurationChanged) {
+    agentBridgeApp.enabled.checked = Boolean(agentBridgeConfiguration);
+    populateAgentBridgeForm(agentBridgeConfiguration);
+    agentBridgeApp.dirty = false;
+    agentBridgeApp.error = "";
+  }
+  const enabled = agentBridgeApp.enabled.checked;
+  agentBridgeApp.enabled.disabled = runtimeStarted;
+  agentBridgeApp.fields.disabled = runtimeStarted || !enabled;
+  agentBridgeApp.apply.disabled = runtimeStarted;
+  agentBridgeApp.lock.hidden = !runtimeStarted;
+  agentBridgeApp.errorNode.hidden = !agentBridgeApp.error;
+  agentBridgeApp.errorNode.textContent = agentBridgeApp.error;
+  const presentation = agentBridgeStatusPresentation();
+  agentBridgeApp.status.dataset.state = presentation.state;
+  agentBridgeApp.status.querySelector("strong").textContent = presentation.title;
+  agentBridgeApp.status.querySelector("small").textContent = presentation.detail;
+  agentBridgeApp.form.dataset.configured = agentBridgeConfiguration ? "true" : "false";
+}
+
+function bindAgentBridgeApp() {
+  if (agentBridgeApp) return;
+  const form = document.querySelector("#agentBridgeForm");
+  if (!form) return;
+  agentBridgeApp = {
+    form,
+    enabled: document.querySelector("#agentBridgeEnabled"),
+    fields: document.querySelector("#agentBridgeFields"),
+    url: document.querySelector("#agentBridgeUrl"),
+    token: document.querySelector("#agentBridgeToken"),
+    reveal: document.querySelector("#agentBridgeTokenReveal"),
+    session: document.querySelector("#agentBridgeSession"),
+    mode: document.querySelector("#agentBridgeMode"),
+    errorNode: document.querySelector("#agentBridgeError"),
+    status: document.querySelector("#agentBridgeStatus"),
+    lock: document.querySelector("#agentBridgeLockNotice"),
+    apply: document.querySelector("#agentBridgeApply"),
+    dirty: false,
+    error: agentBridgeConfigurationError,
+  };
+  const initialDraft = agentBridgeConfiguration
+    ?? (hostAgentBridgeConfiguration && typeof hostAgentBridgeConfiguration === "object"
+      ? hostAgentBridgeConfiguration : null);
+  agentBridgeApp.enabled.checked = Boolean(initialDraft);
+  populateAgentBridgeForm(initialDraft);
+  const markDirty = () => {
+    if (runtimeStarted) return;
+    agentBridgeApp.dirty = true;
+    agentBridgeApp.error = "";
+    syncAgentBridgeApp();
+  };
+  agentBridgeApp.enabled.addEventListener("change", markDirty);
+  agentBridgeApp.fields.addEventListener("input", markDirty);
+  agentBridgeApp.fields.addEventListener("change", markDirty);
+  agentBridgeApp.reveal.addEventListener("click", () => {
+    const reveal = agentBridgeApp.token.type === "password";
+    agentBridgeApp.token.type = reveal ? "text" : "password";
+    agentBridgeApp.reveal.textContent = reveal ? "Hide" : "Show";
+    agentBridgeApp.reveal.setAttribute("aria-pressed", String(reveal));
+  });
+  agentBridgeApp.form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    agentBridgeApp.error = "";
+    try {
+      const enabled = agentBridgeApp.enabled.checked;
+      await configurePlay({
+        agentBridge: enabled ? {
+          url: agentBridgeApp.url.value.trim(),
+          token: agentBridgeApp.token.value,
+          sessionId: agentBridgeApp.session.value.trim(),
+          playMode: agentBridgeApp.mode.value,
+        } : null,
+      });
+      track("setting_changed", {
+        category: "agent_bridge",
+        setting: "enabled",
+        value: enabled ? agentBridgeApp.mode.value : "disabled",
+      });
+    } catch (error) {
+      agentBridgeApp.error = error?.message ?? String(error);
+      syncAgentBridgeApp();
+    }
+  });
+  window.addEventListener("cncport:agentbridge", () => syncAgentBridgeApp());
+  syncAgentBridgeApp();
+}
+
 function playConfiguration() {
   return {
     performanceOverlay: { ...performanceOverlayConfig },
     display: { ...displaySettings },
     diagnostics: configuredDiagLevel,
     shaderTier: effectiveShaderTier(),
+    cursorStyle,
     maxCameraHeight: cameraZoomHeight,
+    agentBridge: agentBridgeConfiguration ? {
+      configured: true,
+      url: publicAgentBridgeEndpoint(agentBridgeConfiguration.url),
+      sessionId: agentBridgeConfiguration.sessionId || null,
+      playMode: agentBridgeConfiguration.playMode,
+    } : { configured: false },
     consoleVisible: !consolePanel.classList.contains("hidden"),
     fullscreen: Boolean(fullscreenElement()),
   };
@@ -1881,6 +2267,16 @@ async function configurePlay(options = {}) {
   }
   if (Object.hasOwn(options, "maxCameraHeight")) {
     cameraZoomHeight = saveCameraZoomHeight(networkStorage, options.maxCameraHeight);
+  }
+  if (Object.hasOwn(options, "agentBridge")) {
+    if (runtimeStarted) {
+      throw new Error("agent bridge configuration must be set before launching the game");
+    }
+    agentBridgeConfiguration = options.agentBridge == null
+      ? null
+      : normalizeAgentBridgeConfiguration(options.agentBridge);
+    agentBridgeConfigurationError = "";
+    syncAgentBridgeApp({ configurationChanged: true });
   }
   if (typeof options.consoleVisible === "boolean") {
     setConsoleVisible(options.consoleVisible);
@@ -1925,6 +2321,7 @@ function installPlayHostApi() {
     setDiagnosticsLevel: setConfiguredDiagLevel,
     setNetworkDiagnostics: setNetworkDiagnosticsEnabled,
     getNetworkDiagnostics: () => window.__cncNetworkDiagnosticsSnapshot?.() ?? null,
+    getAgentBridgeState: () => window.CnCPort.getAgentBridgeState(),
     setConsoleVisible,
     issues: {
       startRecording: (...args) => issueRecorder.startRecording(...args),
@@ -1942,4 +2339,5 @@ if (window.CnCPortPlayConfig?.shaderTier === "ff"
 }
 initDisplayRuntime();
 bindDesktopGameSettings();
+bindAgentBridgeApp();
 installPlayHostApi();

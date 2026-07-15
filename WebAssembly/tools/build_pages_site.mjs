@@ -2,14 +2,23 @@
 
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PAGES_HARNESS_FILES,
+  PAGES_DEPENDENCY_FILES,
+  PAGES_GENERATED_PROJECT_FILES,
   PAGES_RUNTIME_FILES,
   PAGES_TEMPLATE_FILES,
 } from "./pages_site_manifest.mjs";
+import {
+  loadPublicProjectContent,
+  renderDiscoveryHead,
+  renderGeneratedProjectFiles,
+  renderProjectSummary,
+} from "./public_project_content.mjs";
 import { createBuildInfo, readReleaseMetadata } from "./release_metadata.mjs";
+import { buildBinkDecoderRuntime } from "./build_bink_decoder.mjs";
 
 const wasmRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(wasmRoot, "..");
@@ -30,6 +39,11 @@ if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/(?:tree|commi
 
 function escapeHtml(value) {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function replaceRequiredMarker(source, marker, replacement, name) {
+  if (source.split(marker).length !== 2) throw new Error(`${name} must contain exactly one ${marker} marker`);
+  return source.replace(marker, replacement);
 }
 
 async function copyRegularFile(source, destination) {
@@ -66,6 +80,12 @@ async function assertExactRuntimeDirectory() {
   }
 }
 
+const publicProject = await loadPublicProjectContent();
+const generatedProjectFiles = renderGeneratedProjectFiles(publicProject);
+if (JSON.stringify(Object.keys(generatedProjectFiles).sort()) !== JSON.stringify([...PAGES_GENERATED_PROJECT_FILES].sort())) {
+  throw new Error("Generated public-project files do not match the Pages manifest");
+}
+
 await assertExactRuntimeDirectory();
 await rm(outputRoot, { recursive: true, force: true });
 
@@ -73,15 +93,33 @@ for (const name of PAGES_TEMPLATE_FILES) {
   const source = join(wasmRoot, "pages", name);
   const destination = join(outputRoot, name);
   if (name.endsWith(".html")) {
-    const template = await readFile(source, "utf8");
+    let template = await readFile(source, "utf8");
     if (!template.includes("__PAGES_SOURCE_URL__")) {
       throw new Error(`${name} must expose the corresponding-source URL`);
+    }
+    if (name === "index.html") {
+      template = replaceRequiredMarker(
+        template,
+        "<!-- __PUBLIC_PROJECT_DISCOVERY__ -->",
+        renderDiscoveryHead(publicProject, { prefix: "./" }),
+        name,
+      );
+      template = replaceRequiredMarker(
+        template,
+        "<!-- __PUBLIC_PROJECT_SUMMARY__ -->",
+        renderProjectSummary(publicProject, { prefix: "./" }),
+        name,
+      );
     }
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, template.replaceAll("__PAGES_SOURCE_URL__", escapeHtml(sourceUrl)));
   } else {
     await copyRegularFile(source, destination);
   }
+}
+
+for (const [name, contents] of Object.entries(generatedProjectFiles)) {
+  await writeFile(join(outputRoot, name), contents);
 }
 
 for (const name of PAGES_HARNESS_FILES) {
@@ -94,9 +132,24 @@ for (const name of PAGES_HARNESS_FILES) {
     }
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, template.replaceAll("__GA_MEASUREMENT_ID__", measurementId));
+  } else if (name === "mod-package-worker.mjs") {
+    const sourceText = await readFile(source, "utf8");
+    const developmentRoot = "../node_modules/7z-wasm/";
+    if (!sourceText.includes(developmentRoot)) {
+      throw new Error("mod-package-worker.mjs has no development 7z-wasm path marker");
+    }
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, sourceText.replaceAll(developmentRoot, "./vendor/7z-wasm/"));
   } else {
     await copyRegularFile(source, destination);
   }
+}
+
+for (const name of PAGES_DEPENDENCY_FILES) {
+  await copyRegularFile(
+    join(wasmRoot, "node_modules/7z-wasm", basename(name)),
+    join(outputRoot, name),
+  );
 }
 
 const release = await readReleaseMetadata(repoRoot);
@@ -118,11 +171,18 @@ await mkdir(join(outputRoot, "harness"), { recursive: true });
 await writeFile(join(outputRoot, "harness", "build-info.json"), `${JSON.stringify(buildInfo, null, 2)}\n`);
 
 const playSource = await readFile(join(wasmRoot, "harness", "play.html"), "utf8");
+const videoPolicyMarker = 'data-bink-video-sidecars="auto"';
+if (!playSource.includes(videoPolicyMarker)) throw new Error("play.html has no Bink video sidecar policy marker");
+const hostedPlaySource = replaceRequiredMarker(
+  playSource.replace(videoPolicyMarker, 'data-bink-video-sidecars="direct"'),
+  "<!-- __PUBLIC_PROJECT_DISCOVERY__ -->",
+  renderDiscoveryHead(publicProject, { prefix: "../" }),
+  "harness/play.html",
+);
 const directBootstrap = "    <script src=\"../coi-direct.js\"></script>\n";
-const legacyDocumentHead = `    <link rel="canonical" href="../">\n${directBootstrap}`;
+const legacyDocumentHead = directBootstrap;
 const rootDocumentHead = [
   "    <base href=\"./harness/\">",
-  "    <link rel=\"canonical\" href=\"../\">",
   directBootstrap.trimEnd(),
   "",
 ].join("\n");
@@ -133,13 +193,13 @@ if (!aboutLegalPattern.test(playSource)) throw new Error("play.html has no About
 await mkdir(join(outputRoot, "harness"), { recursive: true });
 await writeFile(
   join(outputRoot, "harness", "play.html"),
-  playSource
+  hostedPlaySource
     .replace("<head>\n", `<head>\n${legacyDocumentHead}`)
     .replace(aboutLegalPattern, legalNotice),
 );
 await writeFile(
   join(outputRoot, "launcher.html"),
-  playSource
+  hostedPlaySource
     .replace("<head>\n", `<head>\n${rootDocumentHead}`)
     .replace('href="./manifest.webmanifest"', 'href="../manifest.webmanifest"')
     .replace(aboutLegalPattern, legalNotice),
@@ -160,6 +220,7 @@ await writeFile(join(outputRoot, "manifest.webmanifest"), `${JSON.stringify(root
 for (const name of PAGES_RUNTIME_FILES) {
   await copyRegularFile(join(runtimeDist, name), join(outputRoot, "dist-threaded-release", name));
 }
+await buildBinkDecoderRuntime(outputRoot);
 await copyRegularFile(join(repoRoot, "LICENSE.md"), join(outputRoot, "LICENSE.md"));
 await writeFile(join(outputRoot, ".nojekyll"), "");
 console.log(outputRoot);
