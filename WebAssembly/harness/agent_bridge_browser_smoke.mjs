@@ -531,6 +531,21 @@ async function main() {
     const localTacticalCapability = Object.values(
       tacticalCapabilities?.objectCapabilities ?? {},
     ).find((capability) => capability?.orderable === true);
+    const advertisedCommands = [
+      ...Object.values(tacticalCapabilities?.commandSets ?? {}).flat(),
+      ...Object.values(tacticalCapabilities?.playerCommandSets ?? {}).flat(),
+    ];
+    const executionRoutes = new Set([
+      "order", "command", "playerCommand", "production", "container", "beacon",
+    ]);
+    const invalidPlayerSpecialState = Object.entries(
+      tacticalCapabilities?.playerCommandSets ?? {},
+    ).some(([commandSet, commands]) => commands.some((command) => {
+      if (!command.specialPower) return false;
+      const state = tacticalCapabilities?.playerCommandState?.[commandSet]?.[command.name];
+      return typeof state?.prerequisitesMet !== "boolean"
+        || (state.ready === true && state.prerequisitesMet !== true);
+    }));
     if (tacticalCapabilitiesReply.status !== 200
         || tacticalCapabilities?.observationDetail !== "tactical"
         || !tacticalCapabilities.objects?.every((object) =>
@@ -538,12 +553,63 @@ async function main() {
           && !("capabilities" in object))
         || typeof tacticalCapabilities.templates !== "object"
         || typeof tacticalCapabilities.commandSets !== "object"
+        || typeof tacticalCapabilities.playerCommandSets !== "object"
+        || typeof tacticalCapabilities.playerCommandState !== "object"
+        || advertisedCommands.some((command) => !executionRoutes.has(command.execution))
+        || invalidPlayerSpecialState
         || !localTacticalCapability
         || typeof localTacticalCapability.commandState !== "object") {
       throw new Error(`tactical capability catalog violated compact contract: ${JSON.stringify(
         tacticalCapabilitiesReply,
       )}`);
     }
+    let sciencePurchase;
+    for (const [commandSet, commands] of Object.entries(
+      tacticalCapabilities.playerCommandSets,
+    )) {
+      for (const command of commands) {
+        const state = tacticalCapabilities.playerCommandState?.[commandSet]?.[command.name];
+        const science = state?.sciences?.find((candidate) => candidate.available === true);
+        if (command.type === "purchaseScience"
+            && command.execution === "playerCommand" && science) {
+          sciencePurchase = { commandSet, command, science };
+          break;
+        }
+      }
+      if (sciencePurchase) break;
+    }
+    if (!sciencePurchase) {
+      throw new Error(`USA exposed no purchasable rank-one science: ${JSON.stringify({
+        playerCommandSets: tacticalCapabilities.playerCommandSets,
+        playerCommandState: tacticalCapabilities.playerCommandState,
+      })}`);
+    }
+    const pointsBeforeScience = tacticalCapabilities.players
+      .find((player) => player.local)?.economy?.sciencePurchasePoints;
+    const scienceReply = await rest(`${sessionPath}/game/player-commands`, {
+      method: "POST",
+      body: JSON.stringify({
+        commandSet: sciencePurchase.commandSet,
+        command: sciencePurchase.command.name,
+      }),
+    });
+    if (scienceReply.status !== 200 || scienceReply.body.result?.accepted !== true) {
+      throw new Error(`General Point purchase failed: ${JSON.stringify(scienceReply)}`);
+    }
+    await waitFor("General Point purchase state change",
+      () => rest(`${worldPath}?detail=tactical&includeCapabilities=true`),
+      (reply) => {
+        const result = reply.body.result;
+        const commandState = result?.playerCommandState?.[sciencePurchase.commandSet];
+        const state = commandState?.[sciencePurchase.command.name];
+        const science = state?.sciences?.find((candidate) =>
+          candidate.name === sciencePurchase.science.name);
+        const points = result?.players
+          ?.find((player) => player.local)?.economy?.sciencePurchasePoints;
+        return reply.status === 200 && science?.owned === true
+          && points === pointsBeforeScience - sciencePurchase.science.cost;
+      },
+      30_000);
     const tacticalReply = await rest(`${worldPath}?detail=tactical`);
     const tactical = tacticalReply.body.result;
     const fullBytes = Buffer.byteLength(JSON.stringify(world));
@@ -551,6 +617,8 @@ async function main() {
     if (tacticalReply.status !== 200
         || "templates" in tactical
         || "commandSets" in tactical
+        || "playerCommandSets" in tactical
+        || "playerCommandState" in tactical
         || "objectCapabilities" in tactical
         || tacticalBytes >= fullBytes) {
       throw new Error(`tactical snapshot was not compact: ${JSON.stringify({
@@ -590,12 +658,19 @@ async function main() {
       method: "POST",
       body: JSON.stringify(originalCameraView),
     });
+    const appliedCameraRestore = cameraViewRestore.body.result;
     if (cameraViewRestore.status !== 200
-        || Math.abs(cameraViewRestore.body.result?.angle - originalCameraView.angle) >= 0.001
-        || Math.abs(cameraViewRestore.body.result?.pitch - originalCameraView.pitch) >= 0.001
-        || Math.abs(cameraViewRestore.body.result?.zoom - originalCameraView.zoom) >= 0.001) {
+        || !Number.isFinite(appliedCameraRestore?.angle)
+        || !Number.isFinite(appliedCameraRestore?.pitch)
+        || !Number.isFinite(appliedCameraRestore?.zoom)) {
       throw new Error(`semantic camera view restore failed: ${JSON.stringify(cameraViewRestore)}`);
     }
+    await waitFor("semantic camera restore state", () => rest(worldPath),
+      (reply) => reply.status === 200
+        && Math.abs(reply.body.result?.camera?.angle - originalCameraView.angle) < 0.001
+        && Math.abs(reply.body.result?.camera?.pitch - originalCameraView.pitch) < 0.001
+        && Math.abs(reply.body.result?.camera?.zoom - originalCameraView.zoom) < 0.001,
+      30_000);
     const cameraWorldReply = await rest(worldPath);
     const cameraWorld = cameraWorldReply.body.result;
     if (cameraWorldReply.status !== 200

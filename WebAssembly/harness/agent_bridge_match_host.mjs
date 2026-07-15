@@ -88,11 +88,15 @@ async function main() {
   const staticServer = await startStaticServer({ root: wasmRoot, port: 0, host: "127.0.0.1" });
   const profileDir = resolve(wasmRoot, "artifacts/pw-profiles/agent-bridge-match-host");
   const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
+  const videoDir = process.env.AGENT_BRIDGE_VIDEO_DIR
+    ? resolve(process.env.AGENT_BRIDGE_VIDEO_DIR) : null;
   await rm(profileDir, { recursive: true, force: true });
   await mkdir(profileDir, { recursive: true });
   await mkdir(screenshotDir, { recursive: true });
+  if (videoDir) await mkdir(videoDir, { recursive: true });
 
   let browser;
+  let matchVideo;
   try {
     await waitFor("Go bridge health", () => fetch(`${bridgeBase}/healthz`),
       (response) => response.ok, 30000);
@@ -105,6 +109,9 @@ async function main() {
       ...(process.env.AGENT_BRIDGE_BROWSER_EXECUTABLE
         ? { executablePath: process.env.AGENT_BRIDGE_BROWSER_EXECUTABLE }
         : {}),
+      ...(videoDir ? {
+        recordVideo: { dir: videoDir, size: { width: 1280, height: 800 } },
+      } : {}),
       args: ["--autoplay-policy=no-user-gesture-required", ...browserArgs],
     });
     await browser.addInitScript((config) => {
@@ -117,7 +124,8 @@ async function main() {
         playMode,
       },
     });
-    const page = await browser.newPage();
+    const page = browser.pages()[0] ?? await browser.newPage();
+    matchVideo = page.video();
     page.on("pageerror", (error) => process.stderr.write(`[match-host] page error: ${error}\n`));
     page.on("console", (message) => {
       if (message.type() === "error") process.stderr.write(`[match-host] console: ${message.text()}\n`);
@@ -162,12 +170,17 @@ async function main() {
     await new Promise((resolveStop) => {
       process.once("SIGINT", resolveStop);
       process.once("SIGTERM", resolveStop);
+      if (process.platform !== "win32") process.once("SIGHUP", resolveStop);
     });
     await page.screenshot({
       path: resolve(screenshotDir, "agent-bridge-match-host-final.png"),
     }).catch(() => {});
   } finally {
     if (browser) await browser.close();
+    if (matchVideo) {
+      const videoPath = await matchVideo.path().catch(() => null);
+      if (videoPath) process.stdout.write(`${JSON.stringify({ videoPath })}\n`);
+    }
     await staticServer.close();
     await stopBridge(bridge);
     await rm(profileDir, { recursive: true, force: true });

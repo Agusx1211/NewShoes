@@ -88,6 +88,10 @@ test("authenticates and maps raw UI requests to engine-thread RPC", async () => 
       "game.order",
       "game.context",
       "game.command",
+      "game.playerCommand",
+      "game.production",
+      "game.container",
+      "game.beacon",
       "world.snapshot",
       "terrain.query",
       "minimap.snapshot",
@@ -334,11 +338,34 @@ test("maps semantic gameplay actions to bounded engine RPC", async () => {
     },
   });
   socket.receive({
+    type: "request", id: "player-command", op: "game.playerCommand",
+    args: {
+      commandSet: "AmericaScienceCommandSetRank1",
+      command: "Command_PurchaseSciencePaladinTank",
+    },
+  });
+  socket.receive({
+    type: "request", id: "production", op: "game.production",
+    args: { sourceId: 9, action: "cancel", productionId: 41 },
+  });
+  socket.receive({
+    type: "request", id: "container", op: "game.container",
+    args: { containerId: 17, action: "exit", passengerId: 18 },
+  });
+  socket.receive({
+    type: "request", id: "beacon", op: "game.beacon",
+    args: { action: "place", position: { x: 610, y: 820 } },
+  });
+  socket.receive({
     type: "request", id: "camera", op: "camera.lookAt", args: { x: 400, y: 300 },
   });
   socket.receive({
     type: "request", id: "camera-view", op: "camera.setView", args: { angle: 0.5, zoom: 0.8 },
   });
+  await flush();
+  await flush();
+  await flush();
+  await flush();
   await flush();
   await flush();
   await flush();
@@ -372,6 +399,35 @@ test("maps semantic gameplay actions to bounded engine RPC", async () => {
         angle: 1.25,
         hasPosition: true,
         cameraBound: true,
+      },
+    },
+    {
+      command: "agentGamePlayerCommand",
+      payload: {
+        commandSet: "AmericaScienceCommandSetRank1",
+        command: "Command_PurchaseSciencePaladinTank",
+        targetId: 0,
+        x: 0,
+        y: 0,
+        angle: 0,
+        hasPosition: false,
+        cameraBound: true,
+      },
+    },
+    {
+      command: "agentGameProduction",
+      payload: {
+        sourceId: 9, action: "cancel", productionId: 41, upgrade: "", cameraBound: true,
+      },
+    },
+    {
+      command: "agentGameContainer",
+      payload: { containerId: 17, action: "exit", passengerId: 18, cameraBound: true },
+    },
+    {
+      command: "agentGameBeacon",
+      payload: {
+        action: "place", beaconId: 0, x: 610, y: 820, text: "", cameraBound: true,
       },
     },
     { command: "agentCameraLookAt", payload: { x: 400, y: 300 } },

@@ -13,6 +13,10 @@ const CAPABILITIES = Object.freeze([
   "game.order",
   "game.context",
   "game.command",
+  "game.playerCommand",
+  "game.production",
+  "game.container",
+  "game.beacon",
   "world.snapshot",
   "terrain.query",
   "minimap.snapshot",
@@ -203,6 +207,61 @@ function gameCommand(args) {
   return { sourceId, command, targetId, ...position, angle, hasPosition };
 }
 
+function gamePlayerCommand(args) {
+  const commandSet = boundedString(args?.commandSet, "commandSet", 256);
+  const command = boundedString(args?.command, "command", 256);
+  const targetId = objectId(args?.targetId, "targetId", { optional: true });
+  const hasPosition = args?.position !== undefined && args.position !== null;
+  const position = hasPosition ? worldPosition(args.position) : { x: 0, y: 0 };
+  const angle = args?.angle === undefined ? 0 : Number(args.angle);
+  if (!Number.isFinite(angle)) {
+    throw new ProtocolFault("invalid_arguments", "angle must be a finite number");
+  }
+  return { commandSet, command, targetId, ...position, angle, hasPosition };
+}
+
+function gameProduction(args) {
+  const sourceId = objectId(args?.sourceId, "sourceId");
+  const action = boundedString(args?.action, "action", 32);
+  if (action !== "cancel") {
+    throw new ProtocolFault("invalid_arguments", "production action must be cancel");
+  }
+  const productionId = args?.productionId === undefined || args.productionId === null
+    ? 0 : Number(args.productionId);
+  const upgrade = args?.upgrade === undefined
+    ? "" : boundedString(args.upgrade, "upgrade", 256);
+  if ((!Number.isInteger(productionId) || productionId < 0 || productionId > 0x7fffffff)
+      || ((productionId > 0) === (upgrade.length > 0))) {
+    throw new ProtocolFault(
+      "invalid_arguments", "provide exactly one positive productionId or upgrade name",
+    );
+  }
+  return { sourceId, action, productionId, upgrade };
+}
+
+function gameContainer(args) {
+  const containerId = objectId(args?.containerId, "containerId");
+  const action = boundedString(args?.action, "action", 32);
+  if (action !== "exit") {
+    throw new ProtocolFault("invalid_arguments", "container action must be exit");
+  }
+  return { containerId, action, passengerId: objectId(args?.passengerId, "passengerId") };
+}
+
+function gameBeacon(args) {
+  const action = boundedString(args?.action, "action", 32);
+  if (action !== "place" && action !== "remove" && action !== "setText") {
+    throw new ProtocolFault("invalid_arguments", "beacon action must be place, remove, or setText");
+  }
+  const position = action === "place" ? worldPosition(args?.position) : { x: 0, y: 0 };
+  const beaconId = action === "place" ? 0 : objectId(args?.beaconId, "beaconId");
+  const text = action === "setText" ? (args?.text ?? "") : "";
+  if (typeof text !== "string" || text.length > 255) {
+    throw new ProtocolFault("invalid_arguments", "beacon text must be at most 255 UTF-16 code units");
+  }
+  return { action, beaconId, ...position, text };
+}
+
 function gameContext(args) {
   const objectIds = objectIdList(args);
   const hasTarget = args?.targetId !== undefined && args.targetId !== null && args.targetId !== 0;
@@ -368,6 +427,22 @@ export function createAgentBridgeConnection({
       case "game.command":
         return engineRequest("agentGameCommand", {
           ...gameCommand(args), cameraBound: normalized.playMode === "camera",
+        });
+      case "game.playerCommand":
+        return engineRequest("agentGamePlayerCommand", {
+          ...gamePlayerCommand(args), cameraBound: normalized.playMode === "camera",
+        });
+      case "game.production":
+        return engineRequest("agentGameProduction", {
+          ...gameProduction(args), cameraBound: normalized.playMode === "camera",
+        });
+      case "game.container":
+        return engineRequest("agentGameContainer", {
+          ...gameContainer(args), cameraBound: normalized.playMode === "camera",
+        });
+      case "game.beacon":
+        return engineRequest("agentGameBeacon", {
+          ...gameBeacon(args), cameraBound: normalized.playMode === "camera",
         });
       case "world.snapshot":
         return engineRequest("agentWorldSnapshot", worldObservation(args, normalized.playMode));

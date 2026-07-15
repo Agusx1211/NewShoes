@@ -186,12 +186,14 @@ additionally omits observable objects outside the rendered tactical view.
 `detail=tactical` replaces the large per-object discovery records with compact
 combat records. Their `position` is `[x,y,z]` and `health` is `[current,max]`.
 With `includeCapabilities=true`, reusable template and command definitions are
-reported once in the top-level `templates` and `commandSets` dictionaries;
-live state is keyed by opaque object ID in `objectCapabilities`. That state
-explicitly distinguishes `selectable` from `orderable`, reports containment and
-passengers, current weapons/range/damage/target classes, production queues,
-command availability, and real special-power source/cooldown state. Omit the
-capability dictionaries from high-frequency tactical reads after discovery.
+reported once in the top-level `templates`, `commandSets`, and
+`playerCommandSets` dictionaries; live state is keyed by opaque object ID in
+`objectCapabilities`, while `playerCommandState` reports current General Point
+science availability and shortcut-power readiness. Object state explicitly
+distinguishes `selectable` from `orderable`, reports containment and passengers,
+current weapons/range/damage/target classes, production queues, command
+availability, and real special-power source/cooldown state. Omit the capability
+dictionaries from high-frequency tactical reads after discovery.
 
 ### Tactical event stream
 
@@ -287,10 +289,10 @@ response and subsequent world snapshot report the applied values.
 
 Full `/world` objects include current command sets, production queues, movement
 goals, and capability flags. The compact form separates command definitions
-from each object's live `commandState`. Command entries identify their semantic
-type and, when applicable, the product, cost, build time, availability, upgrade,
-or special power. Clients must send the exact advertised command name back with
-the object ID from the observation:
+from live object and player state. Command entries identify their semantic type,
+`execution` route, and, when applicable, product, cost, build time, availability,
+upgrade, science, or special power. Clients must send the exact advertised
+command name back with the object ID from the observation:
 
 ```sh
 curl -X POST -H 'Authorization: Bearer TOKEN' \
@@ -310,6 +312,33 @@ checks current prerequisites/funds and construction legality in the engine, and
 returns `accepted` after posting the real game message. Observe `/world` to
 confirm its asynchronous simulation effects. Unsupported command types fail
 explicitly; they never report canned success.
+
+Commands whose `execution` is `playerCommand` come from a top-level player
+command set instead of one object. This includes spending General Points and
+using shortcut special powers:
+
+```sh
+curl -X POST -H 'Authorization: Bearer TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{"commandSet":"AmericaScienceCommandSetRank1",\
+       "command":"Command_PurchaseSciencePaladinTank"}' \
+  http://127.0.0.1:18888/v1/sessions/game-1/game/player-commands
+```
+
+Other advertised execution routes cover queue cancellation, individual
+passenger exit, and multiplayer beacons:
+
+```sh
+curl -X POST -H 'Authorization: Bearer TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{"sourceId":9,"action":"cancel","productionId":41}' \
+  http://127.0.0.1:18888/v1/sessions/game-1/game/production
+
+curl -X POST -H 'Authorization: Bearer TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{"containerId":17,"action":"exit","passengerId":18}' \
+  http://127.0.0.1:18888/v1/sessions/game-1/game/container
+```
 
 Selection and tactical group orders use the same opaque IDs:
 
@@ -376,7 +405,8 @@ seconds by default.
 The browser uses WebSocket subprotocol `cnc-agent.v1` and authenticates in its
 first JSON `hello` frame. The protocol advertises capabilities explicitly.
 `protocol.describe`, `input.pointerMove`, `camera.lookAt`, `camera.setView`, `game.select`,
-`game.order`, `game.context`, `game.command`, `world.snapshot`, `terrain.query`,
+`game.order`, `game.context`, `game.command`, `game.playerCommand`, `game.production`,
+`game.container`, `game.beacon`, `world.snapshot`, `terrain.query`,
 `minimap.snapshot`, `hud.snapshot`, `chat.send`, `ui.snapshot`,
 `ui.activate`, `ui.setText`, `ui.submit`, `ui.selectIndex`, `ui.setValue`, `ui.selectTab`,
 and `ui.listItems` are the currently advertised operations.
@@ -407,6 +437,10 @@ host:agent-bridge-match` starts the authenticated bridge, real browser runtime,
 and an otherwise untouched shell session. It prints the ephemeral REST endpoint,
 token, and session ID once connected and remains alive until interrupted. Use a
 hardware-GPU browser and treat the printed credentials as secrets.
+
+Set `AGENT_BRIDGE_VIDEO_DIR` to an artifact directory to record the complete
+1280×800 browser session. The host prints the final `.webm` path after a clean
+shutdown has flushed the recording.
 
 The end-to-end acceptance runs used that host on an RTX 4080. A separate player
 with only the REST endpoint first left the default global-mode skirmish settings

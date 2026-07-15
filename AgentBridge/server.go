@@ -76,6 +76,10 @@ func NewServer(config Config) (*Server, error) {
 	mux.Handle("POST /v1/sessions/{session}/game/orders", server.requireAPIAuth(http.HandlerFunc(server.gameOrder)))
 	mux.Handle("POST /v1/sessions/{session}/game/context", server.requireAPIAuth(http.HandlerFunc(server.gameContext)))
 	mux.Handle("POST /v1/sessions/{session}/game/commands", server.requireAPIAuth(http.HandlerFunc(server.gameCommand)))
+	mux.Handle("POST /v1/sessions/{session}/game/player-commands", server.requireAPIAuth(http.HandlerFunc(server.gamePlayerCommand)))
+	mux.Handle("POST /v1/sessions/{session}/game/production", server.requireAPIAuth(http.HandlerFunc(server.gameProduction)))
+	mux.Handle("POST /v1/sessions/{session}/game/container", server.requireAPIAuth(http.HandlerFunc(server.gameContainer)))
+	mux.Handle("POST /v1/sessions/{session}/game/beacons", server.requireAPIAuth(http.HandlerFunc(server.gameBeacon)))
 	mux.Handle("GET /v1/sessions/{session}/world", server.requireAPIAuth(http.HandlerFunc(server.worldSnapshot)))
 	mux.Handle("GET /v1/sessions/{session}/events", server.requireAPIAuth(http.HandlerFunc(server.tacticalEvents)))
 	mux.Handle("GET /v1/sessions/{session}/terrain", server.requireAPIAuth(http.HandlerFunc(server.terrainQuery)))
@@ -459,6 +463,139 @@ func (s *Server) gameCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.call(w, r, "game.command", request)
+}
+
+func (s *Server) gamePlayerCommand(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		CommandSet string         `json:"commandSet"`
+		Command    string         `json:"command"`
+		TargetID   int64          `json:"targetId,omitempty"`
+		Position   *worldPosition `json:"position,omitempty"`
+		Angle      float64        `json:"angle,omitempty"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	if request.CommandSet == "" || len(request.CommandSet) > 256 ||
+		request.Command == "" || len(request.Command) > 256 {
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"commandSet and command are required and must not exceed 256 characters")
+		return
+	}
+	if err := validateObjectID(request.TargetID, "targetId", true); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if request.Position != nil && !validateBody(w, request.Position.validate("position")) {
+		return
+	}
+	if math.IsNaN(request.Angle) || math.IsInf(request.Angle, 0) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "angle must be a finite number")
+		return
+	}
+	s.call(w, r, "game.playerCommand", request)
+}
+
+func (s *Server) gameProduction(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		SourceID     int64  `json:"sourceId"`
+		Action       string `json:"action"`
+		ProductionID int64  `json:"productionId,omitempty"`
+		Upgrade      string `json:"upgrade,omitempty"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	if err := validateObjectID(request.SourceID, "sourceId", false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if request.Action != "cancel" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "production action must be cancel")
+		return
+	}
+	if request.ProductionID < 0 || request.ProductionID > 0x7fffffff ||
+		((request.ProductionID > 0) == (request.Upgrade != "")) || len(request.Upgrade) > 256 {
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"provide exactly one positive productionId or upgrade name")
+		return
+	}
+	s.call(w, r, "game.production", request)
+}
+
+func (s *Server) gameContainer(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ContainerID int64  `json:"containerId"`
+		Action      string `json:"action"`
+		PassengerID int64  `json:"passengerId"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	if err := validateObjectID(request.ContainerID, "containerId", false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if err := validateObjectID(request.PassengerID, "passengerId", false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if request.Action != "exit" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "container action must be exit")
+		return
+	}
+	s.call(w, r, "game.container", request)
+}
+
+func (s *Server) gameBeacon(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Action   string         `json:"action"`
+		BeaconID int64          `json:"beaconId,omitempty"`
+		Position *worldPosition `json:"position,omitempty"`
+		Text     string         `json:"text,omitempty"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	if request.Action != "place" && request.Action != "remove" && request.Action != "setText" {
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"beacon action must be place, remove, or setText")
+		return
+	}
+	if request.Action == "place" {
+		if request.Position == nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "position is required for place")
+			return
+		}
+		if !validateBody(w, request.Position.validate("position")) {
+			return
+		}
+		if request.BeaconID != 0 || request.Text != "" {
+			writeError(w, http.StatusBadRequest, "invalid_request",
+				"place uses position and does not use beaconId or text")
+			return
+		}
+	} else {
+		if err := validateObjectID(request.BeaconID, "beaconId", false); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		if request.Position != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request",
+				"remove and setText do not use position")
+			return
+		}
+	}
+	if request.Action != "setText" && request.Text != "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "text is only used by setText")
+		return
+	}
+	if len([]rune(request.Text)) > 255 {
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"beacon text must not exceed 255 characters")
+		return
+	}
+	s.call(w, r, "game.beacon", request)
 }
 
 func (s *Server) gameContext(w http.ResponseWriter, r *http.Request) {
