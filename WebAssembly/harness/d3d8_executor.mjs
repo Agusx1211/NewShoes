@@ -178,6 +178,10 @@ let d3d8LastDefaultVertexAttribKey = null;
 const D3D8_VERTEX_ARRAY_CACHE_LIMIT = 4096;
 const d3d8VertexArrayCache = new Map();
 let d3d8VertexArrayCacheEntries = 0;
+let d3d8VertexArrayCachePeakEntries = 0;
+let d3d8VertexArrayCacheEvictions = 0;
+let d3d8VertexArrayCacheInvalidations = 0;
+let d3d8VertexArrayCacheInvalidatedEntries = 0;
 let d3d8VertexArrayCacheOldest = null;
 let d3d8VertexArrayCacheNewest = null;
 const d3d8ScratchVertexAttribKey = {
@@ -1031,9 +1035,44 @@ function d3d8ViewportInputMatches(input, payload, bufferWidth, bufferHeight) {
 }
 
 function d3d8PerfSummary() {
+  let dynamicRangePoolSlots = 0;
+  for (const pool of d3d8DynamicRangeSlotPools.values()) {
+    dynamicRangePoolSlots += pool.length;
+  }
+  let pendingBufferRetirementSlots = 0;
+  for (const retirement of d3d8BufferRetirements) {
+    pendingBufferRetirementSlots += retirement.slots.length;
+  }
+  let activeDynamicRangeSlots = 0;
+  for (const resource of d3d8Buffers.values()) {
+    if (resource.dynSharedSlot?.buffer) {
+      activeDynamicRangeSlots += 1;
+    }
+    if (Array.isArray(resource.dynRanges)) {
+      for (const range of resource.dynRanges) {
+        if (range?.slot?.buffer) {
+          activeDynamicRangeSlots += 1;
+        }
+      }
+    }
+  }
   return {
     countersEnabled: d3d8PerfCountersEnabled,
     timingEnabled: d3d8PerfTimingEnabled,
+    vertexArrayCacheEntries: d3d8VertexArrayCacheEntries,
+    vertexArrayCachePeakEntries: d3d8VertexArrayCachePeakEntries,
+    vertexArrayCacheEvictions: d3d8VertexArrayCacheEvictions,
+    vertexArrayCacheInvalidations: d3d8VertexArrayCacheInvalidations,
+    vertexArrayCacheInvalidatedEntries: d3d8VertexArrayCacheInvalidatedEntries,
+    vertexArrayCacheLimit: D3D8_VERTEX_ARRAY_CACHE_LIMIT,
+    renamedBuffers: d3d8RenamedBufferCounter,
+    dynamicRangeSlots: d3d8DynamicRangeSlotCounter,
+    dynamicRangeSlotsDeleted: d3d8DynamicRangeSlotsDeleted,
+    dynamicRangePoolLimitPerTarget: D3D8_DYNAMIC_RANGE_POOL_LIMIT_PER_TARGET,
+    dynamicRangePoolSlots,
+    activeDynamicRangeSlots,
+    pendingBufferRetirements: d3d8BufferRetirements.length,
+    pendingBufferRetirementSlots,
     draws: d3d8PerfStats.draws,
     drawElements: d3d8PerfStats.drawElements,
     drawIndices: d3d8PerfStats.drawIndices,
@@ -2265,30 +2304,75 @@ function deleteD3D8VertexArrayCacheEntry(entry) {
   }
 }
 
-function evictOldestD3D8VertexArrayCacheEntry() {
-  const entry = d3d8VertexArrayCacheOldest;
+function removeD3D8VertexArrayCacheEntry(entry) {
   if (!entry) {
     return;
   }
   const byIndexBuffer = d3d8VertexArrayCache.get(entry.vertexBufferId);
   const bucket = byIndexBuffer?.get(entry.indexBufferId);
   const bucketIndex = bucket?.indexOf(entry) ?? -1;
-  if (bucketIndex < 0) {
-    unlinkD3D8VertexArrayCacheEntry(entry);
-    deleteD3D8VertexArrayCacheEntry(entry);
-    d3d8VertexArrayCacheEntries = Math.max(0, d3d8VertexArrayCacheEntries - 1);
-    return;
-  }
-  bucket.splice(bucketIndex, 1);
-  unlinkD3D8VertexArrayCacheEntry(entry);
-  deleteD3D8VertexArrayCacheEntry(entry);
-  d3d8VertexArrayCacheEntries -= 1;
-  if (bucket.length === 0) {
-    byIndexBuffer.delete(entry.indexBufferId);
-    if (byIndexBuffer?.size === 0) {
-      d3d8VertexArrayCache.delete(entry.vertexBufferId);
+  if (bucketIndex >= 0) {
+    bucket.splice(bucketIndex, 1);
+    if (bucket.length === 0) {
+      byIndexBuffer.delete(entry.indexBufferId);
+      if (byIndexBuffer.size === 0) {
+        d3d8VertexArrayCache.delete(entry.vertexBufferId);
+      }
     }
   }
+  unlinkD3D8VertexArrayCacheEntry(entry);
+  deleteD3D8VertexArrayCacheEntry(entry);
+  d3d8VertexArrayCacheEntries = Math.max(0, d3d8VertexArrayCacheEntries - 1);
+}
+
+function invalidateD3D8VertexArrayCacheForBufferIds(bufferIds) {
+  const ids = new Set();
+  for (const bufferId of bufferIds) {
+    const numericId = Number(bufferId) >>> 0;
+    if (numericId !== 0) {
+      ids.add(numericId);
+    }
+  }
+  if (ids.size === 0) {
+    return 0;
+  }
+  if (ids.has(d3d8LastVertexAttribKey?.vertexBufferId)) {
+    d3d8LastVertexAttribKey = null;
+  }
+  if (d3d8VertexArrayCacheEntries === 0) {
+    return 0;
+  }
+  const matches = new Set();
+  for (const byIndexBuffer of d3d8VertexArrayCache.values()) {
+    for (const bucket of byIndexBuffer.values()) {
+      for (const entry of bucket) {
+        if (ids.has(entry.vertexBufferId) || ids.has(entry.indexBufferId)) {
+          matches.add(entry);
+        }
+      }
+    }
+  }
+  for (const entry of matches) {
+    removeD3D8VertexArrayCacheEntry(entry);
+  }
+  if (matches.size > 0) {
+    d3d8VertexArrayCacheInvalidations += 1;
+    d3d8VertexArrayCacheInvalidatedEntries += matches.size;
+  }
+  return matches.size;
+}
+
+function invalidateD3D8VertexArrayCacheForBufferId(bufferId) {
+  return invalidateD3D8VertexArrayCacheForBufferIds([bufferId]);
+}
+
+function evictOldestD3D8VertexArrayCacheEntry() {
+  const entry = d3d8VertexArrayCacheOldest;
+  if (!entry) {
+    return;
+  }
+  removeD3D8VertexArrayCacheEntry(entry);
+  d3d8VertexArrayCacheEvictions += 1;
 }
 
 function bindD3D8VertexArray(vertexArray, vertexAttribKey = null, elementArrayBuffer = null, vertexArrayKey = null) {
@@ -2340,6 +2424,10 @@ function bindD3D8ElementArrayBufferForVertexArray(buffer) {
 }
 
 function invalidateD3D8VertexArrayCache() {
+  if (d3d8VertexArrayCacheEntries > 0) {
+    d3d8VertexArrayCacheInvalidations += 1;
+    d3d8VertexArrayCacheInvalidatedEntries += d3d8VertexArrayCacheEntries;
+  }
   if (!gl) {
     d3d8VertexArrayCache.clear();
     d3d8VertexArrayCacheEntries = 0;
@@ -2553,14 +2641,38 @@ function createD3D8Buffer(payload = {}) {
 // slots, so multi-pass re-draws and out-of-order references stay correct.
 const D3D8_DYNAMIC_RANGE_BUFFER_ID_BASE = 0x40000000;
 const D3D8_RENAMED_BUFFER_ID_BASE = 0x20000000;
+// Heavy scenes issue roughly 1,000 streaming appends per target in a frame.
+// Keep two frames of reusable headroom, but release larger one-off backlogs
+// instead of retaining their peak WebGLBuffer/VAO footprint forever.
+const D3D8_DYNAMIC_RANGE_POOL_LIMIT_PER_TARGET = 2048;
 // One pool per GL target: a WebGL buffer object is permanently typed by its
 // first bind target, so vertex and element slots must never mix.
 const d3d8DynamicRangeSlotPools = new Map();
 const d3d8BufferRetirements = [];
 const D3D8_RETIREMENTS_BEFORE_FLUSH = 32;
 let d3d8DynamicRangeSlotCounter = 0;
+let d3d8DynamicRangeSlotsDeleted = 0;
 let d3d8RenamedBufferCounter = 0;
 let d3d8RetirementsSinceFlush = 0;
+
+function deleteD3D8DynamicRangeSlots(slots) {
+  if (!gl) {
+    return;
+  }
+  const liveSlots = slots.filter((slot) => slot?.buffer);
+  invalidateD3D8VertexArrayCacheForBufferIds(liveSlots.map((slot) => slot.id));
+  for (const slot of liveSlots) {
+    if (d3d8CurrentArrayBuffer === slot.buffer) {
+      d3d8CurrentArrayBuffer = null;
+    }
+    if (d3d8CurrentElementArrayBuffer === slot.buffer) {
+      d3d8CurrentElementArrayBuffer = null;
+    }
+    gl.deleteBuffer(slot.buffer);
+    slot.buffer = null;
+    d3d8DynamicRangeSlotsDeleted += 1;
+  }
+}
 
 function drainD3D8BufferRetirements() {
   if (!gl || typeof gl.clientWaitSync !== "function") {
@@ -2578,18 +2690,22 @@ function drainD3D8BufferRetirements() {
     }
     gl.deleteSync(retirement.sync);
     if (status === gl.WAIT_FAILED) {
-      for (const slot of retirement.slots) {
-        gl.deleteBuffer(slot.buffer);
-      }
+      deleteD3D8DynamicRangeSlots(retirement.slots);
     } else {
+      const excessSlots = [];
       for (const slot of retirement.slots) {
         let pool = d3d8DynamicRangeSlotPools.get(slot.target);
         if (!pool) {
           pool = [];
           d3d8DynamicRangeSlotPools.set(slot.target, pool);
         }
-        pool.push(slot);
+        if (pool.length < D3D8_DYNAMIC_RANGE_POOL_LIMIT_PER_TARGET) {
+          pool.push(slot);
+        } else {
+          excessSlots.push(slot);
+        }
       }
+      deleteD3D8DynamicRangeSlots(excessSlots);
     }
     completed += 1;
   }
@@ -2624,9 +2740,7 @@ function retireD3D8BufferSlots(slots = []) {
   // WebGL2 always provides sync objects, but keep context-loss/test doubles
   // safe: deleting an in-flight object is deferred by GL, while reusing it is
   // not safe without a completion signal.
-  for (const slot of liveSlots) {
-    gl.deleteBuffer(slot.buffer);
-  }
+  deleteD3D8DynamicRangeSlots(liveSlots);
 }
 
 function acquireD3D8DynamicRangeSlot(target) {
@@ -2670,6 +2784,7 @@ function replaceD3D8BufferStorage(resource) {
     return false;
   }
   const previousBuffer = resource.buffer;
+  const previousBindingId = resource.bindingId ?? resource.id;
   if (resource.target === gl.ELEMENT_ARRAY_BUFFER) {
     bindD3D8DefaultVertexArray();
     bindD3D8ElementArrayBuffer(buffer);
@@ -2680,9 +2795,10 @@ function replaceD3D8BufferStorage(resource) {
   resource.buffer = buffer;
   resource.bindingId = D3D8_RENAMED_BUFFER_ID_BASE + d3d8RenamedBufferCounter;
   resource.gpuReferenced = false;
-  // This object is never reused. WebGL deletion is deferred until queued
-  // commands and cached VAO references release it, so no explicit fence (or
-  // JS-side retirement reference) is needed.
+  // This object is never reused. Drop VAOs that retain it before deletion;
+  // otherwise WebGL keeps the old storage alive until unrelated LRU pressure
+  // eventually evicts those VAOs.
+  invalidateD3D8VertexArrayCacheForBufferId(previousBindingId);
   gl.deleteBuffer(previousBuffer);
   return true;
 }
@@ -11895,6 +12011,10 @@ function rememberD3D8VertexArray(key, indexBufferId, vertexArray, elementArrayBu
   bucket.push(entry);
   touchD3D8VertexArrayCacheEntry(entry);
   d3d8VertexArrayCacheEntries += 1;
+  d3d8VertexArrayCachePeakEntries = Math.max(
+    d3d8VertexArrayCachePeakEntries,
+    d3d8VertexArrayCacheEntries,
+  );
   while (d3d8VertexArrayCacheEntries > D3D8_VERTEX_ARRAY_CACHE_LIMIT) {
     evictOldestD3D8VertexArrayCacheEntry();
   }
@@ -14357,6 +14477,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     d3d8Buffers,
     d3d8Textures,
     acquireD3D8DynamicRangeSlot,
+    invalidateD3D8VertexArrayCacheForBufferId,
+    rememberD3D8VertexArray,
     drainD3D8BufferRetirements,
     ensureD3D8DynamicRangeUploaded,
     ensureD3D8DynamicSharedBufferCurrent,
