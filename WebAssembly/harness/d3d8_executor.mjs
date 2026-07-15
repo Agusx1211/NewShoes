@@ -2343,12 +2343,27 @@ function invalidateD3D8VertexArrayCacheForBufferIds(bufferIds) {
     return 0;
   }
   const matches = new Set();
-  for (const byIndexBuffer of d3d8VertexArrayCache.values()) {
+  // Vertex-buffer buckets are keyed directly by the binding id.
+  for (const id of ids) {
+    const byIndexBuffer = d3d8VertexArrayCache.get(id);
+    if (!byIndexBuffer) {
+      continue;
+    }
     for (const bucket of byIndexBuffer.values()) {
       for (const entry of bucket) {
-        if (ids.has(entry.vertexBufferId) || ids.has(entry.indexBufferId)) {
-          matches.add(entry);
-        }
+        matches.add(entry);
+      }
+    }
+  }
+  // Index-buffer buckets are nested once beneath each vertex-buffer id.
+  for (const byIndexBuffer of d3d8VertexArrayCache.values()) {
+    for (const id of ids) {
+      const bucket = byIndexBuffer.get(id);
+      if (!bucket) {
+        continue;
+      }
+      for (const entry of bucket) {
+        matches.add(entry);
       }
     }
   }
@@ -2423,40 +2438,8 @@ function bindD3D8ElementArrayBufferForVertexArray(buffer) {
   d3d8CurrentElementArrayBuffer = buffer;
 }
 
-function invalidateD3D8VertexArrayCache() {
-  if (d3d8VertexArrayCacheEntries > 0) {
-    d3d8VertexArrayCacheInvalidations += 1;
-    d3d8VertexArrayCacheInvalidatedEntries += d3d8VertexArrayCacheEntries;
-  }
-  if (!gl) {
-    d3d8VertexArrayCache.clear();
-    d3d8VertexArrayCacheEntries = 0;
-    d3d8VertexArrayCacheOldest = null;
-    d3d8VertexArrayCacheNewest = null;
-    d3d8CurrentVertexArray = null;
-    d3d8CurrentVertexArrayKey = null;
-    d3d8LastVertexAttribKey = null;
-    d3d8LastDefaultVertexAttribKey = null;
-    return;
-  }
-  bindD3D8DefaultVertexArray();
-  for (const byIndexBuffer of d3d8VertexArrayCache.values()) {
-    for (const bucket of byIndexBuffer.values()) {
-      for (const entry of bucket) {
-        deleteD3D8VertexArrayCacheEntry(entry);
-      }
-    }
-  }
-  d3d8VertexArrayCache.clear();
-  d3d8VertexArrayCacheEntries = 0;
-  d3d8VertexArrayCacheOldest = null;
-  d3d8VertexArrayCacheNewest = null;
-  d3d8LastVertexAttribKey = null;
-  d3d8LastDefaultVertexAttribKey = null;
-}
-
-function forgetD3D8BufferBinding(buffer) {
-  invalidateD3D8VertexArrayCache();
+function forgetD3D8BufferBinding(buffer, bindingId) {
+  invalidateD3D8VertexArrayCacheForBufferId(bindingId);
   if (d3d8CurrentArrayBuffer === buffer) {
     d3d8CurrentArrayBuffer = null;
   }
@@ -2573,7 +2556,7 @@ function createD3D8Buffer(payload = {}) {
   const key = d3d8BufferKey(kind, id);
   const existing = d3d8Buffers.get(key);
   if (existing) {
-    forgetD3D8BufferBinding(existing.buffer);
+    forgetD3D8BufferBinding(existing.buffer, existing.bindingId);
     gl.deleteBuffer(existing.buffer);
   }
 
@@ -3117,7 +3100,7 @@ function releaseD3D8Buffer(payload = {}) {
   if (!resource) {
     return 0;
   }
-  forgetD3D8BufferBinding(resource.buffer);
+  forgetD3D8BufferBinding(resource.buffer, resource.bindingId);
   gl.deleteBuffer(resource.buffer);
   if (Array.isArray(resource.dynRanges)) {
     const retiredSlots = takeD3D8DynamicRangeSlots(resource.dynRanges);
