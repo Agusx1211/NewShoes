@@ -11,7 +11,7 @@ const expectedFiles = new Set(CLOUDFLARE_OUTPUT_FILES);
 const expectedDirectories = new Set([""]);
 const forbiddenExtensions = new Set([".big", ".bin", ".cab", ".cer", ".cncdump", ".crt", ".cue", ".iso", ".key", ".pem", ".pfx"]);
 const forbiddenSegments = new Set([".certs", ".wrangler", "artifacts", "build", "node_modules", "profiles"]);
-const textExtensions = new Set([".css", ".html", ".js", ".json", ".md", ".mjs", ".txt", ".webmanifest", ""]);
+const textExtensions = new Set([".css", ".html", ".js", ".json", ".md", ".mjs", ".txt", ".webmanifest", ".xml", ""]);
 const findings = [];
 const inventory = [];
 let totalBytes = 0;
@@ -151,6 +151,10 @@ if (!index.includes('<base href="./harness/">')
     || !index.includes('rel="canonical" href="../"')
     || !index.includes("data-cnc-play-page")
     || !index.includes('data-bink-video-sidecars="direct"')
+    || !index.includes('rel="help" type="text/plain" href="../llms.txt"')
+    || !index.includes('rel="alternate" type="text/markdown" href="../project.md"')
+    || !index.includes('type="application/ld+json"')
+    || !index.includes("data-agent-guide")
     || !index.includes('id="publicLegalNotice"')) {
   findings.push("index.html: direct root launcher contract is incomplete");
 }

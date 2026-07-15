@@ -6,6 +6,7 @@ import {
   classifyArchiveHeader,
   classifyContainerEntries,
   createBigDirectory,
+  defaultArchiveEnabled,
   modContentHash,
   parse7zSlt,
   validateBigReader,
@@ -37,12 +38,6 @@ function safeArchiveName(value, index) {
   const stem = basename(value).replace(/\.(?:big|ctr|gib)$/i, "").replace(/[^A-Za-z0-9_.-]+/g, "_")
     .replace(/^\.+|\.+$/g, "").slice(0, 120) || "content";
   return `${String(index + 1).padStart(3, "0")}-${stem}.big`;
-}
-
-function defaultArchiveEnabled(value) {
-  const name = basename(value).replace(/\.(?:big|ctr|gib)$/i, "");
-  if (!/\.(?:ctr|gib)$/i.test(value)) return true;
-  return !/(?:^|[_-])(?:ru|natvo|newmusic|fogoff|funnygenpics)(?:$|[_-])/i.test(name);
 }
 
 async function getDirectory(path, create = true) {

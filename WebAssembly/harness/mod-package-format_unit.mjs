@@ -4,6 +4,7 @@ import {
   classifyArchiveHeader,
   classifyContainerEntries,
   createBigDirectory,
+  defaultArchiveEnabled,
   enginePathFromContainerPath,
   modContentHash,
   parse7zSlt,
@@ -22,6 +23,44 @@ const nativeHeader = new Uint8Array(16);
 nativeHeader.set([0x4d, 0x5a, 0x90, 0x00]);
 assert.equal(classifyArchiveHeader(nativeHeader), "native-windows");
 assert.equal(classifyArchiveHeader(new TextEncoder().encode("not an archive")), "unknown");
+
+const contraXArchives = [
+  "!!ContraXBeta2_CameosHD.ctr",
+  "!!ContraXBeta2_ControlBarPro.ctr",
+  "!!ContraXBeta2_ControlBarStandard.ctr",
+  "!!ContraXBeta2_DisableExtraBuildingProps.ctr",
+  "!!ContraXBeta2_DisableFogEffects.ctr",
+  "!!ContraXBeta2_DisableWaterEffects.ctr",
+  "!!ContraXBeta2_FunnyGeneralPortraits.ctr",
+  "!ContraXBeta2_AI.ctr",
+  "!ContraXBeta2_Audio.ctr",
+  "!ContraXBeta2_GameData.ctr",
+  "!ContraXBeta2_HotkeysLeikeze_English.ctr",
+  "!ContraXBeta2_HotkeysLeikeze_Russian.ctr",
+  "!ContraXBeta2_HotkeysOriginal_English.ctr",
+  "!ContraXBeta2_HotkeysOriginal_Russian.ctr",
+  "!ContraXBeta2_INI.ctr",
+  "!ContraXBeta2_Maps.ctr",
+  "!ContraXBeta2_MusicEnhanced.ctr",
+  "!ContraXBeta2_MusicTheScore.ctr",
+  "!ContraXBeta2_Terrain.ctr",
+  "!ContraXBeta2_Textures.ctr",
+  "!ContraXBeta2_UnitVoicesEnglish.ctr",
+  "!ContraXBeta2_UnitVoicesNative.ctr",
+  "!ContraXBeta2_W3D.ctr",
+  "!ContraXBeta2_Window.ctr",
+];
+const enabledContraXArchives = contraXArchives.filter(defaultArchiveEnabled);
+assert.equal(enabledContraXArchives.length, 13);
+assert.deepEqual(enabledContraXArchives.filter((name) => /(?:ControlBar|Music|UnitVoices|Hotkeys)/.test(name)), [
+  "!ContraXBeta2_HotkeysOriginal_English.ctr",
+  "!ContraXBeta2_MusicTheScore.ctr",
+  "!ContraXBeta2_UnitVoicesEnglish.ctr",
+]);
+assert.equal(defaultArchiveEnabled("payload/Contra009Final_NatVO.ctr"), false);
+assert.equal(defaultArchiveEnabled("payload/Contra009Final_FogOff.ctr"), false);
+assert.equal(defaultArchiveEnabled("payload/!!ContraXBeta2_Patch1.ctr"), true);
+assert.equal(defaultArchiveEnabled("payload/Patch.big"), true);
 await assert.rejects(() => validateBigReader({
   size: nativeHeader.byteLength,
   read: async (offset, length) => nativeHeader.subarray(offset, offset + length),

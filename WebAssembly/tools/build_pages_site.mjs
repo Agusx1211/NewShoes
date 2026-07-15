@@ -7,9 +7,16 @@ import { fileURLToPath } from "node:url";
 import {
   PAGES_HARNESS_FILES,
   PAGES_DEPENDENCY_FILES,
+  PAGES_GENERATED_PROJECT_FILES,
   PAGES_RUNTIME_FILES,
   PAGES_TEMPLATE_FILES,
 } from "./pages_site_manifest.mjs";
+import {
+  loadPublicProjectContent,
+  renderDiscoveryHead,
+  renderGeneratedProjectFiles,
+  renderProjectSummary,
+} from "./public_project_content.mjs";
 import { createBuildInfo, readReleaseMetadata } from "./release_metadata.mjs";
 import { buildBinkDecoderRuntime } from "./build_bink_decoder.mjs";
 
@@ -32,6 +39,11 @@ if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/(?:tree|commi
 
 function escapeHtml(value) {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function replaceRequiredMarker(source, marker, replacement, name) {
+  if (source.split(marker).length !== 2) throw new Error(`${name} must contain exactly one ${marker} marker`);
+  return source.replace(marker, replacement);
 }
 
 async function copyRegularFile(source, destination) {
@@ -68,6 +80,12 @@ async function assertExactRuntimeDirectory() {
   }
 }
 
+const publicProject = await loadPublicProjectContent();
+const generatedProjectFiles = renderGeneratedProjectFiles(publicProject);
+if (JSON.stringify(Object.keys(generatedProjectFiles).sort()) !== JSON.stringify([...PAGES_GENERATED_PROJECT_FILES].sort())) {
+  throw new Error("Generated public-project files do not match the Pages manifest");
+}
+
 await assertExactRuntimeDirectory();
 await rm(outputRoot, { recursive: true, force: true });
 
@@ -75,15 +93,33 @@ for (const name of PAGES_TEMPLATE_FILES) {
   const source = join(wasmRoot, "pages", name);
   const destination = join(outputRoot, name);
   if (name.endsWith(".html")) {
-    const template = await readFile(source, "utf8");
+    let template = await readFile(source, "utf8");
     if (!template.includes("__PAGES_SOURCE_URL__")) {
       throw new Error(`${name} must expose the corresponding-source URL`);
+    }
+    if (name === "index.html") {
+      template = replaceRequiredMarker(
+        template,
+        "<!-- __PUBLIC_PROJECT_DISCOVERY__ -->",
+        renderDiscoveryHead(publicProject, { prefix: "./" }),
+        name,
+      );
+      template = replaceRequiredMarker(
+        template,
+        "<!-- __PUBLIC_PROJECT_SUMMARY__ -->",
+        renderProjectSummary(publicProject, { prefix: "./" }),
+        name,
+      );
     }
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, template.replaceAll("__PAGES_SOURCE_URL__", escapeHtml(sourceUrl)));
   } else {
     await copyRegularFile(source, destination);
   }
+}
+
+for (const [name, contents] of Object.entries(generatedProjectFiles)) {
+  await writeFile(join(outputRoot, name), contents);
 }
 
 for (const name of PAGES_HARNESS_FILES) {
@@ -137,12 +173,16 @@ await writeFile(join(outputRoot, "harness", "build-info.json"), `${JSON.stringif
 const playSource = await readFile(join(wasmRoot, "harness", "play.html"), "utf8");
 const videoPolicyMarker = 'data-bink-video-sidecars="auto"';
 if (!playSource.includes(videoPolicyMarker)) throw new Error("play.html has no Bink video sidecar policy marker");
-const hostedPlaySource = playSource.replace(videoPolicyMarker, 'data-bink-video-sidecars="direct"');
+const hostedPlaySource = replaceRequiredMarker(
+  playSource.replace(videoPolicyMarker, 'data-bink-video-sidecars="direct"'),
+  "<!-- __PUBLIC_PROJECT_DISCOVERY__ -->",
+  renderDiscoveryHead(publicProject, { prefix: "../" }),
+  "harness/play.html",
+);
 const directBootstrap = "    <script src=\"../coi-direct.js\"></script>\n";
-const legacyDocumentHead = `    <link rel="canonical" href="../">\n${directBootstrap}`;
+const legacyDocumentHead = directBootstrap;
 const rootDocumentHead = [
   "    <base href=\"./harness/\">",
-  "    <link rel=\"canonical\" href=\"../\">",
   directBootstrap.trimEnd(),
   "",
 ].join("\n");

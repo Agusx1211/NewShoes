@@ -5,6 +5,7 @@ import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
 import { chromium } from "playwright";
+import { verifyAgentResources } from "./agent_resources_smoke.mjs";
 
 const root = resolve(process.argv[2] || "cloudflare-dist");
 const expectedBuildInfo = JSON.parse(await readFile(resolve(root, "harness/build-info.json"), "utf8"));
@@ -13,8 +14,9 @@ const expectedChangelogEntries = expectedBuildInfo.release.changelog
 const mime = new Map([
   [".css", "text/css; charset=utf-8"], [".html", "text/html; charset=utf-8"], [".ico", "image/x-icon"],
   [".js", "text/javascript; charset=utf-8"], [".json", "application/json; charset=utf-8"], [".md", "text/markdown; charset=utf-8"],
-  [".mjs", "text/javascript; charset=utf-8"], [".png", "image/png"], [".wasm", "application/wasm"],
-  [".webmanifest", "application/manifest+json; charset=utf-8"], [".webp", "image/webp"],
+  [".mjs", "text/javascript; charset=utf-8"], [".png", "image/png"], [".txt", "text/plain; charset=utf-8"],
+  [".wasm", "application/wasm"], [".webmanifest", "application/manifest+json; charset=utf-8"],
+  [".webp", "image/webp"], [".xml", "application/xml; charset=utf-8"],
 ]);
 const requiredHeaders = {
   "cross-origin-opener-policy": "same-origin",
@@ -104,6 +106,7 @@ try {
   if (!initial.isolated || !initial.sharedArrayBuffer || !initial.launcherVisible || initial.controlled || initial.registrations !== 0) {
     throw new Error(`Direct-header launch contract failed: ${JSON.stringify(initial)}`);
   }
+  const agentResources = await verifyAgentResources(page);
   if (navigationHeaders.length !== 1
       || navigationHeaders[0]["cross-origin-opener-policy"] !== "same-origin"
       || navigationHeaders[0]["cross-origin-embedder-policy"] !== "require-corp") {
@@ -257,6 +260,7 @@ try {
     ok: true,
     baseUrl,
     initial,
+    agentResources,
     wasm,
     videoSupport,
     videoRuntime: { bytes: videoRuntime.bytes, abiVersion: videoRuntime.manifest.abiVersion },

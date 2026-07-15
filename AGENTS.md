@@ -90,6 +90,19 @@ without replacing product behavior.
 - When a task exposes separate follow-up work, report it clearly instead of
   quietly widening the current change.
 
+## Public project information
+
+`WebAssembly/pages/project-content.json` is the canonical source for public and
+agent-facing claims on newshoes.gg. Update it whenever a change affects a public
+capability, status, requirement, setup step, privacy behavior, limitation,
+troubleshooting answer, or stable resource. Every capability needs a current
+review date and repository evidence paths.
+
+Do not hand-edit `llms.txt`, `project.md`, `project-info.json`, `robots.txt`, the
+sitemap, or the discovery metadata in built HTML. The Pages build generates all
+of them from the canonical record and rejects facts outside its review window.
+Run `npm run test:public-project-content` from `WebAssembly/` after updating it.
+
 ## Work tracking: GitHub Issues
 
 GitHub Issues in `Agusx1211/NewShoes` are the durable backlog and coordination
