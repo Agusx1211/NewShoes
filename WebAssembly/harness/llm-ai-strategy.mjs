@@ -278,6 +278,7 @@ function normalizedCapabilities(record) {
 
 function summarizeForces(objects, localPlayerIndex) {
   const groups = new Map();
+  const byId = new Map(objects.map((object) => [object.id, object]));
   for (const object of objects) {
     const owner = normalizedOwnership(object, localPlayerIndex);
     if (!["self", "allied", "enemy"].includes(owner)) continue;
@@ -286,10 +287,22 @@ function summarizeForces(objects, localPlayerIndex) {
     const economicRole = hasCategory(object, "builder") ? "builder"
       : hasCategory(object, "harvester") ? "harvester" : null;
     const squadHandle = owner === "self" ? managedSquadHandle(object, localPlayerIndex) : null;
-    const handle = squadHandle || `force:${ownership}:${economicRole || coarseKind(object)}`;
+    const contained = owner === "self" && Number.isInteger(object.containedById);
+    const commandable = owner === "self" && isManagedSquadMember(object, localPlayerIndex);
+    const availability = owner !== "self" ? "observable"
+      : economicRole ? "economic"
+        : commandable ? "commandable"
+          : contained ? "contained" : "unavailable";
+    const handle = owner !== "self" ? `force:${ownership}:${coarseKind(object)}`
+      : squadHandle || (contained && !economicRole
+        ? `force:contained:${coarseKind(object)}`
+        : commandable && !economicRole
+          ? `force:owned:${coarseKind(object)}`
+          : `force:${ownership}:${economicRole || `unavailable:${coarseKind(object)}`}`);
     const current = groups.get(handle) || {
-      handle, missionHandle: squadHandle, ownership, count: 0, damaged: 0, incomplete: 0,
-      composition: {}, _roles: new Set(), _positions: [],
+      handle, missionHandle: squadHandle, ownership, availability,
+      count: 0, damaged: 0, incomplete: 0,
+      composition: {}, _roles: new Set(), _positions: [], _deploymentSources: new Set(),
     };
     current.count += 1;
     const kind = coarseKind(object);
@@ -297,6 +310,11 @@ function summarizeForces(objects, localPlayerIndex) {
     for (const role of semanticRoles(object)) current._roles.add(role);
     const position = roundedPosition(object.position);
     if (position) current._positions.push(position);
+    if (contained) {
+      const source = byId.get(object.containedById);
+      current._deploymentSources.add(source
+        ? semanticHandle(source, localPlayerIndex) : `unit:${object.containedById}`);
+    }
     const health = Array.isArray(object.health)
       ? { current: object.health[0], max: object.health[1] } : object.health;
     if (health?.max > 0 && health.current < health.max * 0.7) current.damaged += 1;
@@ -318,6 +336,9 @@ function summarizeForces(objects, localPlayerIndex) {
       kind: kinds.length === 1 ? kinds[0] : "mixed",
       composition: group.composition,
       roles: [...group._roles].sort(),
+      availability: group.availability,
+      ...(group._deploymentSources.size > 0
+        ? { deploymentSources: [...group._deploymentSources].sort() } : {}),
       count: group.count,
       damaged: group.damaged,
       incomplete: group.incomplete,
@@ -585,6 +606,7 @@ export function normalizedEntity(record, localPlayerIndex) {
     health,
     construction: record.construction,
     status: record.status,
+    ...(Number.isInteger(record.containedById) ? { containedById: record.containedById } : {}),
     capabilities: normalizedCapabilities(record),
     motion: record.motion?.ai ? {
       state: record.motion.ai.state,

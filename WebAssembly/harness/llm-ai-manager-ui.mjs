@@ -481,7 +481,11 @@ function renderCollection(parent, label, values, describe) {
 function describeForce(force) {
   const composition = Object.entries(force.composition || {})
     .map(([kind, count]) => `${count} ${kind}`).join(", ");
-  return [force.handle, composition || `${force.count || 0} units`, force.roles?.join("/"), force.position ? `at ${compactValue(force.position)}` : null]
+  const deployment = force.deploymentSources?.length
+    ? `deploy via ${force.deploymentSources.join(", ")}` : null;
+  return [force.handle, force.availability, composition || `${force.count || 0} units`,
+    force.roles?.join("/"), deployment,
+    force.position ? `at ${compactValue(force.position)}` : null]
     .filter(Boolean).join(" · ");
 }
 

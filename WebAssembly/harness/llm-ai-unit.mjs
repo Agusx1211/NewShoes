@@ -88,6 +88,7 @@ assert.match(buildLlmAiSystemPrompt(profile), /GAME MODEL: This is a real-time b
 assert.match(buildLlmAiSystemPrompt(profile), /lostContact delta means only/);
 assert.match(buildLlmAiSystemPrompt(profile), /Managed selections exclude builders and harvesters/);
 assert.match(buildLlmAiSystemPrompt(profile), /non-null missionHandle/);
+assert.match(buildLlmAiSystemPrompt(profile), /force:contained:<combat-kind>/);
 assert.match(buildLlmAiSystemPrompt(profile), /results only on the next planning turn/);
 assert.match(buildLlmAiSystemPrompt(profile), /numeric force counts, damage, attrition/);
 assert.match(buildLlmAiSystemPrompt(profile), /feed reinforcements piecemeal/);
@@ -575,7 +576,7 @@ const tool = {
   const tools = createLlmAiGameTools({ rpc, playerIndex: 4, planningIntervalMs: 2_000, profile });
   assert.deepEqual(tools.map((entry) => entry.name), [
     "set_priorities", "query_buildable_options", "request_production", "request_force",
-    "assign_mission", "inspect_job", "inspect_entities", "query_map_region",
+    "evacuate_force", "assign_mission", "inspect_job", "inspect_entities", "query_map_region",
     "issue_order", "use_command", "wait_for_tick",
   ]);
   for (const name of ["query_buildable_options", "inspect_entities", "query_map_region"]) {
@@ -611,8 +612,15 @@ const tool = {
         position: { x: 20, y: 30 }, capabilities: { orderable: true, mobile: true } },
       { id: 28, owner: 4, categories: ["vehicle"], construction: -1,
         position: { x: 40, y: 50 }, capabilities: { orderable: true, mobile: true } },
+      { id: 29, owner: 4, categories: ["infantry", "combat"], construction: -1,
+        containedById: 31, position: { x: 0, y: 0 },
+        capabilities: { orderable: false, mobile: true } },
       { id: 31, owner: 4, categories: ["structure", "barracks"], construction: -1,
-        position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: false } },
+        position: { x: 0, y: 0 }, capabilities: {
+          orderable: true, mobile: false,
+          commands: [{ name: "Command_Evacuate", type: "evacuate" }],
+          containment: { passengers: [29] },
+        } },
       { id: 32, owner: 4, template: "RuntimeInfantry", teamId: 10, categories: ["infantry"],
         construction: -1, position: { x: 0, y: 0 }, capabilities: { orderable: true, mobile: true } },
       { id: 30, owner: 5, relationship: "ENEMIES", categories: ["structure"], construction: -1,
@@ -654,6 +662,21 @@ const tool = {
   };
   state.catalogRevision = "catalog:3";
   const tools = createLlmAiGameTools({ rpc, playerIndex: 4, profile, state });
+  const summarized = compactRoutineObservation(world, {
+    maxTokens: 4_096, assignment: { playerIndex: 4 }, jobs: [],
+  });
+  const contained = summarized.forces.find((entry) => entry.handle === "force:contained:infantry");
+  assert.equal(contained.availability, "contained");
+  assert.deepEqual(contained.deploymentSources, ["facility:31"]);
+  assert.equal(summarized.combat.ownedReady, 5, "contained units are not reported combat-ready");
+  const evacuation = await tools.find((entry) => entry.name === "evacuate_force").execute({
+    sourceHandle: "FACILITY:31",
+  });
+  assert.equal(evacuation.evacuatingCount, 1);
+  assert.deepEqual(calls.findLast((entry) => entry.command === "llmAiGameCommand").payload, {
+    playerIndex: 4, sourceId: 31, command: "Command_Evacuate", targetId: 0,
+    x: 0, y: 0, angle: 0, hasPosition: false,
+  });
   const mission = await tools.find((entry) => entry.name === "assign_mission").execute({
     mission: "attackRegion", squadHandle: "SQUAD:9", targetHandle: "CONTACT:30",
   });

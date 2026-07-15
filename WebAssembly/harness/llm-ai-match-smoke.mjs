@@ -515,7 +515,7 @@ async function main() {
       throw new Error(`match did not use native model tool calls exclusively: ${JSON.stringify(modelDecisions)}`);
     }
     const expectedEngineExecutions = toolResults.filter((result) => [
-      "request_production", "request_force", "assign_mission", "issue_order", "use_command",
+      "request_production", "request_force", "evacuate_force", "assign_mission", "issue_order", "use_command",
     ].includes(result.name));
     if (engineExecutions.length !== expectedEngineExecutions.length || engineReactions.length < modelDecisions.length) {
       throw new Error(`session provenance is incomplete: ${JSON.stringify({

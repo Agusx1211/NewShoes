@@ -65,6 +65,13 @@ function targetIdFromHandle(value) {
   return integer(match[1], "target handle ID", 1);
 }
 
+function ownedSourceIdFromHandle(value) {
+  if (typeof value !== "string") throw new TypeError("sourceHandle must be a string");
+  const match = /^(?:facility|unit):(\d+)$/i.exec(value.trim());
+  if (!match) throw new TypeError("sourceHandle must be a facility: or unit: handle");
+  return integer(match[1], "source handle ID", 1);
+}
+
 function forceSelectionFromHandle(value) {
   if (typeof value !== "string") throw new TypeError("force handle must be a string");
   const handle = value.trim();
@@ -557,6 +564,39 @@ export function createStrategicGameTools({ rpc, playerIndex, planningIntervalMs 
           job.state = "blocked"; job.blockedReason = error?.message || String(error);
           return { ok: false, job: publicJob(job), error: publicError(error) };
         }
+      },
+    },
+    {
+      name: "evacuate_force",
+      description: "Evacuate all owned units currently contained by an advertised deployment source, such as a transport, garrison, or tunnel exit. Pass a source from a force:contained:* summary's deploymentSources. The original synchronized Command_Evacuate owns exit rules and timing. Re-observe after evacuation; exited combat units then appear under commandable force:owned:* or squad handles and still require an explicit mission. One engine command result.",
+      parameters: { type: "object", properties: {
+        sourceHandle: { type: "string", maxLength: 64 },
+      }, required: ["sourceHandle"], additionalProperties: false },
+      validate(args) { ownedSourceIdFromHandle(objectValue(args, "evacuate_force arguments").sourceHandle); },
+      async execute(args) {
+        this.validate(args);
+        const sourceId = ownedSourceIdFromHandle(args.sourceHandle);
+        const raw = await strategic.focused();
+        const source = (raw.objects || []).find((object) =>
+          object.id === sourceId && object.owner === raw.localPlayerIndex);
+        if (!source) throw new TypeError("deployment source is stale or not owned");
+        const command = (source.capabilities?.commands || []).find((candidate) =>
+          String(candidate.type).toLowerCase() === "evacuate");
+        if (!command?.name) throw new TypeError("source does not currently expose an evacuation command");
+        const passengers = source.capabilities?.containment?.passengers || [];
+        if (!Array.isArray(passengers) || passengers.length === 0) {
+          throw new TypeError("deployment source currently contains no owned units");
+        }
+        const result = await call("llmAiGameCommand", {
+          sourceId, command: command.name, targetId: 0,
+          x: 0, y: 0, angle: 0, hasPosition: false,
+        });
+        return {
+          ok: true,
+          sourceHandle: `${hasCategory(source, "structure") ? "facility" : "unit"}:${sourceId}`,
+          evacuatingCount: passengers.length,
+          engine: result,
+        };
       },
     },
     {
