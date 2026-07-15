@@ -214,16 +214,18 @@ async function enterLanLobby(client, { verifyRanked = false } = {}) {
     await clickWindow(client, "MainMenu.wnd:ButtonOnline");
     const rankedMessage = await waitFor("native Ranked coming-soon message",
       async () => fullFrame(client, 1),
-      (result) => result.clientState?.messageBox?.title?.text === "Ranked"
-        && result.clientState?.messageBox?.message?.text
-          === "Ranked is coming soon. Please try Anonymous in the meantime."
-        && result.clientState?.messageBox?.buttonOk?.clickable === true,
+      (result) => result.clientState?.messageBox?.parent?.found === true
+        && result.clientState?.messageBox?.parent?.managerHidden === false,
       10000, 0);
     await client.page.locator("#viewport").screenshot({
       path: resolve(artifactRoot, "multiplayer-ranked-coming-soon.png"),
     });
-    expect(rankedMessage.clientState.messageBox.parent.found === true,
-      "Ranked notice was not an original native message box", rankedMessage.clientState.messageBox);
+    expect(rankedMessage.clientState.messageBox.title?.text === "Ranked"
+        && rankedMessage.clientState.messageBox.message?.text
+          === "Ranked is coming soon. Please try Anonymous in the meantime."
+        && rankedMessage.clientState.messageBox.buttonOk?.found === true,
+    "Ranked notice did not use the expected original native message box",
+    rankedMessage.clientState.messageBox);
     await clickWindow(client, "MessageBox.wnd:ButtonOk");
     await fullFrame(client, 1);
   }
