@@ -392,7 +392,9 @@ try {
   const nativeLobbyFrames = await waitFor("native LAN recovery controls visible", async () =>
     Promise.all(clients.map((client) => fullFrame(client, 1))),
   (frames) => frames.every((result) =>
-    result.clientState?.transition?.finished === true
+    result.clientState?.shell?.animFinished === true
+      && result.clientState?.lanLobby?.parent?.managerHidden === false
+      && result.clientState?.lanLobby?.networkStatus?.managerHidden === false
       && result.clientState?.lanLobby?.buttonReconnect?.text === "Reconnect"
       && result.clientState?.lanLobby?.networkStatus?.text?.includes("Network: online")),
   30000, 0);
