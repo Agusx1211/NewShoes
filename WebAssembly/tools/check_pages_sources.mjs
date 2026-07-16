@@ -61,6 +61,7 @@ const scripts = [
   "harness/launcher.js",
   "harness/multiplayer_identity.mjs",
   "harness/multiplayer_launch_policy.mjs",
+  "harness/multiplayer-network-status.mjs",
   "harness/mod-context.mjs",
   "harness/mod-context_unit.mjs",
   "harness/mod-manager-ui.mjs",
