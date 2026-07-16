@@ -1342,14 +1342,14 @@ async function driveScorchProbe(page) {
     (locateNested(frame?.frame, ["textureDiagnostics"])?.labels ?? [])
       .map((label) => [Number(label.id), label.name || label.path || ""]),
   );
-  const scorchDraws = (frame?.state?.graphics?.d3d8SceneDrawHistory ?? [])
+  const sceneDraws = (frame?.state?.graphics?.d3d8SceneDrawHistory ?? [])
     .map((draw) => ({
       sequence: draw.drawSequence,
       texture: labels.get(Number(draw.texture0?.id ?? 0)) ?? "",
       zBias: Number(draw.renderState?.zBias ?? 0),
       polygonOffset: draw.appliedRenderState?.depth?.bias?.polygonOffset ?? null,
-    }))
-    .filter((draw) => /scorch/i.test(draw.texture));
+    }));
+  const scorchDraws = sceneDraws.filter((draw) => /scorch/i.test(draw.texture));
   await page.locator("#viewport").screenshot({ path: screenshot });
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
 
@@ -1358,7 +1358,21 @@ async function driveScorchProbe(page) {
   expect(scorchDraws.every((draw) =>
     draw.zBias === 1 && draw.polygonOffset?.enabled === true),
     "terrain scorch draw did not reach WebGL with D3D8 depth bias enabled", scorchDraws);
-  return { target: target.name, position, trigger: trigger.result, scorchDraws, screenshot };
+  const lastScorchSequence = Math.max(...scorchDraws.map((draw) => draw.sequence));
+  const firstPostScorchDraw = sceneDraws.find((draw) => draw.sequence > lastScorchSequence) ?? null;
+  expect(firstPostScorchDraw?.zBias === 0 && firstPostScorchDraw?.polygonOffset?.enabled !== true,
+    "terrain scorch draw leaked its depth bias into following scene draws", {
+      lastScorchSequence,
+      firstPostScorchDraw,
+    });
+  return {
+    target: target.name,
+    position,
+    trigger: trigger.result,
+    scorchDraws,
+    firstPostScorchDraw,
+    screenshot,
+  };
 }
 
 function particleEffectDraws(frame) {
