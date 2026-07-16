@@ -405,6 +405,7 @@ try {
   "native LAN recovery controls did not expose discovery and relay state",
   nativeLobbyFrames.map((result) => result.clientState?.lanLobby));
   await fullFrame(host, 1);
+  await host.page.waitForTimeout(250);
   await host.page.locator("#viewport").screenshot({
     path: resolve(artifactRoot, "lan-native-network-status.png"),
   });
@@ -431,6 +432,7 @@ try {
   expect(recoveredEndpoints.every((state) => state.runtime.nativeStatus.includes("Relay:")),
     "recovered endpoint state did not retain native relay diagnostics", recoveredEndpoints);
   await fullFrame(reconnectingClient, 1);
+  await reconnectingClient.page.waitForTimeout(250);
   await reconnectingClient.page.locator("#viewport").screenshot({
     path: resolve(artifactRoot, "lan-native-reconnect-recovered.png"),
   });
