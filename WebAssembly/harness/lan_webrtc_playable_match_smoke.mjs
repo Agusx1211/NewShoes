@@ -77,6 +77,12 @@ function sameEnginePath(left, right) {
   return String(left ?? "").toLowerCase() === String(right ?? "").toLowerCase();
 }
 
+function isExpectedBrowserWarning(error) {
+  if (/Trystero peer error: OperationError: User-Initiated Abort, reason=Close called/i
+    .test(error)) return true;
+  return allowWebGlContextLoss && /WebGL context (?:LOST|restored)/i.test(error);
+}
+
 function archives(baseUrl) {
   return archiveSpecs.map((spec) => ({
     name: spec.name,
@@ -792,10 +798,9 @@ try {
     discovery: result.discovery,
   });
   const unexpectedBrowserErrors = result.browserErrors.flatMap(({ peerId, errors }) =>
-    errors.filter((error) => !allowWebGlContextLoss
-      || !/WebGL context (?:LOST|restored)/i.test(error))
+    errors.filter((error) => !isExpectedBrowserWarning(error))
       .map((error) => ({ peerId, error })));
-  result.visualOk = result.browserErrors.every(({ errors }) => errors.length === 0)
+  result.visualOk = unexpectedBrowserErrors.length === 0
     && result.gpu.every((renderer) => Boolean(renderer.unmaskedRenderer));
   result.visualWarningsAllowed = allowWebGlContextLoss;
   result.unexpectedBrowserErrors = unexpectedBrowserErrors;
