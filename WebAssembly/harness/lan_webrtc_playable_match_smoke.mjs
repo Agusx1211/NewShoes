@@ -392,7 +392,7 @@ try {
   const nativeLobbyFrames = await Promise.all(clients.map((client) => fullFrame(client, 1)));
   expect(nativeLobbyFrames.every((result) =>
     result.clientState?.lanLobby?.buttonReconnect?.text === "Reconnect"
-      && result.clientState?.lanLobby?.networkStatus?.text?.includes("Discovery:")
+      && result.clientState?.lanLobby?.networkStatus?.text?.includes("Network:")
       && result.clientState?.lanLobby?.networkStatus?.text?.includes("Relay:")),
   "native LAN recovery controls did not expose discovery and relay state",
   nativeLobbyFrames.map((result) => result.clientState?.lanLobby));
@@ -417,7 +417,7 @@ try {
     return Promise.all(clients.map((client) => fullFrame(client, 1)));
   }, (frames) => frames.every((result) =>
     result.clientState?.lanLobby?.players?.listBox?.entryCount === playerCount
-      && result.clientState?.lanLobby?.networkStatus?.text?.includes("Discovery: online")),
+      && result.clientState?.lanLobby?.networkStatus?.text?.includes("Network: online")),
   45000, 100);
   expect(recoveredEndpoints.every((state) => state.runtime.nativeStatus.includes("Relay:")),
     "recovered endpoint state did not retain native relay diagnostics", recoveredEndpoints);

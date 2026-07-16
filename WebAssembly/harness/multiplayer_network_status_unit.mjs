@@ -23,7 +23,7 @@ assert.equal(readSharedMultiplayerNetworkStatus(bridge.networkStatus), "Discover
 assert.equal(formatMultiplayerNetworkStatus({
   phase: "connecting",
   configuration: { room: "default-room", relayUrls: null },
-}), "Discovery: connecting | Relay: relay.newshoes.gg | Room: default-room");
+}), "Network: connecting | Relay: relay.newshoes.gg | Room: default-room");
 
 assert.equal(formatMultiplayerNetworkStatus({
   phase: "online",
@@ -36,15 +36,15 @@ assert.equal(formatMultiplayerNetworkStatus({
     openPeers: 1,
     peerCount: 2,
   },
-}), "Discovery: online | Relay: relay.newshoes.gg (1/1) | Peers: 1/2 | Room: default-room");
+}), "Network: online | Relay: relay.newshoes.gg 1/1 | Peers: 1/2 | Room: default-room");
 
 assert.match(formatMultiplayerNetworkStatus({
   phase: "error",
   error: "Trystero discovery relay timed out after 20000ms",
-}), /^Discovery: offline \| Relay: relay\.newshoes\.gg \| Trystero discovery relay timed out/);
+}), /^Network: error \| Relay: relay\.newshoes\.gg \| Trystero discovery relay timed out/);
 assert.match(formatMultiplayerNetworkStatus({
   phase: "error",
   error: "Trystero discovery relay timed out after 20000ms",
-}), /Select Reconnect$/);
+}), /Reconnect$/);
 
 console.log("multiplayer network status unit: PASS");

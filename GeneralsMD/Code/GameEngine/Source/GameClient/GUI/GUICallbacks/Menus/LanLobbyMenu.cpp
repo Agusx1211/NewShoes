@@ -410,21 +410,39 @@ static void configureBrowserMultiplayerControls(void)
 		parentLanLobby, staticTextNetworkStatusID);
 	if (staticTextNetworkStatus == NULL && parentLanLobby != NULL)
 	{
+		const Int statusHeight = 18;
 		Int x = 52;
 		Int y = 491;
 		Int right = 752;
 		Int ignoredHeight = 0;
-		if (buttonHost != NULL)
-			buttonHost->winGetPosition(&x, &y);
-		if (buttonBack != NULL)
+		if (listboxChatWindow != NULL)
 		{
-			Int backX = 0;
-			Int backWidth = 0;
-			buttonBack->winGetPosition(&backX, &y);
-			buttonBack->winGetSize(&backWidth, &ignoredHeight);
-			right = backX + backWidth;
+			Int listWidth = 0;
+			Int listHeight = 0;
+			listboxChatWindow->winGetPosition(&x, &y);
+			listboxChatWindow->winGetSize(&listWidth, &listHeight);
+			if (listHeight > statusHeight * 2)
+			{
+				listboxChatWindow->winSetSize(listWidth, listHeight - statusHeight);
+				y += listHeight - statusHeight;
+				x += 4;
+				right = x + listWidth - 8;
+			}
 		}
-		y = y >= 16 ? y - 16 : y;
+		else
+		{
+			if (buttonHost != NULL)
+				buttonHost->winGetPosition(&x, &y);
+			if (buttonBack != NULL)
+			{
+				Int backX = 0;
+				Int backWidth = 0;
+				buttonBack->winGetPosition(&backX, &y);
+				buttonBack->winGetSize(&backWidth, &ignoredHeight);
+				right = backX + backWidth;
+			}
+			y = y >= statusHeight ? y - statusHeight : y;
+		}
 		WinInstanceData instanceData;
 		instanceData.init();
 		instanceData.m_id = staticTextNetworkStatusID;
@@ -433,22 +451,30 @@ static void configureBrowserMultiplayerControls(void)
 		TextData textData = {};
 		textData.centered = FALSE;
 		textData.centeredVertically = TRUE;
+		textData.leftMargin = 2;
 		const Int statusWidth = right > x ? right - x : 700;
+		GameWindow *textStyleSource = staticToolTip != NULL
+			? staticToolTip
+			: staticTextGameInfo;
 		staticTextNetworkStatus = TheWindowManager->gogoGadgetStaticText(
 			parentLanLobby,
 			WIN_STATUS_ENABLED | WIN_STATUS_NO_INPUT | WIN_STATUS_NO_FOCUS
 				| WIN_STATUS_ONE_LINE,
-			x, y, statusWidth, 16,
+			x, y, statusWidth, statusHeight,
 			&instanceData,
 			&textData,
-			staticTextGameInfo != NULL ? staticTextGameInfo->winGetFont() : NULL,
-			TRUE);
-		if (staticTextNetworkStatus != NULL && staticTextGameInfo != NULL)
+			textStyleSource != NULL ? textStyleSource->winGetFont() : NULL,
+			FALSE);
+		if (staticTextNetworkStatus != NULL)
 		{
-			staticTextNetworkStatus->winSetFont(staticTextGameInfo->winGetFont());
+			const Color textColor = textStyleSource != NULL
+				? textStyleSource->winGetEnabledTextColor()
+				: TheWindowManager->winMakeColor(254, 254, 254, 255);
+			const Color borderColor = textStyleSource != NULL
+				? textStyleSource->winGetEnabledTextBorderColor()
+				: TheWindowManager->winMakeColor(64, 64, 64, 255);
 			staticTextNetworkStatus->winSetEnabledTextColors(
-				staticTextGameInfo->winGetEnabledTextColor(),
-				staticTextGameInfo->winGetEnabledTextBorderColor());
+				textColor, borderColor);
 		}
 	}
 	if (staticTextNetworkStatus != NULL)
