@@ -31,6 +31,10 @@
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
+
 #include "Lib/BaseType.h"
 #include "Common/CRC.h"
 #include "Common/GameEngine.h"
@@ -53,6 +57,8 @@
 #include "GameClient/GameInfoWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/GadgetListBox.h"
+#include "GameClient/GadgetPushButton.h"
+#include "GameClient/GadgetStaticText.h"
 #include "GameClient/GadgetTextEntry.h"
 #include "GameClient/MessageBox.h"
 #include "GameClient/GameWindowTransitions.h"
@@ -74,6 +80,37 @@ static Bool justEntered = FALSE;
 // original Network.ini behavior as the native/default fallback, but let the
 // browser supply that same identity to the original LAN lobby UI.
 extern "C" const char *cnc_port_browser_commander_name(void) __attribute__((weak));
+
+enum BrowserMultiplayerNetworkStateField
+{
+	BROWSER_NETWORK_PEER_GENERATION = 4
+};
+
+EM_JS(Int, browser_multiplayer_status_copy, (char *buffer, Int capacity), {
+	if (!buffer || capacity <= 0) return 0;
+	const getStatus = typeof Module !== "undefined"
+		? Module.cncPortBrowserNetworkStatus
+		: null;
+	const status = typeof getStatus === "function"
+		? String(getStatus())
+		: "Discovery status unavailable";
+	stringToUTF8(status, buffer, capacity);
+	return 1;
+});
+
+EM_JS(Int, browser_multiplayer_network_state, (Int field), {
+	const getState = typeof Module !== "undefined"
+		? Module.cncPortBrowserNetworkState
+		: null;
+	return typeof getState === "function" ? (getState(field) | 0) : 0;
+});
+
+EM_JS(Int, browser_multiplayer_reconnect, (), {
+	const reconnect = typeof Module !== "undefined"
+		? Module.cncPortBrowserNetworkReconnect
+		: null;
+	return typeof reconnect === "function" ? (reconnect() | 0) : 0;
+});
 #endif
 
 
@@ -299,6 +336,9 @@ static NameKeyType textEntryPlayerNameID = NAMEKEY_INVALID;
 static NameKeyType textEntryChatID = NAMEKEY_INVALID;
 static NameKeyType listboxPlayersID = NAMEKEY_INVALID;
 static NameKeyType staticTextGameInfoID = NAMEKEY_INVALID;
+#ifdef __EMSCRIPTEN__
+static NameKeyType staticTextNetworkStatusID = NAMEKEY_INVALID;
+#endif
 
 
 // Window Pointers ------------------------------------------------------------------------
@@ -313,6 +353,11 @@ static GameWindow *staticToolTip = NULL;
 static GameWindow *textEntryPlayerName = NULL;
 static GameWindow *textEntryChat = NULL;
 static GameWindow *staticTextGameInfo = NULL;
+#ifdef __EMSCRIPTEN__
+static GameWindow *staticTextNetworkStatus = NULL;
+static Int lastBrowserPeerGeneration = -1;
+static Int browserStatusPollDelay = 0;
+#endif
 
 //external declarations of the Gadgets the callbacks can use
 NameKeyType listboxChatWindowID = NAMEKEY_INVALID;
@@ -325,6 +370,156 @@ GameWindow *listboxGames = NULL;
 //static Bool shellmapOn;
 static Bool useFpsLimit;
 static UnicodeString defaultName;
+
+#ifdef __EMSCRIPTEN__
+static void configureBrowserMultiplayerControls(void)
+{
+	if (buttonDirectConnect == NULL && parentLanLobby != NULL)
+	{
+		Int x = 402;
+		Int y = 507;
+		Int width = 172;
+		Int height = 36;
+		if (buttonBack != NULL)
+		{
+			buttonBack->winGetPosition(&x, &y);
+			buttonBack->winGetSize(&width, &height);
+			x -= width + 2;
+		}
+		WinInstanceData instanceData;
+		instanceData.init();
+		instanceData.m_id = buttonDirectConnectID;
+		instanceData.m_style = GWS_PUSH_BUTTON | GWS_MOUSE_TRACK;
+		instanceData.m_decoratedNameString = "LanLobbyMenu.wnd:ButtonDirectConnect";
+		buttonDirectConnect = TheWindowManager->gogoGadgetPushButton(
+			parentLanLobby,
+			WIN_STATUS_ENABLED | WIN_STATUS_IMAGE,
+			x, y, width, height,
+			&instanceData,
+			buttonJoin != NULL ? buttonJoin->winGetFont() : NULL,
+			TRUE);
+	}
+	if (buttonDirectConnect != NULL)
+	{
+		buttonDirectConnect->winEnable(TRUE);
+		buttonDirectConnect->winHide(FALSE);
+		GadgetButtonSetText(buttonDirectConnect, UnicodeString(L"Reconnect"));
+	}
+
+	staticTextNetworkStatus = TheWindowManager->winGetWindowFromId(
+		parentLanLobby, staticTextNetworkStatusID);
+	if (staticTextNetworkStatus == NULL && parentLanLobby != NULL)
+	{
+		const Int statusHeight = 36;
+		GameWindow *statusParent = parentLanLobby;
+		Int x = 52;
+		Int y = 491;
+		Int right = 752;
+		Int ignoredHeight = 0;
+		if (listboxChatWindow != NULL)
+		{
+			if (listboxChatWindow->winGetParent() != NULL)
+				statusParent = listboxChatWindow->winGetParent();
+			Int listWidth = 0;
+			Int listHeight = 0;
+			listboxChatWindow->winGetPosition(&x, &y);
+			listboxChatWindow->winGetSize(&listWidth, &listHeight);
+			if (listHeight > statusHeight * 2)
+			{
+				listboxChatWindow->winSetSize(listWidth, listHeight - statusHeight);
+				y += listHeight - statusHeight;
+				x += 4;
+				right = x + listWidth - 8;
+			}
+		}
+		else
+		{
+			if (buttonHost != NULL)
+				buttonHost->winGetPosition(&x, &y);
+			if (buttonBack != NULL)
+			{
+				Int backX = 0;
+				Int backWidth = 0;
+				buttonBack->winGetPosition(&backX, &y);
+				buttonBack->winGetSize(&backWidth, &ignoredHeight);
+				right = backX + backWidth;
+			}
+			y = y >= statusHeight ? y - statusHeight : y;
+		}
+		WinInstanceData instanceData;
+		instanceData.init();
+		instanceData.m_id = staticTextNetworkStatusID;
+		instanceData.m_style = GWS_STATIC_TEXT;
+		instanceData.m_decoratedNameString = "LanLobbyMenu.wnd:StaticTextNetworkStatus";
+		TextData textData = {};
+		textData.centered = FALSE;
+		textData.centeredVertically = TRUE;
+		textData.leftMargin = 2;
+		const Int statusWidth = right > x ? right - x : 700;
+		GameWindow *textStyleSource = staticToolTip != NULL
+			? staticToolTip
+			: staticTextGameInfo;
+		staticTextNetworkStatus = TheWindowManager->gogoGadgetStaticText(
+			statusParent,
+			WIN_STATUS_ENABLED | WIN_STATUS_NO_INPUT | WIN_STATUS_NO_FOCUS,
+			x, y, statusWidth, statusHeight,
+			&instanceData,
+			&textData,
+			textStyleSource != NULL ? textStyleSource->winGetFont() : NULL,
+			FALSE);
+		if (staticTextNetworkStatus != NULL)
+		{
+			const Color textColor = textStyleSource != NULL
+				? textStyleSource->winGetEnabledTextColor()
+				: TheWindowManager->winMakeColor(254, 254, 254, 255);
+			const Color borderColor = textStyleSource != NULL
+				? textStyleSource->winGetEnabledTextBorderColor()
+				: TheWindowManager->winMakeColor(64, 64, 64, 255);
+			staticTextNetworkStatus->winSetEnabledTextColors(
+				textColor, borderColor);
+		}
+	}
+	if (staticTextNetworkStatus != NULL)
+	{
+		staticTextNetworkStatus->winEnable(TRUE);
+		staticTextNetworkStatus->winHide(FALSE);
+	}
+}
+
+static void updateBrowserMultiplayerStatus(Bool force)
+{
+	const Int peerGeneration = browser_multiplayer_network_state(
+		BROWSER_NETWORK_PEER_GENERATION);
+	if (lastBrowserPeerGeneration >= 0
+		&& peerGeneration != lastBrowserPeerGeneration
+		&& TheLAN != NULL)
+	{
+		UnicodeString name = textEntryPlayerName != NULL
+			? GadgetTextEntryGetText(textEntryPlayerName)
+			: defaultName;
+		if (name.isEmpty())
+			name = defaultName;
+		TheLAN->RequestSetName(name);
+		TheLAN->RequestLocations();
+	}
+	lastBrowserPeerGeneration = peerGeneration;
+
+	if (!force && ++browserStatusPollDelay < 10)
+		return;
+	browserStatusPollDelay = 0;
+	if (staticTextNetworkStatus == NULL)
+		return;
+	char status[768];
+	status[0] = '\0';
+	if (browser_multiplayer_status_copy(status, sizeof(status)) != 0)
+	{
+		UnicodeString text;
+		text.translate(AsciiString(status));
+		GadgetStaticTextSetText(staticTextNetworkStatus, text);
+		staticTextNetworkStatus->winSetTooltip(text);
+	}
+}
+#endif
 
 static void playerTooltip(GameWindow *window,
 													WinInstanceData *instData,
@@ -380,6 +575,10 @@ void LanLobbyMenuInit( WindowLayout *layout, void *userData )
 	listboxChatWindowID = TheNameKeyGenerator->nameToKey( AsciiString( "LanLobbyMenu.wnd:ListboxChatWindowLanLobby" ) );
 	listboxGamesID = TheNameKeyGenerator->nameToKey( AsciiString( "LanLobbyMenu.wnd:ListboxGames" ) );
 	staticTextGameInfoID = TheNameKeyGenerator->nameToKey( AsciiString( "LanLobbyMenu.wnd:StaticTextGameInfo" ) );
+#ifdef __EMSCRIPTEN__
+	staticTextNetworkStatusID = TheNameKeyGenerator->nameToKey(
+		AsciiString("LanLobbyMenu.wnd:StaticTextNetworkStatus"));
+#endif
 
 
 	// Get pointers to the window buttons
@@ -398,6 +597,12 @@ void LanLobbyMenuInit( WindowLayout *layout, void *userData )
 	listboxGames = TheWindowManager->winGetWindowFromId( NULL, listboxGamesID );
 	staticTextGameInfo = TheWindowManager->winGetWindowFromId( NULL, staticTextGameInfoID );
 	listboxPlayers->winSetTooltipFunc(playerTooltip);
+#ifdef __EMSCRIPTEN__
+	staticTextNetworkStatus = NULL;
+	lastBrowserPeerGeneration = -1;
+	browserStatusPollDelay = 0;
+	configureBrowserMultiplayerControls();
+#endif
 
 	// Show Menu
 	layout->hide( FALSE );
@@ -475,6 +680,9 @@ void LanLobbyMenuInit( WindowLayout *layout, void *userData )
 		defaultName.removeLastChar();
 	TheLAN->RequestSetName(defaultName);
 	TheLAN->RequestLocations();
+#ifdef __EMSCRIPTEN__
+	updateBrowserMultiplayerStatus(TRUE);
+#endif
 
 	/*
 	UnicodeString unicodeChat;
@@ -617,6 +825,10 @@ void LanLobbyMenuUpdate( WindowLayout * layout, void *userData)
 
 	if (TheShell->isAnimFinished() && !LANbuttonPushed && TheLAN)
 		TheLAN->update();
+
+#ifdef __EMSCRIPTEN__
+	updateBrowserMultiplayerStatus(FALSE);
+#endif
 
 	if (LANSocketErrorDetected == TRUE) {
 		LANSocketErrorDetected = FALSE;
@@ -826,8 +1038,24 @@ WindowMsgHandledType LanLobbyMenuSystem( GameWindow *window, UnsignedInt msg,
 				} //if ( controlID == buttonEmote )
 				else if (controlID == buttonDirectConnectID)
 				{
+#ifdef __EMSCRIPTEN__
+					if (browser_multiplayer_reconnect() != 0)
+					{
+						if (staticTextNetworkStatus != NULL)
+							GadgetStaticTextSetText(staticTextNetworkStatus,
+								UnicodeString(L"Discovery: reconnecting..."));
+					}
+					else
+					{
+						MessageBoxOk(
+							UnicodeString(L"Anonymous Multiplayer"),
+							UnicodeString(L"Reconnect is unavailable because no Anonymous room is configured."),
+							NULL);
+					}
+#else
 					TheLAN->RequestLobbyLeave( false );
 					TheShell->push(AsciiString("Menus/NetworkDirectConnect.wnd"));
+#endif
 				}
 				
 				break;

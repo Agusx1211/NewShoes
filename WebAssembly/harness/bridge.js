@@ -23,6 +23,13 @@ import {
   vanillaModContext,
 } from "./mod-context.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
+import {
+  MULTIPLAYER_NETWORK_LIFECYCLE,
+  SHARED_MULTIPLAYER_NETWORK_STATE,
+  formatMultiplayerNetworkStatus,
+  readSharedMultiplayerNetworkStatus,
+  writeSharedMultiplayerNetworkStatus,
+} from "./multiplayer-network-status.mjs";
 import { networkDiagnostics } from "./network-diagnostics.mjs";
 import {
   clearSharedUdpRing,
@@ -188,6 +195,10 @@ const cncPortThreadedMode = (() => {
 const threadedUdpBridge = cncPortThreadedMode && typeof SharedArrayBuffer === "function"
   ? createSharedUdpBridge()
   : null;
+if (threadedUdpBridge) {
+  writeSharedMultiplayerNetworkStatus(threadedUdpBridge.networkStatus,
+    formatMultiplayerNetworkStatus());
+}
 const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
 let networkDiagnosticsRtcTimer = null;
 let networkDiagnosticsRtcInFlight = false;
@@ -203,7 +214,8 @@ function recordNetworkDiagnostic(event) {
 function setNetworkDiagnosticsEnabled(enabled, { reset = enabled, reason = "settings" } = {}) {
   const active = networkDiagnostics.setEnabled(enabled === true, { reset, reason });
   if (threadedUdpBridge) {
-    Atomics.store(new Int32Array(threadedUdpBridge.state), 1, active ? 1 : 0);
+    Atomics.store(new Int32Array(threadedUdpBridge.state),
+      SHARED_MULTIPLAYER_NETWORK_STATE.DIAGNOSTICS_ENABLED, active ? 1 : 0);
   }
   if (networkDiagnosticsRtcTimer) {
     clearInterval(networkDiagnosticsRtcTimer);
@@ -836,6 +848,15 @@ const browserWebRtcUdpEndpointRuntime = {
   lastDelivered: null,
   eventLog: [],
   lastError: null,
+  configuration: null,
+  peerMetadata: [],
+  connectionGeneration: 0,
+  peerGeneration: 0,
+  reconnectCount: 0,
+  lastOpenPeers: 0,
+  reconnectPromise: null,
+  lifecycle: MULTIPLAYER_NETWORK_LIFECYCLE.OFFLINE,
+  nativeStatus: formatMultiplayerNetworkStatus(),
 };
 
 const browserLanApiRuntime = {
@@ -1161,6 +1182,9 @@ function createThreadedEngineController() {
         return;
       case "udpFlush":
         drainThreadedUdpOutgoing();
+        return;
+      case "networkReconnect":
+        void reconnectBrowserWebRtcUdpEndpoint();
         return;
       case "networkDiagnostic":
         recordNetworkDiagnostic(msg.event);
@@ -1794,6 +1818,7 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   // WebRTC signaling and RTCDataChannels live in the window realm. Their
   // datagrams cross into the engine worker through threadedUdpBridge.
   "browserWebRtcEndpointConnect",
+  "browserWebRtcEndpointReconnect",
   "browserWebRtcEndpointWaitForPeers",
   "browserWebRtcEndpointState",
   "browserWebRtcEndpointDisconnect",
@@ -3318,8 +3343,70 @@ function connectBrowserUdpEndpoint({ webSocketUrl, client, incomingIp, incomingP
   });
 }
 
-function resetBrowserWebRtcUdpEndpointRuntime() {
-  const closePromise = browserWebRtcUdpEndpointRuntime.endpoint?.close() ?? Promise.resolve();
+function publishBrowserWebRtcNativeStatus({ phase = null, endpoint = null, error = null } = {}) {
+  const state = endpoint ?? browserWebRtcUdpEndpointRuntime.endpoint?.snapshot() ?? null;
+  const openPeers = Math.max(0, Number(state?.openPeers) || 0);
+  if (openPeers > browserWebRtcUdpEndpointRuntime.lastOpenPeers) {
+    browserWebRtcUdpEndpointRuntime.peerGeneration += 1;
+  }
+  browserWebRtcUdpEndpointRuntime.lastOpenPeers = openPeers;
+  const effectivePhase = phase ?? (error
+    ? "error"
+    : state?.discoveryConnected === true
+      ? "online"
+      : "offline");
+  const lifecycle = effectivePhase === "connecting"
+    ? MULTIPLAYER_NETWORK_LIFECYCLE.CONNECTING
+    : effectivePhase === "error"
+      ? MULTIPLAYER_NETWORK_LIFECYCLE.ERROR
+      : openPeers > 0
+        ? MULTIPLAYER_NETWORK_LIFECYCLE.PEER_READY
+        : state?.discoveryConnected === true
+          ? MULTIPLAYER_NETWORK_LIFECYCLE.DISCOVERY_ONLINE
+          : MULTIPLAYER_NETWORK_LIFECYCLE.OFFLINE;
+  const text = formatMultiplayerNetworkStatus({
+    phase: effectivePhase,
+    endpoint: state,
+    configuration: browserWebRtcUdpEndpointRuntime.configuration,
+    error,
+  });
+  browserWebRtcUdpEndpointRuntime.lifecycle = lifecycle;
+  browserWebRtcUdpEndpointRuntime.nativeStatus = text;
+  if (threadedUdpBridge) {
+    const shared = new Int32Array(threadedUdpBridge.state);
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.LIFECYCLE, lifecycle);
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.CONNECTION_GENERATION,
+      browserWebRtcUdpEndpointRuntime.connectionGeneration);
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.PEER_GENERATION,
+      browserWebRtcUdpEndpointRuntime.peerGeneration);
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.OPEN_RELAYS,
+      Math.max(0, Number(state?.openRelays) || 0));
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.RELAY_COUNT,
+      Math.max(0, Number(state?.relays?.length) || 0));
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.OPEN_PEERS, openPeers);
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.PEER_COUNT,
+      Math.max(openPeers, Number(state?.peerCount) || 0));
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.RECONNECT_COUNT,
+      browserWebRtcUdpEndpointRuntime.reconnectCount);
+    writeSharedMultiplayerNetworkStatus(threadedUdpBridge.networkStatus, text);
+  }
+  return text;
+}
+
+function resetBrowserWebRtcUdpEndpointRuntime({
+  preserveConfiguration = true,
+  preserveStatus = false,
+} = {}) {
+  const preservedError = preserveStatus ? browserWebRtcUdpEndpointRuntime.lastError : null;
+  const endpoint = browserWebRtcUdpEndpointRuntime.endpoint;
+  if (!preserveConfiguration
+      || (endpoint && endpoint.room !== browserWebRtcUdpEndpointRuntime.configuration?.room)) {
+    browserWebRtcUdpEndpointRuntime.peerMetadata = [];
+  } else if (endpoint) {
+    const metadata = endpoint.peerMetadata();
+    if (metadata.length > 0) browserWebRtcUdpEndpointRuntime.peerMetadata = metadata;
+  }
+  const closePromise = endpoint?.close() ?? Promise.resolve();
   browserWebRtcUdpEndpointRuntime.enabled = false;
   browserWebRtcUdpEndpointRuntime.endpoint = null;
   browserWebRtcUdpEndpointRuntime.incoming = [];
@@ -3329,12 +3416,19 @@ function resetBrowserWebRtcUdpEndpointRuntime() {
   browserWebRtcUdpEndpointRuntime.lastReceived = null;
   browserWebRtcUdpEndpointRuntime.lastDelivered = null;
   browserWebRtcUdpEndpointRuntime.eventLog = [];
-  browserWebRtcUdpEndpointRuntime.lastError = null;
+  browserWebRtcUdpEndpointRuntime.lastError = preservedError;
+  browserWebRtcUdpEndpointRuntime.lastOpenPeers = 0;
+  if (!preserveConfiguration) browserWebRtcUdpEndpointRuntime.configuration = null;
   if (threadedUdpBridge) {
     clearSharedUdpRing(threadedUdpBridge.incoming);
     clearSharedUdpRing(threadedUdpBridge.outgoing);
-    Atomics.store(new Int32Array(threadedUdpBridge.state), 0, 0);
+    Atomics.store(new Int32Array(threadedUdpBridge.state),
+      SHARED_MULTIPLAYER_NETWORK_STATE.VIRTUAL_IP, 0);
   }
+  publishBrowserWebRtcNativeStatus({
+    phase: preservedError ? "error" : "offline",
+    error: preservedError,
+  });
   return closePromise;
 }
 
@@ -3364,6 +3458,10 @@ function summarizeBrowserWebRtcUdpEndpointRuntime() {
     lastDelivered: browserWebRtcUdpEndpointRuntime.lastDelivered,
     eventLog: [...browserWebRtcUdpEndpointRuntime.eventLog],
     lastError: browserWebRtcUdpEndpointRuntime.lastError ?? endpointState?.lastError ?? null,
+    connectionGeneration: browserWebRtcUdpEndpointRuntime.connectionGeneration,
+    peerGeneration: browserWebRtcUdpEndpointRuntime.peerGeneration,
+    reconnectCount: browserWebRtcUdpEndpointRuntime.reconnectCount,
+    nativeStatus: browserWebRtcUdpEndpointRuntime.nativeStatus,
     endpoint: endpointState,
   };
 }
@@ -3376,13 +3474,23 @@ async function connectBrowserWebRtcUdpEndpoint({
   relayUrls,
   timeoutMs = 20000,
 }) {
-  await resetBrowserWebRtcUdpEndpointRuntime();
+  const previousRoom = browserWebRtcUdpEndpointRuntime.configuration?.room ?? null;
+  const configuration = {
+    room: String(room ?? "").trim(),
+    peerId: peerId == null ? null : String(peerId),
+    displayName: displayName == null ? null : String(displayName),
+    iceServers: Array.isArray(iceServers) ? [...iceServers] : [],
+    relayUrls: Array.isArray(relayUrls) ? [...relayUrls] : null,
+    timeoutMs: Number(timeoutMs) || 20000,
+  };
+  if (previousRoom !== configuration.room) browserWebRtcUdpEndpointRuntime.peerMetadata = [];
+  browserWebRtcUdpEndpointRuntime.configuration = configuration;
+  await resetBrowserWebRtcUdpEndpointRuntime({ preserveConfiguration: true });
+  browserWebRtcUdpEndpointRuntime.lastError = null;
+  publishBrowserWebRtcNativeStatus({ phase: "connecting" });
   const endpoint = createWebRtcUdpEndpoint({
-    room,
-    peerId,
-    displayName,
-    iceServers,
-    relayUrls,
+    ...configuration,
+    knownPeerMetadata: browserWebRtcUdpEndpointRuntime.peerMetadata,
     onDatagram: (datagram) => {
       if (threadedUdpBridge) {
         if (!enqueueSharedUdpDatagram(threadedUdpBridge.incoming, datagram)) {
@@ -3417,16 +3525,60 @@ async function connectBrowserWebRtcUdpEndpoint({
     },
     onStateChange: (state) => {
       browserWebRtcUdpEndpointRuntime.lastError = state.lastError;
+      publishBrowserWebRtcNativeStatus({
+        phase: state.lastError ? "error" : null,
+        endpoint: state,
+        error: state.lastError,
+      });
     },
     onDiagnostic: recordNetworkDiagnostic,
   });
   browserWebRtcUdpEndpointRuntime.endpoint = endpoint;
   browserWebRtcUdpEndpointRuntime.enabled = true;
-  await endpoint.connect(timeoutMs);
-  if (threadedUdpBridge) {
-    Atomics.store(new Int32Array(threadedUdpBridge.state), 0, endpoint.localIp | 0);
+  try {
+    const state = await endpoint.connect(configuration.timeoutMs);
+    browserWebRtcUdpEndpointRuntime.connectionGeneration += 1;
+    if (threadedUdpBridge) {
+      Atomics.store(new Int32Array(threadedUdpBridge.state),
+        SHARED_MULTIPLAYER_NETWORK_STATE.VIRTUAL_IP, endpoint.localIp | 0);
+    }
+    publishBrowserWebRtcNativeStatus({ endpoint: state });
+    return summarizeBrowserWebRtcUdpEndpointRuntime();
+  } catch (error) {
+    browserWebRtcUdpEndpointRuntime.lastError = error?.message ?? String(error);
+    publishBrowserWebRtcNativeStatus({
+      phase: "error",
+      endpoint: endpoint.snapshot(),
+      error: browserWebRtcUdpEndpointRuntime.lastError,
+    });
+    throw error;
   }
-  return summarizeBrowserWebRtcUdpEndpointRuntime();
+}
+
+async function reconnectBrowserWebRtcUdpEndpoint() {
+  if (browserWebRtcUdpEndpointRuntime.reconnectPromise) {
+    return browserWebRtcUdpEndpointRuntime.reconnectPromise;
+  }
+  const configuration = browserWebRtcUdpEndpointRuntime.configuration;
+  if (!configuration?.room) {
+    const error = "No Anonymous room is configured";
+    browserWebRtcUdpEndpointRuntime.lastError = error;
+    publishBrowserWebRtcNativeStatus({ phase: "error", error });
+    return { ok: false, error, runtime: summarizeBrowserWebRtcUdpEndpointRuntime() };
+  }
+  browserWebRtcUdpEndpointRuntime.reconnectCount += 1;
+  const reconnect = connectBrowserWebRtcUdpEndpoint(configuration)
+    .then((runtime) => ({ ok: true, runtime }))
+    .catch((error) => ({
+      ok: false,
+      error: error?.message ?? String(error),
+      runtime: summarizeBrowserWebRtcUdpEndpointRuntime(),
+    }))
+    .finally(() => {
+      browserWebRtcUdpEndpointRuntime.reconnectPromise = null;
+    });
+  browserWebRtcUdpEndpointRuntime.reconnectPromise = reconnect;
+  return reconnect;
 }
 
 function drainThreadedUdpOutgoing() {
@@ -3532,6 +3684,38 @@ function cncPortBrowserUdpClear() {
 
 function cncPortBrowserNetworkVirtualIp() {
   return browserWebRtcUdpEndpointRuntime.endpoint?.localIp >>> 0;
+}
+
+function cncPortBrowserNetworkStatus() {
+  return threadedUdpBridge
+    ? readSharedMultiplayerNetworkStatus(threadedUdpBridge.networkStatus)
+    : browserWebRtcUdpEndpointRuntime.nativeStatus;
+}
+
+function cncPortBrowserNetworkState(index) {
+  const field = Number(index) | 0;
+  if (threadedUdpBridge
+      && field >= 0 && field < SHARED_MULTIPLAYER_NETWORK_STATE.WORDS) {
+    return Atomics.load(new Int32Array(threadedUdpBridge.state), field);
+  }
+  switch (field) {
+    case SHARED_MULTIPLAYER_NETWORK_STATE.LIFECYCLE:
+      return browserWebRtcUdpEndpointRuntime.lifecycle;
+    case SHARED_MULTIPLAYER_NETWORK_STATE.CONNECTION_GENERATION:
+      return browserWebRtcUdpEndpointRuntime.connectionGeneration;
+    case SHARED_MULTIPLAYER_NETWORK_STATE.PEER_GENERATION:
+      return browserWebRtcUdpEndpointRuntime.peerGeneration;
+    case SHARED_MULTIPLAYER_NETWORK_STATE.RECONNECT_COUNT:
+      return browserWebRtcUdpEndpointRuntime.reconnectCount;
+    default:
+      return 0;
+  }
+}
+
+function cncPortBrowserNetworkReconnect() {
+  if (!browserWebRtcUdpEndpointRuntime.configuration?.room) return 0;
+  void reconnectBrowserWebRtcUdpEndpoint();
+  return 1;
 }
 
 function resetBrowserLanApiRuntime() {
@@ -5934,6 +6118,9 @@ async function loadWasmModule() {
       cncPortBrowserUdpRecv,
       cncPortBrowserUdpClear,
       cncPortBrowserNetworkVirtualIp,
+      cncPortBrowserNetworkStatus,
+      cncPortBrowserNetworkState,
+      cncPortBrowserNetworkReconnect,
       cncGdiMeasure,
       cncGdiRasterizeGlyph,
       // Persist the in-game save directory to IndexedDB via IDBFS so ".sav"
@@ -9586,7 +9773,7 @@ async function shutdownBrowserRuntime() {
   const engine = threadedEngine
     ? await threadedEngine.shutdown()
     : { ok: true, alreadyStopped: true };
-  await resetBrowserWebRtcUdpEndpointRuntime();
+  await resetBrowserWebRtcUdpEndpointRuntime({ preserveConfiguration: false });
   const audio = await shutdownBrowserAudioRuntime();
   const io = await shutdownIoWorker();
   const webLocksReleased = releaseOpfsWebLocks();
@@ -9606,7 +9793,7 @@ function forceShutdownBrowserRuntime() {
   const engine = threadedEngine
     ? threadedEngine.forceShutdown("threaded engine force-closed")
     : { ok: true, alreadyStopped: true, forced: true };
-  resetBrowserWebRtcUdpEndpointRuntime();
+  resetBrowserWebRtcUdpEndpointRuntime({ preserveConfiguration: false });
   // Source stop/disconnect happens synchronously before this async helper's
   // first await. Context.close is allowed to finish in the background.
   void shutdownBrowserAudioRuntime();
@@ -23225,6 +23412,10 @@ async function rpc(command, payload = {}) {
           };
         } catch (error) {
           browserWebRtcUdpEndpointRuntime.lastError = error?.message ?? String(error);
+          publishBrowserWebRtcNativeStatus({
+            phase: "error",
+            error: browserWebRtcUdpEndpointRuntime.lastError,
+          });
           return {
             ok: false,
             command,
@@ -23241,8 +23432,20 @@ async function rpc(command, payload = {}) {
         runtime: summarizeBrowserWebRtcUdpEndpointRuntime(),
         state: snapshotState(),
       };
+    case "browserWebRtcEndpointReconnect":
+      {
+        const result = await reconnectBrowserWebRtcUdpEndpoint();
+        return {
+          ...result,
+          command,
+          state: snapshotState(),
+        };
+      }
     case "browserWebRtcEndpointDisconnect":
-      await resetBrowserWebRtcUdpEndpointRuntime();
+      await resetBrowserWebRtcUdpEndpointRuntime({
+        preserveConfiguration: payload?.preserveConfiguration !== false,
+        preserveStatus: payload?.preserveStatus === true,
+      });
       return {
         ok: true,
         command,

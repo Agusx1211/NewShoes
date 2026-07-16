@@ -1,3 +1,8 @@
+import {
+  SHARED_MULTIPLAYER_NETWORK_STATE,
+  createSharedMultiplayerNetworkStatus,
+} from "./multiplayer-network-status.mjs";
+
 const CONTROL_WORDS = 4;
 const METADATA_WORDS = 9;
 const WRITE_INDEX = 0;
@@ -69,8 +74,11 @@ export function createSharedUdpBridge(options = {}) {
   return {
     outgoing: createSharedUdpRing(options),
     incoming: createSharedUdpRing(options),
-    // [0] virtual IPv4 address, [1] detailed network diagnostics enabled.
-    state: new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2),
+    // Fixed atomic state plus a seqlock-protected UTF-8 status line shared
+    // with the original engine's native LAN lobby.
+    state: new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT
+      * SHARED_MULTIPLAYER_NETWORK_STATE.WORDS),
+    networkStatus: createSharedMultiplayerNetworkStatus(),
   };
 }
 

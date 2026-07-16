@@ -15,7 +15,10 @@ function errorText(value, fallback) {
 
 function beginEndpointCleanup(rpc) {
   void Promise.resolve()
-    .then(() => rpc("browserWebRtcEndpointDisconnect", {}))
+    .then(() => rpc("browserWebRtcEndpointDisconnect", {
+      preserveConfiguration: true,
+      preserveStatus: true,
+    }))
     .catch(() => {});
 }
 

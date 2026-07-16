@@ -75,6 +75,13 @@ async function waitForPeer(client, peerId) {
   return result;
 }
 
+async function reconnectClient(client, peerId) {
+  const result = await client.page.evaluate(() =>
+    window.CnCPort.rpc("browserWebRtcEndpointReconnect"));
+  expect(result.ok === true && result.runtime?.reconnectCount === 1,
+    `${peerId} did not accept a reconnect request`, result);
+}
+
 async function waitForDatagram(client) {
   for (let attempt = 0; attempt < 100; ++attempt) {
     const result = await client.page.evaluate(() =>
@@ -119,6 +126,20 @@ try {
       source: sourceReady.runtime.endpoint.localIp,
       destination: destinationReady.runtime.endpoint.localIp,
     });
+
+  for (const [reconnecting, waiting, reconnectingId, waitingId]
+    of [[destination, source, "destination", "source"],
+      [source, destination, "source", "destination"]]) {
+    await reconnectClient(reconnecting, reconnectingId);
+    const [reconnectingState, waitingState] = await Promise.all([
+      waitForPeer(reconnecting, `${reconnectingId} after reconnect`),
+      waitForPeer(waiting, `${waitingId} after ${reconnectingId} reconnect`),
+    ]);
+    expect(reconnectingState.runtime?.endpoint?.openPeers === 1
+        && waitingState.runtime?.endpoint?.openPeers === 1,
+    "both WebRTC endpoints did not recover their peer channel",
+    { reconnectingState, waitingState });
+  }
 
   const sendResult = await source.page.evaluate(() =>
     window.CnCPort.rpc("browserNetworkTransportWebRtcSendProbe"));
