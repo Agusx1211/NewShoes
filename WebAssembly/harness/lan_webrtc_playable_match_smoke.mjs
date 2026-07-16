@@ -389,13 +389,20 @@ try {
   expect(lobbies.every((lobby, index) => lobby.localName === clients[index].commanderName),
     "persisted browser commander identity did not reach the original LAN lobby", lobbies);
 
-  const nativeLobbyFrames = await Promise.all(clients.map((client) => fullFrame(client, 1)));
+  const nativeLobbyFrames = await waitFor("native LAN recovery controls visible", async () =>
+    Promise.all(clients.map((client) => fullFrame(client, 1))),
+  (frames) => frames.every((result) =>
+    result.clientState?.transition?.finished === true
+      && result.clientState?.lanLobby?.buttonReconnect?.text === "Reconnect"
+      && result.clientState?.lanLobby?.networkStatus?.text?.includes("Network: online")),
+  30000, 0);
   expect(nativeLobbyFrames.every((result) =>
     result.clientState?.lanLobby?.buttonReconnect?.text === "Reconnect"
       && result.clientState?.lanLobby?.networkStatus?.text?.includes("Network:")
       && result.clientState?.lanLobby?.networkStatus?.text?.includes("Relay:")),
   "native LAN recovery controls did not expose discovery and relay state",
   nativeLobbyFrames.map((result) => result.clientState?.lanLobby));
+  await fullFrame(host, 1);
   await host.page.locator("#viewport").screenshot({
     path: resolve(artifactRoot, "lan-native-network-status.png"),
   });
@@ -421,6 +428,7 @@ try {
   45000, 100);
   expect(recoveredEndpoints.every((state) => state.runtime.nativeStatus.includes("Relay:")),
     "recovered endpoint state did not retain native relay diagnostics", recoveredEndpoints);
+  await fullFrame(reconnectingClient, 1);
   await reconnectingClient.page.locator("#viewport").screenshot({
     path: resolve(artifactRoot, "lan-native-reconnect-recovered.png"),
   });
