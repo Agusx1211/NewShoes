@@ -5,6 +5,7 @@ import {
   AGENT_PROTOCOL,
   AGENT_SUBPROTOCOL,
   createAgentBridgeConnection,
+  probeAgentBridgeConnection,
 } from "./agent_bridge.mjs";
 
 class FakeWebSocket {
@@ -51,6 +52,62 @@ class FakeWebSocket {
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("probes bridge authentication without creating a runtime controller", async () => {
+  FakeWebSocket.instances.length = 0;
+  const pending = probeAgentBridgeConnection({
+    config: {
+      url: "ws://127.0.0.1:18888/engine?private=1",
+      token: "engine-token",
+      sessionId: "probe-alpha",
+      playMode: "camera",
+    },
+    WebSocketImpl: FakeWebSocket,
+    cryptoImpl: { randomUUID: () => "unused" },
+  });
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  assert.deepEqual(socket.sent, [{
+    type: "probe",
+    protocol: AGENT_PROTOCOL,
+    token: "engine-token",
+    sessionId: "probe-alpha",
+    playMode: "camera",
+  }]);
+  socket.receive({
+    type: "probe",
+    ok: true,
+    protocol: AGENT_PROTOCOL,
+    sessionId: "probe-alpha",
+    playMode: "camera",
+  });
+  assert.deepEqual(await pending, {
+    ok: true,
+    protocol: AGENT_PROTOCOL,
+    endpoint: "ws://127.0.0.1:18888/engine",
+    sessionId: "probe-alpha",
+    playMode: "camera",
+  });
+  assert.equal(socket.readyState, 3);
+});
+
+test("reports a rejected bridge probe", async () => {
+  FakeWebSocket.instances.length = 0;
+  const pending = probeAgentBridgeConnection({
+    config: {
+      url: "ws://127.0.0.1:18888/engine",
+      token: "wrong-token",
+      sessionId: "probe-rejected",
+      playMode: "global",
+    },
+    WebSocketImpl: FakeWebSocket,
+    cryptoImpl: { randomUUID: () => "unused" },
+  });
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  socket.close(1008, "invalid engine hello");
+  await assert.rejects(pending, /rejected the browser token or play mode/);
+});
 
 test("authenticates and maps raw UI requests to engine-thread RPC", async () => {
   FakeWebSocket.instances.length = 0;
@@ -568,7 +625,7 @@ test("requires explicit opt-in URL and token", () => {
     rpc: async () => {},
     WebSocketImpl: FakeWebSocket,
     cryptoImpl: { randomUUID: () => "unused" },
-  }), /url must be/);
+  }), /configuration must be an object/);
   assert.throws(() => createAgentBridgeConnection({
     config: { url: "https://example.com/engine", token: "token" },
     rpc: async () => {},

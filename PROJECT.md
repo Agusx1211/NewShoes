@@ -56,6 +56,13 @@ versioned raw WebSocket protocol, and the optional Go process in
 the launcher has no agent configuration, it does not import the adapter or
 create a socket, reconnect timer, or per-frame work.
 
+The pre-launch Remote Agent app remembers the enabled state, bridge URL,
+session ID, and fixed play mode in origin-local storage. Its browser credential
+remains memory-only unless the operator explicitly chooses device-local token
+storage. A bounded authenticated probe verifies reachability, credential, and
+mode agreement without registering a playable session or starting the runtime
+adapter.
+
 The `cnc-agent/1` surface exposes the original `GameWindowManager` tree, real
 gadget action paths, fog/stealth-filtered battlefield state, camera-bounded
 visibility, compact tactical object records, and compact terrain grids. The
