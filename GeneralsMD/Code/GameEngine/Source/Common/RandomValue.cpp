@@ -155,6 +155,20 @@ UnsignedInt GetGameLogicRandomSeedCRC( void )
 	return c.get();
 }
 
+UnsignedInt MixRandomSeed( UnsignedInt seed, UnsignedInt stream )
+{
+	// Separate nearby seeds and streams before applying a 32-bit avalanche mix.
+	// This is useful for deterministic setup choices that must not inherit the
+	// weak first-value correlation of the legacy stateful generator.
+	UnsignedInt value = seed + 0x9e3779b9U * (stream + 1U);
+	value ^= value >> 16;
+	value *= 0x85ebca6bU;
+	value ^= value >> 13;
+	value *= 0xc2b2ae35U;
+	value ^= value >> 16;
+	return value;
+}
+
 void InitRandom( void )
 {
 #ifdef DETERMINISTIC
@@ -439,4 +453,3 @@ Real GameLogicRandomVariable::getValue( void ) const
 			return 0.0f;
 	}
 }
-

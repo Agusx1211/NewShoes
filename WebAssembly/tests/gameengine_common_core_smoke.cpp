@@ -1614,6 +1614,8 @@ bool exercise_random_and_crc()
 	const Real logic_real_a = GetGameLogicRandomValueReal(-1.0f, 1.0f, file, 2);
 	const Int client_a = GetGameClientRandomValue(10, 100, file, 3);
 	const UnsignedInt seed_crc_a = GetGameLogicRandomSeedCRC();
+	(void)MixRandomSeed(0x12345678U, 7);
+	const UnsignedInt seed_crc_after_mix = GetGameLogicRandomSeedCRC();
 
 	InitRandom(0x12345678U);
 	const Int logic_b = GetGameLogicRandomValue(10, 100, file, 1);
@@ -1625,10 +1627,35 @@ bool exercise_random_and_crc()
 	const char payload[] = "ZeroHour";
 	crc.computeCRC(payload, static_cast<Int>(std::strlen(payload)));
 
+	constexpr Int kFactionCount = 12;
+	constexpr UnsignedInt kSeedCount = 120000;
+	Int faction_counts[2][kFactionCount] = {};
+	UnsignedInt duplicate_count = 0;
+	for (UnsignedInt seed = 0; seed < kSeedCount; ++seed) {
+		const Int first = static_cast<Int>(MixRandomSeed(seed, 0) % kFactionCount);
+		const Int second = static_cast<Int>(MixRandomSeed(seed, 1) % kFactionCount);
+		++faction_counts[0][first];
+		++faction_counts[1][second];
+		duplicate_count += first == second;
+	}
+
+	bool faction_distribution_ok = duplicate_count >= 9500 && duplicate_count <= 10500;
+	for (Int stream = 0; stream < 2; ++stream) {
+		for (Int faction = 0; faction < kFactionCount; ++faction) {
+			faction_distribution_ok = faction_distribution_ok &&
+				faction_counts[stream][faction] >= 9500 && faction_counts[stream][faction] <= 10500;
+		}
+	}
+
 	return expect(GetGameLogicRandomSeed() == 0x12345678U, "logic seed tracking failed") &&
 		expect(logic_a == logic_b && client_a == client_b, "random integer replay failed") &&
 		expect(near(logic_real_a, logic_real_b, 0.00001f), "random real replay failed") &&
 		expect(seed_crc_a == seed_crc_b, "random seed CRC replay failed") &&
+		expect(seed_crc_after_mix == seed_crc_a, "mixed random seed advanced the logic RNG") &&
+		expect(MixRandomSeed(0, 0) == 0x92ca2f0eU, "mixed random seed vector failed") &&
+		expect(MixRandomSeed(0x12345678U, 7) == 0x1e22c835U,
+			"mixed random stream vector failed") &&
+		expect(faction_distribution_ok, "mixed random faction distribution is biased") &&
 		expect(crc.get() == 0x60c8U, "GameEngine CRC vector failed");
 }
 
