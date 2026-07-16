@@ -94,6 +94,8 @@ public:
 	virtual int updateBlock(Int x0, Int y0, Int x1, Int y1, WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIterator);
 
 protected:
+	void setTerrainDrawSize(Int width, Int height);
+
 	Int *m_extraBlendTilePositions;	///<array holding x,y tile positions of all extra blend tiles. (used for 3 textures per tile).
 	Int m_numExtraBlendTiles;		///<number of blend tiles in m_extraBlendTilePositions.
 	Int	m_numVisibleExtraBlendTiles; ///<number rendered last frame.	

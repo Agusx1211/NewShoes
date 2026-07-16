@@ -15,6 +15,7 @@ import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
 import { createReplayFileStore } from "./replay-file-store.mjs";
 import { createTransferUserDataStore } from "./transfer-user-data-store.mjs";
+import { createTouchControls } from "./touch-controls.mjs";
 import {
   CNC_PORT_MOD_DATA_ROOT,
   loadActiveModContext,
@@ -22,6 +23,13 @@ import {
   vanillaModContext,
 } from "./mod-context.mjs";
 import { createWebRtcUdpEndpoint } from "./webrtc-udp-endpoint.mjs";
+import {
+  MULTIPLAYER_NETWORK_LIFECYCLE,
+  SHARED_MULTIPLAYER_NETWORK_STATE,
+  formatMultiplayerNetworkStatus,
+  readSharedMultiplayerNetworkStatus,
+  writeSharedMultiplayerNetworkStatus,
+} from "./multiplayer-network-status.mjs";
 import { networkDiagnostics } from "./network-diagnostics.mjs";
 import {
   clearSharedUdpRing,
@@ -187,6 +195,10 @@ const cncPortThreadedMode = (() => {
 const threadedUdpBridge = cncPortThreadedMode && typeof SharedArrayBuffer === "function"
   ? createSharedUdpBridge()
   : null;
+if (threadedUdpBridge) {
+  writeSharedMultiplayerNetworkStatus(threadedUdpBridge.networkStatus,
+    formatMultiplayerNetworkStatus());
+}
 const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
 let networkDiagnosticsRtcTimer = null;
 let networkDiagnosticsRtcInFlight = false;
@@ -202,7 +214,8 @@ function recordNetworkDiagnostic(event) {
 function setNetworkDiagnosticsEnabled(enabled, { reset = enabled, reason = "settings" } = {}) {
   const active = networkDiagnostics.setEnabled(enabled === true, { reset, reason });
   if (threadedUdpBridge) {
-    Atomics.store(new Int32Array(threadedUdpBridge.state), 1, active ? 1 : 0);
+    Atomics.store(new Int32Array(threadedUdpBridge.state),
+      SHARED_MULTIPLAYER_NETWORK_STATE.DIAGNOSTICS_ENABLED, active ? 1 : 0);
   }
   if (networkDiagnosticsRtcTimer) {
     clearInterval(networkDiagnosticsRtcTimer);
@@ -458,6 +471,7 @@ const harnessState = {
   timing: null,
   win32Timing: null,
   browserInput: null,
+  touchUi: null,
   browserDirectInput: {
     source: "browser_directinput_keyboard_queue",
     lastCode: null,
@@ -834,6 +848,15 @@ const browserWebRtcUdpEndpointRuntime = {
   lastDelivered: null,
   eventLog: [],
   lastError: null,
+  configuration: null,
+  peerMetadata: [],
+  connectionGeneration: 0,
+  peerGeneration: 0,
+  reconnectCount: 0,
+  lastOpenPeers: 0,
+  reconnectPromise: null,
+  lifecycle: MULTIPLAYER_NETWORK_LIFECYCLE.OFFLINE,
+  nativeStatus: formatMultiplayerNetworkStatus(),
 };
 
 const browserLanApiRuntime = {
@@ -1089,6 +1112,7 @@ function createThreadedEngineController() {
   function applyThreadedStatus(status) {
     lastStatus = status;
     harnessState.threadedEngine = status;
+    harnessState.touchUi = status.touchUi ?? null;
     networkDiagnostics.recordEngineSample({
       source: "engine-thread-status",
       workerStatusSeq: status.seq ?? null,
@@ -1158,6 +1182,9 @@ function createThreadedEngineController() {
         return;
       case "udpFlush":
         drainThreadedUdpOutgoing();
+        return;
+      case "networkReconnect":
+        void reconnectBrowserWebRtcUdpEndpoint();
         return;
       case "networkDiagnostic":
         recordNetworkDiagnostic(msg.event);
@@ -1791,6 +1818,7 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   // WebRTC signaling and RTCDataChannels live in the window realm. Their
   // datagrams cross into the engine worker through threadedUdpBridge.
   "browserWebRtcEndpointConnect",
+  "browserWebRtcEndpointReconnect",
   "browserWebRtcEndpointWaitForPeers",
   "browserWebRtcEndpointState",
   "browserWebRtcEndpointDisconnect",
@@ -3315,8 +3343,70 @@ function connectBrowserUdpEndpoint({ webSocketUrl, client, incomingIp, incomingP
   });
 }
 
-function resetBrowserWebRtcUdpEndpointRuntime() {
-  const closePromise = browserWebRtcUdpEndpointRuntime.endpoint?.close() ?? Promise.resolve();
+function publishBrowserWebRtcNativeStatus({ phase = null, endpoint = null, error = null } = {}) {
+  const state = endpoint ?? browserWebRtcUdpEndpointRuntime.endpoint?.snapshot() ?? null;
+  const openPeers = Math.max(0, Number(state?.openPeers) || 0);
+  if (openPeers > browserWebRtcUdpEndpointRuntime.lastOpenPeers) {
+    browserWebRtcUdpEndpointRuntime.peerGeneration += 1;
+  }
+  browserWebRtcUdpEndpointRuntime.lastOpenPeers = openPeers;
+  const effectivePhase = phase ?? (error
+    ? "error"
+    : state?.discoveryConnected === true
+      ? "online"
+      : "offline");
+  const lifecycle = effectivePhase === "connecting"
+    ? MULTIPLAYER_NETWORK_LIFECYCLE.CONNECTING
+    : effectivePhase === "error"
+      ? MULTIPLAYER_NETWORK_LIFECYCLE.ERROR
+      : openPeers > 0
+        ? MULTIPLAYER_NETWORK_LIFECYCLE.PEER_READY
+        : state?.discoveryConnected === true
+          ? MULTIPLAYER_NETWORK_LIFECYCLE.DISCOVERY_ONLINE
+          : MULTIPLAYER_NETWORK_LIFECYCLE.OFFLINE;
+  const text = formatMultiplayerNetworkStatus({
+    phase: effectivePhase,
+    endpoint: state,
+    configuration: browserWebRtcUdpEndpointRuntime.configuration,
+    error,
+  });
+  browserWebRtcUdpEndpointRuntime.lifecycle = lifecycle;
+  browserWebRtcUdpEndpointRuntime.nativeStatus = text;
+  if (threadedUdpBridge) {
+    const shared = new Int32Array(threadedUdpBridge.state);
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.LIFECYCLE, lifecycle);
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.CONNECTION_GENERATION,
+      browserWebRtcUdpEndpointRuntime.connectionGeneration);
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.PEER_GENERATION,
+      browserWebRtcUdpEndpointRuntime.peerGeneration);
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.OPEN_RELAYS,
+      Math.max(0, Number(state?.openRelays) || 0));
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.RELAY_COUNT,
+      Math.max(0, Number(state?.relays?.length) || 0));
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.OPEN_PEERS, openPeers);
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.PEER_COUNT,
+      Math.max(openPeers, Number(state?.peerCount) || 0));
+    Atomics.store(shared, SHARED_MULTIPLAYER_NETWORK_STATE.RECONNECT_COUNT,
+      browserWebRtcUdpEndpointRuntime.reconnectCount);
+    writeSharedMultiplayerNetworkStatus(threadedUdpBridge.networkStatus, text);
+  }
+  return text;
+}
+
+function resetBrowserWebRtcUdpEndpointRuntime({
+  preserveConfiguration = true,
+  preserveStatus = false,
+} = {}) {
+  const preservedError = preserveStatus ? browserWebRtcUdpEndpointRuntime.lastError : null;
+  const endpoint = browserWebRtcUdpEndpointRuntime.endpoint;
+  if (!preserveConfiguration
+      || (endpoint && endpoint.room !== browserWebRtcUdpEndpointRuntime.configuration?.room)) {
+    browserWebRtcUdpEndpointRuntime.peerMetadata = [];
+  } else if (endpoint) {
+    const metadata = endpoint.peerMetadata();
+    if (metadata.length > 0) browserWebRtcUdpEndpointRuntime.peerMetadata = metadata;
+  }
+  const closePromise = endpoint?.close() ?? Promise.resolve();
   browserWebRtcUdpEndpointRuntime.enabled = false;
   browserWebRtcUdpEndpointRuntime.endpoint = null;
   browserWebRtcUdpEndpointRuntime.incoming = [];
@@ -3326,12 +3416,19 @@ function resetBrowserWebRtcUdpEndpointRuntime() {
   browserWebRtcUdpEndpointRuntime.lastReceived = null;
   browserWebRtcUdpEndpointRuntime.lastDelivered = null;
   browserWebRtcUdpEndpointRuntime.eventLog = [];
-  browserWebRtcUdpEndpointRuntime.lastError = null;
+  browserWebRtcUdpEndpointRuntime.lastError = preservedError;
+  browserWebRtcUdpEndpointRuntime.lastOpenPeers = 0;
+  if (!preserveConfiguration) browserWebRtcUdpEndpointRuntime.configuration = null;
   if (threadedUdpBridge) {
     clearSharedUdpRing(threadedUdpBridge.incoming);
     clearSharedUdpRing(threadedUdpBridge.outgoing);
-    Atomics.store(new Int32Array(threadedUdpBridge.state), 0, 0);
+    Atomics.store(new Int32Array(threadedUdpBridge.state),
+      SHARED_MULTIPLAYER_NETWORK_STATE.VIRTUAL_IP, 0);
   }
+  publishBrowserWebRtcNativeStatus({
+    phase: preservedError ? "error" : "offline",
+    error: preservedError,
+  });
   return closePromise;
 }
 
@@ -3361,6 +3458,10 @@ function summarizeBrowserWebRtcUdpEndpointRuntime() {
     lastDelivered: browserWebRtcUdpEndpointRuntime.lastDelivered,
     eventLog: [...browserWebRtcUdpEndpointRuntime.eventLog],
     lastError: browserWebRtcUdpEndpointRuntime.lastError ?? endpointState?.lastError ?? null,
+    connectionGeneration: browserWebRtcUdpEndpointRuntime.connectionGeneration,
+    peerGeneration: browserWebRtcUdpEndpointRuntime.peerGeneration,
+    reconnectCount: browserWebRtcUdpEndpointRuntime.reconnectCount,
+    nativeStatus: browserWebRtcUdpEndpointRuntime.nativeStatus,
     endpoint: endpointState,
   };
 }
@@ -3373,13 +3474,23 @@ async function connectBrowserWebRtcUdpEndpoint({
   relayUrls,
   timeoutMs = 20000,
 }) {
-  await resetBrowserWebRtcUdpEndpointRuntime();
+  const previousRoom = browserWebRtcUdpEndpointRuntime.configuration?.room ?? null;
+  const configuration = {
+    room: String(room ?? "").trim(),
+    peerId: peerId == null ? null : String(peerId),
+    displayName: displayName == null ? null : String(displayName),
+    iceServers: Array.isArray(iceServers) ? [...iceServers] : [],
+    relayUrls: Array.isArray(relayUrls) ? [...relayUrls] : null,
+    timeoutMs: Number(timeoutMs) || 20000,
+  };
+  if (previousRoom !== configuration.room) browserWebRtcUdpEndpointRuntime.peerMetadata = [];
+  browserWebRtcUdpEndpointRuntime.configuration = configuration;
+  await resetBrowserWebRtcUdpEndpointRuntime({ preserveConfiguration: true });
+  browserWebRtcUdpEndpointRuntime.lastError = null;
+  publishBrowserWebRtcNativeStatus({ phase: "connecting" });
   const endpoint = createWebRtcUdpEndpoint({
-    room,
-    peerId,
-    displayName,
-    iceServers,
-    relayUrls,
+    ...configuration,
+    knownPeerMetadata: browserWebRtcUdpEndpointRuntime.peerMetadata,
     onDatagram: (datagram) => {
       if (threadedUdpBridge) {
         if (!enqueueSharedUdpDatagram(threadedUdpBridge.incoming, datagram)) {
@@ -3414,16 +3525,60 @@ async function connectBrowserWebRtcUdpEndpoint({
     },
     onStateChange: (state) => {
       browserWebRtcUdpEndpointRuntime.lastError = state.lastError;
+      publishBrowserWebRtcNativeStatus({
+        phase: state.lastError ? "error" : null,
+        endpoint: state,
+        error: state.lastError,
+      });
     },
     onDiagnostic: recordNetworkDiagnostic,
   });
   browserWebRtcUdpEndpointRuntime.endpoint = endpoint;
   browserWebRtcUdpEndpointRuntime.enabled = true;
-  await endpoint.connect(timeoutMs);
-  if (threadedUdpBridge) {
-    Atomics.store(new Int32Array(threadedUdpBridge.state), 0, endpoint.localIp | 0);
+  try {
+    const state = await endpoint.connect(configuration.timeoutMs);
+    browserWebRtcUdpEndpointRuntime.connectionGeneration += 1;
+    if (threadedUdpBridge) {
+      Atomics.store(new Int32Array(threadedUdpBridge.state),
+        SHARED_MULTIPLAYER_NETWORK_STATE.VIRTUAL_IP, endpoint.localIp | 0);
+    }
+    publishBrowserWebRtcNativeStatus({ endpoint: state });
+    return summarizeBrowserWebRtcUdpEndpointRuntime();
+  } catch (error) {
+    browserWebRtcUdpEndpointRuntime.lastError = error?.message ?? String(error);
+    publishBrowserWebRtcNativeStatus({
+      phase: "error",
+      endpoint: endpoint.snapshot(),
+      error: browserWebRtcUdpEndpointRuntime.lastError,
+    });
+    throw error;
   }
-  return summarizeBrowserWebRtcUdpEndpointRuntime();
+}
+
+async function reconnectBrowserWebRtcUdpEndpoint() {
+  if (browserWebRtcUdpEndpointRuntime.reconnectPromise) {
+    return browserWebRtcUdpEndpointRuntime.reconnectPromise;
+  }
+  const configuration = browserWebRtcUdpEndpointRuntime.configuration;
+  if (!configuration?.room) {
+    const error = "No Anonymous room is configured";
+    browserWebRtcUdpEndpointRuntime.lastError = error;
+    publishBrowserWebRtcNativeStatus({ phase: "error", error });
+    return { ok: false, error, runtime: summarizeBrowserWebRtcUdpEndpointRuntime() };
+  }
+  browserWebRtcUdpEndpointRuntime.reconnectCount += 1;
+  const reconnect = connectBrowserWebRtcUdpEndpoint(configuration)
+    .then((runtime) => ({ ok: true, runtime }))
+    .catch((error) => ({
+      ok: false,
+      error: error?.message ?? String(error),
+      runtime: summarizeBrowserWebRtcUdpEndpointRuntime(),
+    }))
+    .finally(() => {
+      browserWebRtcUdpEndpointRuntime.reconnectPromise = null;
+    });
+  browserWebRtcUdpEndpointRuntime.reconnectPromise = reconnect;
+  return reconnect;
 }
 
 function drainThreadedUdpOutgoing() {
@@ -3529,6 +3684,38 @@ function cncPortBrowserUdpClear() {
 
 function cncPortBrowserNetworkVirtualIp() {
   return browserWebRtcUdpEndpointRuntime.endpoint?.localIp >>> 0;
+}
+
+function cncPortBrowserNetworkStatus() {
+  return threadedUdpBridge
+    ? readSharedMultiplayerNetworkStatus(threadedUdpBridge.networkStatus)
+    : browserWebRtcUdpEndpointRuntime.nativeStatus;
+}
+
+function cncPortBrowserNetworkState(index) {
+  const field = Number(index) | 0;
+  if (threadedUdpBridge
+      && field >= 0 && field < SHARED_MULTIPLAYER_NETWORK_STATE.WORDS) {
+    return Atomics.load(new Int32Array(threadedUdpBridge.state), field);
+  }
+  switch (field) {
+    case SHARED_MULTIPLAYER_NETWORK_STATE.LIFECYCLE:
+      return browserWebRtcUdpEndpointRuntime.lifecycle;
+    case SHARED_MULTIPLAYER_NETWORK_STATE.CONNECTION_GENERATION:
+      return browserWebRtcUdpEndpointRuntime.connectionGeneration;
+    case SHARED_MULTIPLAYER_NETWORK_STATE.PEER_GENERATION:
+      return browserWebRtcUdpEndpointRuntime.peerGeneration;
+    case SHARED_MULTIPLAYER_NETWORK_STATE.RECONNECT_COUNT:
+      return browserWebRtcUdpEndpointRuntime.reconnectCount;
+    default:
+      return 0;
+  }
+}
+
+function cncPortBrowserNetworkReconnect() {
+  if (!browserWebRtcUdpEndpointRuntime.configuration?.room) return 0;
+  void reconnectBrowserWebRtcUdpEndpoint();
+  return 1;
 }
 
 function resetBrowserLanApiRuntime() {
@@ -5931,6 +6118,9 @@ async function loadWasmModule() {
       cncPortBrowserUdpRecv,
       cncPortBrowserUdpClear,
       cncPortBrowserNetworkVirtualIp,
+      cncPortBrowserNetworkStatus,
+      cncPortBrowserNetworkState,
+      cncPortBrowserNetworkReconnect,
       cncGdiMeasure,
       cncGdiRasterizeGlyph,
       // Persist the in-game save directory to IndexedDB via IDBFS so ".sav"
@@ -9583,7 +9773,7 @@ async function shutdownBrowserRuntime() {
   const engine = threadedEngine
     ? await threadedEngine.shutdown()
     : { ok: true, alreadyStopped: true };
-  await resetBrowserWebRtcUdpEndpointRuntime();
+  await resetBrowserWebRtcUdpEndpointRuntime({ preserveConfiguration: false });
   const audio = await shutdownBrowserAudioRuntime();
   const io = await shutdownIoWorker();
   const webLocksReleased = releaseOpfsWebLocks();
@@ -9603,7 +9793,7 @@ function forceShutdownBrowserRuntime() {
   const engine = threadedEngine
     ? threadedEngine.forceShutdown("threaded engine force-closed")
     : { ok: true, alreadyStopped: true, forced: true };
-  resetBrowserWebRtcUdpEndpointRuntime();
+  resetBrowserWebRtcUdpEndpointRuntime({ preserveConfiguration: false });
   // Source stop/disconnect happens synchronously before this async helper's
   // first await. Context.close is allowed to finish in the background.
   void shutdownBrowserAudioRuntime();
@@ -9848,6 +10038,7 @@ function virtualKeyFromEvent(event) {
     NumpadSubtract: 0x6d,
     NumpadDecimal: 0x6e,
     NumpadDivide: 0x6f,
+    NumpadEnter: 0x0d,
     F1: 0x70,
     F2: 0x71,
     F3: 0x72,
@@ -10264,6 +10455,11 @@ function resetBrowserPointerCaptureState() {
 
 function wheelWParam(event) {
   const delta = event.deltaY > 0 ? -120 : 120;
+  return (delta & 0xffff) << 16;
+}
+
+function wheelWParamFromSteps(steps) {
+  const delta = steps >= 0 ? 120 : -120;
   return (delta & 0xffff) << 16;
 }
 
@@ -23216,6 +23412,10 @@ async function rpc(command, payload = {}) {
           };
         } catch (error) {
           browserWebRtcUdpEndpointRuntime.lastError = error?.message ?? String(error);
+          publishBrowserWebRtcNativeStatus({
+            phase: "error",
+            error: browserWebRtcUdpEndpointRuntime.lastError,
+          });
           return {
             ok: false,
             command,
@@ -23232,8 +23432,20 @@ async function rpc(command, payload = {}) {
         runtime: summarizeBrowserWebRtcUdpEndpointRuntime(),
         state: snapshotState(),
       };
+    case "browserWebRtcEndpointReconnect":
+      {
+        const result = await reconnectBrowserWebRtcUdpEndpoint();
+        return {
+          ...result,
+          command,
+          state: snapshotState(),
+        };
+      }
     case "browserWebRtcEndpointDisconnect":
-      await resetBrowserWebRtcUdpEndpointRuntime();
+      await resetBrowserWebRtcUdpEndpointRuntime({
+        preserveConfiguration: payload?.preserveConfiguration !== false,
+        preserveStatus: payload?.preserveStatus === true,
+      });
       return {
         ok: true,
         command,
@@ -24084,6 +24296,226 @@ async function rpc(command, payload = {}) {
   }
 }
 
+function touchInputModeForClientPoint(clientPoint) {
+  const point = canvasInputPointFromEvent({
+    clientX: clientPoint?.x ?? 0,
+    clientY: clientPoint?.y ?? 0,
+  });
+  const entries = Array.isArray(harnessState.touchUi?.entries)
+    ? harnessState.touchUi.entries : [];
+  for (let index = entries.length - 1; index >= 0; --index) {
+    const entry = entries[index];
+    const rect = entry?.rect;
+    if (!rect) continue;
+    if (point.x >= rect.x && point.x < rect.x + rect.width
+        && point.y >= rect.y && point.y < rect.y + rect.height) {
+      return entry.inputMode === "numeric" ? "numeric" : "text";
+    }
+  }
+  return null;
+}
+
+function touchFocusedInputMode() {
+  const mode = harnessState.touchUi?.focusedInputMode;
+  return mode === "numeric" ? "numeric" : mode === "text" ? "text" : null;
+}
+
+function touchPointToEngine(clientPoint) {
+  return canvasInputPointFromEvent({
+    clientX: clientPoint?.x ?? 0,
+    clientY: clientPoint?.y ?? 0,
+  });
+}
+
+function forwardTouchMove(clientPoint) {
+  const point = touchPointToEngine(clientPoint);
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: {
+      message: win32Messages.mouseMove,
+      lParam: win32PointLParam(point),
+      point,
+    },
+  });
+}
+
+function forwardTouchButton(button, down, clientPoint, timestamp) {
+  const point = touchPointToEngine(clientPoint);
+  const event = { button, timeStamp: timestamp };
+  const message = mouseButtonMessage(event, down, point);
+  if (!down) rememberPointerUpForDoubleClick(event, point);
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: message >= 0 ? {
+      message,
+      lParam: win32PointLParam(point),
+      point,
+    } : null,
+  });
+}
+
+function forwardTouchWheel(steps, clientPoint) {
+  const point = touchPointToEngine(clientPoint);
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: {
+      message: win32Messages.mouseWheel,
+      wParam: wheelWParamFromSteps(steps),
+      lParam: win32PointLParam(point),
+      point,
+    },
+  });
+}
+
+let touchRotation = null;
+function startTouchRotation(clientPoint, timestamp) {
+  const point = touchPointToEngine(clientPoint);
+  touchRotation = { anchor: point, current: point };
+  const event = { button: 1, timeStamp: timestamp };
+  const message = mouseButtonMessage(event, true, point);
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: { message, lParam: win32PointLParam(point), point },
+  });
+}
+
+function moveTouchRotation(radians) {
+  if (!touchRotation) return;
+  const width = harnessState.engineDisplaySize?.width ?? canvas.width;
+  const point = {
+    x: Math.max(0, Math.min(width - 1,
+      Math.round(touchRotation.anchor.x + Number(radians || 0) / 0.01))),
+    y: touchRotation.anchor.y,
+  };
+  touchRotation.current = point;
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: {
+      message: win32Messages.mouseMove,
+      lParam: win32PointLParam(point),
+      point,
+    },
+  });
+}
+
+function endTouchRotation(_clientPoint, timestamp) {
+  if (!touchRotation) return;
+  const point = touchRotation.current;
+  const event = { button: 1, timeStamp: timestamp };
+  const message = mouseButtonMessage(event, false, point);
+  rememberPointerUpForDoubleClick(event, point);
+  touchRotation = null;
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: { message, lParam: win32PointLParam(point), point },
+  });
+}
+
+function shiftedTouchKeyValue(code, key, shift) {
+  if (!shift || typeof key !== "string" || key.length !== 1) return key;
+  if (/^[a-z]$/.test(key)) return key.toUpperCase();
+  const shifted = {
+    Digit1: "!", Digit2: "@", Digit3: "#", Digit4: "$", Digit5: "%",
+    Digit6: "^", Digit7: "&", Digit8: "*", Digit9: "(", Digit0: ")",
+    Minus: "_", Equal: "+", BracketLeft: "{", BracketRight: "}",
+    Semicolon: ":", Quote: "\"", Backquote: "~", Backslash: "|",
+    Comma: "<", Period: ">", Slash: "?",
+  };
+  return shifted[code] ?? key;
+}
+
+async function forwardTouchKeyStroke({ code, key, modifiers = [] }) {
+  const modifierCodes = modifiers.filter((value) =>
+    ["ControlLeft", "ShiftLeft", "AltLeft"].includes(value));
+  const modifierSet = new Set(modifierCodes);
+  const timestamp = performance.now();
+  const send = async (event, down, offset) => {
+    const virtualKey = virtualKeyFromEvent(event);
+    if (virtualKey < 0) return;
+    await pushBrowserInputToWasmLite({
+      virtualKey,
+      keyDown: down,
+      directInputCode: directInputScanCodeFromEvent(event),
+      timestamp: timestamp + offset,
+      win32Message: {
+        message: down ? win32Messages.keyDown : win32Messages.keyUp,
+        wParam: virtualKey,
+      },
+    });
+  };
+
+  let offset = 0;
+  for (const modifierCode of modifierCodes) {
+    await send({ code: modifierCode, key: modifierCode }, true, offset++);
+  }
+  const event = {
+    code,
+    key: shiftedTouchKeyValue(code, key, modifierSet.has("ShiftLeft")),
+    ctrlKey: modifierSet.has("ControlLeft"),
+    shiftKey: modifierSet.has("ShiftLeft"),
+    altKey: modifierSet.has("AltLeft"),
+    metaKey: false,
+    isComposing: false,
+  };
+  await send(event, true, offset++);
+  const charCode = win32CharCodeFromEvent(event);
+  if (charCode >= 0) {
+    await pushBrowserInputToWasmLite({
+      win32Message: { message: win32Messages.char, wParam: charCode },
+    });
+  }
+  await send(event, false, offset++);
+  for (const modifierCode of modifierCodes.reverse()) {
+    await send({ code: modifierCode, key: modifierCode }, false, offset++);
+  }
+}
+
+function forwardTouchComposition(phase, text) {
+  if (phase === "start") {
+    void postBrowserMessageToWasm({ message: win32Messages.imeStartComposition });
+  } else if (phase === "update") {
+    void postBrowserMessageToWasm({
+      message: win32Messages.imeComposition,
+      wParam: lastUtf16CodeUnit(text),
+      lParam: win32ImeCompositionFlags.compositionString,
+    });
+  } else if (phase === "end") {
+    void (async () => {
+      if (text.length > 0) {
+        await postBrowserMessageToWasm({
+          message: win32Messages.imeComposition,
+          wParam: lastUtf16CodeUnit(text),
+          lParam: win32ImeCompositionFlags.resultString,
+        });
+      }
+      await postBrowserMessageToWasm({ message: win32Messages.imeEndComposition });
+      await postBrowserTextToWasm(text);
+    })();
+  }
+}
+
+const touchTextInput = document.querySelector("#touchTextInput");
+const touchControls = createTouchControls({
+  canvas,
+  root: document.querySelector("#touchControls"),
+  textInput: touchTextInput,
+  textBar: document.querySelector("#touchTextBar"),
+  onMove: forwardTouchMove,
+  onButton: forwardTouchButton,
+  onWheel: forwardTouchWheel,
+  onRotateStart: startTouchRotation,
+  onRotateMove: moveTouchRotation,
+  onRotateEnd: endTouchRotation,
+  onKeyStroke: (stroke) => { void forwardTouchKeyStroke(stroke); },
+  onText: (text) => { void postBrowserTextToWasm(text); },
+  onComposition: forwardTouchComposition,
+  textInputModeAtPoint: touchInputModeForClientPoint,
+  focusedTextInputMode: touchFocusedInputMode,
+  onViewportKeyboardChange: (open) => {
+    harnessState.touchKeyboardOpen = open;
+  },
+});
+
 paintBlackWindow();
 syncStatus();
 
@@ -24098,7 +24530,8 @@ canvas.tabIndex = 0;
 canvas.addEventListener("focus", () => {
   void setBrowserWin32Focus(true);
 });
-canvas.addEventListener("blur", () => {
+canvas.addEventListener("blur", (event) => {
+  if (touchTextInput && event.relatedTarget === touchTextInput) return;
   void setBrowserWin32Focus(false);
 });
 canvas.addEventListener("compositionstart", () => {
@@ -24180,6 +24613,7 @@ window.addEventListener("pageshow", () => {
 });
 
 canvas.addEventListener("pointermove", (event) => {
+  if (touchControls.handlePointerMove?.(event)) return;
   const point = canvasInputPointFromEvent(event);
   void pushBrowserInputToWasmLite({
     cursor: point,
@@ -24191,7 +24625,12 @@ canvas.addEventListener("pointermove", (event) => {
   });
 });
 canvas.addEventListener("pointerdown", (event) => {
-  canvas.focus();
+  try {
+    canvas.focus({ preventScroll: true });
+  } catch {
+    canvas.focus();
+  }
+  if (touchControls.handlePointerDown?.(event)) return;
   const point = canvasInputPointFromEvent(event);
   const message = mouseButtonMessage(event, true, point);
   claimBrowserPointerCapture(event);
@@ -24206,6 +24645,7 @@ canvas.addEventListener("pointerdown", (event) => {
   });
 });
 canvas.addEventListener("pointerup", (event) => {
+  if (touchControls.handlePointerUp?.(event)) return;
   const point = canvasInputPointFromEvent(event);
   const message = mouseButtonMessage(event, false, point);
   rememberPointerUpForDoubleClick(event, point);
@@ -24219,6 +24659,11 @@ canvas.addEventListener("pointerup", (event) => {
       point,
     } : null,
   });
+});
+canvas.addEventListener("pointercancel", (event) => {
+  if (touchControls.handlePointerCancel?.(event)) return;
+  releaseBrowserPointerCapture(event);
+  void resetBrowserInput();
 });
 canvas.addEventListener("wheel", (event) => {
   const point = canvasInputPointFromEvent(event);
@@ -24244,6 +24689,7 @@ canvas.addEventListener("gotpointercapture", (event) => {
   });
 });
 canvas.addEventListener("lostpointercapture", (event) => {
+  touchControls.handleLostPointerCapture?.(event);
   recordBrowserPointerCaptureEvent("lostpointercapture", event, {
     active: false,
     pointerId: null,
@@ -24326,6 +24772,7 @@ window.addEventListener("keyup", (event) => {
   });
 });
 window.addEventListener("blur", () => {
+  touchControls.cancel();
   if (browserWin32Focused) {
     void setBrowserWin32Focus(false);
   } else {
@@ -24410,6 +24857,7 @@ window.CnCPort = {
     phase: "disabled",
     connected: false,
   },
+  getTouchControlsState: () => touchControls.snapshot(),
   d3d8BridgeCallbacks,
   persistSaves: persistSaveFilesystem,
   persistScheduledSaves: persistScheduledSaveFilesystem,

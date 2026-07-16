@@ -87,6 +87,7 @@ const retailReplayFixture = String(process.env.SKIRMISH_REPLAY_FIXTURE ?? "").tr
 const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
 const expectParticleVisibilityProbe =
   process.env.SKIRMISH_START_PARTICLE_VISIBILITY_PROBE === "1";
+const expectTouchControlsProbe = process.env.SKIRMISH_START_TOUCH_PROBE === "1";
 const particleVisibilityFrames = parsePositiveInt(
   "SKIRMISH_START_PARTICLE_VISIBILITY_FRAMES", 30);
 const distDir = parseDistDir();
@@ -577,6 +578,234 @@ async function postMouse(page, message, point) {
   });
   expect(result?.ok === true, "mouse message was not posted", result);
   return result;
+}
+
+async function touchPointToClient(page, point) {
+  return page.evaluate((enginePoint) => {
+    const canvas = document.querySelector("#viewport");
+    const rect = canvas.getBoundingClientRect();
+    const size = window.CnCPort.state.engineDisplaySize ?? {
+      width: canvas.width,
+      height: canvas.height,
+    };
+    const scale = Math.min(rect.width / size.width, rect.height / size.height);
+    const contentWidth = size.width * scale;
+    const contentHeight = size.height * scale;
+    const contentLeft = rect.left + (rect.width - contentWidth) / 2;
+    const contentTop = rect.top + (rect.height - contentHeight) / 2;
+    return {
+      x: contentLeft + enginePoint.x * scale,
+      y: contentTop + enginePoint.y * scale,
+    };
+  }, point);
+}
+
+async function dispatchTouchPointer(page, type, pointerId, point, isPrimary = false) {
+  await page.locator("#viewport").evaluate((canvas, event) => {
+    canvas.dispatchEvent(new PointerEvent(event.type, {
+      bubbles: true,
+      cancelable: true,
+      pointerId: event.pointerId,
+      pointerType: "touch",
+      isPrimary: event.isPrimary,
+      clientX: event.point.x,
+      clientY: event.point.y,
+    }));
+  }, { type, pointerId, point, isPrimary });
+}
+
+async function tapTouchPoint(page, enginePoint, pointerId = 501) {
+  const point = await touchPointToClient(page, enginePoint);
+  await dispatchTouchPointer(page, "pointerdown", pointerId, point, true);
+  await dispatchTouchPointer(page, "pointerup", pointerId, point, true);
+  await page.waitForTimeout(40);
+}
+
+async function touchCameraState(page) {
+  const snapshot = await rpc(page, "agentWorldSnapshot", { mode: "camera" });
+  expect(snapshot?.ok === true && snapshot.result?.camera,
+    "touch camera snapshot was unavailable", snapshot);
+  return snapshot.result.camera;
+}
+
+function coordinateDelta(left, right) {
+  return Math.hypot(
+    Number(right?.x ?? 0) - Number(left?.x ?? 0),
+    Number(right?.y ?? 0) - Number(left?.y ?? 0),
+  );
+}
+
+async function driveTouchControlsProbe(page) {
+  console.error("[skirmish-start] verify touch controls");
+  const screenshot = resolve(screenshotsRoot, "touch-controls-live-skirmish.png");
+  const state = await page.evaluate(() => window.CnCPort.getTouchControlsState?.());
+  expect(state?.enabled === true, "touch controls did not enable in a touch context", state);
+  expect(await page.locator("#touchControls").isVisible(),
+    "touch controls were not visible over the live game");
+  const dismiss = page.locator("[data-touch-action='dismiss-help']");
+  if (await dismiss.isVisible()) await dismiss.click();
+
+  await rpc(page, "revealLocalMap", { permanent: true });
+  await runFrames(page, 6, "touch reveal settle");
+  let drawablesReply = await rpc(page, "queryDrawables");
+  expect(drawablesReply?.ok === true, "touch drawable query failed", drawablesReply);
+  let drawableState = drawablesReply.result ?? drawablesReply.drawables ?? {};
+  let drawables = drawableState.drawables ?? [];
+  let allDrawables = drawableState.allDrawables ?? drawables;
+  let unit = drawables.find((drawable) =>
+    drawable?.localOwned === true && drawable?.structure !== true
+      && drawable?.kindOf?.selectable === true && drawable?.onScreen === true
+      && drawable?.screenPos?.x > 80 && drawable?.screenPos?.x < 700
+      && drawable?.screenPos?.y > 80 && drawable?.screenPos?.y < 430);
+  if (!unit) {
+    const offscreenUnit = allDrawables.find((drawable) =>
+      drawable?.localOwned === true && drawable?.structure !== true
+        && drawable?.kindOf?.selectable === true && drawable?.worldPos != null)
+      ?? allDrawables.find((drawable) =>
+        drawable?.structure !== true && drawable?.hidden !== true
+          && drawable?.effectivelyDead !== true && drawable?.kindOf?.selectable === true
+          && drawable?.worldPos != null);
+    if (offscreenUnit) {
+      const lookAt = await rpc(page, "tacticalViewLookAt", { worldPos: offscreenUnit.worldPos });
+      expect(lookAt?.ok === true, "touch probe could not frame a selectable unit", {
+        offscreenUnit,
+        lookAt,
+      });
+      await runFrames(page, 10, "touch camera frame unit");
+      drawablesReply = await rpc(page, "queryDrawables");
+      expect(drawablesReply?.ok === true,
+        "touch drawable query failed after framing the local unit", drawablesReply);
+      drawableState = drawablesReply.result ?? drawablesReply.drawables ?? {};
+      drawables = drawableState.drawables ?? [];
+      allDrawables = drawableState.allDrawables ?? drawables;
+      unit = allDrawables.find((drawable) =>
+        Number(drawable.id) === Number(offscreenUnit.id) && drawable?.onScreen === true);
+    }
+  }
+  expect(Boolean(unit), "touch selection could not find an on-screen selectable unit", {
+    stats: drawableState.stats,
+    sample: allDrawables.slice(0, 24).map((drawable) => ({
+      name: drawable.name,
+      playerIndex: drawable.playerIndex,
+      localOwned: drawable.localOwned,
+      onScreen: drawable.onScreen,
+      hidden: drawable.hidden,
+      selectable: drawable.kindOf?.selectable,
+    })),
+    localDrawables: allDrawables.filter((drawable) => drawable?.localOwned === true)
+      .map((drawable) => ({ name: drawable.name, screenPos: drawable.screenPos,
+        structure: drawable.structure, selectable: drawable.kindOf?.selectable })),
+  });
+
+  const unitPoint = { x: Math.round(unit.screenPos.x), y: Math.round(unit.screenPos.y) };
+  await tapTouchPoint(page, unitPoint);
+  await runFrames(page, 6, "touch selection settle");
+  const selected = await rpc(page, "querySelection");
+  expect(selected?.result?.selected?.some((entry) => Number(entry.id) === Number(unit.id)),
+    "one-finger tap did not select the on-screen unit", selected?.result);
+
+  const beforeOrder = selected.result.commandPath;
+  await page.locator("[data-touch-action='order']").click();
+  const occupiedPoints = allDrawables
+    .filter((drawable) => drawable?.onScreen === true && drawable?.screenPos)
+    .map((drawable) => drawable.screenPos);
+  const orderPoint = Array.from({ length: 35 }, (_, index) => ({
+    x: 100 + (index % 7) * 100,
+    y: 120 + Math.floor(index / 7) * 65,
+  })).map((point) => ({
+    ...point,
+    clearance: occupiedPoints.reduce((nearest, occupied) => Math.min(nearest,
+      Math.hypot(point.x - occupied.x, point.y - occupied.y)), Number.POSITIVE_INFINITY),
+  })).sort((left, right) => right.clearance - left.clearance)[0];
+  await tapTouchPoint(page, orderPoint, 502);
+  await runFrames(page, 10, "touch order settle");
+  const ordered = await rpc(page, "querySelection");
+  const afterOrder = ordered?.result?.commandPath;
+  expect(Number(afterOrder?.rawRightDownCount) > Number(beforeOrder?.rawRightDownCount)
+      && Number(afterOrder?.rawRightUpCount) > Number(beforeOrder?.rawRightUpCount),
+    "Order then tap did not traverse the real right-click path", { beforeOrder, afterOrder });
+  if (selected.result.selectedControllable === true) {
+    expect(Number(afterOrder?.dispatchMoveCommandCount) >
+        Number(beforeOrder?.dispatchMoveCommandCount),
+      "Order then tap did not dispatch a real move command", { beforeOrder, afterOrder });
+  }
+
+  const cameraBefore = await touchCameraState(page);
+  const panStart = [{ x: 280, y: 240 }, { x: 440, y: 240 }];
+  const panEnd = panStart.map((point) => ({ x: point.x + 70, y: point.y + 35 }));
+  const panStartClient = await Promise.all(panStart.map((point) => touchPointToClient(page, point)));
+  const panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
+  await dispatchTouchPointer(page, "pointerdown", 511, panStartClient[0], true);
+  await dispatchTouchPointer(page, "pointerdown", 512, panStartClient[1]);
+  await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
+  await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
+  await runFrames(page, 4, "touch pan held");
+  await dispatchTouchPointer(page, "pointerup", 511, panEndClient[0], true);
+  await dispatchTouchPointer(page, "pointerup", 512, panEndClient[1]);
+  await runFrames(page, 6, "touch pan settle");
+  const cameraAfterPan = await touchCameraState(page);
+  expect(coordinateDelta(cameraBefore.lookAt, cameraAfterPan.lookAt) > 0.1,
+    "two-finger pan did not move the tactical camera", { cameraBefore, cameraAfterPan });
+
+  const pinchLeft = { x: 330, y: 250 };
+  const pinchRight = { x: 450, y: 250 };
+  let leftClient = await touchPointToClient(page, pinchLeft);
+  let rightClient = await touchPointToClient(page, pinchRight);
+  await dispatchTouchPointer(page, "pointerdown", 521, leftClient, true);
+  await dispatchTouchPointer(page, "pointerdown", 522, rightClient);
+  for (let step = 1; step <= 5; step += 1) {
+    leftClient = await touchPointToClient(page, { x: pinchLeft.x - step * 10, y: pinchLeft.y });
+    rightClient = await touchPointToClient(page, { x: pinchRight.x + step * 10, y: pinchRight.y });
+    await dispatchTouchPointer(page, "pointermove", 521, leftClient, true);
+    await dispatchTouchPointer(page, "pointermove", 522, rightClient);
+  }
+  await dispatchTouchPointer(page, "pointerup", 521, leftClient, true);
+  await dispatchTouchPointer(page, "pointerup", 522, rightClient);
+  await runFrames(page, 8, "touch pinch settle");
+  const cameraAfterPinch = await touchCameraState(page);
+  expect(Math.abs(Number(cameraAfterPinch.zoom) - Number(cameraAfterPan.zoom)) > 0.001,
+    "pinch did not zoom the tactical camera", { cameraAfterPan, cameraAfterPinch });
+
+  const rotateCenter = { x: 390, y: 250 };
+  const rotateRadius = 65;
+  let rotateLeft = await touchPointToClient(page,
+    { x: rotateCenter.x - rotateRadius, y: rotateCenter.y });
+  let rotateRight = await touchPointToClient(page,
+    { x: rotateCenter.x + rotateRadius, y: rotateCenter.y });
+  await dispatchTouchPointer(page, "pointerdown", 531, rotateLeft, true);
+  await dispatchTouchPointer(page, "pointerdown", 532, rotateRight);
+  for (let step = 1; step <= 5; step += 1) {
+    const radians = step * Math.PI / 18;
+    rotateLeft = await touchPointToClient(page, {
+      x: rotateCenter.x - Math.cos(radians) * rotateRadius,
+      y: rotateCenter.y - Math.sin(radians) * rotateRadius,
+    });
+    rotateRight = await touchPointToClient(page, {
+      x: rotateCenter.x + Math.cos(radians) * rotateRadius,
+      y: rotateCenter.y + Math.sin(radians) * rotateRadius,
+    });
+    await dispatchTouchPointer(page, "pointermove", 531, rotateLeft, true);
+    await dispatchTouchPointer(page, "pointermove", 532, rotateRight);
+  }
+  await runFrames(page, 4, "touch rotation held");
+  await dispatchTouchPointer(page, "pointerup", 531, rotateLeft, true);
+  await dispatchTouchPointer(page, "pointerup", 532, rotateRight);
+  await runFrames(page, 6, "touch rotation settle");
+  const cameraAfterRotate = await touchCameraState(page);
+  expect(Math.abs(Number(cameraAfterRotate.angle) - Number(cameraAfterPinch.angle)) > 0.001,
+    "two-finger twist did not rotate the tactical camera", {
+      cameraAfterPinch, cameraAfterRotate,
+    });
+
+  await page.screenshot({ path: screenshot });
+  return {
+    enabled: state.enabled,
+    selectedObject: { id: unit.id, name: unit.name, localOwned: unit.localOwned },
+    order: { before: beforeOrder, after: afterOrder },
+    camera: { before: cameraBefore, afterPan: cameraAfterPan,
+      afterPinch: cameraAfterPinch, afterRotate: cameraAfterRotate },
+    screenshot,
+  };
 }
 
 function realMenuHitMatches(menu, hitProbeName, buttonFieldName) {
@@ -1342,14 +1571,14 @@ async function driveScorchProbe(page) {
     (locateNested(frame?.frame, ["textureDiagnostics"])?.labels ?? [])
       .map((label) => [Number(label.id), label.name || label.path || ""]),
   );
-  const scorchDraws = (frame?.state?.graphics?.d3d8SceneDrawHistory ?? [])
+  const sceneDraws = (frame?.state?.graphics?.d3d8SceneDrawHistory ?? [])
     .map((draw) => ({
       sequence: draw.drawSequence,
       texture: labels.get(Number(draw.texture0?.id ?? 0)) ?? "",
       zBias: Number(draw.renderState?.zBias ?? 0),
       polygonOffset: draw.appliedRenderState?.depth?.bias?.polygonOffset ?? null,
-    }))
-    .filter((draw) => /scorch/i.test(draw.texture));
+    }));
+  const scorchDraws = sceneDraws.filter((draw) => /scorch/i.test(draw.texture));
   await page.locator("#viewport").screenshot({ path: screenshot });
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
 
@@ -1358,7 +1587,21 @@ async function driveScorchProbe(page) {
   expect(scorchDraws.every((draw) =>
     draw.zBias === 1 && draw.polygonOffset?.enabled === true),
     "terrain scorch draw did not reach WebGL with D3D8 depth bias enabled", scorchDraws);
-  return { target: target.name, position, trigger: trigger.result, scorchDraws, screenshot };
+  const lastScorchSequence = Math.max(...scorchDraws.map((draw) => draw.sequence));
+  const firstPostScorchDraw = sceneDraws.find((draw) => draw.sequence > lastScorchSequence) ?? null;
+  expect(firstPostScorchDraw?.zBias === 0 && firstPostScorchDraw?.polygonOffset?.enabled !== true,
+    "terrain scorch draw leaked its depth bias into following scene draws", {
+      lastScorchSequence,
+      firstPostScorchDraw,
+    });
+  return {
+    target: target.name,
+    position,
+    trigger: trigger.result,
+    scorchDraws,
+    firstPostScorchDraw,
+    screenshot,
+  };
 }
 
 function particleEffectDraws(frame) {
@@ -1622,11 +1865,17 @@ async function main() {
     if (process.env.SKIRMISH_START_BROWSER_ARGS) {
       launchOptions.args = process.env.SKIRMISH_START_BROWSER_ARGS.split(/\s+/).filter(Boolean);
     }
+    const pageOptions = expectTouchControlsProbe
+      ? { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }
+      : { viewport: { width: 1280, height: 720 } };
+    if (browserProfileDir) Object.assign(launchOptions, pageOptions);
 
     browser = browserProfileDir
       ? await chromium.launchPersistentContext(browserProfileDir, launchOptions)
       : await chromium.launch(launchOptions);
-    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    const page = browserProfileDir
+      ? await browser.newPage()
+      : await browser.newPage(pageOptions);
     page.setDefaultTimeout(300000);
     page.setDefaultNavigationTimeout(300000);
     page.on("pageerror", (error) => {
@@ -1695,7 +1944,10 @@ async function main() {
       console.error(`[skirmish-start] imported ${activeMod.name}: ${activeMod.archiveCount} enabled archives`);
     }
 
-    const harnessUrl = new URL("harness/index.html", server.url);
+    const harnessUrl = new URL(
+      expectTouchControlsProbe ? "harness/play.html" : "harness/index.html",
+      server.url,
+    );
     harnessUrl.searchParams.set("dist", distDir);
     if (process.env.SKIRMISH_START_THREADS === "1") harnessUrl.searchParams.set("threads", "1");
     if (expectLightPulseProbe) {
@@ -1706,6 +1958,15 @@ async function main() {
     }
     await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
     await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
+    if (expectTouchControlsProbe) {
+      await page.evaluate(() => {
+        const overlay = document.querySelector("#launchOverlay");
+        overlay.hidden = false;
+        overlay.classList.add("is-running");
+        document.querySelector("#launchLoader").hidden = true;
+        document.querySelector("#viewport").hidden = false;
+      });
+    }
     await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
     const modMountPlan = activeMod
       ? await page.evaluate(async () => {
@@ -1838,27 +2099,74 @@ async function main() {
       30);
     await postMouse(page, WM_LBUTTONUP, playerNamePoint);
     await runFrames(page, 2, "skirmish player-name release");
-    await page.locator("#viewport").focus();
 
     const playerNameBefore = playerNameFocused.frame.clientState.skirmishMenu.playerNameText;
-    await page.keyboard.type("zxq");
+    if (expectTouchControlsProbe) {
+      await page.waitForFunction((point) =>
+        window.CnCPort.state.touchUi?.entries?.some((entry) =>
+          point.x >= entry.rect.x && point.x < entry.rect.x + entry.rect.width
+            && point.y >= entry.rect.y && point.y < entry.rect.y + entry.rect.height),
+      playerNamePoint, { timeout: 5000 });
+      await tapTouchPoint(page, playerNamePoint, 541);
+      try {
+        await page.waitForFunction(() => document.activeElement?.id === "touchTextInput",
+          null, { timeout: 5000 });
+      } catch (error) {
+        const diagnostics = await page.evaluate(() => {
+          const canvas = document.querySelector("#viewport");
+          const rect = canvas.getBoundingClientRect();
+          return {
+            activeElement: document.activeElement?.id ?? null,
+            touchControls: window.CnCPort.getTouchControlsState?.(),
+            touchUi: window.CnCPort.state.touchUi,
+            engineDisplaySize: window.CnCPort.state.engineDisplaySize,
+            canvasRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          };
+        });
+        expect(false, "tapping the engine entry did not open the native text proxy", {
+          error: error?.message ?? String(error),
+          diagnostics,
+        });
+      }
+      await page.locator("#touchTextInput").evaluate((input) => {
+        input.dispatchEvent(new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          data: "zxq",
+          inputType: "insertText",
+        }));
+      });
+    } else {
+      await page.locator("#viewport").focus();
+      await page.keyboard.type("zxq");
+    }
     await page.waitForTimeout(50);
     const playerNameTyped = await runFrames(page, 4, "skirmish player-name typing");
     expect(playerNameTyped.frame?.clientState?.skirmishMenu?.playerNameText === `${playerNameBefore}zxq`,
       "printable text did not mutate the real skirmish player-name gadget",
       playerNameTyped.frame?.clientState?.skirmishMenu);
 
-    await page.keyboard.press("Backspace");
+    if (expectTouchControlsProbe) {
+      await page.locator("#touchTextInput").evaluate((input) => {
+        input.dispatchEvent(new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "deleteContentBackward",
+        }));
+      });
+    } else {
+      await page.keyboard.press("Backspace");
+    }
     await page.waitForTimeout(50);
     const playerNameBackspaced = await runFrames(page, 4, "skirmish player-name backspace");
     expect(playerNameBackspaced.frame?.clientState?.skirmishMenu?.playerNameText === `${playerNameBefore}zx`,
       "Backspace did not mutate the real skirmish player-name gadget",
       playerNameBackspaced.frame?.clientState?.skirmishMenu);
 
-    await page.locator("#viewport").evaluate((canvas) => {
-      canvas.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
-      canvas.dispatchEvent(new CompositionEvent("compositionupdate", { data: "r" }));
-      canvas.dispatchEvent(new CompositionEvent("compositionend", { data: "r" }));
+    await page.locator(expectTouchControlsProbe ? "#touchTextInput" : "#viewport").evaluate((target) => {
+      target.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      target.dispatchEvent(new CompositionEvent("compositionupdate", { data: "r" }));
+      target.dispatchEvent(new CompositionEvent("compositionend", { data: "r" }));
     });
     await page.waitForTimeout(50);
     const playerNameComposed = await runFrames(page, 4, "skirmish player-name composition");
@@ -1866,6 +2174,9 @@ async function main() {
       "composition text did not mutate the real skirmish player-name gadget",
       playerNameComposed.frame?.clientState?.skirmishMenu);
     await page.locator("#viewport").screenshot({ path: textEntryScreenshotPath });
+    if (expectTouchControlsProbe) {
+      await page.locator("[data-touch-text-done]").click();
+    }
 
     let skirmishMapSet = null;
     if (requestedSkirmishMap) {
@@ -1882,7 +2193,8 @@ async function main() {
     // Optional: force the local player's faction/general (e.g.
     // FactionAmericaSuperWeaponGeneral) so a specific insignia decal is placed.
     let localTemplateSet = null;
-    const requestedLocalTemplate = String(process.env.SKIRMISH_START_LOCAL_TEMPLATE ?? "").trim();
+    const requestedLocalTemplate = String(process.env.SKIRMISH_START_LOCAL_TEMPLATE ?? "").trim()
+      || (expectTouchControlsProbe ? "FactionAmerica" : "");
     if (requestedLocalTemplate) {
       console.error(`[skirmish-start] set local template ${requestedLocalTemplate}`);
       localTemplateSet = await rpc(page, "realEngineSetSkirmishLocalTemplate", {
@@ -2036,6 +2348,9 @@ async function main() {
       console.error("[skirmish-start] particleVisibilityProbe:",
         JSON.stringify(particleVisibilityProbe));
     }
+    const touchControlsProbe = expectTouchControlsProbe
+      ? await driveTouchControlsProbe(page)
+      : null;
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
     expect(renderProbe.ok === true,
@@ -2248,6 +2563,7 @@ async function main() {
       rallyProbe,
       scorchProbe,
       particleVisibilityProbe,
+      touchControlsProbe,
       lightPulseProbe,
       replayRoundTrip,
       renderProbe,

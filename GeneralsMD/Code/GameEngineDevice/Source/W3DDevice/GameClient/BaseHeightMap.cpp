@@ -217,10 +217,9 @@ void BaseHeightMapRenderObjClass::drawScorches(void)
 	DX8Wrapper::Set_Texture(0,m_scorchTexture);
 	if (Is_Hidden() == 0) {
 		// The small vertex lift can collapse onto the terrain at distant camera depths.
-		const UnsignedInt previousZBias = DX8Wrapper::Get_DX8_Render_State(D3DRS_ZBIAS);
 		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZBIAS, 1);
 		DX8Wrapper::Draw_Triangles(	0,m_curNumScorchIndices/3, 0,	m_curNumScorchVertices);
-		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZBIAS, previousZBias);
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZBIAS, 0);
 	}
 }
 #endif

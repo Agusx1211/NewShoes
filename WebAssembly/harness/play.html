@@ -721,6 +721,93 @@
         </div>
         <main class="shell playShell">
           <canvas id="viewport" width="1280" height="720" aria-label="Command &amp; Conquer: Zero Hour game viewport" tabindex="0" hidden></canvas>
+          <section id="touchControls" class="touchControls" aria-label="Touch game controls" hidden>
+            <nav class="touchToolbar" aria-label="Primary touch actions">
+              <button type="button" data-touch-action="order" aria-pressed="false" title="Send the next tap as a right-click order"><span>◎</span>Order</button>
+              <button type="button" data-touch-action="escape" title="Cancel the current command or open game options"><span>×</span>Cancel</button>
+              <button type="button" data-touch-action="type" title="Open the device keyboard for the focused game text field"><span>⌨</span>Type</button>
+              <button type="button" data-touch-action="keys" aria-expanded="false" title="Show every keyboard and control-group action"><span>⌘</span>Keys</button>
+              <button type="button" data-touch-action="help" aria-expanded="false" title="Show touch gesture help"><span>?</span><span class="touchButtonWideLabel">Touch help</span></button>
+            </nav>
+
+            <aside class="touchGuide" data-touch-guide aria-label="Touch gesture guide" hidden>
+              <header><strong>Touch controls</strong><button type="button" data-touch-action="dismiss-help" aria-label="Dismiss touch help">×</button></header>
+              <dl>
+                <div><dt>Tap / double-tap</dt><dd>Select, activate, or select matching units</dd></div>
+                <div><dt>Drag one finger</dt><dd>Selection box, sliders, and scroll lists</dd></div>
+                <div><dt>Hold or two-finger tap</dt><dd>Right-click context order or cancel</dd></div>
+                <div><dt>Drag two fingers</dt><dd>Move the camera</dd></div>
+                <div><dt>Pinch / twist</dt><dd>Zoom / rotate the camera</dd></div>
+                <div><dt>Order</dt><dd>Make the next tap a precise right-click</dd></div>
+              </dl>
+              <p>Use <strong>Keys</strong> for control groups, modifiers, chat, and every mapped game hotkey. Landscape gives the original HUD more room.</p>
+            </aside>
+
+            <section class="touchKeyPanel" data-touch-key-panel aria-label="On-screen game keys" hidden>
+              <header><strong>Game keys</strong><span>Modifiers latch for one key</span><button type="button" data-touch-action="keys" aria-label="Close game keys">×</button></header>
+              <div class="touchKeyScroll">
+                <div class="touchKeySection touchCameraKeys" aria-label="Camera actions">
+                  <button type="button" data-touch-camera="zoom-in">Zoom +</button>
+                  <button type="button" data-touch-camera="zoom-out">Zoom −</button>
+                  <button type="button" data-touch-camera="rotate-left">Rotate ↶</button>
+                  <button type="button" data-touch-camera="rotate-right">Rotate ↷</button>
+                  <button type="button" data-touch-camera="reset">Reset camera</button>
+                </div>
+                <div class="touchKeySection touchModifierKeys" aria-label="Keyboard modifiers">
+                  <button type="button" data-touch-modifier="ControlLeft" aria-pressed="false">Ctrl</button>
+                  <button type="button" data-touch-modifier="ShiftLeft" aria-pressed="false">Shift</button>
+                  <button type="button" data-touch-modifier="AltLeft" aria-pressed="false">Alt</button>
+                  <span>Ctrl + number sets a control group; tap the number to recall it.</span>
+                </div>
+                <div class="touchKeySection touchNumberKeys" aria-label="Numbers and control groups">
+                  <button type="button" data-touch-key="Digit1" data-touch-key-value="1">1</button>
+                  <button type="button" data-touch-key="Digit2" data-touch-key-value="2">2</button>
+                  <button type="button" data-touch-key="Digit3" data-touch-key-value="3">3</button>
+                  <button type="button" data-touch-key="Digit4" data-touch-key-value="4">4</button>
+                  <button type="button" data-touch-key="Digit5" data-touch-key-value="5">5</button>
+                  <button type="button" data-touch-key="Digit6" data-touch-key-value="6">6</button>
+                  <button type="button" data-touch-key="Digit7" data-touch-key-value="7">7</button>
+                  <button type="button" data-touch-key="Digit8" data-touch-key-value="8">8</button>
+                  <button type="button" data-touch-key="Digit9" data-touch-key-value="9">9</button>
+                  <button type="button" data-touch-key="Digit0" data-touch-key-value="0">0</button>
+                </div>
+                <div class="touchKeySection touchCommonKeys" aria-label="Common game keys">
+                  <button type="button" data-touch-key="Escape" data-touch-key-value="Escape">Esc</button>
+                  <button type="button" data-touch-key="Tab" data-touch-key-value="Tab">Tab</button>
+                  <button type="button" data-touch-key="Enter" data-touch-key-value="Enter">Enter / chat</button>
+                  <button type="button" data-touch-key="Space" data-touch-key-value=" ">Space</button>
+                  <button type="button" data-touch-key="Backspace" data-touch-key-value="Backspace">⌫</button>
+                </div>
+                <div class="touchKeySection touchLetterKeys" aria-label="Letter hotkeys">
+                  <button type="button" data-touch-key="KeyQ" data-touch-key-value="q">Q</button><button type="button" data-touch-key="KeyW" data-touch-key-value="w">W</button><button type="button" data-touch-key="KeyE" data-touch-key-value="e">E</button><button type="button" data-touch-key="KeyR" data-touch-key-value="r">R</button><button type="button" data-touch-key="KeyT" data-touch-key-value="t">T</button><button type="button" data-touch-key="KeyY" data-touch-key-value="y">Y</button><button type="button" data-touch-key="KeyU" data-touch-key-value="u">U</button><button type="button" data-touch-key="KeyI" data-touch-key-value="i">I</button><button type="button" data-touch-key="KeyO" data-touch-key-value="o">O</button><button type="button" data-touch-key="KeyP" data-touch-key-value="p">P</button>
+                  <button type="button" data-touch-key="KeyA" data-touch-key-value="a">A</button><button type="button" data-touch-key="KeyS" data-touch-key-value="s">S</button><button type="button" data-touch-key="KeyD" data-touch-key-value="d">D</button><button type="button" data-touch-key="KeyF" data-touch-key-value="f">F</button><button type="button" data-touch-key="KeyG" data-touch-key-value="g">G</button><button type="button" data-touch-key="KeyH" data-touch-key-value="h">H</button><button type="button" data-touch-key="KeyJ" data-touch-key-value="j">J</button><button type="button" data-touch-key="KeyK" data-touch-key-value="k">K</button><button type="button" data-touch-key="KeyL" data-touch-key-value="l">L</button>
+                  <button type="button" data-touch-key="KeyZ" data-touch-key-value="z">Z</button><button type="button" data-touch-key="KeyX" data-touch-key-value="x">X</button><button type="button" data-touch-key="KeyC" data-touch-key-value="c">C</button><button type="button" data-touch-key="KeyV" data-touch-key-value="v">V</button><button type="button" data-touch-key="KeyB" data-touch-key-value="b">B</button><button type="button" data-touch-key="KeyN" data-touch-key-value="n">N</button><button type="button" data-touch-key="KeyM" data-touch-key-value="m">M</button>
+                </div>
+                <div class="touchKeySection touchNavigationKeys" aria-label="Navigation and editing keys">
+                  <button type="button" data-touch-key="Home" data-touch-key-value="Home">Home</button><button type="button" data-touch-key="ArrowUp" data-touch-key-value="ArrowUp">↑</button><button type="button" data-touch-key="PageUp" data-touch-key-value="PageUp">PgUp</button>
+                  <button type="button" data-touch-key="ArrowLeft" data-touch-key-value="ArrowLeft">←</button><button type="button" data-touch-key="ArrowDown" data-touch-key-value="ArrowDown">↓</button><button type="button" data-touch-key="ArrowRight" data-touch-key-value="ArrowRight">→</button>
+                  <button type="button" data-touch-key="End" data-touch-key-value="End">End</button><button type="button" data-touch-key="Insert" data-touch-key-value="Insert">Ins</button><button type="button" data-touch-key="PageDown" data-touch-key-value="PageDown">PgDn</button><button type="button" data-touch-key="Delete" data-touch-key-value="Delete">Del</button>
+                </div>
+                <div class="touchKeySection touchFunctionKeys" aria-label="Function keys">
+                  <button type="button" data-touch-key="F1" data-touch-key-value="F1">F1</button><button type="button" data-touch-key="F2" data-touch-key-value="F2">F2</button><button type="button" data-touch-key="F3" data-touch-key-value="F3">F3</button><button type="button" data-touch-key="F4" data-touch-key-value="F4">F4</button><button type="button" data-touch-key="F5" data-touch-key-value="F5">F5</button><button type="button" data-touch-key="F6" data-touch-key-value="F6">F6</button><button type="button" data-touch-key="F7" data-touch-key-value="F7">F7</button><button type="button" data-touch-key="F8" data-touch-key-value="F8">F8</button><button type="button" data-touch-key="F9" data-touch-key-value="F9">F9</button><button type="button" data-touch-key="F10" data-touch-key-value="F10">F10</button><button type="button" data-touch-key="F11" data-touch-key-value="F11">F11</button><button type="button" data-touch-key="F12" data-touch-key-value="F12">F12</button>
+                </div>
+                <div class="touchKeySection touchPunctuationKeys" aria-label="Punctuation keys">
+                  <button type="button" data-touch-key="Minus" data-touch-key-value="-">−</button><button type="button" data-touch-key="Equal" data-touch-key-value="=">=</button><button type="button" data-touch-key="BracketLeft" data-touch-key-value="[">[</button><button type="button" data-touch-key="BracketRight" data-touch-key-value="]">]</button><button type="button" data-touch-key="Semicolon" data-touch-key-value=";">;</button><button type="button" data-touch-key="Quote" data-touch-key-value="'">'</button><button type="button" data-touch-key="Backquote" data-touch-key-value="`">`</button><button type="button" data-touch-key="Backslash" data-touch-key-value="\">\</button><button type="button" data-touch-key="Comma" data-touch-key-value=",">,</button><button type="button" data-touch-key="Period" data-touch-key-value=".">.</button><button type="button" data-touch-key="Slash" data-touch-key-value="/">/</button>
+                </div>
+                <div class="touchKeySection touchNumpadKeys" aria-label="Numeric keypad keys">
+                  <button type="button" data-touch-key="Numpad7" data-touch-key-value="7">Num 7</button><button type="button" data-touch-key="Numpad8" data-touch-key-value="8">Num 8</button><button type="button" data-touch-key="Numpad9" data-touch-key-value="9">Num 9</button><button type="button" data-touch-key="NumpadDivide" data-touch-key-value="/">Num /</button>
+                  <button type="button" data-touch-key="Numpad4" data-touch-key-value="4">Num 4</button><button type="button" data-touch-key="Numpad5" data-touch-key-value="5">Num 5</button><button type="button" data-touch-key="Numpad6" data-touch-key-value="6">Num 6</button><button type="button" data-touch-key="NumpadMultiply" data-touch-key-value="*">Num *</button>
+                  <button type="button" data-touch-key="Numpad1" data-touch-key-value="1">Num 1</button><button type="button" data-touch-key="Numpad2" data-touch-key-value="2">Num 2</button><button type="button" data-touch-key="Numpad3" data-touch-key-value="3">Num 3</button><button type="button" data-touch-key="NumpadSubtract" data-touch-key-value="-">Num −</button>
+                  <button type="button" data-touch-key="Numpad0" data-touch-key-value="0">Num 0</button><button type="button" data-touch-key="NumpadDecimal" data-touch-key-value=".">Num .</button><button type="button" data-touch-key="NumpadAdd" data-touch-key-value="+">Num +</button><button type="button" data-touch-key="NumpadEnter" data-touch-key-value="Enter">Num Enter</button>
+                </div>
+              </div>
+            </section>
+
+            <div id="touchTextBar" class="touchTextBar" hidden>
+              <label for="touchTextInput"><span>Typing into Zero Hour</span><textarea id="touchTextInput" rows="1" inputmode="text" enterkeyhint="done" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Text for the focused Zero Hour field"></textarea></label>
+              <button type="button" data-touch-text-done>Done</button>
+            </div>
+          </section>
           <aside id="performanceOverlay" class="performanceOverlay hidden" aria-label="Performance diagnostics">
             <div class="performanceTitle">Performance</div>
             <div class="performanceRates">

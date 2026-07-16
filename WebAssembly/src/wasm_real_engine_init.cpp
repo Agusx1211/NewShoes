@@ -51,6 +51,7 @@
 #include "GameClient/Gadget.h"
 #include "GameClient/GadgetListBox.h"
 #include "GameClient/GadgetPushButton.h"
+#include "GameClient/GadgetStaticText.h"
 #include "GameClient/GadgetTextEntry.h"
 #include "WW3D2/assetmgr.h"
 #include "WW3D2/texture.h"
@@ -106,6 +107,7 @@
 #include "GameClient/ParticleSys.h"
 #include "GameLogic/Module/LaserUpdate.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
+#include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "wasm_function_lexicon_runtime.h"
 
@@ -1232,6 +1234,7 @@ void append_real_view_state(std::string &json)
 			"\"cameraPosition\":null,\"zoom\":null,\"pitch\":null,"
 			"\"angle\":null,\"fieldOfView\":null,"
 			"\"terrainHeightUnderCamera\":null,"
+			"\"terrainDrawArea\":null,"
 			"\"currentHeightAboveGround\":null,"
 			"\"heightAboveGround\":null,\"cameraMovementFinished\":null,"
 			"\"timeFrozen\":null,\"timeMultiplier\":null,"
@@ -1280,6 +1283,20 @@ void append_real_view_state(std::string &json)
 		std::to_string(static_cast<Int>(TheTacticalView->getCameraLock()));
 	json += ",\"zoomLimited\":";
 	json += TheTacticalView->isZoomLimited() ? "true" : "false";
+	WorldHeightMap *height_map = TheTerrainRenderObject != NULL ?
+		TheTerrainRenderObject->getMap() : NULL;
+	if (height_map != NULL) {
+		json += ",\"terrainDrawArea\":{\"originX\":" +
+			std::to_string(height_map->getDrawOrgX());
+		json += ",\"originY\":" + std::to_string(height_map->getDrawOrgY());
+		json += ",\"width\":" + std::to_string(height_map->getDrawWidth());
+		json += ",\"height\":" + std::to_string(height_map->getDrawHeight());
+		json += ",\"mapWidth\":" + std::to_string(height_map->getXExtent());
+		json += ",\"mapHeight\":" + std::to_string(height_map->getYExtent());
+		json += "}";
+	} else {
+		json += ",\"terrainDrawArea\":null";
+	}
 	json += "}";
 }
 
@@ -4811,7 +4828,9 @@ void append_window_json(std::string &json, GameWindow *window, const char *reque
 			GadgetTextEntryGetText(window))) + "\"";
 	}
 	if (inst_data != NULL) {
-		UnicodeString text = inst_data->getText();
+		UnicodeString text = (style & GWS_STATIC_TEXT) != 0
+			? GadgetStaticTextGetText(window)
+			: inst_data->getText();
 		json += ",\"text\":\"" + json_escape(unicode_to_debug_ascii(text)) + "\"";
 		json += ",\"textLength\":" + std::to_string(static_cast<long long>(text.getLength()));
 		json += ",\"textLabel\":\"" + json_escape(inst_data->m_textLabelString.str()) + "\"";
@@ -5442,6 +5461,7 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonSinglePlayer", "MainMenu.wnd:ButtonSinglePlayer");
 	append_window_probe(json, "buttonMultiplayer", "MainMenu.wnd:ButtonMultiplayer");
 	append_window_probe(json, "buttonNetwork", "MainMenu.wnd:ButtonNetwork");
+	append_window_probe(json, "buttonOnline", "MainMenu.wnd:ButtonOnline");
 	append_window_probe(json, "buttonSingleBack", "MainMenu.wnd:ButtonSingleBack");
 	append_window_probe(json, "buttonUSA", "MainMenu.wnd:ButtonUSA");
 	append_window_probe(json, "buttonGLA", "MainMenu.wnd:ButtonGLA");
@@ -5500,7 +5520,17 @@ void append_real_engine_client_state(std::string &json)
 	append_window_probe(json, "buttonHost", "LanLobbyMenu.wnd:ButtonHost");
 	append_window_probe(json, "buttonJoin", "LanLobbyMenu.wnd:ButtonJoin");
 	append_window_probe(json, "buttonBack", "LanLobbyMenu.wnd:ButtonBack");
+	append_window_probe(json, "buttonReconnect", "LanLobbyMenu.wnd:ButtonDirectConnect");
+	append_window_probe(json, "networkStatus", "LanLobbyMenu.wnd:StaticTextNetworkStatus");
+	append_window_probe(json, "players", "LanLobbyMenu.wnd:ListboxPlayers");
 	append_window_probe(json, "games", "LanLobbyMenu.wnd:ListboxGames");
+	json += "}";
+
+	json += ",\"messageBox\":{\"queried\":true";
+	append_window_probe(json, "parent", "MessageBox.wnd:MessageBoxParent");
+	append_window_probe(json, "title", "MessageBox.wnd:StaticTextTitle");
+	append_window_probe(json, "message", "MessageBox.wnd:StaticTextMessage");
+	append_window_probe(json, "buttonOk", "MessageBox.wnd:ButtonOk");
 	json += "}";
 
 	json += ",\"lanGameOptions\":{\"queried\":true";

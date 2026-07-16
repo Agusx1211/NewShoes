@@ -40,6 +40,10 @@
 import { createD3D8Executor } from "./d3d8_executor.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
 import {
+  SHARED_MULTIPLAYER_NETWORK_STATE,
+  readSharedMultiplayerNetworkStatus,
+} from "./multiplayer-network-status.mjs";
+import {
   clearSharedUdpRing,
   createSharedUdpPortDemultiplexer,
   enqueueSharedUdpDatagram,
@@ -474,8 +478,23 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     return datagram;
   };
   Module.cncPortBrowserNetworkVirtualIp = () => udpBridge
-    ? Atomics.load(new Int32Array(udpBridge.state), 0) >>> 0
+    ? Atomics.load(new Int32Array(udpBridge.state),
+      SHARED_MULTIPLAYER_NETWORK_STATE.VIRTUAL_IP) >>> 0
     : 0;
+  Module.cncPortBrowserNetworkStatus = () => udpBridge?.networkStatus
+    ? readSharedMultiplayerNetworkStatus(udpBridge.networkStatus)
+    : "Discovery status unavailable";
+  Module.cncPortBrowserNetworkState = (index) => {
+    const field = Number(index) | 0;
+    return udpBridge && field >= 0 && field < SHARED_MULTIPLAYER_NETWORK_STATE.WORDS
+      ? Atomics.load(new Int32Array(udpBridge.state), field)
+      : 0;
+  };
+  Module.cncPortBrowserNetworkReconnect = () => {
+    if (!udpBridge) return 0;
+    postToMain({ cmd: "networkReconnect" });
+    return 1;
+  };
 
   // ---- wasm call plumbing (all deferred until the pthread ticks) -------------
   let live = false; // first tick seen -> wasm calls are safe in this realm
@@ -899,6 +918,14 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   function buildStatus() {
     const result = loop.lastResult;
     let networkDiagnostics = null;
+    let touchUi = null;
+    if (live) {
+      try {
+        touchUi = parseMaybeJson(cwrapFor("cnc_port_touch_ui_state", "string", [])());
+      } catch (error) {
+        touchUi = { ok: false, error: String(error), entries: [] };
+      }
+    }
     if (live && networkDiagnosticsEnabled()) {
       try {
         networkDiagnostics = parseMaybeJson(cwrapFor(
@@ -938,6 +965,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         quitting: result.quitting,
       } : null,
       networkDiagnostics,
+      touchUi,
       engineDisplaySize: realmState.engineDisplaySize ?? null,
       canvas: { width: canvas.width, height: canvas.height },
       contextLost: typeof d3d8Diag?.webglContextLost === "function"
@@ -1327,6 +1355,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       "cncPortBrowserUdpRecv",
       "cncPortBrowserUdpClear",
       "cncPortBrowserNetworkVirtualIp",
+      "cncPortBrowserNetworkStatus",
+      "cncPortBrowserNetworkState",
+      "cncPortBrowserNetworkReconnect",
       "cncPortEngineThreadTick",
     ],
     handleCommand,

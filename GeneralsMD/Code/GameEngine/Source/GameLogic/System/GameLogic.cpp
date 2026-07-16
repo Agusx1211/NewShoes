@@ -834,9 +834,7 @@ static void populateRandomSideAndColor( GameInfo *game )
 		return;
 	Int i;
 
-#define MORE_RANDOM
-#ifdef MORE_RANDOM
-	std::vector<Int> startSlots;
+	std::vector<Int> playableTemplateIndices;
 	for (i = 0; i < ThePlayerTemplateStore->getPlayerTemplateCount(); ++i)
 	{
 		const PlayerTemplate* ptTest = ThePlayerTemplateStore->getNthPlayerTemplate(i);
@@ -855,9 +853,9 @@ static void populateRandomSideAndColor( GameInfo *game )
 		if (disallowLockedGenerals && startsLocked)
 			continue;
 
-		startSlots.push_back(i);
+		playableTemplateIndices.push_back(i);
 	}
-#endif
+	const UnsignedInt gameSeed = GetGameLogicRandomSeed();
 
 	for (i=0; i<MAX_SLOTS; ++i)
 	{
@@ -872,26 +870,32 @@ static void populateRandomSideAndColor( GameInfo *game )
 		while (playerTemplateIdx != PLAYERTEMPLATE_OBSERVER && (playerTemplateIdx < 0 || playerTemplateIdx >= ThePlayerTemplateStore->getPlayerTemplateCount()))
 		{
 			DEBUG_ASSERTCRASH(playerTemplateIdx == PLAYERTEMPLATE_RANDOM, ("Non-random bad playerTemplate %d in slot %d\n", playerTemplateIdx, i));
-#ifdef MORE_RANDOM
-			// our RNG is basically shit -- horribly nonrandom at the start of the sequence.
-			// get a few values at random to get rid of the dreck.
-			// there's no mathematical basis for this, but empirically, it helps a lot.
-			UnsignedInt silly = GetGameLogicRandomSeed() % 7;
-			for (Int poo = 0; poo < silly; ++poo) 
+			if (playableTemplateIndices.empty())
 			{
-				GameLogicRandomValue(0, 1);	// ignore result
+				DEBUG_CRASH(("Cannot resolve a random player template: no playable factions are available\n"));
+				return;
 			}
-			Int idxIdx = GameLogicRandomValue(0, 1000) % startSlots.size();
-			playerTemplateIdx = startSlots[idxIdx];
-#else
-			playerTemplateIdx = GameLogicRandomValue(0, ThePlayerTemplateStore->getPlayerTemplateCount()-1);
-#endif
+
+			// Preserve the original RNG call count so random colors, start positions,
+			// and gameplay keep the same deterministic stream for a given game seed.
+			const UnsignedInt legacyDiscardCount = GetGameLogicRandomSeed() % 7;
+			for (UnsignedInt discard = 0; discard < legacyDiscardCount; ++discard)
+			{
+				(void)GameLogicRandomValue(0, 1);
+			}
+			(void)GameLogicRandomValue(0, 1000);
+
+			// The legacy first values are strongly correlated for nearby tick-count
+			// seeds. Mix the game seed with the slot instead of applying a second
+			// modulo to that weak sequence.
+			const UnsignedInt randomBits = MixRandomSeed(gameSeed, static_cast<UnsignedInt>(i));
+			const UnsignedInt templateOffset =
+				randomBits % static_cast<UnsignedInt>(playableTemplateIndices.size());
+			playerTemplateIdx = playableTemplateIndices[templateOffset];
 			const PlayerTemplate* pt = ThePlayerTemplateStore->getNthPlayerTemplate(playerTemplateIdx);
 			if (!pt || pt->getStartingBuilding().isEmpty())
 			{
-#ifdef MORE_RANDOM
 				DEBUG_CRASH(("should not be possible"));
-#endif
 				playerTemplateIdx = -1; // only pick playable factions
 			}
 			else

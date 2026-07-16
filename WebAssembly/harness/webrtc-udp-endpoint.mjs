@@ -131,6 +131,7 @@ export class WebRtcUdpEndpoint {
     displayName = null,
     iceServers = [],
     relayUrls = null,
+    knownPeerMetadata = [],
     onDatagram = () => {},
     onStateChange = () => {},
     onDiagnostic = () => {},
@@ -164,6 +165,18 @@ export class WebRtcUdpEndpoint {
     this.peers = new Map();
     this.pendingPeerMetadata = new Map();
     this.pendingPeerIds = new Set();
+    this.knownPeerMetadata = new Map((Array.isArray(knownPeerMetadata)
+      ? knownPeerMetadata : []).flatMap((metadata) => {
+      const peerId = String(metadata?.peerId ?? "");
+      const virtualIp = Number(metadata?.virtualIp) >>> 0;
+      if (!peerId || virtualIp !== virtualIpForTrysteroPeer(peerId)) return [];
+      return [[peerId, {
+        peerId,
+        requestedPeerId: cleanLabel(metadata.requestedPeerId, peerId, 64),
+        displayName: cleanLabel(metadata.displayName, metadata.requestedPeerId ?? peerId),
+        virtualIp,
+      }]];
+    }));
     this.waiters = [];
     this.lastError = null;
     this.diagnosticSequence = 0;
@@ -333,6 +346,10 @@ export class WebRtcUdpEndpoint {
     };
   }
 
+  peerMetadata() {
+    return [...this.knownPeerMetadata.values()];
+  }
+
   validateRemoteMetadata(transportPeerId, value) {
     if (!value || typeof value !== "object" || value.transportVersion !== TRANSPORT_VERSION) {
       throw new Error(`peer ${transportPeerId} uses an incompatible LAN transport`);
@@ -426,7 +443,13 @@ export class WebRtcUdpEndpoint {
 
   addPeer(peerId) {
     if (this.closed || this.peers.has(peerId)) return;
-    const metadata = this.pendingPeerMetadata.get(peerId);
+    // Trystero can retain a healthy shared RTCPeerConnection briefly after a
+    // room binding leaves. Rejoining the same room then attaches that already
+    // authenticated peer without repeating the room handshake. Preserve the
+    // metadata from the previous endpoint so a user-requested reconnect can
+    // bind the reused connection instead of rejecting a valid known peer.
+    const metadata = this.pendingPeerMetadata.get(peerId)
+      ?? this.knownPeerMetadata.get(peerId);
     const connection = this.discoveryRoom?.getPeers()[peerId];
     if (!metadata || !connection) {
       this.lastError = `Trystero peer ${peerId} joined without negotiated metadata`;
@@ -434,6 +457,7 @@ export class WebRtcUdpEndpoint {
       return;
     }
     this.pendingPeerMetadata.delete(peerId);
+    this.knownPeerMetadata.set(peerId, metadata);
     const peer = {
       ...metadata,
       connection,
