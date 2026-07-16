@@ -24291,10 +24291,11 @@ function forwardTouchComposition(phase, text) {
   }
 }
 
+const touchTextInput = document.querySelector("#touchTextInput");
 const touchControls = createTouchControls({
   canvas,
   root: document.querySelector("#touchControls"),
-  textInput: document.querySelector("#touchTextInput"),
+  textInput: touchTextInput,
   textBar: document.querySelector("#touchTextBar"),
   onMove: forwardTouchMove,
   onButton: forwardTouchButton,
@@ -24327,7 +24328,7 @@ canvas.addEventListener("focus", () => {
   void setBrowserWin32Focus(true);
 });
 canvas.addEventListener("blur", (event) => {
-  if (event.relatedTarget === document.querySelector("#touchTextInput")) return;
+  if (touchTextInput && event.relatedTarget === touchTextInput) return;
   void setBrowserWin32Focus(false);
 });
 canvas.addEventListener("compositionstart", () => {
