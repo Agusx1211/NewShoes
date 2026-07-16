@@ -1,6 +1,6 @@
 {
   "schema": "project-new-shoes/public-project/v1",
-  "reviewedAt": "2026-07-15",
+  "reviewedAt": "2026-07-16",
   "maxReviewAgeDays": 90,
   "site": {
     "name": "Project New Shoes",
@@ -79,15 +79,17 @@
       "name": "Connect a remote playing agent",
       "status": "experimental",
       "summary": "An optional authenticated bridge exposes human-accessible shell and match information plus semantic direct controls to a separately operated agent.",
-      "reviewedAt": "2026-07-15",
+      "reviewedAt": "2026-07-16",
       "details": [
-        "Before launch, a person can open the Windows-style Remote Agent app, enable it, and stage the WebSocket URL, browser credential, session ID, and fixed Global or Camera play mode printed by a separately running Go bridge. When disabled, the browser does not import the adapter or create an agent socket, polling loop, or reconnect timer.",
+        "Before launch, a person can open the Windows-style Remote Agent app, enable it, and stage the WebSocket URL, browser credential, session ID, and fixed Global or Camera play mode printed by a separately running Go bridge. The app remembers non-secret settings, offers explicit device-local browser-token storage, and can authenticate a connection test without registering a playable session. When disabled, the browser does not import the runtime adapter or create an agent socket, polling loop, or reconnect timer.",
         "The bridge uses distinct random browser and REST credentials by default. Its authenticated REST API covers shell UI, HUD messages, fog-safe world, terrain and minimap observations, compact reusable capability dictionaries, bounded tactical event streams, and semantic selection, production, upgrade, special-power, construction, movement, combat, camera, and chat actions. Engine observation and actions retain the original simulation and input paths rather than replacing gameplay with a harness implementation.",
         "Global mode exposes information a human player could access across the map subject to radar, shroud, stealth, disguise, and other game rules. Camera mode additionally bounds observation and action targets to the tactical view while preserving select-then-pan interaction. The mode is fixed for the session. Independent completed Easy-mode wins under both policies verify full-match operation, but the interface does not prescribe strategy or guarantee that an agent will win.",
-        "The browser credential is accepted only through explicit pre-launch configuration, stays in page memory, and is omitted from URLs, browser storage, public status, and issue dumps. An agent still cannot provide retail assets, select local files, or grant browser permissions."
+        "The browser credential is accepted only through explicit pre-launch configuration and stays in page memory by default. Remembering it in origin-local browser storage requires a separate device-local opt-in that can be turned off to erase the saved token. It is always omitted from URLs, public status, and issue dumps. An agent still cannot provide retail assets, select local files, or grant browser permissions."
       ],
       "evidence": [
         "AgentBridge/README.md",
+        "AgentBridge/server_test.go",
+        "WebAssembly/harness/agent-bridge-config.mjs",
         "WebAssembly/harness/agent_bridge_browser_smoke.mjs",
         "WebAssembly/harness/agent_bridge_config_ui_smoke.mjs",
         "WebAssembly/src/wasm_agent_api.cpp"
@@ -261,7 +263,7 @@
     "Keep the tab open while local extraction, hashing, validation, and OPFS installation finish. The first import can take several minutes.",
     "When Zero Hour appears in the game library, review Game & Display settings if desired and launch it.",
     "Use the original game menus after the canvas opens. On a touch screen, open Touch help for the gesture map and Keys for hotkeys and control groups; landscape is recommended. All picker operations require a person at the browser; a remote text agent cannot grant file permissions or provide the user's retail media.",
-    "For optional remote play, start the external AgentBridge in Global or Camera mode. Before launch, open Remote Agent, enable it, enter the bridge's printed WebSocket URL and browser credential, choose a session ID and the same fixed mode, and select Apply for next launch.",
+    "For optional remote play, start the external AgentBridge in Global or Camera mode. Before launch, open Remote Agent, enable it, enter the bridge's printed WebSocket URL and browser credential, choose a session ID and the same fixed mode, test the authenticated connection, and select Apply for next launch. Non-secret settings are remembered; browser-token storage is an explicit device-local choice.",
     "Give the bridge's separate REST address and API credential only to the trusted controller. Treat both credentials as secrets, and disable Remote Agent or close the bridge when the session is over."
   ],
   "privacy": {
@@ -269,7 +271,7 @@
       "Retail assets selected in the launcher are read locally and stored locally in the browser profile. They are not uploaded to Project New Shoes. Installed archives, mods, saves, replays, preferences, and generated movie cache files live under browser-managed origin storage.",
       "The settings UI provides an anonymous analytics preference. Documented analytics are limited to broad feature, reliability, setting-category, and performance-bucket events. They exclude filenames, paths, disc labels, game data, save content, free text, issue dumps, and precise hardware or storage values. Global Privacy Control or Do Not Track disables analytics automatically, and advertising features are disabled.",
       "Imported mod installers are parsed, not executed. Native code found in a mod is not compatible with the WebAssembly engine. Browser origin data can be removed through the launcher or browser site-data controls, but deleting it can remove the installed game, mods, saves, and settings.",
-      "Remote Agent is explicitly opt-in and uses separate browser and REST credentials. The browser credential stays in page memory, is not put in a URL or local or session storage, and is excluded from public status and issue dumps. Operators are responsible for securing the external bridge, controller, reverse proxy, or tunnel they choose to use.",
+      "Remote Agent is explicitly opt-in and uses separate browser and REST credentials. The browser credential stays in page memory by default and is stored in origin-local browser storage only when the operator explicitly enables device-local remembering. Turning that option off erases the saved token. The credential is never put in a URL and is excluded from public status and issue dumps. Operators are responsible for securing the browser profile, external bridge, controller, reverse proxy, or tunnel they choose to use.",
       "LLM commander profiles and session transcripts are stored in the browser's IndexedDB. The configured endpoint receives the commander's mandate, compacted conversation, player-scoped game observations, and tool results directly from the browser. Project New Shoes does not proxy those requests. API keys are omitted from session exports, but users should still treat exported strategy transcripts as potentially sensitive."
     ],
     "networkActivity": [
@@ -277,7 +279,7 @@
       "Optional analytics sends only documented broad events when enabled.",
       "Multiplayer uses public discovery relays and direct peer-to-peer game channels.",
       "Device transfer connects the two participating devices for the confirmed encrypted transfer.",
-      "When Remote Agent is enabled for a launch, the browser opens an outbound WebSocket to the configured external bridge. The bridge exposes an authenticated REST API on loopback by default; remote exposure requires operator-controlled networking and transport security.",
+      "Testing or launching with Remote Agent opens an outbound WebSocket to the configured external bridge. A test performs only the authenticated probe and does not register a playable session. The bridge exposes an authenticated REST API on loopback by default; remote exposure requires operator-controlled networking and transport security.",
       "An enabled LLM commander sends gameplay context and receives model responses from the OpenAI-compatible endpoint selected in its profile.",
       "Diagnostics leave the device only when the user explicitly uploads a report."
     ]
@@ -325,7 +327,7 @@
     },
     {
       "problem": "Remote Agent does not connect",
-      "answer": "Start the external AgentBridge first. Before launching Zero Hour, enable Remote Agent and make its WebSocket URL, browser credential, session ID, and Global or Camera mode exactly match the bridge output, then apply the configuration for the next launch. Keep the browser and REST credentials distinct, confirm the browser can reach the socket, and inspect the bridge session list with the REST credential."
+      "answer": "Start the external AgentBridge first. Before launching Zero Hour, enable Remote Agent and make its WebSocket URL, browser credential, session ID, and Global or Camera mode exactly match the bridge output. Select Test connection to check reachability, authentication, protocol, and fixed-mode agreement without creating a game session, then apply the configuration for the next launch. Keep the browser and REST credentials distinct; if the test fails, check mixed-content or certificate policy and whether the bridge address is reachable from that device."
     },
     {
       "problem": "Reporting a bug",

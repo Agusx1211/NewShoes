@@ -36,12 +36,17 @@ desktop or Start menu:
 2. Paste the bridge's printed WebSocket URL and browser token.
 3. Choose a session ID and the same Global or Camera play mode used by the
    bridge process.
-4. Select **Apply for next launch**, then launch Zero Hour normally.
+4. Leave **Remember browser token on this device** off to keep the credential
+   memory-only, or explicitly enable it for this browser profile.
+5. Select **Test connection** to authenticate without creating a game session,
+   then **Apply for next launch** and launch Zero Hour normally.
 
 The app validates and stages the connection immediately. The socket opens only
 after the real engine and its frame loop are ready. The browser token lives only
-in page memory: it is a password field, is never stored in local or session
-storage, and is omitted from public status and issue dumps.
+in page memory by default. The launcher remembers the enabled state, URL,
+session ID, and play mode in origin-local storage; token storage is a separate
+device-local opt-in that can be turned off to erase the stored credential. The
+token remains omitted from public status and issue dumps in either mode.
 
 Automation or embedding hosts can configure the same pre-launch state without
 the app:
@@ -403,7 +408,10 @@ seconds by default.
 ## Protocol boundary
 
 The browser uses WebSocket subprotocol `cnc-agent.v1` and authenticates in its
-first JSON `hello` frame. The protocol advertises capabilities explicitly.
+first JSON frame. A runtime uses `hello` and advertises capabilities explicitly;
+the pre-launch UI can instead send `probe`, which validates the same token,
+session ID, and fixed play mode, returns the protocol identity, closes cleanly,
+and never registers a playable engine session.
 `protocol.describe`, `input.pointerMove`, `camera.lookAt`, `camera.setView`, `game.select`,
 `game.order`, `game.context`, `game.command`, `game.playerCommand`, `game.production`,
 `game.container`, `game.beacon`, `world.snapshot`, `terrain.query`,

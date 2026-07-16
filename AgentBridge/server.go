@@ -156,11 +156,27 @@ func (s *Server) engine(w http.ResponseWriter, r *http.Request) {
 	var hello protocolMessage
 	err = wsjson.Read(helloCtx, conn, &hello)
 	cancelHello()
-	if err != nil || hello.Type != "hello" || hello.Protocol != ProtocolVersion ||
+	if err != nil || (hello.Type != "hello" && hello.Type != "probe") ||
+		hello.Protocol != ProtocolVersion ||
 		!sessionIDPattern.MatchString(hello.SessionID) ||
 		hello.PlayMode != s.config.PlayMode ||
 		!tokensEqual(hello.Token, s.config.EngineToken) {
 		_ = conn.Close(websocket.StatusPolicyViolation, "invalid engine hello")
+		return
+	}
+	if hello.Type == "probe" {
+		probeCtx, cancelProbe := context.WithTimeout(context.Background(), 5*time.Second)
+		err := wsjson.Write(probeCtx, conn, protocolMessage{
+			Type:      "probe",
+			Protocol:  ProtocolVersion,
+			SessionID: hello.SessionID,
+			PlayMode:  hello.PlayMode,
+			OK:        true,
+		})
+		cancelProbe()
+		if err == nil {
+			_ = conn.Close(websocket.StatusNormalClosure, "connection test complete")
+		}
 		return
 	}
 
