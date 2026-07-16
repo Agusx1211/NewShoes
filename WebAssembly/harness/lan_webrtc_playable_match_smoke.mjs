@@ -431,9 +431,9 @@ try {
   45000, 100);
   expect(recoveredEndpoints.every((state) => state.runtime.nativeStatus.includes("Relay:")),
     "recovered endpoint state did not retain native relay diagnostics", recoveredEndpoints);
-  await fullFrame(reconnectingClient, 1);
-  await reconnectingClient.page.waitForTimeout(250);
-  await reconnectingClient.page.locator("#viewport").screenshot({
+  await fullFrame(host, 1);
+  await host.page.waitForTimeout(250);
+  await host.page.locator("#viewport").screenshot({
     path: resolve(artifactRoot, "lan-native-reconnect-recovered.png"),
   });
   console.error(`[lan-webrtc] native reconnect restored ${playerCount} visible LAN players`);
