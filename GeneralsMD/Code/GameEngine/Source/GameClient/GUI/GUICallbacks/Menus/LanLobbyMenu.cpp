@@ -410,13 +410,16 @@ static void configureBrowserMultiplayerControls(void)
 		parentLanLobby, staticTextNetworkStatusID);
 	if (staticTextNetworkStatus == NULL && parentLanLobby != NULL)
 	{
-		const Int statusHeight = 18;
+		const Int statusHeight = 36;
+		GameWindow *statusParent = parentLanLobby;
 		Int x = 52;
 		Int y = 491;
 		Int right = 752;
 		Int ignoredHeight = 0;
 		if (listboxChatWindow != NULL)
 		{
+			if (listboxChatWindow->winGetParent() != NULL)
+				statusParent = listboxChatWindow->winGetParent();
 			Int listWidth = 0;
 			Int listHeight = 0;
 			listboxChatWindow->winGetPosition(&x, &y);
@@ -457,9 +460,8 @@ static void configureBrowserMultiplayerControls(void)
 			? staticToolTip
 			: staticTextGameInfo;
 		staticTextNetworkStatus = TheWindowManager->gogoGadgetStaticText(
-			parentLanLobby,
-			WIN_STATUS_ENABLED | WIN_STATUS_NO_INPUT | WIN_STATUS_NO_FOCUS
-				| WIN_STATUS_ONE_LINE,
+			statusParent,
+			WIN_STATUS_ENABLED | WIN_STATUS_NO_INPUT | WIN_STATUS_NO_FOCUS,
 			x, y, statusWidth, statusHeight,
 			&instanceData,
 			&textData,

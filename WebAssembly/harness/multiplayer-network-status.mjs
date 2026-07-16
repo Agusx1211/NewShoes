@@ -105,15 +105,15 @@ export function formatMultiplayerNetworkStatus({
   const relay = relayHost(endpoint, configuration);
   const room = cleanLabel(endpoint?.room ?? configuration?.room, "not selected", 32);
   if (phase === "connecting") {
-    return `Network: connecting | Relay: ${relay} | Room: ${room}`;
+    return `Network: connecting | Relay: ${relay}\nRoom: ${room}`;
   }
   if (phase === "error" || error) {
     const detail = cleanLabel(error ?? endpoint?.lastError,
-      "connection failed", 48);
-    return `Network: error | Relay: ${relay} | ${detail} | Reconnect`;
+      "connection failed", 32);
+    return `Network: error | Relay: ${relay} | Reconnect\nRoom: ${room} | ${detail}`;
   }
   if (phase === "offline" || !endpoint) {
-    return `Network: offline | Relay: ${relay} | Reconnect`;
+    return `Network: offline | Relay: ${relay} | Reconnect\nRoom: ${room}`;
   }
   const openRelays = Math.max(0, Number(endpoint.openRelays) || 0);
   const relayCount = Math.max(openRelays, Number(endpoint.relays?.length) || 0);
@@ -121,5 +121,5 @@ export function formatMultiplayerNetworkStatus({
   const peerCount = Math.max(openPeers, Number(endpoint.peerCount) || 0);
   const discovery = endpoint.discoveryConnected === true ? "online" : "waiting";
   return `Network: ${discovery} | Relay: ${relay} ${openRelays}/${relayCount}`
-    + ` | Peers: ${openPeers}/${peerCount} | Room: ${room}`;
+    + ` | Peers: ${openPeers}/${peerCount}\nRoom: ${room}`;
 }
