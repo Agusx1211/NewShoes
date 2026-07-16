@@ -21,6 +21,7 @@ const wasmRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const executablePath = process.env.CNC_CHROMIUM ?? undefined;
 const playwrightModule = executablePath ? "playwright-core" : "playwright";
 const { chromium } = await import(playwrightModule);
+const emulateIPad = process.env.CNC_RESOLUTION_IPAD === "1";
 
 // Either drive an already-running harness server (CNC_HARNESS_URL, e.g. the
 // Mac at :8123) or start the local static server like the other gates.
@@ -63,7 +64,13 @@ mkdirSync(profileDir, { recursive: true });
 const browser = await chromium.launchPersistentContext(profileDir, {
   headless: true,
   executablePath,
-  viewport: { width: 1280, height: 800 },
+  viewport: emulateIPad ? { width: 1024, height: 768 } : { width: 1280, height: 800 },
+  deviceScaleFactor: emulateIPad ? 2 : 1,
+  hasTouch: emulateIPad,
+  isMobile: emulateIPad,
+  userAgent: emulateIPad
+    ? "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
+    : undefined,
   args: ["--autoplay-policy=no-user-gesture-required", "--window-size=1400,940", ...extraArgs],
 });
 try {
@@ -134,11 +141,20 @@ try {
   // --- 1. dynamic boot -------------------------------------------------------
   let state = await readDisplayState();
   console.error("[res-probe] post-boot state", JSON.stringify(state));
-  const expectBoot = { width: 1280, height: 800 };
+  const expectBoot = emulateIPad
+    ? { width: 1024, height: 768 }
+    : { width: 1280, height: 800 };
   check("dynamic-boot engine==viewport", state.engine?.width === expectBoot.width
     && state.engine?.height === expectBoot.height, state.engine);
   check("dynamic-boot buffer==engine", state.buffer.width === state.engine?.width
     && state.buffer.height === state.engine?.height, state.buffer);
+  if (emulateIPad) {
+    check("iPad dynamic boot avoids DPR-sized backing store",
+      state.dpr === 2
+        && state.cssBox.width === 1024 && state.cssBox.height === 768
+        && state.buffer.width === 1024 && state.buffer.height === 768,
+      state);
+  }
   const chromeDefault = await page.evaluate(() => ({
     gearPresent: Boolean(document.querySelector("#gearButton")),
     legacySettingsPresent: Boolean(document.querySelector("#settingsOverlay")),

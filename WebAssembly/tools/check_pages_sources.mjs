@@ -39,6 +39,8 @@ const scripts = [
   "harness/device-transfer-protocol.mjs",
   "harness/device_transfer_browser_smoke.mjs",
   "harness/device_transfer_protocol_unit.mjs",
+  "harness/display-resolution.mjs",
+  "harness/display_resolution_unit.mjs",
   "harness/engine_realm_boot.mjs",
   "harness/gdi_executor.mjs",
   "harness/game-data-store.mjs",

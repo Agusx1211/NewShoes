@@ -13,6 +13,12 @@ import {
   saveCameraZoomHeight,
 } from "./camera-zoom-config.mjs";
 import { loadCursorStyle, saveCursorStyle } from "./cursor-style-config.mjs";
+import {
+  clampResolution,
+  dynamicResolutionForBox,
+  isIOSLikeNavigator,
+  isIPadLikeNavigator,
+} from "./display-resolution.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import {
   runRuntimeShutdownSequence,
@@ -1557,17 +1563,14 @@ const fullscreenCanvasTarget = document.querySelector(".shell") || document.body
 // The menus are authored for >= 800x600; the engine-side hook additionally
 // clamps at 640x480..7680x4320. Dynamic sizing clamps to the authored minimum
 // so tiny windows scale the render down via CSS instead of breaking layouts.
-const ENGINE_MIN = { width: 800, height: 600 };
-const ENGINE_MAX = { width: 7680, height: 4320 };
-
-// Total-pixel budget for DYNAMIC sizing. iPads report devicePixelRatio 2-3;
-// a full-DPR canvas there means a ~16MP render target and WebGL context loss
-// ("browser reclaimed the GPU"), so mobile Safari gets a tighter budget (the
-// render is CSS-upscaled from a still-sharp ~2.4MP). Desktop allows up to 4K.
-// Explicit fixed/custom selections are NOT capped — only the automatic mode.
-const IS_IOS_LIKE = /iP(ad|hone|od)/.test(navigator.userAgent)
-  || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-const MAX_DYNAMIC_PIXELS = IS_IOS_LIKE ? 2_400_000 : 8_500_000;
+// Dynamic iPad rendering uses its CSS pixel grid rather than DPR 2-3. The
+// original 800x600 path worked on these devices; multiplying the whole game
+// framebuffer (including depth/stencil) by DPR consumed enough GPU memory for
+// Safari to lose or corrupt the context. iPhone keeps the existing 2.4MP cap,
+// desktop keeps the 4K-equivalent cap, and explicit fixed/custom choices stay
+// uncapped by the automatic policy.
+const IS_IPAD_LIKE = isIPadLikeNavigator(navigator);
+const IS_IOS_LIKE = isIOSLikeNavigator(navigator);
 
 function normalizeDisplaySettings(settings) {
   if (settings?.mode === "fixed") {
@@ -1589,34 +1592,23 @@ let displaySettings = window.CnCPortPlayConfig?.display
   : loadDisplaySettings();
 let lastAppliedResolution = null; // {width,height} last reported by the engine
 
-function clampResolution(width, height) {
-  return {
-    width: Math.min(ENGINE_MAX.width, Math.max(ENGINE_MIN.width, Math.round(width))),
-    height: Math.min(ENGINE_MAX.height, Math.max(ENGINE_MIN.height, Math.round(height))),
-  };
-}
-
 // The canvas CSS box x devicePixelRatio: the display's real pixel grid, so
-// rendering at this size is 1:1 sharp (no upscale blur). Returns null during
-// degenerate layouts (mid-fullscreen-transition, hidden canvas) so callers
-// skip instead of pushing a broken size into the engine.
+// rendering at this size is 1:1 sharp (no upscale blur). iPad is the deliberate
+// exception described above. Returns null during degenerate layouts
+// (mid-fullscreen-transition, hidden canvas) so callers skip instead of pushing
+// a broken size into the engine.
 function dynamicTargetResolution() {
   const rect = viewportCanvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const cssWidth = rect.width || window.innerWidth || 0;
   const cssHeight = rect.height || window.innerHeight || 0;
-  if (cssWidth < 64 || cssHeight < 64) {
-    return null;
-  }
-  let width = cssWidth * dpr;
-  let height = cssHeight * dpr;
-  const pixels = width * height;
-  if (pixels > MAX_DYNAMIC_PIXELS) {
-    const scale = Math.sqrt(MAX_DYNAMIC_PIXELS / pixels);
-    width *= scale;
-    height *= scale;
-  }
-  return clampResolution(width, height);
+  return dynamicResolutionForBox({
+    cssWidth,
+    cssHeight,
+    devicePixelRatio: dpr,
+    iosLike: IS_IOS_LIKE,
+    ipadLike: IS_IPAD_LIKE,
+  });
 }
 
 function targetResolutionForSettings() {
