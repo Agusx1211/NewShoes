@@ -8,7 +8,7 @@
     "repositoryUrl": "https://github.com/Agusx1211/NewShoes",
     "issuesUrl": "https://github.com/Agusx1211/NewShoes/issues",
     "shortDescription": "Project New Shoes is a browser port of the original Command & Conquer: Generals and Command & Conquer: Generals Zero Hour C++ engine. The real engine is compiled to WebAssembly, with browser implementations at its operating-system boundaries.",
-    "description": "Project New Shoes runs the original Command & Conquer: Generals Zero Hour C++ engine in a desktop web browser through WebAssembly. It is a port of the real engine, not a clone, remake, stream, or emulation layer. Players provide game files from a copy they own; retail assets are not bundled and remain on the player's device.",
+    "description": "Project New Shoes runs the original Command & Conquer: Generals Zero Hour C++ engine in a modern web browser through WebAssembly. It is a port of the real engine, not a clone, remake, stream, or emulation layer. Players provide game files from a copy they own; retail assets are not bundled and remain on the player's device.",
     "heroTitle": "The original Zero Hour engine, ported to the web",
     "heroSummary": "Project New Shoes runs the real C++ game engine through WebAssembly. Players bring a complete Generals and Zero Hour copy they own; selection, installation, and play stay in the local browser.",
     "agentBoundary": "The public site is an interactive browser launcher and game runtime. Reading its public documentation does not grant an agent control, and an agent cannot choose local files or grant browser permissions. After a person installs their owned game data and explicitly configures the optional authenticated Remote Agent interface, a separate trusted controller can observe and play through its documented contract."
@@ -45,7 +45,7 @@
       "summary": "The original Zero Hour shell boots and playable skirmishes run against the original AI through the engine's real simulation and input paths.",
       "reviewedAt": "2026-07-14",
       "details": [
-        "Players use the original menus, mouse, keyboard, selection, building, production, movement, camera, and combat behavior. This is the actual C++ engine compiled for WebAssembly rather than reimplemented gameplay.",
+        "Players use the original menus, mouse, keyboard, touch controls, selection, building, production, movement, camera, and combat behavior. This is the actual C++ engine compiled for WebAssembly rather than reimplemented gameplay.",
         "All official multiplayer maps have been exercised to rendered skirmish state. Campaign and Generals Challenge use the real engine and are in active validation; mission breadth, cutscenes, win and loss flows, and edge cases continue to receive coverage.",
         "This is a playable development product, not a claim that every original flow and every browser combination is already perfect. Current issues and deployed build metadata should be consulted for narrower compatibility claims."
       ],
@@ -53,6 +53,25 @@
         "WebAssembly/harness/skirmish_start_smoke.mjs",
         "WebAssembly/harness/threaded_play_gate.mjs",
         "WebAssembly/harness/shellmap_real_init_gate.mjs"
+      ]
+    },
+    {
+      "id": "touch-controls",
+      "name": "Play on a touch screen",
+      "status": "in_testing",
+      "summary": "Phone and tablet layouts map selection, contextual orders, camera movement, zoom, rotation, hotkeys, and text entry onto touch controls that feed the engine's original input paths.",
+      "reviewedAt": "2026-07-15",
+      "details": [
+        "One-finger taps and drags provide left-click selection and UI operation. A hold, two-finger tap, or armed Order button provides a right click. Two-finger translation pans the map, pinch zooms, and twist rotates the camera. Explicit Cancel, text, help, camera, modifier, control-group, function, navigation, punctuation, and numeric-keypad controls make keyboard-only actions reachable.",
+        "Visible original-engine text-entry rectangles are relayed to the browser so tapping one can open the device keyboard during the touch event. Browsers with the Virtual Keyboard API use overlay mode; other mobile browsers keep the game canvas at its pre-keyboard geometry and move only the text proxy above the visible keyboard.",
+        "The controls are designed for phone and tablet play, including iPhone- and iPad-class portrait and landscape layouts. Touch recognition and mobile Chromium layouts have focused automated coverage; physical-device and Safari breadth remain in active validation. Landscape is recommended because the original Zero Hour interface was designed for a wide screen."
+      ],
+      "evidence": [
+        "WebAssembly/harness/touch-controls.mjs",
+        "WebAssembly/harness/touch_controls_unit.mjs",
+        "WebAssembly/harness/touch_controls_browser_smoke.mjs",
+        "WebAssembly/harness/bridge.js",
+        "WebAssembly/src/wasm_agent_api.cpp"
       ]
     },
     {
@@ -214,7 +233,7 @@
     }
   ],
   "requirements": {
-    "intro": "Use a modern desktop browser. Chrome and Chromium receive the most testing. Other modern browsers can work when they expose all required platform features, but Firefox and Safari do not yet receive the same validation.",
+    "intro": "Use a modern browser on a desktop, phone, or tablet. Chrome and Chromium receive the most testing. Other modern browsers can work when they expose all required platform features, but Firefox and Safari do not yet receive the same validation.",
     "platform": [
       "WebAssembly and WebAssembly threads.",
       "SharedArrayBuffer through a cross-origin-isolated page.",
@@ -222,7 +241,7 @@
       "Web Audio.",
       "OPFS and browser storage capacity for roughly a multi-gigabyte installed archive set.",
       "Local file or folder selection appropriate to the chosen ownership path.",
-      "A desktop environment; mobile browsers, text-only browsers, and embedded webviews are not supported game clients."
+      "A graphical browser with pointer or touch input. Text-only browsers and embedded webviews are not supported game clients."
     ],
     "assets": [
       "The hosted site supplies HTTPS and the necessary cross-origin isolation headers. A self-hosted copy must do the same.",
@@ -231,13 +250,13 @@
     ]
   },
   "setup": [
-    "Open https://newshoes.gg/ in a supported desktop browser.",
+    "Open https://newshoes.gg/ in a supported modern browser.",
     "Choose Add Game Folder for a complete English installation. If the browser cannot grant access to a protected Steam folder, use the launcher's compatibility folder picker.",
     "Alternatively, choose Add Disc Images and select the complete Generals and Zero Hour media set together. Do not select only one disc from a multi-disc release.",
     "Review the detected source. Choose whether to retain source permission when the browser supports it and whether to install the validated runtime into browser storage.",
     "Keep the tab open while local extraction, hashing, validation, and OPFS installation finish. The first import can take several minutes.",
     "When Zero Hour appears in the game library, review Game & Display settings if desired and launch it.",
-    "Use the original game menus and controls after the canvas opens. All picker operations require a person at the browser; a remote text agent cannot grant file permissions or provide the user's retail media.",
+    "Use the original game menus after the canvas opens. On a touch screen, open Touch help for the gesture map and Keys for hotkeys and control groups; landscape is recommended. All picker operations require a person at the browser; a remote text agent cannot grant file permissions or provide the user's retail media.",
     "For optional remote play, start the external AgentBridge in Global or Camera mode. Before launch, open Remote Agent, enable it, enter the bridge's printed WebSocket URL and browser credential, choose a session ID and the same fixed mode, and select Apply for next launch.",
     "Give the bridge's separate REST address and API credential only to the trusted controller. Treat both credentials as secrets, and disable Remote Agent or close the bridge when the session is over."
   ],
@@ -274,7 +293,7 @@
   "troubleshooting": [
     {
       "problem": "The browser reports missing capabilities",
-      "answer": "Move to a current desktop Chrome or Chromium build first. Avoid embedded browsers and private modes that disable persistent storage. Confirm that JavaScript, WebAssembly, graphics acceleration, and site storage are available. The Hardware & Browser settings panel shows the capabilities exposed by the current browser."
+      "answer": "Move to a current Chrome or Chromium build first. Avoid embedded browsers and private modes that disable persistent storage. Confirm that JavaScript, WebAssembly, graphics acceleration, and site storage are available. The Hardware & Browser settings panel shows the capabilities exposed by the current browser."
     },
     {
       "problem": "The folder picker cannot open a Steam directory",
@@ -442,7 +461,7 @@
   "faq": [
     {
       "question": "Is this playable now?",
-      "answer": "Yes. The original Zero Hour engine boots in supported desktop browsers and playable skirmishes work. It remains a development product with ongoing validation and polish in the qualified areas above."
+      "answer": "Yes. The original Zero Hour engine boots in supported modern browsers and playable skirmishes work. Mouse and keyboard controls are supported, and phone and tablet touch controls are in active validation. It remains a development product with ongoing validation and polish in the qualified areas above."
     },
     {
       "question": "Is the game included?",

@@ -899,6 +899,14 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   function buildStatus() {
     const result = loop.lastResult;
     let networkDiagnostics = null;
+    let touchUi = null;
+    if (live) {
+      try {
+        touchUi = parseMaybeJson(cwrapFor("cnc_port_touch_ui_state", "string", [])());
+      } catch (error) {
+        touchUi = { ok: false, error: String(error), entries: [] };
+      }
+    }
     if (live && networkDiagnosticsEnabled()) {
       try {
         networkDiagnostics = parseMaybeJson(cwrapFor(
@@ -938,6 +946,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         quitting: result.quitting,
       } : null,
       networkDiagnostics,
+      touchUi,
       engineDisplaySize: realmState.engineDisplaySize ?? null,
       canvas: { width: canvas.width, height: canvas.height },
       contextLost: typeof d3d8Diag?.webglContextLost === "function"

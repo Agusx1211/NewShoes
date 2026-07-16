@@ -77,6 +77,7 @@ namespace {
 
 constexpr const char *kProtocol = "cnc-agent/1";
 constexpr Int kMaxWindows = WIN_MAX_WINDOWS;
+constexpr Int kMaxTouchTextEntries = 64;
 constexpr Int kMaxSnapshotRowsPerList = 64;
 constexpr Int kMaxListColumns = 16;
 constexpr Int kMaxListQueryRows = 128;
@@ -488,6 +489,54 @@ void append_window_tree_pass(
 			&& (pass == WindowVisibilityPass::HIDDEN || !hidden)) {
 			append_window_tree_pass(json, current->winGetChild(), pass,
 				visited, emitted, first, truncated);
+			if (truncated) return;
+		}
+	}
+}
+
+void append_touch_text_entries(
+	std::string &json,
+	GameWindow *window,
+	GameWindow *focus,
+	Int &emitted,
+	bool &first,
+	bool &truncated)
+{
+	for (GameWindow *current = window; current != nullptr; current = current->winGetNext()) {
+		const bool hidden = TheWindowManager->isHidden(current);
+		if (!hidden && window_is_interactive(current)
+			&& (current->winGetStyle() & GWS_ENTRY_FIELD) != 0) {
+			if (emitted >= kMaxTouchTextEntries) {
+				truncated = true;
+				return;
+			}
+			EntryData *entry = static_cast<EntryData *>(current->winGetUserData());
+			Int x = 0;
+			Int y = 0;
+			Int width = 0;
+			Int height = 0;
+			current->winGetScreenPosition(&x, &y);
+			current->winGetSize(&width, &height);
+			if (width > 0 && height > 0) {
+				if (!first) json += ",";
+				first = false;
+				json += "{\"rect\":{\"x\":" + std::to_string(x)
+					+ ",\"y\":" + std::to_string(y)
+					+ ",\"width\":" + std::to_string(width)
+					+ ",\"height\":" + std::to_string(height) + "}";
+				json += ",\"inputMode\":\"";
+				json += entry != nullptr && entry->numericalOnly ? "numeric" : "text";
+				json += "\",\"maxLength\":"
+					+ std::to_string(entry != nullptr ? entry->maxTextLen : 0);
+				json += ",\"focused\":";
+				json += current == focus ? "true" : "false";
+				json += "}";
+				++emitted;
+			}
+		}
+		if (!hidden && current->winGetChild() != nullptr) {
+			append_touch_text_entries(json, current->winGetChild(), focus,
+				emitted, first, truncated);
 			if (truncated) return;
 		}
 	}
@@ -2587,6 +2636,37 @@ extern "C" void cnc_port_agent_record_match_outcome(
 		? RetainedMatchOutcome::VICTORY
 		: (local_defeat ? RetainedMatchOutcome::DEFEAT : RetainedMatchOutcome::ENDED);
 	capture_retained_scoreboard();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_touch_ui_state()
+{
+	static std::string json;
+	if (TheWindowManager == nullptr) {
+		json = "{\"ok\":false,\"focusedInputMode\":null,\"entries\":[]}";
+		return json.c_str();
+	}
+
+	GameWindow *focus = TheWindowManager->winGetFocus();
+	EntryData *focus_entry = focus != nullptr
+		&& window_is_interactive(focus)
+		&& (focus->winGetStyle() & GWS_ENTRY_FIELD) != 0
+		? static_cast<EntryData *>(focus->winGetUserData()) : nullptr;
+	json = "{\"ok\":true,\"focusedInputMode\":";
+	if (focus_entry == nullptr) {
+		json += "null";
+	} else {
+		json += focus_entry->numericalOnly ? "\"numeric\"" : "\"text\"";
+	}
+	json += ",\"entries\":[";
+	Int emitted = 0;
+	bool first = true;
+	bool truncated = false;
+	append_touch_text_entries(json, TheWindowManager->winGetWindowList(), focus,
+		emitted, first, truncated);
+	json += "],\"truncated\":";
+	json += truncated ? "true" : "false";
+	json += "}";
+	return json.c_str();
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_agent_ui_snapshot(Int include_hidden)

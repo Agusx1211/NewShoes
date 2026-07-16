@@ -24,6 +24,7 @@
     "verify:llm-ai-match": "node harness/llm-ai-match-smoke.mjs",
     "test:release-metadata": "node tools/release_metadata_unit.mjs",
     "test:public-project-content": "node tools/public_project_content_unit.mjs",
+    "test:touch-controls": "node harness/touch_controls_unit.mjs && node harness/touch_controls_browser_smoke.mjs",
     "test:bink-video-capability": "node harness/bink_video_capability_unit.mjs",
     "build:bink-decoder": "node tools/build_bink_decoder.mjs",
     "verify:bink-decoder-corpus": "cargo run --manifest-path bink-decoder/Cargo.toml --release --locked --bin corpus -- artifacts/real-assets",

@@ -1,5 +1,12 @@
 /* Glue between the Project New Shoes desktop and the existing real-game harness. */
 
+/* Mobile keyboards commonly shrink 100dvh. Keep the desktop and transferred
+   game canvas at their pre-keyboard geometry; touch-controls.mjs separately
+   positions its native text proxy above the visible keyboard. */
+:root.touch-keyboard-open {
+  --desktop-viewport-height: var(--touch-frozen-viewport-height);
+}
+
 html,
 body {
   width: 100%;
@@ -85,6 +92,10 @@ body {
 .launch-overlay.is-running .playShell {
   pointer-events: auto;
   background: #000;
+}
+
+.launch-overlay:not(.is-running) .touchControls {
+  display: none;
 }
 
 .launch-overlay .launch-loader {

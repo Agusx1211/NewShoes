@@ -15,6 +15,7 @@ import { resolveShaderTier } from "./shader-tier-config.mjs";
 import { createSavePersistenceCoordinator } from "./save-persistence-coordinator.mjs";
 import { createReplayFileStore } from "./replay-file-store.mjs";
 import { createTransferUserDataStore } from "./transfer-user-data-store.mjs";
+import { createTouchControls } from "./touch-controls.mjs";
 import {
   CNC_PORT_MOD_DATA_ROOT,
   loadActiveModContext,
@@ -458,6 +459,7 @@ const harnessState = {
   timing: null,
   win32Timing: null,
   browserInput: null,
+  touchUi: null,
   browserDirectInput: {
     source: "browser_directinput_keyboard_queue",
     lastCode: null,
@@ -1089,6 +1091,7 @@ function createThreadedEngineController() {
   function applyThreadedStatus(status) {
     lastStatus = status;
     harnessState.threadedEngine = status;
+    harnessState.touchUi = status.touchUi ?? null;
     networkDiagnostics.recordEngineSample({
       source: "engine-thread-status",
       workerStatusSeq: status.seq ?? null,
@@ -9848,6 +9851,7 @@ function virtualKeyFromEvent(event) {
     NumpadSubtract: 0x6d,
     NumpadDecimal: 0x6e,
     NumpadDivide: 0x6f,
+    NumpadEnter: 0x0d,
     F1: 0x70,
     F2: 0x71,
     F3: 0x72,
@@ -10264,6 +10268,11 @@ function resetBrowserPointerCaptureState() {
 
 function wheelWParam(event) {
   const delta = event.deltaY > 0 ? -120 : 120;
+  return (delta & 0xffff) << 16;
+}
+
+function wheelWParamFromSteps(steps) {
+  const delta = steps >= 0 ? 120 : -120;
   return (delta & 0xffff) << 16;
 }
 
@@ -24084,6 +24093,225 @@ async function rpc(command, payload = {}) {
   }
 }
 
+function touchInputModeForClientPoint(clientPoint) {
+  const point = canvasInputPointFromEvent({
+    clientX: clientPoint?.x ?? 0,
+    clientY: clientPoint?.y ?? 0,
+  });
+  const entries = Array.isArray(harnessState.touchUi?.entries)
+    ? harnessState.touchUi.entries : [];
+  for (let index = entries.length - 1; index >= 0; --index) {
+    const entry = entries[index];
+    const rect = entry?.rect;
+    if (!rect) continue;
+    if (point.x >= rect.x && point.x < rect.x + rect.width
+        && point.y >= rect.y && point.y < rect.y + rect.height) {
+      return entry.inputMode === "numeric" ? "numeric" : "text";
+    }
+  }
+  return null;
+}
+
+function touchFocusedInputMode() {
+  const mode = harnessState.touchUi?.focusedInputMode;
+  return mode === "numeric" ? "numeric" : mode === "text" ? "text" : null;
+}
+
+function touchPointToEngine(clientPoint) {
+  return canvasInputPointFromEvent({
+    clientX: clientPoint?.x ?? 0,
+    clientY: clientPoint?.y ?? 0,
+  });
+}
+
+function forwardTouchMove(clientPoint) {
+  const point = touchPointToEngine(clientPoint);
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: {
+      message: win32Messages.mouseMove,
+      lParam: win32PointLParam(point),
+      point,
+    },
+  });
+}
+
+function forwardTouchButton(button, down, clientPoint, timestamp) {
+  const point = touchPointToEngine(clientPoint);
+  const event = { button, timeStamp: timestamp };
+  const message = mouseButtonMessage(event, down, point);
+  if (!down) rememberPointerUpForDoubleClick(event, point);
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: message >= 0 ? {
+      message,
+      lParam: win32PointLParam(point),
+      point,
+    } : null,
+  });
+}
+
+function forwardTouchWheel(steps, clientPoint) {
+  const point = touchPointToEngine(clientPoint);
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: {
+      message: win32Messages.mouseWheel,
+      wParam: wheelWParamFromSteps(steps),
+      lParam: win32PointLParam(point),
+      point,
+    },
+  });
+}
+
+let touchRotation = null;
+function startTouchRotation(clientPoint, timestamp) {
+  const point = touchPointToEngine(clientPoint);
+  touchRotation = { anchor: point, current: point };
+  const event = { button: 1, timeStamp: timestamp };
+  const message = mouseButtonMessage(event, true, point);
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: { message, lParam: win32PointLParam(point), point },
+  });
+}
+
+function moveTouchRotation(radians) {
+  if (!touchRotation) return;
+  const width = harnessState.engineDisplaySize?.width ?? canvas.width;
+  const point = {
+    x: Math.max(0, Math.min(width - 1,
+      Math.round(touchRotation.anchor.x + Number(radians || 0) / 0.01))),
+    y: touchRotation.anchor.y,
+  };
+  touchRotation.current = point;
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: {
+      message: win32Messages.mouseMove,
+      lParam: win32PointLParam(point),
+      point,
+    },
+  });
+}
+
+function endTouchRotation(_clientPoint, timestamp) {
+  if (!touchRotation) return;
+  const point = touchRotation.current;
+  const event = { button: 1, timeStamp: timestamp };
+  const message = mouseButtonMessage(event, false, point);
+  rememberPointerUpForDoubleClick(event, point);
+  touchRotation = null;
+  void pushBrowserInputToWasmLite({
+    cursor: point,
+    win32Message: { message, lParam: win32PointLParam(point), point },
+  });
+}
+
+function shiftedTouchKeyValue(code, key, shift) {
+  if (!shift || typeof key !== "string" || key.length !== 1) return key;
+  if (/^[a-z]$/.test(key)) return key.toUpperCase();
+  const shifted = {
+    Digit1: "!", Digit2: "@", Digit3: "#", Digit4: "$", Digit5: "%",
+    Digit6: "^", Digit7: "&", Digit8: "*", Digit9: "(", Digit0: ")",
+    Minus: "_", Equal: "+", BracketLeft: "{", BracketRight: "}",
+    Semicolon: ":", Quote: "\"", Backquote: "~", Backslash: "|",
+    Comma: "<", Period: ">", Slash: "?",
+  };
+  return shifted[code] ?? key;
+}
+
+async function forwardTouchKeyStroke({ code, key, modifiers = [] }) {
+  const modifierCodes = modifiers.filter((value) =>
+    ["ControlLeft", "ShiftLeft", "AltLeft"].includes(value));
+  const modifierSet = new Set(modifierCodes);
+  const timestamp = performance.now();
+  const send = async (event, down, offset) => {
+    const virtualKey = virtualKeyFromEvent(event);
+    if (virtualKey < 0) return;
+    await pushBrowserInputToWasmLite({
+      virtualKey,
+      keyDown: down,
+      directInputCode: directInputScanCodeFromEvent(event),
+      timestamp: timestamp + offset,
+      win32Message: {
+        message: down ? win32Messages.keyDown : win32Messages.keyUp,
+        wParam: virtualKey,
+      },
+    });
+  };
+
+  let offset = 0;
+  for (const modifierCode of modifierCodes) {
+    await send({ code: modifierCode, key: modifierCode }, true, offset++);
+  }
+  const event = {
+    code,
+    key: shiftedTouchKeyValue(code, key, modifierSet.has("ShiftLeft")),
+    ctrlKey: modifierSet.has("ControlLeft"),
+    shiftKey: modifierSet.has("ShiftLeft"),
+    altKey: modifierSet.has("AltLeft"),
+    metaKey: false,
+    isComposing: false,
+  };
+  await send(event, true, offset++);
+  const charCode = win32CharCodeFromEvent(event);
+  if (charCode >= 0) {
+    await pushBrowserInputToWasmLite({
+      win32Message: { message: win32Messages.char, wParam: charCode },
+    });
+  }
+  await send(event, false, offset++);
+  for (const modifierCode of modifierCodes.reverse()) {
+    await send({ code: modifierCode, key: modifierCode }, false, offset++);
+  }
+}
+
+function forwardTouchComposition(phase, text) {
+  if (phase === "start") {
+    void postBrowserMessageToWasm({ message: win32Messages.imeStartComposition });
+  } else if (phase === "update") {
+    void postBrowserMessageToWasm({
+      message: win32Messages.imeComposition,
+      wParam: lastUtf16CodeUnit(text),
+      lParam: win32ImeCompositionFlags.compositionString,
+    });
+  } else if (phase === "end") {
+    void (async () => {
+      if (text.length > 0) {
+        await postBrowserMessageToWasm({
+          message: win32Messages.imeComposition,
+          wParam: lastUtf16CodeUnit(text),
+          lParam: win32ImeCompositionFlags.resultString,
+        });
+      }
+      await postBrowserMessageToWasm({ message: win32Messages.imeEndComposition });
+      await postBrowserTextToWasm(text);
+    })();
+  }
+}
+
+const touchControls = createTouchControls({
+  canvas,
+  root: document.querySelector("#touchControls"),
+  textInput: document.querySelector("#touchTextInput"),
+  textBar: document.querySelector("#touchTextBar"),
+  onMove: forwardTouchMove,
+  onButton: forwardTouchButton,
+  onWheel: forwardTouchWheel,
+  onRotateStart: startTouchRotation,
+  onRotateMove: moveTouchRotation,
+  onRotateEnd: endTouchRotation,
+  onKeyStroke: (stroke) => { void forwardTouchKeyStroke(stroke); },
+  onText: (text) => { void postBrowserTextToWasm(text); },
+  onComposition: forwardTouchComposition,
+  textInputModeAtPoint: touchInputModeForClientPoint,
+  focusedTextInputMode: touchFocusedInputMode,
+  onViewportKeyboardChange: (open) => {
+    harnessState.touchKeyboardOpen = open;
+  },
+});
+
 paintBlackWindow();
 syncStatus();
 
@@ -24098,7 +24326,8 @@ canvas.tabIndex = 0;
 canvas.addEventListener("focus", () => {
   void setBrowserWin32Focus(true);
 });
-canvas.addEventListener("blur", () => {
+canvas.addEventListener("blur", (event) => {
+  if (event.relatedTarget === document.querySelector("#touchTextInput")) return;
   void setBrowserWin32Focus(false);
 });
 canvas.addEventListener("compositionstart", () => {
@@ -24180,6 +24409,7 @@ window.addEventListener("pageshow", () => {
 });
 
 canvas.addEventListener("pointermove", (event) => {
+  if (touchControls.handlePointerMove?.(event)) return;
   const point = canvasInputPointFromEvent(event);
   void pushBrowserInputToWasmLite({
     cursor: point,
@@ -24191,7 +24421,12 @@ canvas.addEventListener("pointermove", (event) => {
   });
 });
 canvas.addEventListener("pointerdown", (event) => {
-  canvas.focus();
+  try {
+    canvas.focus({ preventScroll: true });
+  } catch {
+    canvas.focus();
+  }
+  if (touchControls.handlePointerDown?.(event)) return;
   const point = canvasInputPointFromEvent(event);
   const message = mouseButtonMessage(event, true, point);
   claimBrowserPointerCapture(event);
@@ -24206,6 +24441,7 @@ canvas.addEventListener("pointerdown", (event) => {
   });
 });
 canvas.addEventListener("pointerup", (event) => {
+  if (touchControls.handlePointerUp?.(event)) return;
   const point = canvasInputPointFromEvent(event);
   const message = mouseButtonMessage(event, false, point);
   rememberPointerUpForDoubleClick(event, point);
@@ -24219,6 +24455,11 @@ canvas.addEventListener("pointerup", (event) => {
       point,
     } : null,
   });
+});
+canvas.addEventListener("pointercancel", (event) => {
+  if (touchControls.handlePointerCancel?.(event)) return;
+  releaseBrowserPointerCapture(event);
+  void resetBrowserInput();
 });
 canvas.addEventListener("wheel", (event) => {
   const point = canvasInputPointFromEvent(event);
@@ -24244,6 +24485,7 @@ canvas.addEventListener("gotpointercapture", (event) => {
   });
 });
 canvas.addEventListener("lostpointercapture", (event) => {
+  touchControls.handleLostPointerCapture?.(event);
   recordBrowserPointerCaptureEvent("lostpointercapture", event, {
     active: false,
     pointerId: null,
@@ -24326,6 +24568,7 @@ window.addEventListener("keyup", (event) => {
   });
 });
 window.addEventListener("blur", () => {
+  touchControls.cancel();
   if (browserWin32Focused) {
     void setBrowserWin32Focus(false);
   } else {
@@ -24410,6 +24653,7 @@ window.CnCPort = {
     phase: "disabled",
     connected: false,
   },
+  getTouchControlsState: () => touchControls.snapshot(),
   d3d8BridgeCallbacks,
   persistSaves: persistSaveFilesystem,
   persistScheduledSaves: persistScheduledSaveFilesystem,
