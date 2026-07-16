@@ -1,6 +1,6 @@
 {
   "schema": "project-new-shoes/public-project/v1",
-  "reviewedAt": "2026-07-15",
+  "reviewedAt": "2026-07-16",
   "maxReviewAgeDays": 90,
   "site": {
     "name": "Project New Shoes",
@@ -26,7 +26,7 @@
       "name": "Install and launch a local copy",
       "status": "supported",
       "summary": "The launcher imports a complete English Generals and Zero Hour installation or the complete original media set without uploading retail files.",
-      "reviewedAt": "2026-07-14",
+      "reviewedAt": "2026-07-16",
       "details": [
         "The browser launcher can inspect either a complete English Generals and Zero Hour installation or the complete original Generals and Zero Hour disc-image or media set. Folder and media selection always require an explicit action by the person using the browser.",
         "The launcher reads and validates required files locally. It can parse supported ISO and disc-image layouts, extract required Cabinet members, and install the needed BIG archives into the browser's Origin Private File System (OPFS). The installed game remains associated with that browser profile and site origin.",
@@ -34,6 +34,8 @@
       ],
       "evidence": [
         "WebAssembly/harness/launcher-asset-manager.mjs",
+        "WebAssembly/harness/opfs_realm_files.mjs",
+        "WebAssembly/harness/opfs_realm_files_unit.mjs",
         "WebAssembly/harness/game-data-store.mjs",
         "WebAssembly/harness/startup_vertical_smoke.mjs"
       ]
