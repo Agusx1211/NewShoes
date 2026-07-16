@@ -95,6 +95,7 @@
     "serve:harness": "node harness/serve.mjs",
     "test:io-worker-offthread": "node harness/io_worker_offthread_smoke.mjs",
     "test:offscreen-worker-gl": "node harness/offscreen_worker_gl_smoke.mjs",
+    "test:display-resolution": "node harness/display_resolution_unit.mjs",
     "test:opfs-sync-read": "node harness/opfs_sync_read_smoke.mjs",
     "probe:p2-opfs": "node harness/p2_opfs_probe.mjs",
     "test:issue-recorder": "node tools/verify_crash_diagnostics_zero_overhead.mjs && node harness/issue_recorder_unit.mjs && node harness/network_diagnostics_unit.mjs && node harness/issue_dump_network_decode_smoke.mjs && node harness/issue_dump_upload_smoke.mjs && node harness/issue_recorder_ui_smoke.mjs",
