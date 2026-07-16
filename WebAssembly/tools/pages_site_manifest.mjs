@@ -43,6 +43,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "cursor-style-config.mjs",
   "d3d8_executor.mjs",
   "device-transfer-protocol.mjs",
+  "display-resolution.mjs",
   "engine_realm_boot.mjs",
   "gdi_executor.mjs",
   "game-data-store.mjs",
