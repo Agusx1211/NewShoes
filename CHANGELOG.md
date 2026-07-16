@@ -13,6 +13,8 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Add complete mobile touch controls, virtual keyboard integration, and gesture coverage ([PR #110](https://github.com/Agusx1211/NewShoes/pull/110)).
 - Expand terrain rendering to cover ultrawide high-zoom and near-vertical camera views ([PR #113](https://github.com/Agusx1211/NewShoes/pull/113)).
 - Set version 0.3.0 and complete its audited release inventory ([PR #116](https://github.com/Agusx1211/NewShoes/pull/116)).
+- Reduce automatic iPad rendering to the CSS pixel grid to lower GPU pressure ([PR #111](https://github.com/Agusx1211/NewShoes/pull/111)).
+- Add native Anonymous and Ranked multiplayer UI with LAN status and reconnect recovery ([PR #112](https://github.com/Agusx1211/NewShoes/pull/112)).
 
 ## [0.2.0] - 2026-07-15
 
