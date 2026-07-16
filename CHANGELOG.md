@@ -12,6 +12,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Fix biased skirmish random-faction assignments while preserving deterministic RNG progression ([PR #109](https://github.com/Agusx1211/NewShoes/pull/109)).
 - Add complete mobile touch controls, virtual keyboard integration, and gesture coverage ([PR #110](https://github.com/Agusx1211/NewShoes/pull/110)).
 - Expand terrain rendering to cover ultrawide high-zoom and near-vertical camera views ([PR #113](https://github.com/Agusx1211/NewShoes/pull/113)).
+- Set version 0.3.0 and complete its audited release inventory ([PR #116](https://github.com/Agusx1211/NewShoes/pull/116)).
 
 ## [0.2.0] - 2026-07-15
 
