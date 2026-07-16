@@ -73,6 +73,10 @@ function expect(condition, message, payload = null) {
   if (!condition) throw new Error(`${message}: ${JSON.stringify(payload)}`);
 }
 
+function sameEnginePath(left, right) {
+  return String(left ?? "").toLowerCase() === String(right ?? "").toLowerCase();
+}
+
 function archives(baseUrl) {
   return archiveSpecs.map((spec) => ({
     name: spec.name,
@@ -473,9 +477,9 @@ try {
     await pumpLobby(clients);
     return Promise.all(clients.map((client) => lanState(client)));
   }, (states) => states.every((state) =>
-    state.game?.numPlayers === playerCount && state.game?.map === map), 45000);
+    state.game?.numPlayers === playerCount && sameEnginePath(state.game?.map, map)), 45000);
   expect(joined?.every((state) => state.game?.numPlayers === playerCount
-      && state.game?.map === map),
+      && sameEnginePath(state.game?.map, map)),
   "LAN game state did not converge after every guest joined", joined);
 
   await Promise.all(clients.map((client) => lanCommand(client, "ready")));
