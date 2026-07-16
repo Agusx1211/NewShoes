@@ -641,6 +641,263 @@ body {
   padding: 0.55rem;
   font: 13px/1.45 var(--sys-font);
 }
+
+/* --- Touch game controls --------------------------------------------------
+   The root never intercepts the game surface. Only visible controls opt into
+   pointer events, so one- and two-finger gestures still begin on the canvas. */
+.touchControls {
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  overflow: hidden;
+  color: #f3f6f4;
+  font: 600 12px/1.2 var(--sys-font);
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.touchControls[hidden],
+.touchControls [hidden] {
+  display: none !important;
+}
+.touchControls button,
+.touchControls textarea {
+  font: inherit;
+  touch-action: manipulation;
+}
+.touchControls button {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 6px 10px;
+  color: #f7f4e9;
+  border: 1px solid rgba(231, 202, 123, .58);
+  border-radius: 9px;
+  background: linear-gradient(rgba(48, 67, 62, .96), rgba(20, 33, 32, .96));
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .46), inset 0 1px rgba(255, 255, 255, .12);
+  pointer-events: auto;
+}
+.touchControls button:active,
+.touchControls button[aria-pressed="true"] {
+  color: #17201c;
+  border-color: #ffe29a;
+  background: #e5bf62;
+}
+.touchToolbar {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+.touchToolbar button {
+  display: grid;
+  min-width: 58px;
+  place-items: center;
+  gap: 1px;
+  padding: 5px 8px;
+  color: #f3eedf;
+  background: rgba(18, 31, 30, .82);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+}
+.touchToolbar button > span:first-child {
+  font-size: 19px;
+  line-height: 17px;
+}
+.touchGuide,
+.touchKeyPanel {
+  position: absolute;
+  top: max(66px, calc(env(safe-area-inset-top) + 58px));
+  right: max(8px, env(safe-area-inset-right));
+  width: min(430px, calc(100% - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  max-height: calc(100% - 82px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: hidden;
+  color: #eaf0ec;
+  border: 1px solid rgba(224, 190, 105, .55);
+  border-radius: 12px;
+  background: rgba(10, 21, 21, .94);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .58);
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.touchGuide header,
+.touchKeyPanel header {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 14px;
+  color: #f2cd73;
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+}
+.touchGuide header button,
+.touchKeyPanel header button {
+  min-width: 40px;
+  min-height: 40px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 24px;
+}
+.touchGuide dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+  margin: 0;
+  padding: 14px;
+}
+.touchGuide dl > div { min-width: 0; }
+.touchGuide dt { color: #fff3cc; }
+.touchGuide dd {
+  margin: 2px 0 0;
+  color: #b7c6c1;
+  font-weight: 450;
+}
+.touchGuide p {
+  margin: 0;
+  padding: 0 14px 14px;
+  color: #c5d0cc;
+  font-weight: 450;
+}
+.touchKeyPanel {
+  width: min(560px, calc(100% - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  display: flex;
+  flex-direction: column;
+}
+.touchKeyPanel header > span {
+  color: #9eb0aa;
+  font-size: 10px;
+  font-weight: 450;
+}
+.touchKeyScroll {
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.touchKeySection {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(42px, 1fr));
+  gap: 5px;
+  margin-bottom: 7px;
+}
+.touchKeySection button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 5px 3px;
+  border-color: rgba(181, 202, 193, .34);
+  border-radius: 6px;
+  background: rgba(41, 57, 54, .92);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .08);
+}
+.touchCameraKeys,
+.touchCommonKeys { grid-template-columns: repeat(5, minmax(54px, 1fr)); }
+.touchModifierKeys { grid-template-columns: repeat(3, minmax(58px, 1fr)) minmax(180px, 3fr); }
+.touchModifierKeys > span {
+  align-self: center;
+  padding: 0 7px;
+  color: #aab9b4;
+  font-size: 10px;
+  font-weight: 450;
+}
+.touchNavigationKeys { grid-template-columns: repeat(5, minmax(44px, 1fr)); }
+.touchFunctionKeys { grid-template-columns: repeat(12, minmax(36px, 1fr)); }
+.touchNumpadKeys { grid-template-columns: repeat(4, minmax(56px, 1fr)); }
+.touchTextBar {
+  position: absolute;
+  right: max(8px, env(safe-area-inset-right));
+  bottom: max(var(--touch-keyboard-inset, 0px), env(keyboard-inset-height, 0px), env(safe-area-inset-bottom));
+  left: max(8px, env(safe-area-inset-left));
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  padding: 8px;
+  color: #dbe5e0;
+  border: 1px solid rgba(224, 190, 105, .58);
+  border-radius: 12px 12px 0 0;
+  background: rgba(10, 21, 21, .96);
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, .55);
+  pointer-events: auto;
+}
+.touchTextBar label {
+  min-width: 0;
+  flex: 1;
+}
+.touchTextBar label > span {
+  display: block;
+  margin: 0 0 4px 2px;
+  color: #e8ca7c;
+  font-size: 10px;
+}
+.touchTextBar textarea {
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  max-height: 80px;
+  display: block;
+  resize: none;
+  padding: 10px 12px;
+  color: #f3f6f4;
+  caret-color: #f2ca69;
+  border: 1px solid #667c74;
+  border-radius: 7px;
+  outline: none;
+  background: #152321;
+  pointer-events: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+@media (max-width: 700px), (max-height: 520px) {
+  .touchToolbar { gap: 4px; }
+  .touchToolbar button {
+    min-width: 50px;
+    min-height: 48px;
+    padding-inline: 5px;
+    font-size: 10px;
+  }
+  .touchButtonWideLabel { display: none; }
+  .touchGuide,
+  .touchKeyPanel {
+    top: max(62px, calc(env(safe-area-inset-top) + 54px));
+    max-height: calc(100% - 70px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+  .touchGuide dl { grid-template-columns: 1fr; }
+  .touchKeyPanel { left: max(8px, env(safe-area-inset-left)); width: auto; }
+  .touchKeySection { grid-template-columns: repeat(6, minmax(42px, 1fr)); }
+  .touchCameraKeys,
+  .touchCommonKeys { grid-template-columns: repeat(5, minmax(48px, 1fr)); }
+  .touchModifierKeys { grid-template-columns: repeat(3, 1fr); }
+  .touchModifierKeys > span { grid-column: 1 / -1; }
+  .touchNavigationKeys { grid-template-columns: repeat(5, 1fr); }
+  .touchFunctionKeys { grid-template-columns: repeat(6, 1fr); }
+  .touchNumpadKeys { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (orientation: portrait) and (max-width: 600px) {
+  .touchToolbar {
+    top: auto;
+    right: max(5px, env(safe-area-inset-right));
+    bottom: max(5px, env(safe-area-inset-bottom));
+    left: max(5px, env(safe-area-inset-left));
+    justify-content: center;
+  }
+  .touchToolbar button { flex: 1; max-width: 74px; }
+  .touchGuide,
+  .touchKeyPanel {
+    top: max(8px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    bottom: calc(62px + env(safe-area-inset-bottom));
+    left: max(8px, env(safe-area-inset-left));
+    width: auto;
+    max-height: none;
+  }
+}
 .issueActions {
   display: flex;
   gap: 0.45rem;

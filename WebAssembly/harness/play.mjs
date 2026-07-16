@@ -1840,6 +1840,13 @@ function onFullscreenChange() {
 // --- live tracking of tab size / DPR / fullscreen -----------------------------
 let resizeSettleTimer = null;
 function onViewportGeometryChange() {
+  if (document.documentElement.classList.contains("touch-keyboard-open")) {
+    if (resizeSettleTimer) {
+      clearTimeout(resizeSettleTimer);
+      resizeSettleTimer = null;
+    }
+    return;
+  }
   if (displaySettings.mode !== "dynamic") {
     return;
   }
@@ -1866,6 +1873,9 @@ function initDisplayRuntime() {
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("webkitfullscreenchange", onFullscreenChange);
   window.addEventListener("resize", onViewportGeometryChange);
+  window.addEventListener("cncport:virtualkeyboardchange", (event) => {
+    if (event.detail?.open === false) onViewportGeometryChange();
+  });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", onViewportGeometryChange);
   }

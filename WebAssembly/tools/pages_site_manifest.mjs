@@ -89,6 +89,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "runtime-shutdown-sequence.mjs",
   "save-persistence-coordinator.mjs",
   "shader-tier-config.mjs",
+  "touch-controls.mjs",
   "udp_realm_bridge.mjs",
   "transfer-user-data-store.mjs",
   "vendor/pako-LICENSE.txt",
