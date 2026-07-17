@@ -1186,12 +1186,15 @@ async function start() {
     renderPerformanceOverlay();
     issueRecorder.setSessionContext({ phase: "running" });
     viewportCanvas.focus();
-    initDisplayRuntime();
     // The engine booted at the requested resolution (the boot resolutionchange
     // event recorded it); this apply is a no-op then, and covers the fallbacks:
     // a stale wasm without the boot export, or the window changing size during
-    // the archive download.
+    // the archive download. Keep engine-originated resolution persistence
+    // disabled until this initial reconciliation finishes: a delayed threaded
+    // status for the boot size must not turn a still-dynamic device layout into
+    // a fixed 800x600 setting before the page can apply its live viewport.
     await applyDisplaySettings("boot");
+    initDisplayRuntime();
     analyticsStage = "display";
     track("boot_milestone", { milestone: "first_frame" });
     track("game_launch", {

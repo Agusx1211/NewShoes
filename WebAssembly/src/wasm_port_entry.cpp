@@ -23,6 +23,7 @@
 
 #include "D3dx8core.h"
 #include "Common/Debug.h"
+#include "Common/MessageStream.h"
 #include "Common/RandomValue.h"
 #include "GameLogic/LogicRandomValue.h"
 #include "mmsystem.h"
@@ -4532,6 +4533,35 @@ EMSCRIPTEN_KEEPALIVE int cnc_port_set_browser_input_lite(
 	int key_down)
 {
 	apply_browser_input(cursor_x, cursor_y, cursor_available, virtual_key, key_down);
+	return 1;
+}
+
+EMSCRIPTEN_KEEPALIVE int cnc_port_post_touch_navigation_lite(
+	int previous_x,
+	int previous_y,
+	int current_x,
+	int current_y,
+	double scale,
+	double angle_delta)
+{
+	if (TheMessageStream == nullptr
+			|| !std::isfinite(scale) || scale < 0.25 || scale > 4.0
+			|| !std::isfinite(angle_delta)
+			|| angle_delta < -3.141592653589793 || angle_delta > 3.141592653589793) {
+		return 0;
+	}
+
+	GameMessage *message = TheMessageStream->appendMessage(
+		GameMessage::MSG_RAW_TOUCH_NAVIGATION);
+	if (message == nullptr) {
+		return 0;
+	}
+	ICoord2D previous = { previous_x, previous_y };
+	ICoord2D current = { current_x, current_y };
+	message->appendPixelArgument(previous);
+	message->appendPixelArgument(current);
+	message->appendRealArgument(static_cast<Real>(scale));
+	message->appendRealArgument(static_cast<Real>(angle_delta));
 	return 1;
 }
 

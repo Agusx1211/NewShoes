@@ -24,6 +24,38 @@ export function clampResolution(width, height) {
   };
 }
 
+export function fitResolutionToLimits(width, height, maxPixels) {
+  const sourceWidth = Number(width);
+  const sourceHeight = Number(height);
+  const pixelLimit = Number(maxPixels);
+  if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight)
+      || !Number.isFinite(pixelLimit)
+      || sourceWidth <= 0 || sourceHeight <= 0 || pixelLimit <= 0) {
+    return null;
+  }
+
+  const minimumScale = Math.max(
+    ENGINE_MIN.width / sourceWidth,
+    ENGINE_MIN.height / sourceHeight,
+  );
+  const maximumScale = Math.min(
+    ENGINE_MAX.width / sourceWidth,
+    ENGINE_MAX.height / sourceHeight,
+    Math.sqrt(pixelLimit / (sourceWidth * sourceHeight)),
+  );
+  // Prefer the source pixel grid, raise it uniformly to the authored minimum
+  // when possible, and reduce it uniformly for GPU/engine limits. Extremely
+  // narrow or wide boxes can make the minimum and maximum incompatible; the
+  // device aspect and hard limits win instead of stretching one axis.
+  const scale = minimumScale <= maximumScale
+    ? Math.min(maximumScale, Math.max(minimumScale, 1))
+    : maximumScale;
+  return {
+    width: Math.max(1, Math.round(sourceWidth * scale)),
+    height: Math.max(1, Math.round(sourceHeight * scale)),
+  };
+}
+
 export function dynamicResolutionForBox({
   cssWidth,
   cssHeight,
@@ -45,19 +77,11 @@ export function dynamicResolutionForBox({
   // 1024x768..1366x1024), while applying DPR 2 creates several full-size
   // color/depth surfaces for no gameplay benefit. Preserve the box aspect and
   // raise only small/portrait layouts uniformly to the engine-authored minimum.
-  const renderScale = ipadLike
-    ? Math.max(1, ENGINE_MIN.width / boxWidth, ENGINE_MIN.height / boxHeight)
-    : dpr;
-  let width = boxWidth * renderScale;
-  let height = boxHeight * renderScale;
+  const renderScale = ipadLike ? 1 : dpr;
+  const width = boxWidth * renderScale;
+  const height = boxHeight * renderScale;
   const maxPixels = iosLike || ipadLike
     ? IOS_MAX_DYNAMIC_PIXELS
     : DESKTOP_MAX_DYNAMIC_PIXELS;
-  const pixels = width * height;
-  if (pixels > maxPixels) {
-    const scale = Math.sqrt(maxPixels / pixels);
-    width *= scale;
-    height *= scale;
-  }
-  return clampResolution(width, height);
+  return fitResolutionToLimits(width, height, maxPixels);
 }
