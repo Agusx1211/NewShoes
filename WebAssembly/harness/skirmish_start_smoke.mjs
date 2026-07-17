@@ -672,8 +672,10 @@ async function driveTouchControlsProbe(page) {
   let unit = drawables.find((drawable) =>
     drawable?.localOwned === true && drawable?.structure !== true
       && drawable?.kindOf?.selectable === true && drawable?.onScreen === true
-      && drawable?.screenPos?.x > 80 && drawable?.screenPos?.x < 700
-      && drawable?.screenPos?.y > 80 && drawable?.screenPos?.y < 430);
+      && drawable?.screenPos?.x > 80
+      && drawable?.screenPos?.x < renderGeometry.display.width - 80
+      && drawable?.screenPos?.y > 80
+      && drawable?.screenPos?.y < renderGeometry.display.height - 120);
   if (!unit) {
     const offscreenUnit = allDrawables.find((drawable) =>
       drawable?.localOwned === true && drawable?.structure !== true
