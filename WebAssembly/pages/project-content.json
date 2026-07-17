@@ -35,6 +35,8 @@
       ],
       "evidence": [
         "WebAssembly/harness/launcher-asset-manager.mjs",
+        "WebAssembly/harness/opfs_realm_files.mjs",
+        "WebAssembly/harness/opfs_realm_files_unit.mjs",
         "WebAssembly/harness/game-data-store.mjs",
         "WebAssembly/harness/startup_vertical_smoke.mjs",
         "WebAssembly/harness/launcher_mobile_browser_smoke.mjs"
