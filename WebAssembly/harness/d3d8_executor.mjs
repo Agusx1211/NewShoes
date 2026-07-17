@@ -3464,7 +3464,7 @@ function convertD3D8TextureBytes(format, bytes, width, height, depth = 1) {
  * Decode a single DXT1 (BC1) block to 4x4 RGBA8
  * DXT1: 8 bytes -> 4x4 pixels. Two RGB565 endpoints + 4-color palette + 16×2-bit indices
  */
-function decodeDxt1Block(blockBytes, target, width, height, x, y) {
+function decodeDxt1Block(blockData, blockBytes, target, width, height, x, y) {
   const c0 = (blockBytes[0] | (blockBytes[1] << 8));
   const c1 = (blockBytes[2] | (blockBytes[3] << 8));
 
