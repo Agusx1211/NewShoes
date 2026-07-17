@@ -2046,7 +2046,7 @@ function syncAgentBridgeTokenHelp() {
 
 function populateAgentBridgeForm(config, { rememberToken } = {}) {
   if (!agentBridgeApp) return;
-  agentBridgeApp.url.value = String(config?.url ?? "ws://127.0.0.1:18888/engine");
+  agentBridgeApp.url.value = String(config?.url ?? "webrtc://relay.newshoes.gg/agent");
   agentBridgeApp.token.value = String(config?.token ?? "");
   agentBridgeApp.session.value = String(config?.sessionId ?? "game-1") || "game-1";
   const mode = String(config?.playMode ?? "global");
@@ -2075,7 +2075,7 @@ function agentBridgeStatusPresentation() {
     return {
       state: "connecting",
       title: "Testing the bridge connection",
-      detail: "Opening the WebSocket and authenticating with the browser token…",
+      detail: "Establishing the peer connection and authenticating with the browser token…",
     };
   }
   if (agentBridgeApp?.testState === "success") {

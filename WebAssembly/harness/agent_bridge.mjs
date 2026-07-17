@@ -1,4 +1,5 @@
 import { normalizeAgentBridgeConfiguration } from "./agent-bridge-config.mjs";
+import { createAgentTransport } from "./agent-webrtc-transport.mjs";
 
 export const AGENT_PROTOCOL = "cnc-agent/1";
 export const AGENT_SUBPROTOCOL = "cnc-agent.v1";
@@ -320,11 +321,10 @@ export function probeAgentBridgeConnection({
   config,
   WebSocketImpl = globalThis.WebSocket,
   cryptoImpl = globalThis.crypto,
-  timeoutMs = 5000,
+  timeoutMs = 15000,
   setTimeoutImpl = globalThis.setTimeout.bind(globalThis),
   clearTimeoutImpl = globalThis.clearTimeout.bind(globalThis),
 } = {}) {
-  if (typeof WebSocketImpl !== "function") throw new TypeError("WebSocket is unavailable");
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError("agent bridge probe timeout must be a positive number");
   }
@@ -347,7 +347,7 @@ export function probeAgentBridgeConnection({
     };
 
     try {
-      socket = new WebSocketImpl(normalized.url, [AGENT_SUBPROTOCOL]);
+      socket = createAgentTransport(normalized, { WebSocketImpl, cryptoImpl });
     } catch (error) {
       finish(new Error(`Could not open the bridge connection: ${error?.message ?? String(error)}`));
       return;
@@ -387,7 +387,8 @@ export function probeAgentBridgeConnection({
       });
     });
     socket.addEventListener("error", () => {
-      transportError = "WebSocket transport error";
+      transportError = normalized.url.startsWith("webrtc")
+        ? "WebRTC transport error" : "WebSocket transport error";
     });
     socket.addEventListener("close", (event) => {
       if (settled) return;
@@ -411,7 +412,6 @@ export function createAgentBridgeConnection({
   onStatus = () => {},
 } = {}) {
   if (typeof rpc !== "function") throw new TypeError("agent bridge requires the engine RPC function");
-  if (typeof WebSocketImpl !== "function") throw new TypeError("WebSocket is unavailable");
 
   const normalized = normalizeAgentBridgeConfiguration(config, cryptoImpl);
   let socket = null;
@@ -456,7 +456,8 @@ export function createAgentBridgeConnection({
           protocol: AGENT_PROTOCOL,
           capabilities: [...CAPABILITIES],
           observation: "request-driven",
-          transport: "raw-websocket-json",
+          transport: normalized.url.startsWith("webrtc")
+            ? "webrtc-datachannel-json" : "raw-websocket-json",
           playMode: normalized.playMode,
         };
       case "input.pointerMove": {
@@ -662,7 +663,7 @@ export function createAgentBridgeConnection({
     publish({ phase: "connecting", connected: false });
     let target;
     try {
-      target = new WebSocketImpl(normalized.url, [AGENT_SUBPROTOCOL]);
+      target = createAgentTransport(normalized, { WebSocketImpl, cryptoImpl });
       socket = target;
     } catch (error) {
       publish({ lastError: error?.message ?? String(error) });
@@ -715,7 +716,10 @@ export function createAgentBridgeConnection({
         });
     });
     target.addEventListener("error", () => {
-      if (target === socket) publish({ lastError: "WebSocket transport error" });
+      if (target === socket) publish({
+        lastError: normalized.url.startsWith("webrtc")
+          ? "WebRTC transport error" : "WebSocket transport error",
+      });
     });
     target.addEventListener("close", (event) => {
       if (target !== socket) return;
@@ -723,7 +727,9 @@ export function createAgentBridgeConnection({
       publish({
         phase: stopped ? "stopped" : "disconnected",
         connected: false,
-        lastError: stopped || event.wasClean ? state.lastError : `WebSocket closed (${event.code})`,
+        lastError: stopped || event.wasClean
+          ? state.lastError
+          : `${normalized.url.startsWith("webrtc") ? "WebRTC transport" : "WebSocket"} closed (${event.code})`,
       });
       scheduleReconnect();
     });

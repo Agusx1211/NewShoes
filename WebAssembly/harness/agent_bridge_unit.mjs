@@ -631,5 +631,5 @@ test("requires explicit opt-in URL and token", () => {
     rpc: async () => {},
     WebSocketImpl: FakeWebSocket,
     cryptoImpl: { randomUUID: () => "unused" },
-  }), /ws: or wss:/);
+  }), /webrtc:, ws:, or wss:/);
 });
