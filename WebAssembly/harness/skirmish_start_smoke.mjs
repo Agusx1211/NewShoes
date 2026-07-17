@@ -1760,6 +1760,14 @@ function particleEffectDraws(frame) {
 
 async function inspectGraphics(page) {
   return page.evaluate(() => {
+    const threaded = window.CnCPort?.state?.threadedEngine;
+    if (threaded) {
+      return {
+        renderer: threaded.graphics?.renderer ?? null,
+        contextLost: threaded.contextLost === true,
+        contextLossBanner: Boolean(document.querySelector("#webglContextLostBanner")),
+      };
+    }
     const canvas = document.querySelector("#viewport");
     const context = canvas?.getContext("webgl2");
     const debugInfo = context?.getExtension("WEBGL_debug_renderer_info");
