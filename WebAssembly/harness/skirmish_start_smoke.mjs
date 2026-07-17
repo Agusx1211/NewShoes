@@ -752,16 +752,28 @@ async function driveTouchControlsProbe(page) {
   const cameraBefore = await touchCameraState(page);
   const navigationPathBefore = (await rpc(page, "querySelection"))?.result?.commandPath;
   const panStart = [{ x: 280, y: 240 }, { x: 440, y: 240 }];
-  const panEnd = panStart.map((point) => ({ x: point.x + 70, y: point.y + 35 }));
+  let panEnd = panStart.map((point) => ({ x: point.x + 70, y: point.y + 35 }));
   const panStartClient = await Promise.all(panStart.map((point) => touchPointToClient(page, point)));
-  const panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
+  let panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
   await dispatchTouchPointer(page, "pointerdown", 511, panStartClient[0], true);
   await dispatchTouchPointer(page, "pointerdown", 512, panStartClient[1]);
   await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
   await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
   await page.waitForTimeout(40);
   await runFrames(page, 4, "touch direct pan");
-  const cameraPanMoved = await touchCameraState(page);
+  let cameraPanMoved = await touchCameraState(page);
+  // A random start position can place the camera against the map edge. If the
+  // first drag points farther out of bounds, reverse it while the same gesture
+  // is held so direct translation is still tested without depending on spawn.
+  if (coordinateDelta(cameraBefore.lookAt, cameraPanMoved.lookAt) <= 0.1) {
+    panEnd = panStart.map((point) => ({ x: point.x - 70, y: point.y - 35 }));
+    panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
+    await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
+    await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
+    await page.waitForTimeout(40);
+    await runFrames(page, 4, "touch direct pan reverse from map edge");
+    cameraPanMoved = await touchCameraState(page);
+  }
   const navigationDiagnostics = await page.evaluate(() => ({
     touchControls: window.CnCPort.getTouchControlsState?.() ?? null,
     forwardedNavigation: window.CnCPort.state.touchNavigation ?? null,
