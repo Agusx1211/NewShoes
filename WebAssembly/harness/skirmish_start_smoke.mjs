@@ -640,6 +640,15 @@ async function waitForTouchNavigationQueued(page, minimumCount) {
   }, minimumCount);
 }
 
+async function settleTouchNavigationQueue(page, minimumCount) {
+  await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
+  await waitForTouchNavigationQueued(page, minimumCount);
+  const count = await touchNavigationCount(page);
+  await waitForTouchNavigationQueued(page, count);
+}
+
 function coordinateDelta(left, right) {
   return Math.hypot(
     Number(right?.x ?? 0) - Number(left?.x ?? 0),
@@ -772,8 +781,7 @@ async function driveTouchControlsProbe(page) {
   let navigationCountBeforeMove = await touchNavigationCount(page);
   await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
   await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
-  await page.waitForTimeout(40);
-  await waitForTouchNavigationQueued(page, navigationCountBeforeMove + 1);
+  await settleTouchNavigationQueue(page, navigationCountBeforeMove + 1);
   await runFrames(page, 4, "touch direct pan");
   let cameraPanMoved = await touchCameraState(page);
   // A random start position can place the camera against the map edge. If the
@@ -785,8 +793,7 @@ async function driveTouchControlsProbe(page) {
     navigationCountBeforeMove = await touchNavigationCount(page);
     await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
     await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
-    await page.waitForTimeout(40);
-    await waitForTouchNavigationQueued(page, navigationCountBeforeMove + 1);
+    await settleTouchNavigationQueue(page, navigationCountBeforeMove + 1);
     await runFrames(page, 4, "touch direct pan reverse from map edge");
     cameraPanMoved = await touchCameraState(page);
   }
@@ -849,7 +856,7 @@ async function driveTouchControlsProbe(page) {
     await dispatchTouchPointer(page, "pointermove", 522, rightClient);
     await page.waitForTimeout(20);
   }
-  await waitForTouchNavigationQueued(page, navigationCountBeforeMove + 1);
+  await settleTouchNavigationQueue(page, navigationCountBeforeMove + 1);
   await runFrames(page, 6, "touch combined navigation");
   const cameraCombined = await touchCameraState(page);
   const combinedDiagnostics = await page.evaluate(() => ({
