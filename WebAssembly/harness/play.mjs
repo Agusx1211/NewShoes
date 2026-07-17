@@ -6,6 +6,12 @@ import "./analytics.mjs";
 // flows through bridge.js canvas listeners into the engine's Win32 queue.
 
 import "./launcher-archive-specs.js";
+import {
+  forgetAgentBridgeToken,
+  loadAgentBridgeSettings,
+  normalizeAgentBridgeConfiguration,
+  saveAgentBridgeSettings,
+} from "./agent-bridge-config.mjs";
 import { createIssueRecorder } from "./issue-recorder.mjs";
 import {
   loadCameraZoomHeight,
@@ -56,6 +62,12 @@ const progressNode = document.querySelector("#launchStatus");
 const progressSentinel = document.querySelector("#progress");
 const bootSentinel = document.querySelector("#overlay");
 const queryParams = new URLSearchParams(window.location.search);
+let networkStorage = null;
+try {
+  networkStorage = window.localStorage;
+} catch {
+  // Privacy settings can make the localStorage property itself throw.
+}
 
 function publicAgentBridgeEndpoint(value) {
   try {
@@ -79,46 +91,16 @@ function diagnosticPageParams() {
 }
 
 const hostAgentBridgeConfiguration = window.CnCPortPlayConfig?.agentBridge;
+const rememberedAgentBridgeSettings = loadAgentBridgeSettings(networkStorage);
 let agentBridgeConfigurationError = "";
 
-function normalizeAgentBridgeConfiguration(config) {
-  if (!config || typeof config !== "object" || Array.isArray(config)) {
-    throw new TypeError("agent bridge configuration must be an object");
-  }
-  const rawUrl = String(config.url ?? "");
-  if (rawUrl.length === 0 || rawUrl.length > 4096) {
-    throw new TypeError("agent bridge URL must be a non-empty string of at most 4096 characters");
-  }
-  let url;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new TypeError("agent bridge URL is invalid");
-  }
-  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
-    throw new TypeError("agent bridge URL must use ws: or wss:");
-  }
-  const token = String(config.token ?? "");
-  if (token.length === 0 || token.length > 4096) {
-    throw new TypeError("agent bridge token must be a non-empty string of at most 4096 characters");
-  }
-  const rawSessionId = String(config.sessionId ?? "");
-  const sessionId = rawSessionId || window.crypto.randomUUID();
-  if (sessionId.length > 128 || !/^[A-Za-z0-9._-]+$/.test(sessionId)) {
-    throw new TypeError("agent bridge session ID may contain only letters, numbers, dot, underscore, and hyphen (128 characters maximum)");
-  }
-  const playMode = String(config.playMode ?? "global");
-  if (playMode !== "global" && playMode !== "camera") {
-    throw new TypeError("agent bridge play mode must be global or camera");
-  }
-  return Object.freeze({ url: url.href, token, sessionId, playMode });
-}
-
 function initialAgentBridgeConfiguration() {
-  const host = hostAgentBridgeConfiguration;
-  if (host == null) return null;
+  const candidate = hostAgentBridgeConfiguration
+    ?? (rememberedAgentBridgeSettings.enabled && rememberedAgentBridgeSettings.token
+      ? rememberedAgentBridgeSettings : null);
+  if (candidate == null) return null;
   try {
-    return normalizeAgentBridgeConfiguration(host);
+    return normalizeAgentBridgeConfiguration(candidate);
   } catch (error) {
     agentBridgeConfigurationError = error?.message ?? String(error);
     return null;
@@ -154,12 +136,6 @@ const binkPreparationFill = document.querySelector("#binkPreparationFill");
 const binkPreparationDetail = document.querySelector("#binkPreparationDetail");
 const binkPreparationCancel = document.querySelector("#binkPreparationCancel");
 const NETWORK_DIAGNOSTICS_SETTINGS_KEY = "cncPortNetworkDiagnosticsEnabled.v1";
-let networkStorage = null;
-try {
-  networkStorage = window.localStorage;
-} catch {
-  // Privacy settings can make the localStorage property itself throw.
-}
 let cursorStyle = loadCursorStyle(networkStorage);
 
 function binkPreparationPercent(detail) {
@@ -1210,12 +1186,15 @@ async function start() {
     renderPerformanceOverlay();
     issueRecorder.setSessionContext({ phase: "running" });
     viewportCanvas.focus();
-    initDisplayRuntime();
     // The engine booted at the requested resolution (the boot resolutionchange
     // event recorded it); this apply is a no-op then, and covers the fallbacks:
     // a stale wasm without the boot export, or the window changing size during
-    // the archive download.
+    // the archive download. Keep engine-originated resolution persistence
+    // disabled until this initial reconciliation finishes: a delayed threaded
+    // status for the boot size must not turn a still-dynamic device layout into
+    // a fixed 800x600 setting before the page can apply its live viewport.
     await applyDisplaySettings("boot");
+    initDisplayRuntime();
     analyticsStage = "display";
     track("boot_milestone", { milestone: "first_frame" });
     track("game_launch", {
@@ -2061,25 +2040,66 @@ function setShaderTier(tier, { reload = false } = {}) {
 
 let agentBridgeApp = null;
 
-function populateAgentBridgeForm(config) {
+function syncAgentBridgeTokenHelp() {
   if (!agentBridgeApp) return;
-  agentBridgeApp.url.value = String(config?.url ?? "ws://127.0.0.1:18888/engine");
+  agentBridgeApp.tokenHelp.textContent = agentBridgeApp.rememberToken.checked
+    ? "Stored on this browser profile until you turn remembering off or clear site data."
+    : "Kept only in memory until this page closes.";
+}
+
+function populateAgentBridgeForm(config, { rememberToken } = {}) {
+  if (!agentBridgeApp) return;
+  agentBridgeApp.url.value = String(config?.url ?? "webrtc://relay.newshoes.gg/agent");
   agentBridgeApp.token.value = String(config?.token ?? "");
   agentBridgeApp.session.value = String(config?.sessionId ?? "game-1") || "game-1";
   const mode = String(config?.playMode ?? "global");
   agentBridgeApp.mode.value = mode === "camera" ? "camera" : "global";
+  if (rememberToken !== undefined) {
+    agentBridgeApp.rememberToken.checked = rememberToken === true;
+  }
   agentBridgeApp.token.type = "password";
   agentBridgeApp.reveal.textContent = "Show";
   agentBridgeApp.reveal.setAttribute("aria-pressed", "false");
+  syncAgentBridgeTokenHelp();
+}
+
+function agentBridgeFormConfiguration() {
+  return {
+    url: agentBridgeApp.url.value.trim(),
+    token: agentBridgeApp.token.value,
+    sessionId: agentBridgeApp.session.value.trim(),
+    playMode: agentBridgeApp.mode.value,
+  };
 }
 
 function agentBridgeStatusPresentation() {
   const enabled = agentBridgeApp?.enabled.checked === true;
+  if (agentBridgeApp?.testState === "testing") {
+    return {
+      state: "connecting",
+      title: "Testing the bridge connection",
+      detail: "Establishing the peer connection and authenticating with the browser token…",
+    };
+  }
+  if (agentBridgeApp?.testState === "success") {
+    return {
+      state: "connected",
+      title: "Bridge connection verified",
+      detail: agentBridgeApp.testDetail,
+    };
+  }
+  if (agentBridgeApp?.testState === "error") {
+    return {
+      state: "error",
+      title: "Connection test failed",
+      detail: agentBridgeApp.testDetail,
+    };
+  }
   if (agentBridgeApp?.error) {
     return {
       state: "error",
       title: "Configuration needs attention",
-      detail: "Correct the highlighted connection details, then apply again.",
+      detail: agentBridgeApp.error,
     };
   }
   if (!runtimeStarted) {
@@ -2155,9 +2175,11 @@ function syncAgentBridgeApp({ configurationChanged = false } = {}) {
     agentBridgeApp.error = "";
   }
   const enabled = agentBridgeApp.enabled.checked;
-  agentBridgeApp.enabled.disabled = runtimeStarted;
-  agentBridgeApp.fields.disabled = runtimeStarted || !enabled;
-  agentBridgeApp.apply.disabled = runtimeStarted;
+  const testing = agentBridgeApp.testState === "testing";
+  agentBridgeApp.enabled.disabled = runtimeStarted || testing;
+  agentBridgeApp.fields.disabled = runtimeStarted || !enabled || testing;
+  agentBridgeApp.test.disabled = runtimeStarted || !enabled || testing;
+  agentBridgeApp.apply.disabled = runtimeStarted || testing;
   agentBridgeApp.lock.hidden = !runtimeStarted;
   agentBridgeApp.errorNode.hidden = !agentBridgeApp.error;
   agentBridgeApp.errorNode.textContent = agentBridgeApp.error;
@@ -2178,49 +2200,89 @@ function bindAgentBridgeApp() {
     fields: document.querySelector("#agentBridgeFields"),
     url: document.querySelector("#agentBridgeUrl"),
     token: document.querySelector("#agentBridgeToken"),
+    tokenHelp: document.querySelector("#agentBridgeTokenHelp"),
     reveal: document.querySelector("#agentBridgeTokenReveal"),
+    rememberToken: document.querySelector("#agentBridgeRememberToken"),
     session: document.querySelector("#agentBridgeSession"),
     mode: document.querySelector("#agentBridgeMode"),
     errorNode: document.querySelector("#agentBridgeError"),
     status: document.querySelector("#agentBridgeStatus"),
     lock: document.querySelector("#agentBridgeLockNotice"),
+    test: document.querySelector("#agentBridgeTest"),
     apply: document.querySelector("#agentBridgeApply"),
     dirty: false,
     error: agentBridgeConfigurationError,
+    testState: "idle",
+    testDetail: "",
   };
-  const initialDraft = agentBridgeConfiguration
-    ?? (hostAgentBridgeConfiguration && typeof hostAgentBridgeConfiguration === "object"
-      ? hostAgentBridgeConfiguration : null);
-  agentBridgeApp.enabled.checked = Boolean(initialDraft);
-  populateAgentBridgeForm(initialDraft);
+  const hostDraft = hostAgentBridgeConfiguration && typeof hostAgentBridgeConfiguration === "object"
+    ? hostAgentBridgeConfiguration : null;
+  const initialDraft = agentBridgeConfiguration ?? hostDraft ?? rememberedAgentBridgeSettings;
+  agentBridgeApp.enabled.checked = hostAgentBridgeConfiguration == null
+    ? rememberedAgentBridgeSettings.enabled : Boolean(hostDraft);
+  populateAgentBridgeForm(initialDraft, {
+    rememberToken: hostAgentBridgeConfiguration == null
+      && rememberedAgentBridgeSettings.rememberToken,
+  });
   const markDirty = () => {
     if (runtimeStarted) return;
     agentBridgeApp.dirty = true;
     agentBridgeApp.error = "";
+    agentBridgeApp.testState = "idle";
+    agentBridgeApp.testDetail = "";
     syncAgentBridgeApp();
   };
   agentBridgeApp.enabled.addEventListener("change", markDirty);
   agentBridgeApp.fields.addEventListener("input", markDirty);
   agentBridgeApp.fields.addEventListener("change", markDirty);
+  agentBridgeApp.rememberToken.addEventListener("change", () => {
+    if (!agentBridgeApp.rememberToken.checked) forgetAgentBridgeToken(networkStorage);
+    syncAgentBridgeTokenHelp();
+  });
   agentBridgeApp.reveal.addEventListener("click", () => {
     const reveal = agentBridgeApp.token.type === "password";
     agentBridgeApp.token.type = reveal ? "text" : "password";
     agentBridgeApp.reveal.textContent = reveal ? "Hide" : "Show";
     agentBridgeApp.reveal.setAttribute("aria-pressed", String(reveal));
   });
+  agentBridgeApp.test.addEventListener("click", async () => {
+    agentBridgeApp.error = "";
+    agentBridgeApp.testState = "testing";
+    agentBridgeApp.testDetail = "";
+    syncAgentBridgeApp();
+    try {
+      const config = normalizeAgentBridgeConfiguration(agentBridgeFormConfiguration());
+      const { probeAgentBridgeConnection } = await import("./agent_bridge.mjs");
+      const result = await probeAgentBridgeConnection({ config });
+      agentBridgeApp.testState = "success";
+      agentBridgeApp.testDetail = `${result.endpoint} · authenticated ${result.protocol}; apply these settings for the next launch.`;
+    } catch (error) {
+      agentBridgeApp.testState = "error";
+      agentBridgeApp.testDetail = error?.message ?? String(error);
+    }
+    syncAgentBridgeApp();
+  });
   agentBridgeApp.form.addEventListener("submit", async (event) => {
     event.preventDefault();
     agentBridgeApp.error = "";
     try {
       const enabled = agentBridgeApp.enabled.checked;
+      const config = agentBridgeFormConfiguration();
+      const rememberToken = agentBridgeApp.rememberToken.checked;
       await configurePlay({
-        agentBridge: enabled ? {
-          url: agentBridgeApp.url.value.trim(),
-          token: agentBridgeApp.token.value,
-          sessionId: agentBridgeApp.session.value.trim(),
-          playMode: agentBridgeApp.mode.value,
-        } : null,
+        agentBridge: enabled ? config : null,
       });
+      saveAgentBridgeSettings(networkStorage, {
+        enabled,
+        ...config,
+        rememberToken,
+      });
+      agentBridgeApp.enabled.checked = enabled;
+      populateAgentBridgeForm(config, { rememberToken });
+      agentBridgeApp.dirty = false;
+      agentBridgeApp.testState = "idle";
+      agentBridgeApp.testDetail = "";
+      syncAgentBridgeApp();
       track("setting_changed", {
         category: "agent_bridge",
         setting: "enabled",

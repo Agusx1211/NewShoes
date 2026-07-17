@@ -60,6 +60,12 @@ jobs:
         working-directory: WebAssembly
         run: npx playwright install --with-deps chromium
 
+      - name: Verify phone launcher navigation
+        working-directory: WebAssembly
+        env:
+          LAUNCHER_MOBILE_SHOTS: ${{ runner.temp }}/launcher-mobile
+        run: npm run verify:launcher-mobile
+
       - name: Prove Pages-like cross-origin isolation
         working-directory: WebAssembly
         env:

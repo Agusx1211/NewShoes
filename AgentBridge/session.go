@@ -10,9 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 )
 
 var errSessionClosed = errors.New("engine session disconnected")
@@ -28,7 +25,7 @@ type Session struct {
 	playMode     string
 	capabilities []string
 	connectedAt  time.Time
-	conn         *websocket.Conn
+	conn         messageConn
 	ctx          context.Context
 	cancel       context.CancelFunc
 
@@ -54,7 +51,7 @@ func newSession(
 	id string,
 	playMode string,
 	capabilities []string,
-	conn *websocket.Conn,
+	conn messageConn,
 	eventsConfig eventRuntimeConfig,
 ) *Session {
 	readCtx, cancel := context.WithCancel(ctx)
@@ -94,7 +91,7 @@ func (s *Session) supports(capability string) bool {
 func (s *Session) write(ctx context.Context, message protocolMessage) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	return wsjson.Write(ctx, s.conn, message)
+	return s.conn.Write(ctx, message)
 }
 
 func (s *Session) call(
@@ -147,7 +144,7 @@ func (s *Session) call(
 func (s *Session) readLoop() error {
 	for {
 		var message protocolMessage
-		if err := wsjson.Read(s.ctx, s.conn, &message); err != nil {
+		if err := s.conn.Read(s.ctx, &message); err != nil {
 			return err
 		}
 		if message.Type != "response" || message.ID == "" {

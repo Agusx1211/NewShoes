@@ -16,6 +16,8 @@ const TRYSTERO_KIND_MAX = 29999;
 const HEX_32 = /^[0-9a-f]{64}$/;
 const HEX_64 = /^[0-9a-f]{128}$/;
 const TRYSTERO_TOPIC = /^[0-9a-z]{20,40}$/;
+const AGENT_ROOM = /^[0-9a-f]{64}$/;
+const AGENT_ROLES = new Set(["bridge", "engine"]);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -167,6 +169,21 @@ export default {
         gameplayTraffic: false,
       });
     }
+    if (url.pathname === "/agent") {
+      if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+        return new Response("Expected a WebSocket upgrade", { status: 426 });
+      }
+      const room = url.searchParams.get("room") ?? "";
+      const role = url.searchParams.get("role") ?? "";
+      if (!AGENT_ROOM.test(room) || !AGENT_ROLES.has(role)) {
+        return new Response("Invalid agent signaling room or role", { status: 400 });
+      }
+      const origin = request.headers.get("origin");
+      if ((role === "engine" && !allowedOrigin(request, env)) || (role === "bridge" && origin)) {
+        return new Response("Origin is not allowed", { status: 403 });
+      }
+      return env.AGENT_SIGNALING.getByName(room).fetch(request);
+    }
     if (url.pathname !== "/nostr") return new Response("Not found", { status: 404 });
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket upgrade", { status: 426 });
@@ -175,6 +192,81 @@ export default {
     return env.TRYSTERO_RELAY.getByName("global").fetch(request);
   },
 };
+
+export class AgentSignalingRelay {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.sessions = new Map();
+    for (const socket of ctx.getWebSockets()) {
+      const attachment = socket.deserializeAttachment();
+      if (AGENT_ROLES.has(attachment?.role)) this.sessions.set(socket, attachment.role);
+    }
+  }
+
+  fetch(request) {
+    const role = new URL(request.url).searchParams.get("role");
+    for (const [socket, existingRole] of this.sessions) {
+      if (existingRole === role) {
+        this.sessions.delete(socket);
+        socket.close(4000, "Replaced by a newer peer");
+      }
+    }
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    server.serializeAttachment({ role });
+    this.ctx.acceptWebSocket(server);
+    this.sessions.set(server, role);
+    this.broadcastPresence();
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  broadcastPresence() {
+    const roles = new Set(this.sessions.values());
+    for (const [socket, role] of this.sessions) {
+      send(socket, { type: "peer", present: roles.has(role === "bridge" ? "engine" : "bridge") });
+    }
+  }
+
+  webSocketMessage(socket, rawMessage) {
+    const bytes = typeof rawMessage === "string"
+      ? encoder.encode(rawMessage)
+      : new Uint8Array(rawMessage);
+    if (bytes.byteLength > MAX_MESSAGE_BYTES) {
+      socket.close(1009, "Signal is too large");
+      return;
+    }
+    let message;
+    try {
+      message = JSON.parse(typeof rawMessage === "string" ? rawMessage : decoder.decode(bytes));
+    } catch {
+      socket.close(1007, "Invalid signal JSON");
+      return;
+    }
+    if (message?.type !== "signal" || typeof message.payload !== "string"
+        || message.payload.length < 1 || message.payload.length > MAX_MESSAGE_BYTES) {
+      socket.close(1008, "Invalid encrypted signal envelope");
+      return;
+    }
+    const sourceRole = this.sessions.get(socket);
+    if (!sourceRole) return;
+    for (const [target, role] of this.sessions) {
+      if (role !== sourceRole) send(target, { type: "signal", payload: message.payload });
+    }
+  }
+
+  remove(socket) {
+    this.sessions.delete(socket);
+    this.broadcastPresence();
+  }
+
+  webSocketClose(socket) {
+    this.remove(socket);
+  }
+
+  webSocketError(socket) {
+    this.remove(socket);
+  }
+}
 
 export class TrysteroNostrRelay {
   constructor(ctx) {

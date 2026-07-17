@@ -1941,6 +1941,31 @@ void W3DView::scrollBy( Coord2D *delta )
 }  // end scrollBy
 
 //-------------------------------------------------------------------------------------------------
+/** Shift the view by a projected world-space delta without scroll-control scaling. */
+//-------------------------------------------------------------------------------------------------
+void W3DView::scrollByWorld( Coord2D *delta )
+{
+	if (delta && (delta->x != 0 || delta->y != 0))
+	{
+		View::scrollByWorld(delta);
+		// A direct pan can cross terrain heights without entering the ordinary
+		// scroll state. Keep the desired height synchronized with the actual
+		// camera so the idle update does not add a delayed zoom after the fingers
+		// stop moving.
+		m_terrainHeightUnderCamera = getHeightAroundPos(m_pos.x, m_pos.y);
+		m_currentHeightAboveGround = m_cameraOffset.z * m_zoom - m_terrainHeightUnderCamera;
+		m_heightAboveGround = m_currentHeightAboveGround;
+		m_doingMoveCameraOnWaypointPath = false;
+		m_CameraArrivedAtWaypointOnPathFlag = false;
+		m_doingRotateCamera = false;
+		m_doingPitchCamera = false;
+		m_doingZoomCamera = false;
+		m_doingScriptedCameraLock = false;
+		setCameraTransform();
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 void W3DView::forceRedraw()
 {

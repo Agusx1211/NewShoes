@@ -453,6 +453,63 @@ func TestRESTRequiresBearerToken(t *testing.T) {
 	}
 }
 
+func TestEngineProbeAuthenticatesWithoutRegisteringSession(t *testing.T) {
+	bridge, err := NewServer(Config{
+		EngineToken: "engine-secret", APIToken: "api-secret", PlayMode: PlayModeCamera,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bridge.Close()
+	httpServer := httptest.NewServer(bridge.Handler())
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx,
+		"ws"+strings.TrimPrefix(httpServer.URL, "http")+"/engine",
+		&websocket.DialOptions{Subprotocols: []string{WebSocketProtocol}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	if err := wsjson.Write(ctx, conn, protocolMessage{
+		Type: "probe", Protocol: ProtocolVersion, Token: "engine-secret",
+		SessionID: "preflight", PlayMode: PlayModeCamera,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var reply protocolMessage
+	if err := wsjson.Read(ctx, conn, &reply); err != nil {
+		t.Fatal(err)
+	}
+	if reply.Type != "probe" || !reply.OK || reply.Protocol != ProtocolVersion ||
+		reply.SessionID != "preflight" || reply.PlayMode != PlayModeCamera {
+		t.Fatalf("unexpected probe reply: %#v", reply)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		httpServer.URL+"/v1/sessions", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer api-secret")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var sessions struct {
+		Sessions []json.RawMessage `json:"sessions"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions.Sessions) != 0 {
+		t.Fatalf("probe registered playable sessions: %v", sessions.Sessions)
+	}
+}
+
 func TestServerRequiresDistinctCredentials(t *testing.T) {
 	if _, err := NewServer(Config{EngineToken: "shared", APIToken: "shared"}); err == nil {
 		t.Fatal("expected shared credential to be rejected")

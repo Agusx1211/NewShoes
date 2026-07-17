@@ -156,6 +156,7 @@ public:
 	virtual void setOrigin( Int x, Int y);			///< Sets location of top-left view corner on display 
 
 	virtual void scrollBy( Coord2D *delta );  ///< Shift the view by the given delta
+	virtual void scrollByWorld( Coord2D *delta );  ///< Shift the view by a world-space delta
 
 	virtual void forceRedraw();
 

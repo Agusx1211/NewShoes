@@ -79,6 +79,44 @@ function connect(origin = "https://newshoes.gg") {
   });
 }
 
+function connectAgent(role, room, origin = null) {
+  return new Promise((resolveConnect, reject) => {
+    const headers = origin ? { Origin: origin } : {};
+    const socket = new WebSocket(
+      `ws://127.0.0.1:${port}/agent?room=${room}&role=${role}`,
+      { headers },
+    );
+    const messages = [];
+    const waiters = [];
+    socket.on("message", (data) => {
+      const message = JSON.parse(String(data));
+      const waiterIndex = waiters.findIndex(({ predicate }) => predicate(message));
+      if (waiterIndex >= 0) {
+        const [{ resolve: resolveWaiter, timer }] = waiters.splice(waiterIndex, 1);
+        clearTimeout(timer);
+        resolveWaiter(message);
+      } else messages.push(message);
+    });
+    socket.once("open", () => resolveConnect({
+      socket,
+      next(predicate, timeoutMs = 5000) {
+        const messageIndex = messages.findIndex(predicate);
+        if (messageIndex >= 0) return Promise.resolve(messages.splice(messageIndex, 1)[0]);
+        return new Promise((resolveMessage, rejectMessage) => {
+          const waiter = { predicate, resolve: resolveMessage, timer: null };
+          waiters.push(waiter);
+          waiter.timer = setTimeout(() => {
+            const index = waiters.indexOf(waiter);
+            if (index >= 0) waiters.splice(index, 1);
+            rejectMessage(new Error(`timed out waiting for agent signal; queued=${JSON.stringify(messages)}`));
+          }, timeoutMs);
+        });
+      },
+    }));
+    socket.once("error", reject);
+  });
+}
+
 async function signedEvent(topic, content) {
   const secretKey = utils.randomSecretKey();
   const pubkey = Buffer.from(schnorr.getPublicKey(secretKey)).toString("hex");
@@ -136,6 +174,19 @@ try {
   const rejected = await publisher.next((message) => message[0] === "OK" && message[2] === false);
   expect(rejected[3]?.startsWith("invalid:"), "tampered event was not rejected", rejected);
 
+  const agentRoom = "b".repeat(64);
+  const bridge = await connectAgent("bridge", agentRoom);
+  const engine = await connectAgent("engine", agentRoom, "https://newshoes.gg");
+  sockets.push(bridge.socket, engine.socket);
+  await Promise.all([
+    bridge.next((message) => message.type === "peer" && message.present === true),
+    engine.next((message) => message.type === "peer" && message.present === true),
+  ]);
+  const opaquePayload = "encrypted-sdp-not-readable-by-relay";
+  bridge.socket.send(JSON.stringify({ type: "signal", payload: opaquePayload }));
+  const routedSignal = await engine.next((message) => message.type === "signal");
+  expect(routedSignal.payload === opaquePayload, "opaque agent signaling was not routed", routedSignal);
+
   const denied = await new Promise((resolveDenied) => {
     const socket = new WebSocket(socketUrl, { headers: { Origin: "https://attacker.example" } });
     socket.once("unexpected-response", (_, response) => resolveDenied(response.statusCode));
@@ -152,6 +203,7 @@ try {
     retainedLateJoin: true,
     invalidEventRejected: true,
     originGate: true,
+    opaqueAgentSignaling: true,
   }));
 } finally {
   for (const socket of sockets) socket.close();
