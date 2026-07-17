@@ -19,7 +19,19 @@ const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined;
 const bootTimeoutMs = Number(process.env.BOOT_TIMEOUT_MS ?? 15 * 60 * 1000);
 const matchTimeoutMs = Number(process.env.MATCH_TIMEOUT_MS ?? 6 * 60 * 1000);
 const expectedRenderer = process.env.CAMERA_ZOOM_EXPECT_RENDERER || "";
+const requestedSkirmishMap = String(process.env.CAMERA_ZOOM_SKIRMISH_MAP ?? "").trim();
 const verbose = process.env.VERBOSE === "1";
+const particleProbe = process.env.CAMERA_ZOOM_PARTICLE_PROBE === "1";
+const particleProbeMs = Number(process.env.CAMERA_ZOOM_PARTICLE_PROBE_MS ?? 12000);
+const particleProbeCopies = Number(process.env.CAMERA_ZOOM_PARTICLE_COPIES ?? 8);
+const particleProbeTargetStructure =
+  process.env.CAMERA_ZOOM_PARTICLE_TARGET_STRUCTURE === "1";
+const particleProbeSystems = String(
+  process.env.CAMERA_ZOOM_PARTICLE_SYSTEMS ?? "MOABDustWave,SubExplosionSmoke02")
+  .split(",").map((name) => name.trim()).filter(Boolean);
+const particleScreencastDir = process.env.CAMERA_ZOOM_PARTICLE_SCREENCAST_DIR
+  ? resolve(process.env.CAMERA_ZOOM_PARTICLE_SCREENCAST_DIR) : null;
+const requireParticleDraws = process.env.CAMERA_ZOOM_REQUIRE_PARTICLE_DRAWS === "1";
 
 function expect(condition, message, detail = null) {
   if (!condition) {
@@ -121,7 +133,9 @@ async function engineRenderer(page) {
 
 async function main() {
   await mkdir(outputDir, { recursive: true });
-  await rm(profileDir, { recursive: true, force: true });
+  if (process.env.CAMERA_ZOOM_REUSE_PROFILE !== "1") {
+    await rm(profileDir, { recursive: true, force: true });
+  }
   await mkdir(profileDir, { recursive: true });
   const server = await startStaticServer({ root: wasmRoot, host: "127.0.0.1", port: 0 });
   const browser = await chromium.launchPersistentContext(profileDir, {
@@ -149,7 +163,10 @@ async function main() {
       if (verbose) process.stderr.write(`[camera-zoom-runtime] ${message.type()}: ${message.text()}\n`);
     });
     const url = new URL(
-      "harness/play.html?autostart=1&dist=dist-threaded-release&shellmap=0", server.url);
+      `harness/play.html?autostart=1&dist=${process.env.CAMERA_ZOOM_DIST ?? "dist-threaded-release"}&shellmap=0`, server.url);
+    if (requireParticleDraws) {
+      url.searchParams.set("perfCounters", "1");
+    }
     await page.goto(url.href, { waitUntil: "load" });
     await page.waitForSelector("#overlay.hidden", { state: "attached", timeout: bootTimeoutMs });
 
@@ -191,6 +208,20 @@ async function main() {
     summary.skirmishClick = await clickEngineButton(
       page, frame.clientState.mainMenu.buttonSkirmish, "Skirmish button");
 
+    // The animated faction menu can consume the first release while the
+    // transition group is settling. Retry the same real input path only when
+    // the original button becomes clickable again.
+    for (let retry = 0; retry < 3; ++retry) {
+      await page.waitForTimeout(2000);
+      frame = await fullFrame(page);
+      if (frame?.clientState?.skirmishMenu?.buttonStart?.clickable === true) break;
+      const retryButton = frame?.clientState?.mainMenu?.buttonSkirmish;
+      if (retryButton?.clickable === true) {
+        summary.skirmishClickRetry = await clickEngineButton(
+          page, retryButton, `Skirmish button retry ${retry + 1}`);
+      }
+    }
+
     frame = await waitForFrame(
       page,
       "skirmish options",
@@ -198,6 +229,14 @@ async function main() {
       120000,
       fullFrame,
     );
+    if (requestedSkirmishMap) {
+      const mapSet = await rpc(page, "realEngineSetSkirmishMap", {
+        map: requestedSkirmishMap,
+      });
+      expect(mapSet?.ok === true && Boolean(mapSet.result?.applied),
+        "requested particle-probe skirmish map was not applied", mapSet);
+      summary.skirmishMapSet = mapSet.result;
+    }
     summary.startClick = await clickEngineButton(
       page, frame.clientState.skirmishMenu.buttonStart, "Start button");
 
@@ -209,6 +248,115 @@ async function main() {
         && Number(gameplay?.renderedObjectCount ?? 0) > 0;
     }, matchTimeoutMs);
     summary.activeGameplay = frame.gameplay ?? frame.clientState?.gameplay ?? null;
+
+    if (particleProbe) {
+      const drawables = await rpc(page, "queryDrawables");
+      const target = (drawables?.result?.drawables ?? drawables?.drawables?.drawables ?? [])
+        .find((drawable) =>
+        drawable.localOwned === true && drawable.worldPos &&
+          (!particleProbeTargetStructure || drawable.structure === true));
+      expect(Boolean(target), "particle probe could not find a visible local drawable", drawables);
+      const probePosition = {
+        x: target.worldPos.x,
+        y: target.worldPos.y,
+        z: target.worldPos.z,
+      };
+      const camera = await rpc(page, "agentCameraLookAt", {
+        x: probePosition.x,
+        y: probePosition.y,
+      });
+      expect(camera?.ok === true, "particle probe could not center its target", camera);
+      await page.waitForTimeout(1000);
+      summary.particleProbe = {
+        target, probePosition, triggers: [], statusSamples: [],
+      };
+      const sampleStatus = async (label) => {
+        const status = await rpc(page, "threadedStatus");
+        summary.particleProbe.statusSamples.push({
+          label,
+          elapsedMs: Date.now() - probeStartedAt,
+          frame: status?.status?.frame ?? null,
+          contextLost: status?.status?.contextLost ?? null,
+          d3d8Perf: status?.status?.graphics?.d3d8Perf ?? null,
+        });
+      };
+      const spawnWave = async () => {
+        for (let copy = 0; copy < particleProbeCopies; ++copy) {
+          for (const name of particleProbeSystems) {
+            const trigger = await rpc(page, "realEngineSpawnParticleSystem", {
+              name,
+              x: probePosition.x + (copy % 4) * 8,
+              y: probePosition.y + Math.floor(copy / 4) * 8,
+              z: probePosition.z,
+              useViewPosition: false,
+              clampToTerrain: true,
+            });
+            expect(trigger?.ok === true, "threaded particle trigger failed", { name, trigger });
+            summary.particleProbe.triggers.push({ name, result: trigger.result });
+          }
+        }
+      };
+      const probeStartedAt = Date.now();
+      let screencastSession = null;
+      let screencastSerial = 0;
+      const screencastWrites = [];
+      if (particleScreencastDir) {
+        await mkdir(particleScreencastDir, { recursive: true });
+        screencastSession = await browser.newCDPSession(page);
+        screencastSession.on("Page.screencastFrame", (event) => {
+          screencastSerial += 1;
+          screencastSession.send("Page.screencastFrameAck", {
+            sessionId: event.sessionId,
+          }).catch(() => {});
+          screencastWrites.push(writeFile(
+            join(particleScreencastDir,
+              `particle-${String(screencastSerial).padStart(5, "0")}.png`),
+            Buffer.from(event.data, "base64"),
+          ));
+        });
+        await screencastSession.send("Page.startScreencast", {
+          format: "png",
+          maxWidth: 640,
+          maxHeight: 400,
+          everyNthFrame: 1,
+        });
+      }
+      await spawnWave();
+      await sampleStatus("initial");
+      while (Date.now() - probeStartedAt < particleProbeMs) {
+        const elapsedMs = Date.now() - probeStartedAt;
+        await page.waitForTimeout(Math.min(250, particleProbeMs - elapsedMs));
+      }
+      if (screencastSession) {
+        await screencastSession.send("Page.stopScreencast");
+        await Promise.all(screencastWrites);
+        summary.particleProbe.screencastFrames = {
+          directory: particleScreencastDir,
+          count: screencastSerial,
+        };
+        expect(screencastSerial > 0,
+          "particle probe did not capture any browser frames");
+      }
+      await sampleStatus("final");
+      const finalDrawables = await rpc(page, "queryDrawables");
+      summary.particleProbe.targetAfter =
+        (finalDrawables?.result?.drawables ?? finalDrawables?.drawables?.drawables ?? [])
+          .find((drawable) => Number(drawable.objectId ?? drawable.id) ===
+            Number(target.objectId ?? target.id)) ?? null;
+      if (requireParticleDraws) {
+        const initialDraws = Number(
+          summary.particleProbe.statusSamples[0]?.d3d8Perf?.particleProgramDraws ?? 0);
+        const finalDraws = Number(
+          summary.particleProbe.statusSamples.at(-1)?.d3d8Perf?.particleProgramDraws ?? 0);
+        expect(finalDraws > initialDraws,
+          "particle probe produced no visible particle draws", { initialDraws, finalDraws });
+      }
+      summary.particleProbe.screenshotBytes = await captureViewport(
+        page, join(outputDir, "threaded-particle-probe.png"));
+      await writeFile(join(outputDir, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+      return;
+    }
 
     const viewportBox = await page.locator("#viewport").boundingBox();
     expect(viewportBox != null, "runtime viewport has no browser geometry");
