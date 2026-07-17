@@ -104,6 +104,7 @@
     "test:multiplayer-launch-policy": "node harness/multiplayer_launch_policy_unit.mjs",
     "test:multiplayer-network-status": "node harness/multiplayer_network_status_unit.mjs",
     "test:agent-bridge": "node --test harness/agent_bridge_unit.mjs harness/agent_bridge_config_unit.mjs",
+    "test:agent-webrtc-e2e": "node harness/agent_webrtc_e2e_smoke.mjs",
     "test:agent-bridge-ui": "node harness/agent_bridge_config_ui_smoke.mjs",
     "test:agent-bridge-browser": "node harness/agent_bridge_browser_smoke.mjs",
     "host:agent-bridge-match": "node harness/agent_bridge_match_host.mjs",

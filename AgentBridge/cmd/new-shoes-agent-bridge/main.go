@@ -27,7 +27,7 @@ func randomToken() (string, error) {
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:18888", "HTTP listen address")
-	publicEngineURL := flag.String("engine-url", "", "WebSocket URL the browser should connect to")
+	publicEngineURL := flag.String("engine-url", "", "WebRTC signaling URL or WebSocket URL the browser should use")
 	engineToken := flag.String("engine-token", "", "browser-to-bridge token (random when omitted)")
 	apiToken := flag.String("api-token", "", "REST bearer token (random when omitted)")
 	playMode := flag.String("play-mode", agentbridge.PlayModeGlobal, "agent play policy: global or camera")
@@ -61,11 +61,7 @@ func main() {
 		*apiToken = generated
 	}
 	if *publicEngineURL == "" {
-		host := *listen
-		if strings.HasPrefix(host, ":") {
-			host = "127.0.0.1" + host
-		}
-		*publicEngineURL = "ws://" + host + "/engine"
+		*publicEngineURL = "webrtc://relay.newshoes.gg/agent"
 	}
 
 	bridge, err := agentbridge.NewServer(agentbridge.Config{
@@ -84,6 +80,8 @@ func main() {
 		log.Fatal(err)
 	}
 	defer bridge.Close()
+	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	server := &http.Server{
 		Addr:              *listen,
@@ -103,9 +101,15 @@ func main() {
 			log.Fatalf("serve: %v", err)
 		}
 	}()
+	if strings.HasPrefix(*publicEngineURL, "webrtc:") ||
+		strings.HasPrefix(*publicEngineURL, "webrtc+insecure:") {
+		go func() {
+			if err := bridge.RunWebRTC(shutdownCtx, *publicEngineURL); err != nil {
+				log.Printf("WebRTC endpoint stopped: %v", err)
+			}
+		}()
+	}
 
-	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	<-shutdownCtx.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

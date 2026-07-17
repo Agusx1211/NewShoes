@@ -135,7 +135,7 @@ try {
   await page.locator("#agentBridgeMode").selectOption("camera");
   await page.locator("#agentBridgeApply").click();
   await page.waitForSelector("#agentBridgeError:not([hidden])");
-  assert.match(await page.locator("#agentBridgeError").textContent(), /ws: or wss:/);
+  assert.match(await page.locator("#agentBridgeError").textContent(), /webrtc:, ws:, or wss:/);
   assert.deepEqual(await page.evaluate(() => window.CnCPort.play.getConfiguration().agentBridge), {
     configured: false,
   });

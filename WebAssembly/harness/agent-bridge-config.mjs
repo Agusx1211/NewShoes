@@ -2,7 +2,7 @@ export const AGENT_BRIDGE_SETTINGS_KEY = "cncPortAgentBridgeSettings.v1";
 
 const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
-  url: "ws://127.0.0.1:18888/engine",
+  url: "webrtc://relay.newshoes.gg/agent",
   token: "",
   sessionId: "game-1",
   playMode: "global",
@@ -13,7 +13,8 @@ function validStoredURL(value) {
   if (typeof value !== "string" || value.length === 0 || value.length > 4096) return null;
   try {
     const url = new URL(value);
-    return url.protocol === "ws:" || url.protocol === "wss:" ? url.href : null;
+    return ["ws:", "wss:", "webrtc:", "webrtc+insecure:"].includes(url.protocol)
+      ? url.href : null;
   } catch {
     return null;
   }
@@ -49,8 +50,8 @@ export function normalizeAgentBridgeConfiguration(config, cryptoImpl = globalThi
   } catch {
     throw new TypeError("agent bridge URL is invalid");
   }
-  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
-    throw new TypeError("agent bridge URL must use ws: or wss:");
+  if (!["ws:", "wss:", "webrtc:", "webrtc+insecure:"].includes(url.protocol)) {
+    throw new TypeError("agent bridge URL must use webrtc:, ws:, or wss:");
   }
   const token = String(config.token ?? "");
   if (token.length === 0 || token.length > 4096) {

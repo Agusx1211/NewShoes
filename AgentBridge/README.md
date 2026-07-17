@@ -5,6 +5,12 @@ requests into data-layer operations on a running browser game. The browser
 opens the connection outward, so the engine does not listen on a port and does
 not need screenshots, OCR, DOM selectors, or synthetic browser clicks.
 
+By default the hosted HTTPS game and bridge connect directly through an
+encrypted WebRTC data channel. `relay.newshoes.gg` is used only to exchange
+end-to-end-encrypted SDP/ICE signaling; it never carries agent requests,
+responses, or gameplay data. The bridge's REST API remains on loopback for the
+controller, so neither machine needs to expose a local HTTP or WebSocket port.
+
 The current `cnc-agent/1` surface covers semantic shell UI observation, the
 real engine action paths for pointer motion and shell gadgets, filtered
 battlefield/player/camera/terrain observation, and semantic match actions. Live
@@ -22,18 +28,21 @@ go run ./cmd/new-shoes-agent-bridge
 go run ./cmd/new-shoes-agent-bridge -play-mode=camera
 ```
 
-The command binds to `127.0.0.1:18888` by default. It creates separate random
+The command binds its controller REST API to `127.0.0.1:18888` by default and
+connects outward to `webrtc://relay.newshoes.gg/agent`. It creates separate random
 256-bit browser and REST credentials when `-engine-token` and `-api-token` are
 omitted, then prints the browser configuration and REST bearer value once.
-The two credentials must be distinct. Treat that output as secret. For a bridge
-behind a TLS reverse proxy, pass its public socket address with
-`-engine-url wss://host/engine`.
+The two credentials must be distinct. Treat that output as secret. Direct
+WebRTC is the normal hosted-page transport. A self-hosted signaling Worker can
+be selected with `-engine-url webrtc://relay.example/agent`; the legacy direct
+WebSocket transport remains available with `-engine-url ws://host/engine` or a
+TLS-secured `wss:` URL.
 
 Before pressing Launch, open **Remote Agent** from the Project New Shoes
 desktop or Start menu:
 
 1. Turn on **Enable Remote Agent**.
-2. Paste the bridge's printed WebSocket URL and browser token.
+2. Paste the bridge's printed WebRTC URL and browser token.
 3. Choose a session ID and the same Global or Camera play mode used by the
    bridge process.
 4. Leave **Remember browser token on this device** off to keep the credential
@@ -54,7 +63,7 @@ the app:
 ```js
 await window.CnCPort.play.configure({
   agentBridge: {
-    url: "ws://127.0.0.1:18888/engine",
+    url: "webrtc://relay.newshoes.gg/agent",
     token: "the-token-printed-by-the-bridge",
     sessionId: "game-1",
     playMode: "global",
@@ -65,8 +74,14 @@ await window.CnCPort.play.configure({
 An embedding page can also define the same object as
 `window.CnCPortPlayConfig.agentBridge` before `play.mjs` loads. The credential
 is not accepted in the page URL, is omitted from public status, and is not
-recorded in issue dumps. If no configuration is provided, the adapter module is
-not imported and no agent socket or reconnect timer exists.
+recorded in issue dumps. The signaling room is a one-way hash of the token and
+the SDP/ICE payload is encrypted with a separate token-derived key. If no
+configuration is provided, the adapter module is not imported and no agent
+socket or reconnect timer exists.
+
+WebRTC uses the same public STUN set as multiplayer. Unusual firewalls or NATs
+that require a TURN relay can still prevent a peer-to-peer connection; no TURN
+service is bundled or used by default.
 
 ## REST API
 
