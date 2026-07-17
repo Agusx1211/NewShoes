@@ -2065,23 +2065,12 @@ async function main() {
       "failed to mount imported mod archives", mount?.modSet ?? mount);
     }
 
-    console.error("[skirmish-start] real init");
-    const init = await rpc(page, "realEngineInit", {
-      runDirectory: "/assets/skirmish-start",
-      shellMap: true,
-      modDirectory: mount.modDirectory ?? "",
-    });
-    expect(init?.ok === true && init?.aborted === false && init?.frontier?.initReturned === true,
-      "real engine init failed", init?.frontier ?? init);
-    if (activeMod) {
-      expect(init.frontier.commandLine?.includes("-mod /assets/cnc-mods-active"),
-        "real engine did not receive the imported mod directory", init.frontier);
-    }
+    let touchBootResolution = null;
     if (expectTouchControlsProbe) {
       // This harness initializes the engine through RPC instead of invoking
       // play.mjs's normal launch sequence, so explicitly replay the shipping
-      // dynamic-resolution decision before exercising the mobile match.
-      const target = await page.evaluate(async () => {
+      // dynamic-resolution decision through the same pre-init hook.
+      touchBootResolution = await page.evaluate(async () => {
         const {
           dynamicResolutionForBox,
           isIOSLikeNavigator,
@@ -2097,16 +2086,22 @@ async function main() {
           ipadLike: isIPadLikeNavigator(navigator),
         });
       });
-      const resolution = await rpc(page, "setEngineResolution", target);
-      expect(resolution?.ok === true
-          && resolution.applied?.width === target.width
-          && resolution.applied?.height === target.height,
-      "mobile probe could not apply the shipping dynamic resolution", {
-        target,
-        resolution,
-      });
     }
 
+    console.error("[skirmish-start] real init");
+    const init = await rpc(page, "realEngineInit", {
+      runDirectory: "/assets/skirmish-start",
+      shellMap: true,
+      modDirectory: mount.modDirectory ?? "",
+      bootWidth: touchBootResolution?.width,
+      bootHeight: touchBootResolution?.height,
+    });
+    expect(init?.ok === true && init?.aborted === false && init?.frontier?.initReturned === true,
+      "real engine init failed", init?.frontier ?? init);
+    if (activeMod) {
+      expect(init.frontier.commandLine?.includes("-mod /assets/cnc-mods-active"),
+        "real engine did not receive the imported mod directory", init.frontier);
+    }
     if (expectReplayRoundTrip) {
       const existingReplays = await rpc(page, "listReplays");
       const priorLastReplay = existingReplays?.files?.find((file) =>
