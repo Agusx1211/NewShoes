@@ -764,6 +764,7 @@ async function driveTouchControlsProbe(page) {
   const cameraPanMoved = await touchCameraState(page);
   const navigationDiagnostics = await page.evaluate(() => ({
     touchControls: window.CnCPort.getTouchControlsState?.() ?? null,
+    forwardedNavigation: window.CnCPort.state.touchNavigation ?? null,
     threadedInputLogs: window.CnCPort.state.threadedEngine?.recentLogs ?? null,
   }));
   expect(coordinateDelta(cameraBefore.lookAt, cameraPanMoved.lookAt) > 0.1,
@@ -821,8 +822,17 @@ async function driveTouchControlsProbe(page) {
   }
   await runFrames(page, 6, "touch combined navigation");
   const cameraCombined = await touchCameraState(page);
+  const combinedDiagnostics = await page.evaluate(() => ({
+    touchControls: window.CnCPort.getTouchControlsState?.() ?? null,
+    forwardedNavigation: window.CnCPort.state.touchNavigation ?? null,
+    threadedInputLogs: window.CnCPort.state.threadedEngine?.recentLogs ?? null,
+  }));
   expect(coordinateDelta(cameraAfterPan.lookAt, cameraCombined.lookAt) > 0.1,
-    "combined gesture did not pan the tactical camera", { cameraAfterPan, cameraCombined });
+    "combined gesture did not pan the tactical camera", {
+      cameraAfterPan,
+      cameraCombined,
+      combinedDiagnostics,
+    });
   expect(Math.abs(Number(cameraCombined.zoom) - Number(cameraAfterPan.zoom)) > 0.001,
     "combined gesture did not pinch-zoom the tactical camera", {
       cameraAfterPan, cameraCombined,

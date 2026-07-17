@@ -24412,6 +24412,13 @@ function forwardTouchWheel(steps, clientPoint) {
 function forwardTouchNavigation(action) {
   const previousPoint = touchPointToEngine(action.previousPoint);
   const point = touchPointToEngine(action.point);
+  harnessState.touchNavigation = {
+    count: Number(harnessState.touchNavigation?.count ?? 0) + 1,
+    previousPoint,
+    point,
+    scale: Number(action.scale),
+    radians: Number(action.radians),
+  };
   void pushTouchNavigationToWasmLite({
     previousPoint,
     point,

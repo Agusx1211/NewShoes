@@ -57,6 +57,8 @@ export class TouchGestureRecognizer {
     this.multi = null;
     this.longPressTimer = null;
     this.secondaryArmed = false;
+    this.navigationActionCount = 0;
+    this.lastNavigationAction = null;
   }
 
   armSecondary(armed = true) {
@@ -181,14 +183,17 @@ export class TouchGestureRecognizer {
     const radians = normalizedAngleDelta(this.multi.currentAngle - this.multi.sampleAngle);
     const moved = distance(this.multi.sampleCenter, this.multi.currentCenter);
     if (moved > 0.001 || Math.abs(scale - 1) > 0.00001 || Math.abs(radians) > 0.00001) {
-      this.emit({
+      const action = {
         type: "navigate",
         previousPoint: copyPoint(this.multi.sampleCenter),
         point: copyPoint(this.multi.currentCenter),
         scale,
         radians,
         timestamp,
-      });
+      };
+      this.navigationActionCount += 1;
+      this.lastNavigationAction = action;
+      this.emit(action);
     }
     this.multi.sampleCenter = this.multi.currentCenter;
     this.multi.sampleDistance = this.multi.currentDistance;
@@ -292,6 +297,8 @@ export class TouchGestureRecognizer {
       secondaryArmed: this.secondaryArmed,
       primaryButtonDown: this.primaryButtonDown,
       navigationActive: this.multi?.active === true,
+      navigationActionCount: this.navigationActionCount,
+      lastNavigationAction: this.lastNavigationAction,
     };
   }
 }
