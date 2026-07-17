@@ -8,6 +8,8 @@ import {
   normalizeAgentBridgeConfiguration,
   saveAgentBridgeSettings,
 } from "./agent-bridge-config.mjs";
+import { deriveAgentWebRTCPairing } from "./agent-webrtc-transport.mjs";
+import { createHash, webcrypto } from "node:crypto";
 
 class MemoryStorage {
   constructor(value = null) {
@@ -66,7 +68,7 @@ test("ignores corrupt stored values and normalizes runtime configuration", () =>
   const storage = new MemoryStorage("not-json");
   assert.deepEqual(loadAgentBridgeSettings(storage), {
     enabled: false,
-    url: "ws://127.0.0.1:18888/engine",
+    url: "webrtc://relay.newshoes.gg/agent",
     token: "",
     sessionId: "game-1",
     playMode: "global",
@@ -83,4 +85,26 @@ test("ignores corrupt stored values and normalizes runtime configuration", () =>
     sessionId: "generated-session",
     playMode: "camera",
   });
+});
+
+test("accepts a direct WebRTC bridge configuration", () => {
+  assert.deepEqual(normalizeAgentBridgeConfiguration({
+    url: "webrtc://relay.newshoes.gg/agent",
+    token: "pairing-secret",
+    sessionId: "remote-game",
+    playMode: "global",
+  }), {
+    url: "webrtc://relay.newshoes.gg/agent",
+    token: "pairing-secret",
+    sessionId: "remote-game",
+    playMode: "global",
+  });
+});
+
+test("derives an opaque WebRTC signaling room from the browser token", async () => {
+  const token = "pairing-secret";
+  const pairing = await deriveAgentWebRTCPairing(token, webcrypto);
+  assert.equal(pairing.room, createHash("sha256")
+    .update(`cnc-agent-webrtc-room/v1:${token}`).digest("hex"));
+  assert.equal(pairing.room.includes(token), false);
 });

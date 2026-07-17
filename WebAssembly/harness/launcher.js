@@ -507,6 +507,7 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
       const button = document.createElement("button");
       button.type = "button";
       button.dataset.app = appId;
+      button.setAttribute("aria-label", meta.title);
       button.className = `task-button${windowEl.classList.contains("is-active") && !windowEl.classList.contains("is-minimized") ? " is-active" : ""}`;
       const icon = meta.launcherLogo
         ? `<img src="${LAUNCHER_LOGO_PATH}" alt="">`
