@@ -760,8 +760,16 @@ async function driveTouchControlsProbe(page) {
   await page.waitForTimeout(40);
   await runFrames(page, 4, "touch direct pan");
   const cameraPanMoved = await touchCameraState(page);
+  const navigationDiagnostics = await page.evaluate(() => ({
+    touchControls: window.CnCPort.getTouchControlsState?.() ?? null,
+    threadedInputLogs: window.CnCPort.state.threadedEngine?.recentLogs ?? null,
+  }));
   expect(coordinateDelta(cameraBefore.lookAt, cameraPanMoved.lookAt) > 0.1,
-    "two-finger pan did not move the tactical camera", { cameraBefore, cameraPanMoved });
+    "two-finger pan did not move the tactical camera", {
+      cameraBefore,
+      cameraPanMoved,
+      navigationDiagnostics,
+    });
   await runFrames(page, 12, "touch pan stationary");
   const cameraPanStationary = await touchCameraState(page);
   expect(coordinateDelta(cameraPanMoved.lookAt, cameraPanStationary.lookAt) < 0.01,
