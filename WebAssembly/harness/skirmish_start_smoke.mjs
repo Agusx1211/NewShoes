@@ -810,7 +810,9 @@ async function driveTouchControlsProbe(page) {
     });
   await runFrames(page, 12, "touch pan stationary");
   const cameraPanStationary = await touchCameraState(page);
-  expect(coordinateDelta(cameraPanMoved.lookAt, cameraPanStationary.lookAt) < 0.01,
+  expect(coordinateDelta(cameraPanMoved.lookAt, cameraPanStationary.lookAt) < 0.01
+      && Math.abs(Number(cameraPanMoved.zoom) - Number(cameraPanStationary.zoom)) < 0.0001
+      && Math.abs(Number(cameraPanMoved.angle) - Number(cameraPanStationary.angle)) < 0.0001,
     "stationary fingers must not leave velocity scrolling active", {
       cameraPanMoved, cameraPanStationary,
     });
@@ -818,7 +820,9 @@ async function driveTouchControlsProbe(page) {
   await dispatchTouchPointer(page, "pointerup", 512, panEndClient[1]);
   await runFrames(page, 6, "touch pan settle");
   const cameraAfterPan = await touchCameraState(page);
-  expect(coordinateDelta(cameraPanStationary.lookAt, cameraAfterPan.lookAt) < 0.01,
+  expect(coordinateDelta(cameraPanStationary.lookAt, cameraAfterPan.lookAt) < 0.01
+      && Math.abs(Number(cameraPanStationary.zoom) - Number(cameraAfterPan.zoom)) < 0.0001
+      && Math.abs(Number(cameraPanStationary.angle) - Number(cameraAfterPan.angle)) < 0.0001,
     "releasing a direct pan must not add residual camera movement", {
       cameraPanStationary, cameraAfterPan,
     });
