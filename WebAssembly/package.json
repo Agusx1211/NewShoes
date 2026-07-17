@@ -133,6 +133,7 @@
     "verify:device-transfer-browser": "node harness/device_transfer_browser_smoke.mjs",
     "verify:launcher-polish": "npm run verify:cursor-assets && node harness/launcher_polish_smoke.mjs",
     "verify:launcher-polish-browser": "node harness/launcher_polish_browser_smoke.mjs",
+    "verify:launcher-mobile": "node harness/launcher_mobile_browser_smoke.mjs",
     "verify:launcher-games": "node harness/launcher_games_browser_smoke.mjs",
     "verify:audio-startup-activation": "node harness/audio_startup_activation_smoke.mjs",
     "verify:audio-tab-recovery": "node harness/audio_tab_recovery_smoke.mjs",
