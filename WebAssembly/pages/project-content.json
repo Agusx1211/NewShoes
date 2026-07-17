@@ -142,7 +142,7 @@
       "name": "Graphics, audio, and movies",
       "status": "in_testing",
       "summary": "WebGL2, Web Audio, and browser-side Bink integration carry the original engine's rendering, sound, and movie requests, with continuing fidelity and coverage work.",
-      "reviewedAt": "2026-07-15",
+      "reviewedAt": "2026-07-17",
       "details": [
         "The Direct3D 8-shaped renderer maps the original rendering path to WebGL2. The default enhanced tier translates shipped shader model 1.1 programs to GLSL ES, while a classic tier generates fixed-function-style shaders for comparison and fallback. Terrain, objects, UI, particles, effects, render targets, and common scenes work; fidelity and performance fixes continue.",
         "Engine-driven music, speech, streams, and two-dimensional and three-dimensional samples play through Web Audio. The mixer retains the engine's category and positional intent at the browser boundary.",
@@ -150,6 +150,8 @@
       ],
       "evidence": [
         "WebAssembly/harness/shader_fidelity_probe.mjs",
+        "WebAssembly/harness/d3d8_dxt_cpu_fallback_unit.mjs",
+        "WebAssembly/harness/d3d8_dxt_cpu_fallback_browser_smoke.mjs",
         "WebAssembly/harness/terrain_culling_orientation_probe.mjs",
         "WebAssembly/harness/real_audio_event_smoke.mjs",
         "WebAssembly/harness/bink_direct_decoder_browser_smoke.mjs"
