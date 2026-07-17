@@ -6169,6 +6169,14 @@ async function loadWasmModule() {
           ["number", "number", "number", "number", "number"],
         )
         : null,
+      postTouchNavigationLite:
+        typeof module._cnc_port_post_touch_navigation_lite === "function"
+          ? module.cwrap(
+            "cnc_port_post_touch_navigation_lite",
+            "number",
+            ["number", "number", "number", "number", "number", "number"],
+          )
+          : null,
       resetBrowserInput: module.cwrap("cnc_port_reset_browser_input", "string", []),
       postBrowserMessage: module.cwrap(
         "cnc_port_post_browser_message",
@@ -10619,6 +10627,40 @@ async function pushBrowserInputToWasmLite({
     );
   }
   return null;
+}
+
+async function pushTouchNavigationToWasmLite({
+  previousPoint,
+  point,
+  scale,
+  radians,
+} = {}) {
+  const touchNavigation = {
+    previousX: previousPoint?.x ?? point?.x ?? 0,
+    previousY: previousPoint?.y ?? point?.y ?? 0,
+    currentX: point?.x ?? 0,
+    currentY: point?.y ?? 0,
+    scale: Number(scale ?? 1),
+    radians: Number(radians ?? 0),
+  };
+  if (cncPortThreadedMode) {
+    try {
+      await threadedEngine.ensureReady();
+      threadedEngine.forwardInput({ touchNavigation });
+    } catch (_error) {
+      // Realm not ready during asset/init phases; touch input is droppable.
+    }
+    return null;
+  }
+  const wasmModule = await wasmModulePromise;
+  return wasmModule?.postTouchNavigationLite?.(
+    touchNavigation.previousX,
+    touchNavigation.previousY,
+    touchNavigation.currentX,
+    touchNavigation.currentY,
+    touchNavigation.scale,
+    touchNavigation.radians,
+  ) ?? 0;
 }
 
 async function postBrowserMessageToWasm({
@@ -24367,6 +24409,17 @@ function forwardTouchWheel(steps, clientPoint) {
   });
 }
 
+function forwardTouchNavigation(action) {
+  const previousPoint = touchPointToEngine(action.previousPoint);
+  const point = touchPointToEngine(action.point);
+  void pushTouchNavigationToWasmLite({
+    previousPoint,
+    point,
+    scale: action.scale,
+    radians: action.radians,
+  });
+}
+
 let touchRotation = null;
 function startTouchRotation(clientPoint, timestamp) {
   const point = touchPointToEngine(clientPoint);
@@ -24503,6 +24556,7 @@ const touchControls = createTouchControls({
   onMove: forwardTouchMove,
   onButton: forwardTouchButton,
   onWheel: forwardTouchWheel,
+  onNavigate: forwardTouchNavigation,
   onRotateStart: startTouchRotation,
   onRotateMove: moveTouchRotation,
   onRotateEnd: endTouchRotation,

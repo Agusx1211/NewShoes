@@ -1,10 +1,8 @@
 const DEFAULTS = Object.freeze({
   dragThresholdPx: 8,
   panThresholdPx: 8,
-  rotationThresholdRadians: Math.PI / 18,
-  rotationPanLimitPx: 14,
-  rotationPinchLimitRatio: 0.1,
-  pinchStepRatio: 0.06,
+  pinchThresholdRatio: 0.04,
+  rotationThresholdRadians: Math.PI / 36,
   longPressMs: 600,
 });
 
@@ -38,7 +36,8 @@ function normalizedAngleDelta(value) {
 /**
  * Recognizes RTS touch gestures without knowing anything about the DOM or the
  * engine transport. The emitted actions are consumed by the browser input
- * bridge and deliberately mirror real mouse buttons/wheel events.
+ * bridge. Selection and context actions mirror real mouse input; two-finger
+ * navigation stays a continuous transform for the engine camera translator.
  */
 export class TouchGestureRecognizer {
   constructor({
@@ -106,15 +105,18 @@ export class TouchGestureRecognizer {
     if (tracked.length !== 2) return;
     const center = centroid(tracked[0].current, tracked[1].current);
     const spread = Math.max(1, distance(tracked[0].current, tracked[1].current));
+    const gestureAngle = angle(tracked[0].current, tracked[1].current);
     this.multi = {
       startCenter: center,
       currentCenter: center,
       startDistance: spread,
-      wheelDistance: spread,
-      startAngle: angle(tracked[0].current, tracked[1].current),
-      panDown: false,
-      rotateDown: false,
-      manipulated: false,
+      currentDistance: spread,
+      startAngle: gestureAngle,
+      currentAngle: gestureAngle,
+      sampleCenter: center,
+      sampleDistance: spread,
+      sampleAngle: gestureAngle,
+      active: false,
     };
     this.phase = "multi";
     this.emitMove(center, timestamp);
@@ -146,70 +148,52 @@ export class TouchGestureRecognizer {
     }
   }
 
-  updateMulti(timestamp = 0) {
+  updateMultiState() {
     const tracked = [...this.pointers.values()].slice(0, 2);
     if (!this.multi || tracked.length !== 2) return;
     const center = centroid(tracked[0].current, tracked[1].current);
     const spread = Math.max(1, distance(tracked[0].current, tracked[1].current));
-    const translation = distance(this.multi.startCenter, center);
-    const rotation = normalizedAngleDelta(
-      angle(tracked[0].current, tracked[1].current) - this.multi.startAngle,
-    );
-    const pinchFromStart = Math.abs(Math.log(spread / this.multi.startDistance));
     this.multi.currentCenter = center;
+    this.multi.currentDistance = spread;
+    this.multi.currentAngle = angle(tracked[0].current, tracked[1].current);
+  }
 
-    if (!this.multi.panDown && !this.multi.rotateDown
-        && Math.abs(rotation) >= this.thresholds.rotationThresholdRadians
-        && translation < this.thresholds.rotationPanLimitPx
-        && pinchFromStart < this.thresholds.rotationPinchLimitRatio) {
-      this.multi.rotateDown = true;
-      this.multi.manipulated = true;
-      this.phase = "multi-rotate";
+  flushMultiGesture(timestamp = 0) {
+    if (!this.multi) return false;
+    this.updateMultiState();
+
+    if (!this.multi.active) {
+      const translation = distance(this.multi.startCenter, this.multi.currentCenter);
+      const pinch = Math.abs(this.multi.currentDistance / this.multi.startDistance - 1);
+      const rotation = Math.abs(normalizedAngleDelta(
+        this.multi.currentAngle - this.multi.startAngle,
+      ));
+      if (translation < this.thresholds.panThresholdPx
+          && pinch < this.thresholds.pinchThresholdRatio
+          && rotation < this.thresholds.rotationThresholdRadians) {
+        return false;
+      }
+      this.multi.active = true;
+      this.phase = "multi-navigation";
+    }
+
+    const scale = this.multi.currentDistance / this.multi.sampleDistance;
+    const radians = normalizedAngleDelta(this.multi.currentAngle - this.multi.sampleAngle);
+    const moved = distance(this.multi.sampleCenter, this.multi.currentCenter);
+    if (moved > 0.001 || Math.abs(scale - 1) > 0.00001 || Math.abs(radians) > 0.00001) {
       this.emit({
-        type: "rotate-start",
-        point: copyPoint(this.multi.startCenter),
+        type: "navigate",
+        previousPoint: copyPoint(this.multi.sampleCenter),
+        point: copyPoint(this.multi.currentCenter),
+        scale,
+        radians,
         timestamp,
       });
     }
-
-    if (this.multi.rotateDown) {
-      this.emit({
-        type: "rotate-move",
-        point: copyPoint(center),
-        radians: rotation,
-        timestamp,
-      });
-      return;
-    }
-
-    if (!this.multi.panDown && this.phase !== "multi-pinch"
-        && translation >= this.thresholds.panThresholdPx) {
-      this.multi.panDown = true;
-      this.multi.manipulated = true;
-      this.phase = "multi-pan";
-      this.emitMove(this.multi.startCenter, timestamp);
-      this.emitButton(2, true, this.multi.startCenter, timestamp);
-    }
-    if (this.multi.panDown) {
-      this.emitMove(center, timestamp);
-      return;
-    }
-
-    let ratio = spread / this.multi.wheelDistance;
-    while (ratio >= 1 + this.thresholds.pinchStepRatio) {
-      this.phase = "multi-pinch";
-      this.emit({ type: "wheel", steps: 1, point: copyPoint(center), timestamp });
-      this.multi.wheelDistance *= 1 + this.thresholds.pinchStepRatio;
-      this.multi.manipulated = true;
-      ratio = spread / this.multi.wheelDistance;
-    }
-    while (ratio <= 1 - this.thresholds.pinchStepRatio) {
-      this.phase = "multi-pinch";
-      this.emit({ type: "wheel", steps: -1, point: copyPoint(center), timestamp });
-      this.multi.wheelDistance *= 1 - this.thresholds.pinchStepRatio;
-      this.multi.manipulated = true;
-      ratio = spread / this.multi.wheelDistance;
-    }
+    this.multi.sampleCenter = this.multi.currentCenter;
+    this.multi.sampleDistance = this.multi.currentDistance;
+    this.multi.sampleAngle = this.multi.currentAngle;
+    return true;
   }
 
   pointerMove(event) {
@@ -235,23 +219,13 @@ export class TouchGestureRecognizer {
       return;
     }
     if (this.phase.startsWith("multi")) {
-      this.updateMulti(timestamp);
+      this.updateMultiState();
     }
   }
 
   finishMulti(timestamp, cancelled) {
     if (!this.multi) return;
-    if (this.multi.panDown) {
-      this.emitButton(2, false, this.multi.currentCenter, timestamp);
-    }
-    if (this.multi.rotateDown) {
-      this.emit({
-        type: "rotate-end",
-        point: copyPoint(this.multi.currentCenter),
-        timestamp,
-      });
-    }
-    if (!cancelled && !this.multi.manipulated) {
+    if (!cancelled && !this.multi.active) {
       this.emitClick(2, this.multi.currentCenter, timestamp);
     }
     this.multi = null;
@@ -267,7 +241,7 @@ export class TouchGestureRecognizer {
     this.clearLongPress();
 
     if (this.phase.startsWith("multi")) {
-      this.updateMulti(timestamp);
+      this.flushMultiGesture(timestamp);
       this.finishMulti(timestamp, cancelled);
     } else if (this.phase === "pending" && id === this.primaryId) {
       if (!cancelled) {
@@ -308,12 +282,6 @@ export class TouchGestureRecognizer {
       const pointer = this.pointers.get(this.primaryId);
       this.emitButton(0, false, pointer?.current ?? { x: 0, y: 0 }, timestamp);
     }
-    if (this.multi?.panDown) {
-      this.emitButton(2, false, this.multi.currentCenter, timestamp);
-    }
-    if (this.multi?.rotateDown) {
-      this.emit({ type: "rotate-end", point: copyPoint(this.multi.currentCenter), timestamp });
-    }
     this.resetState();
   }
 
@@ -323,8 +291,7 @@ export class TouchGestureRecognizer {
       pointerCount: this.pointers.size,
       secondaryArmed: this.secondaryArmed,
       primaryButtonDown: this.primaryButtonDown,
-      panDown: this.multi?.panDown === true,
-      rotateDown: this.multi?.rotateDown === true,
+      navigationActive: this.multi?.active === true,
     };
   }
 }
@@ -358,6 +325,7 @@ export function createTouchControls({
   onMove = () => {},
   onButton = () => {},
   onWheel = () => {},
+  onNavigate = () => {},
   onRotateStart = () => {},
   onRotateMove = () => {},
   onRotateEnd = () => {},
@@ -389,6 +357,8 @@ export function createTouchControls({
   const modifiers = new Set();
   let lastPoint = { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 };
   let rotateAnchor = null;
+  let navigationFrame = null;
+  let navigationTimestamp = 0;
   let textKeyboardOpen = false;
   let frozenViewportHeight = 0;
   let keyboardCleanupTimer = null;
@@ -403,6 +373,8 @@ export function createTouchControls({
         onButton(action.button, action.down, action.point, action.timestamp);
       } else if (action.type === "wheel") {
         onWheel(action.steps, action.point, action.timestamp);
+      } else if (action.type === "navigate") {
+        onNavigate(action);
       } else if (action.type === "rotate-start") {
         rotateAnchor = copyPoint(action.point);
         onRotateStart(action.point, action.timestamp);
@@ -555,12 +527,28 @@ export function createTouchControls({
     if (!handles(event)) return false;
     event.preventDefault();
     recognizer.pointerMove(event);
+    if (recognizer.multi) {
+      navigationTimestamp = Number(event.timeStamp ?? performance.now());
+      if (navigationFrame === null) {
+        navigationFrame = requestAnimationFrame(() => {
+          navigationFrame = null;
+          recognizer.flushMultiGesture(navigationTimestamp);
+        });
+      }
+    }
     return true;
+  }
+
+  function cancelNavigationFrame() {
+    if (navigationFrame === null) return;
+    cancelAnimationFrame(navigationFrame);
+    navigationFrame = null;
   }
 
   function handlePointerUp(event) {
     if (!handles(event)) return false;
     event.preventDefault();
+    cancelNavigationFrame();
     recognizer.pointerUp(event);
     release(event);
     return true;
@@ -569,6 +557,7 @@ export function createTouchControls({
   function handlePointerCancel(event) {
     if (!handles(event)) return false;
     event.preventDefault();
+    cancelNavigationFrame();
     recognizer.pointerCancel(event);
     release(event);
     return true;
@@ -576,6 +565,7 @@ export function createTouchControls({
 
   function handleLostPointerCapture(event) {
     if (!handles(event) || !recognizer.pointers.has(Number(event.pointerId))) return false;
+    cancelNavigationFrame();
     recognizer.pointerCancel(event);
     return true;
   }
@@ -726,7 +716,10 @@ export function createTouchControls({
     },
     openTextKeyboard,
     closeTextKeyboard,
-    cancel: (timestamp = performance.now()) => recognizer.cancelAll(timestamp),
+    cancel: (timestamp = performance.now()) => {
+      cancelNavigationFrame();
+      recognizer.cancelAll(timestamp);
+    },
     snapshot: () => ({
       enabled,
       keyboardOpen: textKeyboardOpen,

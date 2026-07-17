@@ -642,6 +642,23 @@ async function driveTouchControlsProbe(page) {
   expect(state?.enabled === true, "touch controls did not enable in a touch context", state);
   expect(await page.locator("#touchControls").isVisible(),
     "touch controls were not visible over the live game");
+  const renderGeometry = await page.evaluate(() => {
+    const canvas = document.querySelector("#viewport");
+    const rect = canvas.getBoundingClientRect();
+    const display = window.CnCPort.state.engineDisplaySize;
+    return {
+      css: { width: rect.width, height: rect.height },
+      display,
+      backingStore: { width: canvas.width, height: canvas.height },
+    };
+  });
+  const cssAspect = renderGeometry.css.width / renderGeometry.css.height;
+  const displayAspect = renderGeometry.display.width / renderGeometry.display.height;
+  expect(Math.abs(cssAspect - displayAspect) <=
+      1 / Math.min(renderGeometry.display.width, renderGeometry.display.height)
+      && renderGeometry.backingStore.width === renderGeometry.display.width
+      && renderGeometry.backingStore.height === renderGeometry.display.height,
+  "mobile render resolution must preserve the device box aspect and backing store", renderGeometry);
   const dismiss = page.locator("[data-touch-action='dismiss-help']");
   if (await dismiss.isVisible()) await dismiss.click();
 
@@ -731,6 +748,7 @@ async function driveTouchControlsProbe(page) {
   }
 
   const cameraBefore = await touchCameraState(page);
+  const navigationPathBefore = (await rpc(page, "querySelection"))?.result?.commandPath;
   const panStart = [{ x: 280, y: 240 }, { x: 440, y: 240 }];
   const panEnd = panStart.map((point) => ({ x: point.x + 70, y: point.y + 35 }));
   const panStartClient = await Promise.all(panStart.map((point) => touchPointToClient(page, point)));
@@ -739,71 +757,108 @@ async function driveTouchControlsProbe(page) {
   await dispatchTouchPointer(page, "pointerdown", 512, panStartClient[1]);
   await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
   await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
-  await runFrames(page, 4, "touch pan held");
+  await page.waitForTimeout(40);
+  await runFrames(page, 4, "touch direct pan");
+  const cameraPanMoved = await touchCameraState(page);
+  expect(coordinateDelta(cameraBefore.lookAt, cameraPanMoved.lookAt) > 0.1,
+    "two-finger pan did not move the tactical camera", { cameraBefore, cameraPanMoved });
+  await runFrames(page, 12, "touch pan stationary");
+  const cameraPanStationary = await touchCameraState(page);
+  expect(coordinateDelta(cameraPanMoved.lookAt, cameraPanStationary.lookAt) < 0.01,
+    "stationary fingers must not leave velocity scrolling active", {
+      cameraPanMoved, cameraPanStationary,
+    });
   await dispatchTouchPointer(page, "pointerup", 511, panEndClient[0], true);
   await dispatchTouchPointer(page, "pointerup", 512, panEndClient[1]);
   await runFrames(page, 6, "touch pan settle");
   const cameraAfterPan = await touchCameraState(page);
-  expect(coordinateDelta(cameraBefore.lookAt, cameraAfterPan.lookAt) > 0.1,
-    "two-finger pan did not move the tactical camera", { cameraBefore, cameraAfterPan });
+  expect(coordinateDelta(cameraPanStationary.lookAt, cameraAfterPan.lookAt) < 0.01,
+    "releasing a direct pan must not add residual camera movement", {
+      cameraPanStationary, cameraAfterPan,
+    });
 
-  const pinchLeft = { x: 330, y: 250 };
-  const pinchRight = { x: 450, y: 250 };
-  let leftClient = await touchPointToClient(page, pinchLeft);
-  let rightClient = await touchPointToClient(page, pinchRight);
+  const gestureStartCenter = { x: 390, y: 250 };
+  const gestureStartRadius = 60;
+  let leftClient = await touchPointToClient(page, {
+    x: gestureStartCenter.x - gestureStartRadius,
+    y: gestureStartCenter.y,
+  });
+  let rightClient = await touchPointToClient(page, {
+    x: gestureStartCenter.x + gestureStartRadius,
+    y: gestureStartCenter.y,
+  });
   await dispatchTouchPointer(page, "pointerdown", 521, leftClient, true);
   await dispatchTouchPointer(page, "pointerdown", 522, rightClient);
   for (let step = 1; step <= 5; step += 1) {
-    leftClient = await touchPointToClient(page, { x: pinchLeft.x - step * 10, y: pinchLeft.y });
-    rightClient = await touchPointToClient(page, { x: pinchRight.x + step * 10, y: pinchRight.y });
+    const progress = step / 5;
+    const center = {
+      x: gestureStartCenter.x + 65 * progress,
+      y: gestureStartCenter.y + 30 * progress,
+    };
+    const radius = gestureStartRadius + 45 * progress;
+    const radians = Math.PI / 7 * progress;
+    leftClient = await touchPointToClient(page, {
+      x: center.x - Math.cos(radians) * radius,
+      y: center.y - Math.sin(radians) * radius,
+    });
+    rightClient = await touchPointToClient(page, {
+      x: center.x + Math.cos(radians) * radius,
+      y: center.y + Math.sin(radians) * radius,
+    });
     await dispatchTouchPointer(page, "pointermove", 521, leftClient, true);
     await dispatchTouchPointer(page, "pointermove", 522, rightClient);
+    await page.waitForTimeout(20);
   }
+  await runFrames(page, 6, "touch combined navigation");
+  const cameraCombined = await touchCameraState(page);
+  expect(coordinateDelta(cameraAfterPan.lookAt, cameraCombined.lookAt) > 0.1,
+    "combined gesture did not pan the tactical camera", { cameraAfterPan, cameraCombined });
+  expect(Math.abs(Number(cameraCombined.zoom) - Number(cameraAfterPan.zoom)) > 0.001,
+    "combined gesture did not pinch-zoom the tactical camera", {
+      cameraAfterPan, cameraCombined,
+    });
+  expect(Math.abs(Number(cameraCombined.angle) - Number(cameraAfterPan.angle)) > 0.001,
+    "combined gesture did not twist the tactical camera", {
+      cameraAfterPan, cameraCombined,
+    });
+  await runFrames(page, 12, "touch combined gesture stationary");
+  const cameraCombinedStationary = await touchCameraState(page);
+  expect(coordinateDelta(cameraCombined.lookAt, cameraCombinedStationary.lookAt) < 0.01
+      && Math.abs(Number(cameraCombined.zoom) - Number(cameraCombinedStationary.zoom)) < 0.0001
+      && Math.abs(Number(cameraCombined.angle) - Number(cameraCombinedStationary.angle)) < 0.0001,
+    "a stationary combined gesture must not continue changing the camera", {
+      cameraCombined, cameraCombinedStationary,
+    });
   await dispatchTouchPointer(page, "pointerup", 521, leftClient, true);
   await dispatchTouchPointer(page, "pointerup", 522, rightClient);
-  await runFrames(page, 8, "touch pinch settle");
-  const cameraAfterPinch = await touchCameraState(page);
-  expect(Math.abs(Number(cameraAfterPinch.zoom) - Number(cameraAfterPan.zoom)) > 0.001,
-    "pinch did not zoom the tactical camera", { cameraAfterPan, cameraAfterPinch });
+  await runFrames(page, 8, "touch combined navigation release");
+  const cameraAfterRelease = await touchCameraState(page);
+  expect(coordinateDelta(cameraCombinedStationary.lookAt, cameraAfterRelease.lookAt) < 0.01,
+    "combined navigation release must not add camera drift", {
+      cameraCombinedStationary, cameraAfterRelease,
+    });
 
-  const rotateCenter = { x: 390, y: 250 };
-  const rotateRadius = 65;
-  let rotateLeft = await touchPointToClient(page,
-    { x: rotateCenter.x - rotateRadius, y: rotateCenter.y });
-  let rotateRight = await touchPointToClient(page,
-    { x: rotateCenter.x + rotateRadius, y: rotateCenter.y });
-  await dispatchTouchPointer(page, "pointerdown", 531, rotateLeft, true);
-  await dispatchTouchPointer(page, "pointerdown", 532, rotateRight);
-  for (let step = 1; step <= 5; step += 1) {
-    const radians = step * Math.PI / 18;
-    rotateLeft = await touchPointToClient(page, {
-      x: rotateCenter.x - Math.cos(radians) * rotateRadius,
-      y: rotateCenter.y - Math.sin(radians) * rotateRadius,
-    });
-    rotateRight = await touchPointToClient(page, {
-      x: rotateCenter.x + Math.cos(radians) * rotateRadius,
-      y: rotateCenter.y + Math.sin(radians) * rotateRadius,
-    });
-    await dispatchTouchPointer(page, "pointermove", 531, rotateLeft, true);
-    await dispatchTouchPointer(page, "pointermove", 532, rotateRight);
-  }
-  await runFrames(page, 4, "touch rotation held");
-  await dispatchTouchPointer(page, "pointerup", 531, rotateLeft, true);
-  await dispatchTouchPointer(page, "pointerup", 532, rotateRight);
-  await runFrames(page, 6, "touch rotation settle");
-  const cameraAfterRotate = await touchCameraState(page);
-  expect(Math.abs(Number(cameraAfterRotate.angle) - Number(cameraAfterPinch.angle)) > 0.001,
-    "two-finger twist did not rotate the tactical camera", {
-      cameraAfterPinch, cameraAfterRotate,
-    });
+  const navigationPathAfter = (await rpc(page, "querySelection"))?.result?.commandPath;
+  expect(Number(navigationPathAfter?.rawRightDownCount) ===
+      Number(navigationPathBefore?.rawRightDownCount)
+      && Number(navigationPathAfter?.rawRightUpCount) ===
+        Number(navigationPathBefore?.rawRightUpCount)
+      && Number(navigationPathAfter?.dispatchMoveCommandCount) ===
+        Number(navigationPathBefore?.dispatchMoveCommandCount),
+  "camera navigation must not leak a right click or contextual order", {
+    navigationPathBefore, navigationPathAfter,
+  });
 
   await page.screenshot({ path: screenshot });
   return {
     enabled: state.enabled,
     selectedObject: { id: unit.id, name: unit.name, localOwned: unit.localOwned },
     order: { before: beforeOrder, after: afterOrder },
-    camera: { before: cameraBefore, afterPan: cameraAfterPan,
-      afterPinch: cameraAfterPinch, afterRotate: cameraAfterRotate },
+    camera: { before: cameraBefore, panMoved: cameraPanMoved,
+      panStationary: cameraPanStationary, afterPan: cameraAfterPan,
+      combined: cameraCombined, combinedStationary: cameraCombinedStationary,
+      afterRelease: cameraAfterRelease },
+    renderGeometry,
     screenshot,
   };
 }

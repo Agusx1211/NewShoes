@@ -363,6 +363,45 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 		}
 
 		//-----------------------------------------------------------------------------
+		case GameMessage::MSG_RAW_TOUCH_NAVIGATION:
+		{
+			disp = DESTROY_MESSAGE;
+			if ((TheShell && TheShell->isShellActive()) || !TheInGameUI->getInputEnabled())
+				break;
+
+			const ICoord2D previous = msg->getArgument( 0 )->pixel;
+			const ICoord2D current = msg->getArgument( 1 )->pixel;
+			const Real scale = msg->getArgument( 2 )->real;
+			const Real angleDelta = msg->getArgument( 3 )->real;
+
+			// Keep the terrain point under the previous centroid attached to the
+			// current centroid while all three parts of the gesture are applied.
+			// Unlike RMB scrolling this is displacement, not velocity: stationary
+			// fingers produce no camera movement.
+			Coord3D anchor;
+			TheTacticalView->screenToTerrain( &previous, &anchor );
+			if (scale != 1.0f)
+			{
+				TheTacticalView->setHeightAboveGround(
+					TheTacticalView->getHeightAboveGround() / scale );
+			}
+			if (angleDelta != 0.0f)
+			{
+				TheTacticalView->setAngle( TheTacticalView->getAngle() + angleDelta );
+			}
+
+			Coord3D transformed;
+			TheTacticalView->screenToWorldAtZ( &current, &transformed, anchor.z );
+			Coord2D offset;
+			offset.x = anchor.x - transformed.x;
+			offset.y = anchor.y - transformed.y;
+			TheTacticalView->scrollBy( &offset );
+			m_currentPos = current;
+			m_lastMouseMoveFrame = TheGameLogic->getFrame();
+			break;
+		}
+
+		//-----------------------------------------------------------------------------
 		case GameMessage::MSG_RAW_MOUSE_WHEEL:
 		{
 			m_lastMouseMoveFrame = TheGameLogic->getFrame();

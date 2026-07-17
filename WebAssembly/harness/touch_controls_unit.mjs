@@ -36,6 +36,10 @@ function buttonActions(actions) {
     .map(({ button, down, point }) => ({ button, down, point }));
 }
 
+function navigationActions(actions) {
+  return actions.filter((action) => action.type === "navigate");
+}
+
 {
   const test = harness();
   test.recognizer.pointerDown(pointer(1, 50, 70, 10));
@@ -79,15 +83,19 @@ function buttonActions(actions) {
   assert.deepEqual(buttonActions(test.actions), [], "the first half of a two-finger gesture must not leak a click");
   test.recognizer.pointerMove(pointer(1, 100, 100, 20));
   test.recognizer.pointerMove(pointer(2, 140, 100, 21));
+  test.recognizer.flushMultiGesture(22);
   test.recognizer.pointerUp(pointer(1, 100, 100, 30));
   test.recognizer.pointerUp(pointer(2, 140, 100, 31));
-  assert.deepEqual(buttonActions(test.actions), [
-    { button: 2, down: true, point: { x: 100, y: 80 } },
-    { button: 2, down: false, point: { x: 120, y: 100 } },
-  ], "two-finger translation must become a real right-button camera drag");
-  assert.equal(buttonActions(test.actions).some((action) => action.button === 0), false);
-  assert.equal(test.actions.some((action) => action.type === "wheel"), false,
-    "sequential pointer updates during a pan must not leak pinch zoom steps");
+  assert.deepEqual(navigationActions(test.actions), [{
+    type: "navigate",
+    previousPoint: { x: 100, y: 80 },
+    point: { x: 120, y: 100 },
+    scale: 1,
+    radians: 0,
+    timestamp: 22,
+  }], "two-finger translation must emit one direct camera transform");
+  assert.deepEqual(buttonActions(test.actions), [],
+    "camera navigation must not synthesize a contextual click or order");
 }
 
 {
@@ -96,10 +104,14 @@ function buttonActions(actions) {
   test.recognizer.pointerDown(pointer(2, 120, 80, 11));
   test.recognizer.pointerMove(pointer(1, 70, 80, 20));
   test.recognizer.pointerMove(pointer(2, 130, 80, 21));
+  test.recognizer.flushMultiGesture(22);
   test.recognizer.pointerUp(pointer(1, 70, 80, 30));
   test.recognizer.pointerUp(pointer(2, 130, 80, 31));
-  assert.equal(test.actions.some((action) => action.type === "wheel" && action.steps === 1), true,
-    "pinch-out must emit wheel-up zoom steps");
+  const [navigation] = navigationActions(test.actions);
+  assert.deepEqual(navigation.previousPoint, { x: 100, y: 80 });
+  assert.deepEqual(navigation.point, { x: 100, y: 80 });
+  assert.equal(navigation.scale, 1.5, "pinch-out must preserve its continuous scale");
+  assert.equal(navigation.radians, 0);
   assert.deepEqual(buttonActions(test.actions), [], "a pure pinch must not click or start camera pan");
 }
 
@@ -107,17 +119,44 @@ function buttonActions(actions) {
   const test = harness();
   test.recognizer.pointerDown(pointer(1, 80, 100, 10));
   test.recognizer.pointerDown(pointer(2, 120, 100, 11));
-  test.recognizer.pointerMove(pointer(1, 82, 93, 20));
-  test.recognizer.pointerMove(pointer(2, 118, 107, 21));
-  test.recognizer.pointerUp(pointer(1, 82, 93, 30));
-  test.recognizer.pointerUp(pointer(2, 118, 107, 31));
-  assert.equal(test.actions.filter((action) => action.type === "rotate-start").length, 1,
-    "two-finger twist must begin one middle-button rotation mapping");
-  assert.equal(test.actions.some((action) => action.type === "rotate-move" && action.radians > 0), true);
-  assert.equal(test.actions.filter((action) => action.type === "rotate-end").length, 1);
-  assert.deepEqual(buttonActions(test.actions), [], "a pure twist must not emit primary/context buttons");
-  assert.equal(test.actions.some((action) => action.type === "wheel"), false,
-    "a pure twist must not leak pinch zoom steps");
+  const radians = Math.PI / 12;
+  const left = { x: 100 - Math.cos(radians) * 20, y: 100 - Math.sin(radians) * 20 };
+  const right = { x: 100 + Math.cos(radians) * 20, y: 100 + Math.sin(radians) * 20 };
+  test.recognizer.pointerMove(pointer(1, left.x, left.y, 20));
+  test.recognizer.pointerMove(pointer(2, right.x, right.y, 21));
+  test.recognizer.flushMultiGesture(22);
+  test.recognizer.pointerUp(pointer(1, left.x, left.y, 30));
+  test.recognizer.pointerUp(pointer(2, right.x, right.y, 31));
+  const [navigation] = navigationActions(test.actions);
+  assert.ok(Math.abs(navigation.scale - 1) < 1e-12,
+    "a constant-radius twist must not change scale");
+  assert.ok(Math.abs(navigation.radians - radians) < 1e-12,
+    "two-finger twist must preserve its continuous angle");
+  assert.deepEqual(buttonActions(test.actions), [],
+    "a pure twist must not emit primary/context buttons");
+}
+
+{
+  const test = harness();
+  test.recognizer.pointerDown(pointer(1, 100, 200, 10));
+  test.recognizer.pointerDown(pointer(2, 200, 200, 11));
+  test.recognizer.pointerMove(pointer(1, 130, 190, 20));
+  test.recognizer.pointerMove(pointer(2, 250, 250, 21));
+  test.recognizer.flushMultiGesture(22);
+  const [navigation] = navigationActions(test.actions);
+  assert.deepEqual(navigation.previousPoint, { x: 150, y: 200 });
+  assert.deepEqual(navigation.point, { x: 190, y: 220 });
+  assert.ok(navigation.scale > 1.3 && navigation.scale < 1.4);
+  assert.ok(navigation.radians > 0.4 && navigation.radians < 0.5);
+  assert.equal(test.recognizer.snapshot().navigationActive, true,
+    "translation, pinch, and twist must remain one active navigation gesture");
+  test.recognizer.flushMultiGesture(23);
+  assert.equal(navigationActions(test.actions).length, 1,
+    "stationary fingers must not create camera velocity");
+  test.recognizer.pointerUp(pointer(1, 130, 190, 30));
+  test.recognizer.pointerUp(pointer(2, 250, 250, 31));
+  assert.deepEqual(buttonActions(test.actions), [],
+    "combined navigation must not leak an order on release");
 }
 
 {
