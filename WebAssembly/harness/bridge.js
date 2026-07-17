@@ -10634,6 +10634,7 @@ async function pushTouchNavigationToWasmLite({
   point,
   scale,
   radians,
+  sequence = 0,
 } = {}) {
   const touchNavigation = {
     previousX: previousPoint?.x ?? point?.x ?? 0,
@@ -10647,13 +10648,23 @@ async function pushTouchNavigationToWasmLite({
     try {
       await threadedEngine.ensureReady();
       threadedEngine.forwardInput({ touchNavigation });
+      // forwardInput batches through a microtask. Publish queue completion
+      // only after that microtask has posted the ordered input command, so
+      // probes and diagnostics can distinguish recognition from transport.
+      await new Promise((resolve) => queueMicrotask(resolve));
+      if (harnessState.touchNavigation) {
+        harnessState.touchNavigation.queuedCount = Math.max(
+          Number(harnessState.touchNavigation.queuedCount ?? 0),
+          Number(sequence),
+        );
+      }
     } catch (_error) {
       // Realm not ready during asset/init phases; touch input is droppable.
     }
     return null;
   }
   const wasmModule = await wasmModulePromise;
-  return wasmModule?.postTouchNavigationLite?.(
+  const result = wasmModule?.postTouchNavigationLite?.(
     touchNavigation.previousX,
     touchNavigation.previousY,
     touchNavigation.currentX,
@@ -10661,6 +10672,13 @@ async function pushTouchNavigationToWasmLite({
     touchNavigation.scale,
     touchNavigation.radians,
   ) ?? 0;
+  if (result === 1 && harnessState.touchNavigation) {
+    harnessState.touchNavigation.queuedCount = Math.max(
+      Number(harnessState.touchNavigation.queuedCount ?? 0),
+      Number(sequence),
+    );
+  }
+  return result;
 }
 
 async function postBrowserMessageToWasm({
@@ -24412,8 +24430,10 @@ function forwardTouchWheel(steps, clientPoint) {
 function forwardTouchNavigation(action) {
   const previousPoint = touchPointToEngine(action.previousPoint);
   const point = touchPointToEngine(action.point);
+  const sequence = Number(harnessState.touchNavigation?.count ?? 0) + 1;
   harnessState.touchNavigation = {
-    count: Number(harnessState.touchNavigation?.count ?? 0) + 1,
+    count: sequence,
+    queuedCount: Number(harnessState.touchNavigation?.queuedCount ?? 0),
     previousPoint,
     point,
     scale: Number(action.scale),
@@ -24424,6 +24444,7 @@ function forwardTouchNavigation(action) {
     point,
     scale: action.scale,
     radians: action.radians,
+    sequence,
   });
 }
 

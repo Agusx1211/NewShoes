@@ -628,6 +628,18 @@ async function touchCameraState(page) {
   return snapshot.result.camera;
 }
 
+async function touchNavigationCount(page) {
+  return page.evaluate(() => Number(window.CnCPort.state.touchNavigation?.count ?? 0));
+}
+
+async function waitForTouchNavigationQueued(page, minimumCount) {
+  await page.waitForFunction((expected) => {
+    const navigation = window.CnCPort.state.touchNavigation;
+    return Number(navigation?.count ?? 0) >= expected
+      && Number(navigation?.queuedCount ?? 0) >= Number(navigation.count);
+  }, minimumCount);
+}
+
 function coordinateDelta(left, right) {
   return Math.hypot(
     Number(right?.x ?? 0) - Number(left?.x ?? 0),
@@ -757,9 +769,11 @@ async function driveTouchControlsProbe(page) {
   let panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
   await dispatchTouchPointer(page, "pointerdown", 511, panStartClient[0], true);
   await dispatchTouchPointer(page, "pointerdown", 512, panStartClient[1]);
+  let navigationCountBeforeMove = await touchNavigationCount(page);
   await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
   await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
   await page.waitForTimeout(40);
+  await waitForTouchNavigationQueued(page, navigationCountBeforeMove + 1);
   await runFrames(page, 4, "touch direct pan");
   let cameraPanMoved = await touchCameraState(page);
   // A random start position can place the camera against the map edge. If the
@@ -768,9 +782,11 @@ async function driveTouchControlsProbe(page) {
   if (coordinateDelta(cameraBefore.lookAt, cameraPanMoved.lookAt) <= 0.1) {
     panEnd = panStart.map((point) => ({ x: point.x - 70, y: point.y - 35 }));
     panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
+    navigationCountBeforeMove = await touchNavigationCount(page);
     await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
     await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
     await page.waitForTimeout(40);
+    await waitForTouchNavigationQueued(page, navigationCountBeforeMove + 1);
     await runFrames(page, 4, "touch direct pan reverse from map edge");
     cameraPanMoved = await touchCameraState(page);
   }
@@ -812,6 +828,7 @@ async function driveTouchControlsProbe(page) {
   });
   await dispatchTouchPointer(page, "pointerdown", 521, leftClient, true);
   await dispatchTouchPointer(page, "pointerdown", 522, rightClient);
+  navigationCountBeforeMove = await touchNavigationCount(page);
   for (let step = 1; step <= 5; step += 1) {
     const progress = step / 5;
     const center = {
@@ -832,6 +849,7 @@ async function driveTouchControlsProbe(page) {
     await dispatchTouchPointer(page, "pointermove", 522, rightClient);
     await page.waitForTimeout(20);
   }
+  await waitForTouchNavigationQueued(page, navigationCountBeforeMove + 1);
   await runFrames(page, 6, "touch combined navigation");
   const cameraCombined = await touchCameraState(page);
   const combinedDiagnostics = await page.evaluate(() => ({
