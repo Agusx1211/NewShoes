@@ -159,6 +159,15 @@ void View::scrollBy( Coord2D *delta )
 }
 
 /**
+ * Shift the view by an already projected world-space delta.
+ */
+void View::scrollByWorld( Coord2D *delta )
+{
+	m_pos.x += delta->x;
+	m_pos.y += delta->y;
+}
+
+/**
  * Rotate the view around the up axis by the given angle.
  */
 void View::setAngle( Real angle )

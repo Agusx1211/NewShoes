@@ -1941,6 +1941,24 @@ void W3DView::scrollBy( Coord2D *delta )
 }  // end scrollBy
 
 //-------------------------------------------------------------------------------------------------
+/** Shift the view by a projected world-space delta without scroll-control scaling. */
+//-------------------------------------------------------------------------------------------------
+void W3DView::scrollByWorld( Coord2D *delta )
+{
+	if (delta && (delta->x != 0 || delta->y != 0))
+	{
+		View::scrollByWorld(delta);
+		m_doingMoveCameraOnWaypointPath = false;
+		m_CameraArrivedAtWaypointOnPathFlag = false;
+		m_doingRotateCamera = false;
+		m_doingPitchCamera = false;
+		m_doingZoomCamera = false;
+		m_doingScriptedCameraLock = false;
+		setCameraTransform();
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 void W3DView::forceRedraw()
 {

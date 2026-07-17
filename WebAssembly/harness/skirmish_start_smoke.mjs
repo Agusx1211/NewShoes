@@ -890,7 +890,11 @@ async function driveTouchControlsProbe(page) {
   await dispatchTouchPointer(page, "pointerup", 522, rightClient);
   await runFrames(page, 8, "touch combined navigation release");
   const cameraAfterRelease = await touchCameraState(page);
-  expect(coordinateDelta(cameraCombinedStationary.lookAt, cameraAfterRelease.lookAt) < 0.01,
+  expect(coordinateDelta(cameraCombinedStationary.lookAt, cameraAfterRelease.lookAt) < 0.01
+      && Math.abs(Number(cameraCombinedStationary.zoom) -
+        Number(cameraAfterRelease.zoom)) < 0.0001
+      && Math.abs(Number(cameraCombinedStationary.angle) -
+        Number(cameraAfterRelease.angle)) < 0.0001,
     "combined navigation release must not add camera drift", {
       cameraCombinedStationary, cameraAfterRelease,
     });
@@ -906,6 +910,16 @@ async function driveTouchControlsProbe(page) {
     navigationPathBefore, navigationPathAfter,
   });
 
+  const graphics = await inspectGraphics(page);
+  const expectedRenderer = String(
+    process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
+  expect(graphics.contextLost === false && graphics.contextLossBanner === false,
+    "touch navigation run lost its WebGL context", graphics);
+  if (expectedRenderer) {
+    expect(String(graphics.renderer ?? "").toLowerCase().includes(expectedRenderer),
+      "touch navigation run used an unexpected GPU renderer", graphics);
+  }
+
   await page.screenshot({ path: screenshot });
   return {
     enabled: state.enabled,
@@ -916,6 +930,7 @@ async function driveTouchControlsProbe(page) {
       combined: cameraCombined, combinedStationary: cameraCombinedStationary,
       afterRelease: cameraAfterRelease },
     renderGeometry,
+    graphics,
     screenshot,
   };
 }

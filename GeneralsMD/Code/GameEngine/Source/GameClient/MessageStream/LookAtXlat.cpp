@@ -382,8 +382,26 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 			TheTacticalView->screenToTerrain( &previous, &anchor );
 			if (scale != 1.0f)
 			{
-				TheTacticalView->setHeightAboveGround(
-					TheTacticalView->getHeightAboveGround() / scale );
+				// Ordinary wheel zoom changes desired height and deliberately eases
+				// the real zoom over later frames.  A direct manipulation must snap
+				// both values together so stationary fingers leave no residual motion.
+				const Real currentZoom = TheTacticalView->getZoom();
+				const Real terrainHeight = TheTacticalView->getTerrainHeightUnderCamera();
+				const Real cameraHeight = terrainHeight
+					+ TheTacticalView->getCurrentHeightAboveGround();
+				if (currentZoom > 0.0f && cameraHeight > 0.0f)
+				{
+					TheTacticalView->setHeightAboveGround(
+						cameraHeight / scale - terrainHeight );
+					const Real desiredCameraHeight = terrainHeight
+						+ TheTacticalView->getHeightAboveGround();
+					TheTacticalView->setZoom(
+						currentZoom * desiredCameraHeight / cameraHeight );
+					// Reconcile the desired height with a zoom clamp, if one applied.
+					TheTacticalView->setHeightAboveGround(
+						cameraHeight * TheTacticalView->getZoom() / currentZoom
+							- terrainHeight );
+				}
 			}
 			if (angleDelta != 0.0f)
 			{
@@ -395,7 +413,7 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 			Coord2D offset;
 			offset.x = anchor.x - transformed.x;
 			offset.y = anchor.y - transformed.y;
-			TheTacticalView->scrollBy( &offset );
+			TheTacticalView->scrollByWorld( &offset );
 			m_currentPos = current;
 			m_lastMouseMoveFrame = TheGameLogic->getFrame();
 			break;
