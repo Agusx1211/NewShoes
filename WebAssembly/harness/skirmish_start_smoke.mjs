@@ -2077,6 +2077,35 @@ async function main() {
       expect(init.frontier.commandLine?.includes("-mod /assets/cnc-mods-active"),
         "real engine did not receive the imported mod directory", init.frontier);
     }
+    if (expectTouchControlsProbe) {
+      // This harness initializes the engine through RPC instead of invoking
+      // play.mjs's normal launch sequence, so explicitly replay the shipping
+      // dynamic-resolution decision before exercising the mobile match.
+      const target = await page.evaluate(async () => {
+        const {
+          dynamicResolutionForBox,
+          isIOSLikeNavigator,
+          isIPadLikeNavigator,
+        } = await import("./display-resolution.mjs");
+        const canvas = document.querySelector("#viewport");
+        const rect = canvas.getBoundingClientRect();
+        return dynamicResolutionForBox({
+          cssWidth: rect.width || window.innerWidth,
+          cssHeight: rect.height || window.innerHeight,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          iosLike: isIOSLikeNavigator(navigator),
+          ipadLike: isIPadLikeNavigator(navigator),
+        });
+      });
+      const resolution = await rpc(page, "setEngineResolution", target);
+      expect(resolution?.ok === true
+          && resolution.applied?.width === target.width
+          && resolution.applied?.height === target.height,
+      "mobile probe could not apply the shipping dynamic resolution", {
+        target,
+        resolution,
+      });
+    }
 
     if (expectReplayRoundTrip) {
       const existingReplays = await rpc(page, "listReplays");
