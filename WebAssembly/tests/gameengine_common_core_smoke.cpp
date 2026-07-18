@@ -55,6 +55,7 @@
 #include "GameLogic/ArmorSet.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/LogicRandomValue.h"
+#include "GameLogic/ScriptActions.h"
 #include "GameNetwork/GameInfo.h"
 #include "Lib/Trig.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
@@ -789,10 +790,11 @@ bool exercise_file_interfaces()
 bool exercise_file_system_dispatch()
 {
 	SmokeLocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
 	FileSystem file_system;
 	TheLocalFileSystem = &local_file_system;
 	TheFileSystem = &file_system;
-	TheArchiveFileSystem = nullptr;
+	TheArchiveFileSystem = &archive_file_system;
 
 	File *opened = file_system.openFile("local-smoke.txt", File::READ | File::BINARY);
 	const bool open_ok =
@@ -807,9 +809,18 @@ bool exercise_file_system_dispatch()
 	const bool missing_ok = expect(file_system.openFile("missing.txt", File::READ) == nullptr,
 		"FileSystem missing local/archive file should fail");
 
+	FileInfo missing_info = { 1, 2, 3, 4 };
+	const bool missing_info_ok =
+		expect(!file_system.getFileInfo(AsciiString("missing.txt"), &missing_info),
+			"FileSystem missing file info should fail") &&
+		expect(missing_info.sizeHigh == 0 && missing_info.sizeLow == 0 &&
+				missing_info.timestampHigh == 0 && missing_info.timestampLow == 0,
+			"FileSystem missing file info was not fully cleared");
+
 	TheFileSystem = nullptr;
+	TheArchiveFileSystem = nullptr;
 	TheLocalFileSystem = nullptr;
-	return open_ok && missing_ok;
+	return open_ok && missing_ok && missing_info_ok;
 }
 
 bool exercise_win32_local_file_system()
@@ -1090,13 +1101,27 @@ bool exercise_cached_file_input_stream()
 	}
 
 	char readback[sizeof(payload)] = {};
+	const Int negative_bytes_read = input.read(readback, -1);
+	const bool negative_read_ok =
+		expect(negative_bytes_read == 0, "CachedFileInputStream accepted a negative read size") &&
+		expect(input.tell() == 0, "CachedFileInputStream advanced after a negative read size") &&
+		expect(readback[0] == '\0', "CachedFileInputStream copied data for a negative read size");
 	const Int bytes_read = input.read(readback, payload_size);
+	const Bool exact_read_eof = input.eof();
+	const Bool clamp_seek_ok = input.absoluteSeek(1);
+	char clamped_readback[sizeof(payload)] = {};
+	const Int clamped_bytes_read = input.read(clamped_readback, payload_size);
 	const bool read_ok =
+		negative_read_ok &&
 		expect(bytes_read == payload_size, "CachedFileInputStream read size failed") &&
 		expect(std::memcmp(readback, payload, payload_size) == 0,
 			"CachedFileInputStream decompressed payload mismatch") &&
-		expect(input.eof(), "CachedFileInputStream eof failed") &&
-		expect(input.absoluteSeek(0) && input.tell() == 0, "CachedFileInputStream seek/tell failed");
+		expect(exact_read_eof, "CachedFileInputStream eof failed") &&
+		expect(clamp_seek_ok && clamped_bytes_read == payload_size - 1,
+			"CachedFileInputStream did not clamp a read to the remaining bytes") &&
+		expect(std::memcmp(clamped_readback, payload + 1, payload_size - 1) == 0,
+			"CachedFileInputStream clamped read payload mismatch") &&
+		expect(input.eof(), "CachedFileInputStream clamped read did not reach eof");
 
 	input.close();
 	TheFileSystem = nullptr;
@@ -1737,6 +1762,23 @@ bool exercise_game_common()
 			"normalizeAngle negative wrap failed");
 }
 
+bool exercise_script_garrison_policy()
+{
+	constexpr PlayerMaskType controller = 0x04;
+	constexpr PlayerMaskType other_player = 0x02;
+
+	return expect(!ScriptActions::isValidSpecificBuildingGarrisonTarget(FALSE, 0, controller),
+			"script garrison accepted an empty non-structure container") &&
+		expect(!ScriptActions::isValidSpecificBuildingGarrisonTarget(FALSE, controller, controller),
+			"script garrison accepted a same-player non-structure container") &&
+		expect(ScriptActions::isValidSpecificBuildingGarrisonTarget(TRUE, 0, controller),
+			"script garrison rejected an empty structure") &&
+		expect(ScriptActions::isValidSpecificBuildingGarrisonTarget(TRUE, controller, controller),
+			"script garrison rejected a same-player structure") &&
+		expect(!ScriptActions::isValidSpecificBuildingGarrisonTarget(TRUE, other_player, controller),
+			"script garrison accepted another player's structure");
+}
+
 std::uintptr_t dynamic_type_word(const ParticleInfo &info)
 {
 	std::uintptr_t word = 0;
@@ -2082,6 +2124,7 @@ int main()
 		exercise_dict() &&
 		exercise_trig() &&
 		exercise_game_common() &&
+		exercise_script_garrison_policy() &&
 		exercise_particle_info_merge_fallback() &&
 		exercise_list_and_circle() &&
 		exercise_bezier() &&

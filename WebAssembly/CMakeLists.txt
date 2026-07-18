@@ -2147,6 +2147,42 @@ set_source_files_properties(${ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES} PROPERTIES
   COMPILE_OPTIONS "-U__PRERTS_H__;-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
 )
 
+set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptActions.cpp" APPEND PROPERTY
+  COMPILE_OPTIONS "-Werror=logical-op-parentheses"
+)
+
+set_property(SOURCE "${GAMEENGINE_COMMON_DIR}/System/Debug.cpp" APPEND PROPERTY
+  COMPILE_OPTIONS "-Werror=format"
+)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  # Chinook combat-drop states are custom raw state IDs, not AIStateType values.
+  set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/AIUpdate/ChinookAIUpdate.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS
+      "-Werror=enum-compare"
+      "-Werror=tautological-constant-out-of-range-compare"
+  )
+
+  # Old-script compatibility tables must use representable ConditionType sentinels.
+  set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=tautological-constant-out-of-range-compare"
+  )
+
+  # Rider-less stealth fallbacks must remain initialized before gameplay uses them.
+  set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/StealthUpdate.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=sometimes-uninitialized"
+  )
+
+  # EMP and leaflet radii may be zero, which must remain a valid empty iteration.
+  set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/EMPUpdate.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=sometimes-uninitialized"
+  )
+
+  set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/FlightDeckBehavior.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=unused-comparison"
+  )
+endif()
+
 set(ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyChat.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyGP.cpp"
@@ -2159,6 +2195,12 @@ set_source_files_properties(${ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES} PROPERT
 # Browser-owned WOL declarations must not route real-header targets through
 # the shadow GameNetwork/WOLBrowser/WebBrowser.h shim.
 set(WOL_BROWSER_COMPILE_BRIDGE "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_webbrowser_boundary.h")
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  set_property(SOURCE "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLLoginMenu.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=mismatched-new-delete"
+  )
+endif()
 
 set_source_files_properties("${GAMEENGINE_COMMON_DIR}/GameEngine.cpp" PROPERTIES
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/atlbase.h;-include${WASM_SHIMS_DIR}/mmsystem.h;${WOL_BROWSER_COMPILE_BRIDGE}"
@@ -3480,6 +3522,11 @@ target_compile_options(zh_gameengine_real_ini_runtime PRIVATE
 
 target_link_libraries(zh_gameengine_real_ini_runtime PUBLIC
   zh_gameengine_globaldata_runtime
+)
+
+set_property(
+  SOURCE "${GAMEENGINE_COMMON_DIR}/Thing/ThingTemplate.cpp"
+  APPEND PROPERTY COMPILE_OPTIONS -Werror=tautological-constant-out-of-range-compare
 )
 
 add_library(zh_gameengine_real_object_ini_runtime STATIC
@@ -6185,6 +6232,8 @@ target_link_libraries(wwmath-core-smoke PRIVATE
 
 target_compile_options(wwmath-core-smoke PRIVATE
   -include "${WWVEGAS_PORT_SHIM}"
+  -fsanitize=undefined
+  -fno-sanitize-recover=undefined
   -fms-extensions
   -Wall
   -Wextra
@@ -6202,6 +6251,8 @@ target_compile_options(wwmath-core-smoke PRIVATE
 target_link_options(wwmath-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
+  -fsanitize=undefined
+  -fno-sanitize-recover=undefined
   ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
@@ -6432,6 +6483,65 @@ target_compile_options(gameengine-header-case-smoke PRIVATE
 )
 
 target_link_options(gameengine-header-case-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
+add_executable(flightdeck-layout-smoke
+  tests/flightdeck_layout_smoke.cpp
+)
+
+set_target_properties(flightdeck-layout-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_include_directories(flightdeck-layout-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(flightdeck-layout-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
+target_compile_options(flightdeck-layout-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-invalid-offsetof
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(flightdeck-layout-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   ${CNC_ASSERTIONS_LINK_OPTION}
@@ -7072,6 +7182,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIWebpageURL.cpp"
   "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/FunctionLexicon.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
@@ -7090,6 +7201,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
   "${GAMEENGINE_COMMON_DIR}/UserPreferences.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/CampaignManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainRoads.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
@@ -7103,6 +7215,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPlayer.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/GhostObject.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Weapon.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptActions.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/Squad.cpp"
@@ -7204,6 +7317,175 @@ target_link_options(gamelogic-new-game-dispatch-smoke PRIVATE
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sNODERAWFS=1"
+)
+
+add_executable(partition-detach-dirty-smoke
+  tests/partition_detach_dirty_smoke.cpp
+  "${GAMEENGINE_COMMON_DIR}/System/Snapshot.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/SubsystemInterface.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/PartitionManager.cpp"
+)
+
+set_target_properties(partition-detach-dirty-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_compile_definitions(partition-detach-dirty-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
+target_include_directories(partition-detach-dirty-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(partition-detach-dirty-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -ffunction-sections
+  -fdata-sections
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Werror=sometimes-uninitialized
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-invalid-offsetof
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(partition-detach-dirty-smoke PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-Wl,--unresolved-symbols=ignore-all"
+  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
+add_executable(stealth-module-data-default-smoke
+  tests/stealth_module_data_default_smoke.cpp
+  "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/Snapshot.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/StealthUpdate.cpp"
+)
+
+set_target_properties(stealth-module-data-default-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_compile_definitions(stealth-module-data-default-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
+target_include_directories(stealth-module-data-default-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(stealth-module-data-default-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -ffunction-sections
+  -fdata-sections
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-invalid-offsetof
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(stealth-module-data-default-smoke PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-Wl,--unresolved-symbols=ignore-all"
+  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sEXIT_RUNTIME=1"
 )
 
 add_executable(win32-gameengine-message-pump-smoke
@@ -8613,6 +8895,7 @@ target_link_options(miles-audio-play-sample-smoke PRIVATE
 
 add_executable(gamenetwork-core-smoke
   tests/gamenetwork_core_smoke.cpp
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Thread/ThreadUtils.cpp"
 )
 
 set_target_properties(gamenetwork-core-smoke PROPERTIES
@@ -8651,6 +8934,7 @@ target_compile_options(gamenetwork-core-smoke PRIVATE
   -Wall
   -Wextra
   -Wpedantic
+  -Werror=mismatched-new-delete
   -Wno-register
   -Wno-writable-strings
 )
