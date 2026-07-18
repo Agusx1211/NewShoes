@@ -1,5 +1,5 @@
 import { joinRoom } from "./vendor/trystero-nostr.min.mjs";
-import { PROJECT_NOSTR_RELAY } from "./webrtc-udp-endpoint.mjs";
+import { hybridNostrRelayUrls } from "./webrtc-udp-endpoint.mjs";
 import { loadActiveModContext } from "./mod-context.mjs";
 import {
   DEVICE_TRANSFER_APP_ID,
@@ -58,7 +58,7 @@ function relayUrls() {
       && testUrls.every((url) => /^wss?:\/\//i.test(String(url)))) {
     return [...testUrls];
   }
-  return [PROJECT_NOSTR_RELAY];
+  return hybridNostrRelayUrls(DEVICE_TRANSFER_APP_ID);
 }
 
 function localDeviceLabel() {

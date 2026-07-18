@@ -583,18 +583,7 @@ WWINLINE int WWMath::Float_To_Int_Chop(const float& f)
 
 WWINLINE int WWMath::Float_To_Int_Floor (const float& f)
 {
-	int a			= *reinterpret_cast<const int*>(&f);			// take bit pattern of float into a register
-	int sign		= (a>>31);												// sign = 0xFFFFFFFF if original value is negative, 0 if positive
-	a&=0x7fffffff;															// we don't need the sign any more
-
-	int exponent	= (a>>23)-127;										// extract the exponent
-	int expsign	= ~(exponent>>31);									// 0xFFFFFFFF if exponent is positive, 0 otherwise
-	int imask		= ( (1<<(31-(exponent))))-1;					// mask for true integer values
-	int mantissa	= (a&((1<<23)-1));								// extract mantissa (without the hidden bit)
-	int r			= ((unsigned int)(mantissa|(1<<23))<<8)>>(31-exponent);	// ((1<<exponent)*(mantissa|hidden bit))>>24 -- (we know that mantissa > (1<<24))
-
-	r = ((r & expsign) ^ (sign)) + ((!((mantissa<<8)&imask)&(expsign^((a-1)>>31)))&sign);	// if (fabs(value)<1.0) value = 0; copy sign; if (value < 0 && value==(int)(value)) value++;
-	return r;
+	return static_cast<int>(floorf(f));
 }
 
 // ----------------------------------------------------------------------------

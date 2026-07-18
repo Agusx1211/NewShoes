@@ -10,6 +10,7 @@
 #include "lightenvironment.h"
 #include "matrix3d.h"
 #include "rendobj.h"
+#include "scene.h"
 #include "ww3d.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
@@ -120,6 +121,16 @@ bool smoke_camera_defaults()
 	camera->Release_Ref();
 	return ok;
 }
+
+bool smoke_scene_id_dispatch()
+{
+	SimpleSceneClass *simple_scene = W3DNEW SimpleSceneClass();
+	const SceneClass *scene = simple_scene;
+	const bool ok = expect(scene->Get_Scene_ID() == SceneClass::SCENE_ID_SIMPLE,
+		"SimpleSceneClass reported the base scene ID through SceneClass pointer");
+	simple_scene->Release_Ref();
+	return ok;
+}
 }
 
 int main()
@@ -130,6 +141,9 @@ int main()
 		return 1;
 	}
 	if (!smoke_camera_defaults()) {
+		return 1;
+	}
+	if (!smoke_scene_id_dispatch()) {
 		return 1;
 	}
 

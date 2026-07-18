@@ -45,6 +45,7 @@
 
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
+import { waitForRelaunchExitReady } from "./threaded_relaunch_exit.mjs";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -58,6 +59,7 @@ const threadedPlayDist = /^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(process.env.THREAD
   ? process.env.THREADED_PLAY_DIST
   : "";
 const BOOT_TIMEOUT_MS = Number(process.env.BOOT_TIMEOUT_MS ?? 15 * 60 * 1000);
+const RELAUNCH_MENU_TIMEOUT_MS = Number(process.env.RELAUNCH_MENU_TIMEOUT_MS ?? 120000);
 // Post-boot settle before the title capture: the main-menu fade-in advances
 // per RENDERED frame, so slow SwiftShader runs need tens of seconds before
 // the menu is fully lit.
@@ -1047,24 +1049,40 @@ async function main() {
         "/home/web_user/Command and Conquer Generals Zero Hour Data/Save/__threaded_gate_roundtrip.sav",
       )),
     }));
+    const exitReadiness = await waitForRelaunchExitReady(page, {
+      timeoutMs: RELAUNCH_MENU_TIMEOUT_MS,
+    });
+    const originalExitReadiness = exitReadiness.queryResponse;
     const originalExitClick = await page.evaluate(() =>
       window.CnCPort.rpc("clickWindowByName", { name: "MainMenu.wnd:ButtonExit" }));
+    summary.cleanExit.relaunch = {
+      state: relaunchState,
+      originalExitReadiness,
+      readinessSamples: exitReadiness.sampleCount,
+      originalExitClick,
+      exit: null,
+    };
+    log(`relaunch Exit readiness: ${JSON.stringify({
+      found: originalExitReadiness?.result?.found,
+      managerHidden: originalExitReadiness?.result?.managerHidden,
+      samples: exitReadiness.sampleCount,
+      clicked: originalExitClick?.result?.clicked,
+      downResult: originalExitClick?.result?.downResult,
+      upResult: originalExitClick?.result?.upResult,
+    })}`);
     await page.waitForFunction(() =>
       window.ZeroHRuntime?.closing === true || window.ZeroHRuntime?.closed === true, null, {
       timeout: 30000,
       polling: 100,
     });
     const relaunchExit = await page.evaluate(() => window.ZeroHRuntime.exit());
-    summary.cleanExit.relaunch = {
-      state: relaunchState,
-      originalExitClick,
-      exit: relaunchExit,
-    };
+    summary.cleanExit.relaunch.exit = relaunchExit;
     checks.push([
       "desktop shortcut relaunches and the original Exit button cleanly closes the fresh runtime",
       relaunchState.started === true
         && relaunchState.closed === false
         && JSON.stringify(relaunchState.saveBytes) === JSON.stringify([0x53, 0x41, 0x56, 0x45, 0x21])
+        && originalExitReadiness?.result?.found === true
         && originalExitClick?.ok === true
         && originalExitClick?.result?.clicked === true
         && relaunchExit?.ok === true
