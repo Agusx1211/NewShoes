@@ -737,7 +737,6 @@ void ReleaseCrashLocalized(const AsciiString& p, const AsciiString& m)
 	UnicodeString prompt = TheGameText->fetch(p);
 	UnicodeString mesg = TheGameText->fetch(m);
 	AsciiString mesgA;
-	mesgA.translate(mesg);
 
 
 	/// do additional reporting on the crash, if possible
@@ -751,6 +750,7 @@ void ReleaseCrashLocalized(const AsciiString& p, const AsciiString& m)
 	if (TheSystemIsUnicode) 
 	{
 		::MessageBoxW(NULL, mesg.str(), prompt.str(), MB_OK|MB_SYSTEMMODAL|MB_ICONERROR);
+		mesgA.translate(mesg);
 	} 
 	else 
 	{
@@ -758,6 +758,7 @@ void ReleaseCrashLocalized(const AsciiString& p, const AsciiString& m)
 		// translate the string into an AsciiString
 		AsciiString promptA;
 		promptA.translate(prompt);
+		mesgA.translate(mesg);
 		//Make sure main window is not TOP_MOST
 		::SetWindowPos(ApplicationHWnd, HWND_NOTOPMOST, 0, 0, 0, 0,SWP_NOSIZE |SWP_NOMOVE);
 		::MessageBoxA(NULL, mesgA.str(), promptA.str(), MB_OK|MB_TASKMODAL|MB_ICONERROR);
