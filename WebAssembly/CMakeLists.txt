@@ -7113,8 +7113,6 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${WWSAVELOAD_DIR}/persistfactory.cpp"
   "${WWSAVELOAD_DIR}/pointerremap.cpp"
   "${WWSAVELOAD_DIR}/saveload.cpp"
-  "${WWVEGAS_DIR}/WW3D2/dx8wrapper.cpp"
-  "${WWVEGAS_DIR}/WW3D2/rendobj.cpp"
 )
 
 set_target_properties(gamelogic-new-game-dispatch-smoke PROPERTIES
@@ -7129,6 +7127,15 @@ target_compile_definitions(gamelogic-new-game-dispatch-smoke PRIVATE
 target_link_libraries(gamelogic-new-game-dispatch-smoke PRIVATE
   zh_gameclient_gui_input_runtime
   zh_w3d_terrain_probe_runtime
+  zh_ww3d2_compile_frontier
+  zh_browser_d3d8
+  zh_wwmath_lookup
+  zh_wwsaveload_full
+  zh_wwsaveload_core
+  zh_wwlib_thread
+  zh_wwlib_mutex
+  zh_wwlib_targa
+  zh_wwdebug_profile
 )
 
 target_include_directories(gamelogic-new-game-dispatch-smoke PRIVATE
