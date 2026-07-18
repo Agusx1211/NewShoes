@@ -1,4 +1,9 @@
-import { getRelaySockets, joinRoom, selfId } from "./vendor/trystero-nostr.min.mjs";
+import {
+  defaultRelayUrls,
+  getRelaySockets,
+  joinRoom,
+  selfId,
+} from "./vendor/trystero-nostr.min.mjs";
 
 const FRAME_MAGIC = 0x434e4331; // "CNC1"
 const FRAME_HEADER_BYTES = 16;
@@ -6,10 +11,46 @@ const BROADCAST_IP = 0xffffffff;
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 const MAX_ROOM_PEERS = 8;
 const TRYSTERO_APP_ID = "project-new-shoes-lan-v1";
+const PUBLIC_NOSTR_RELAY_COUNT = 4;
 const TRANSPORT_VERSION = 1;
 const DATA_CHANNEL_LABEL = "cnc-udp-v1";
 const DATA_CHANNEL_PROTOCOL = "cnc-generals-udp-v1";
 export const PROJECT_NOSTR_RELAY = "wss://relay.newshoes.gg/nostr";
+
+function shuffledRelays(relays, seed) {
+  const result = [...relays];
+  const random = () => {
+    const value = Math.sin(seed++) * 10_000;
+    return value - Math.floor(value);
+  };
+  let remaining = result.length;
+  while (remaining > 0) {
+    const index = Math.floor(random() * remaining--);
+    [result[remaining], result[index]] = [result[index], result[remaining]];
+  }
+  return result;
+}
+
+// Match Trystero's app-ID-derived relay selection so every participant in an
+// application uses the same public fallback set. The project relay remains an
+// owned operational anchor, but discovery succeeds through any open relay.
+export function hybridNostrRelayUrls(appId, publicRelayCount = PUBLIC_NOSTR_RELAY_COUNT) {
+  if (typeof appId !== "string" || appId.length === 0) {
+    throw new TypeError("Trystero relay selection requires an application ID");
+  }
+  if (!Number.isInteger(publicRelayCount) || publicRelayCount < 1) {
+    throw new RangeError("Trystero relay selection requires at least one public relay");
+  }
+  const seed = [...appId].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+  const publicRelays = shuffledRelays(defaultRelayUrls, seed)
+    .filter((url) => url !== PROJECT_NOSTR_RELAY)
+    .slice(0, publicRelayCount);
+  return [PROJECT_NOSTR_RELAY, ...publicRelays];
+}
+
+export const DEFAULT_MULTIPLAYER_NOSTR_RELAYS = Object.freeze(
+  hybridNostrRelayUrls(TRYSTERO_APP_ID),
+);
 function normalizedBytes(value) {
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
@@ -117,10 +158,11 @@ export function virtualIpForTrysteroPeer(peerId) {
   return (0x0a000000 | host) >>> 0;
 }
 
-function relayStates() {
-  return Object.entries(getRelaySockets()).map(([url, socket]) => ({
+function relayStates(urls) {
+  const sockets = getRelaySockets();
+  return urls.map((url) => ({
     url,
-    state: socket.readyState,
+    state: sockets[url]?.readyState ?? 3,
   }));
 }
 
@@ -149,13 +191,13 @@ export class WebRtcUdpEndpoint {
     this.displayName = cleanLabel(displayName, this.requestedPeerId);
     this.localIp = virtualIpForTrysteroPeer(selfId);
     this.iceServers = Array.isArray(iceServers) ? iceServers : [];
-    // Production discovery is project-owned so late joins do not depend on an
-    // arbitrary public Nostr pool. Explicit URLs remain available to tests and
-    // private deployments without changing the shipping endpoint.
+    // Shipping discovery uses the project relay plus a deterministic public
+    // fallback set. Explicit URLs remain available to tests and private
+    // deployments without changing their requested topology.
     this.relayUrls = relayUrls
       ? [...new Set(relayUrls.map((url) => String(url).trim()))]
-      : [PROJECT_NOSTR_RELAY];
-    this.relaySource = relayUrls ? "configured" : "project";
+      : [...DEFAULT_MULTIPLAYER_NOSTR_RELAYS];
+    this.relaySource = relayUrls ? "configured" : "hybrid";
     this.onDatagram = onDatagram;
     this.onStateChange = onStateChange;
     this.onDiagnostic = onDiagnostic;
@@ -209,7 +251,7 @@ export class WebRtcUdpEndpoint {
       maxRetransmits: peer.channel?.maxRetransmits ?? null,
     }));
     const openPeers = peers.filter((peer) => peer.channelState === "open").length;
-    const relays = relayStates();
+    const relays = relayStates(this.relayUrls);
     return {
       source: "browser Trystero WebRTC P2P UDP endpoint",
       browserTransport: "dedicated WebRTC RTCDataChannel peer mesh",
@@ -218,6 +260,7 @@ export class WebRtcUdpEndpoint {
       productionTransport: true,
       relayTransport: false,
       projectRelay: PROJECT_NOSTR_RELAY,
+      relaySource: this.relaySource,
       enabled: !this.closed,
       connected: this.discoveryConnected || openPeers > 0,
       signalingConnected: this.discoveryConnected,
@@ -401,7 +444,7 @@ export class WebRtcUdpEndpoint {
   async waitForDiscoveryRelay(timeoutMs) {
     const deadline = Date.now() + timeoutMs;
     while (!this.closed && Date.now() < deadline) {
-      if (relayStates().some((relay) => relay.state === WebSocket.OPEN)) {
+      if (relayStates(this.relayUrls).some((relay) => relay.state === WebSocket.OPEN)) {
         this.discoveryConnected = true;
         this.lastError = null;
         this.notifyState();

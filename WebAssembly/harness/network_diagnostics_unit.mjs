@@ -39,6 +39,42 @@ assert.equal(snapshot.complete, false);
 assert.equal(snapshot.rtcSamples.length, 1);
 assert.equal(snapshot.engineSamples[0].network.frameDataReady, false);
 
+const saturatedRecorder = new NetworkDiagnosticsRecorder({
+  packets: 4,
+  packetBytes: 1024,
+  events: 4,
+  rtcSamples: 2,
+  engineSamples: 2,
+});
+saturatedRecorder.setEnabled(true, { reason: "saturation" });
+const originalArrayShift = Array.prototype.shift;
+let arrayShiftCalls = 0;
+try {
+  Array.prototype.shift = function instrumentedArrayShift(...args) {
+    arrayShiftCalls += 1;
+    return originalArrayShift.apply(this, args);
+  };
+  for (let index = 0; index < 20; ++index) {
+    saturatedRecorder.recordPacket({ bytes: Uint8Array.of(index) });
+    saturatedRecorder.recordEvent(`event-${index}`);
+    saturatedRecorder.recordRtcSample({ index });
+    saturatedRecorder.recordEngineSample({ index });
+  }
+} finally {
+  Array.prototype.shift = originalArrayShift;
+}
+assert.equal(arrayShiftCalls, 0,
+  "saturated diagnostics retention should not perform linear-time Array.shift eviction");
+const saturatedSnapshot = saturatedRecorder.snapshot();
+assert.deepEqual(saturatedSnapshot.packets.map((packet) => packet.payloadHex), ["10", "11", "12", "13"]);
+assert.deepEqual(saturatedSnapshot.events.map((event) => event.type),
+  ["event-16", "event-17", "event-18", "event-19"]);
+assert.deepEqual(saturatedSnapshot.rtcSamples.map((sample) => sample.index), [18, 19]);
+assert.deepEqual(saturatedSnapshot.engineSamples.map((sample) => sample.index), [18, 19]);
+saturatedRecorder.clear();
+assert.deepEqual(saturatedRecorder.summary().retained,
+  { packets: 0, packetBytes: 0, events: 0, rtcSamples: 0, engineSamples: 0 });
+
 const ring = createSharedUdpRing({ capacity: 2, maxBytes: 16 });
 const queuedAtUs = 1_783_872_550_123_456;
 assert.equal(enqueueSharedUdpDatagram(ring, {
