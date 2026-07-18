@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <type_traits>
 
 #include "PreRTS.h"
 
@@ -13,6 +14,7 @@
 #include "GameNetwork/FrameData.h"
 #include "GameNetwork/FrameDataManager.h"
 #include "GameNetwork/FrameMetrics.h"
+#include "GameNetwork/LANGameInfo.h"
 #include "GameNetwork/NetCommandList.h"
 #include "GameNetwork/NetCommandMsg.h"
 #include "GameNetwork/NetCommandRef.h"
@@ -94,6 +96,9 @@ public:
 		m_retryTime = -1;
 	}
 };
+
+static_assert(std::is_same_v<decltype(&LANGameInfo::amIHost), Bool (LANGameInfo::*)() const>,
+	"LANGameInfo::amIHost must override the const GameInfo host query");
 
 bool transportMessageHasValidCrc(const TransportMessage &message)
 {

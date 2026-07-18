@@ -102,7 +102,7 @@ public:
 
 	// Convinience functions that interface with the LANPlayer held in the slot list	
 	virtual void resetAccepted(void);														///< Reset the accepted flag on all players
-	Bool amIHost( void );																///< Convenience function - is the local player the game host?
+	virtual Bool amIHost( void ) const;																///< Convenience function - is the local player the game host?
 
 	/// Get the IP of selected player or return 0
 	inline UnsignedInt getIP( int who ) 

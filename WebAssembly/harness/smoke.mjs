@@ -629,6 +629,10 @@ function assertGameNetworkProbe(state, label) {
       || probe.packetRoundTrip.frameCommandCount !== 5) {
     throw new Error(`${label} GameNetwork packet round-trip mismatch: ${JSON.stringify(probe.packetRoundTrip)}`);
   }
+
+  if (!probe.lanHostDispatch?.ok) {
+    throw new Error(`${label} GameNetwork LAN host dispatch mismatch: ${JSON.stringify(probe.lanHostDispatch)}`);
+  }
 }
 
 function assertBrowserNetworkRelayRuntime(runtime, context) {

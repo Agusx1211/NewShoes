@@ -1586,6 +1586,23 @@ bool probe_packet_round_trip(GameNetworkProbeResult &result)
 	return ok;
 }
 
+bool probe_lan_host_dispatch()
+{
+	ProbeLANAPI lan;
+	ScopedLANProbeGlobals globals(&lan);
+	lan.setLocalAddress(kLanApiLocalIp);
+
+	LANGameInfo game;
+	game.enterGame();
+	lan.setLocalAddress(kLanApiRemoteIp);
+	LANGameSlot host_slot;
+	host_slot.setState(SLOT_PLAYER, UnicodeString(L"Host"), kLanApiRemoteIp);
+	game.setSlot(0, host_slot);
+
+	const GameInfo *game_info = &game;
+	return game.amIHost() && game_info->amIHost();
+}
+
 }
 
 extern "C" {
@@ -4487,11 +4504,13 @@ GameNetworkProbeResult probe_original_game_network()
 		result.frame_data_ok = probe_frame_data(result);
 		result.frame_data_manager_ok = probe_frame_data_manager(result);
 		result.packet_round_trip_ok = probe_packet_round_trip(result);
+		result.lan_host_dispatch_ok = probe_lan_host_dispatch();
 		result.ok =
 			result.command_ids_ok &&
 			result.frame_data_ok &&
 			result.frame_data_manager_ok &&
-			result.packet_round_trip_ok;
+			result.packet_round_trip_ok &&
+			result.lan_host_dispatch_ok;
 	} catch (...) {
 		result.ok = false;
 	}

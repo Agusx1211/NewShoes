@@ -3280,7 +3280,8 @@ std::string build_game_network_probe_json()
 		"\"readyState\":%d},"
 		"\"packetRoundTrip\":{\"ok\":%s,\"length\":%d,\"commands\":%d,"
 		"\"relay\":%d,\"executionFrame\":%d,\"playerId\":%d,"
-		"\"commandId\":%d,\"frameCommandCount\":%d}}",
+		"\"commandId\":%d,\"frameCommandCount\":%d},"
+		"\"lanHostDispatch\":{\"ok\":%s}}",
 		source_json.c_str(),
 		g_game_network_probe.attempted ? "true" : "false",
 		g_game_network_probe.ok ? "true" : "false",
@@ -3305,7 +3306,8 @@ std::string build_game_network_probe_json()
 		g_game_network_probe.packet_execution_frame,
 		g_game_network_probe.packet_player_id,
 		g_game_network_probe.packet_command_id,
-		g_game_network_probe.packet_frame_command_count);
+		g_game_network_probe.packet_frame_command_count,
+		g_game_network_probe.lan_host_dispatch_ok ? "true" : "false");
 	return buffer;
 }
 

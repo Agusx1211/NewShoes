@@ -10,6 +10,7 @@ struct GameNetworkProbeResult
 	bool frame_data_ok = false;
 	bool frame_data_manager_ok = false;
 	bool packet_round_trip_ok = false;
+	bool lan_host_dispatch_ok = false;
 	unsigned short first_command_id = 0;
 	unsigned short second_command_id = 0;
 	int frame = 0;
