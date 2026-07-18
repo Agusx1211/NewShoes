@@ -1172,6 +1172,7 @@ void MilesAudioManager::stopAllAudioImmediately( void )
 	for (it = m_playingSounds.begin(); it != m_playingSounds.end(); ) {
 		playing = *it;
 		if (!playing) {
+			it = m_playingSounds.erase(it);
 			continue;
 		}
 
@@ -1182,6 +1183,7 @@ void MilesAudioManager::stopAllAudioImmediately( void )
 	for (it = m_playing3DSounds.begin(); it != m_playing3DSounds.end(); ) {
 		playing = *it;
 		if (!playing) {
+			it = m_playing3DSounds.erase(it);
 			continue;
 		}
 
@@ -1192,6 +1194,7 @@ void MilesAudioManager::stopAllAudioImmediately( void )
 	for (it = m_playingStreams.begin(); it != m_playingStreams.end(); ) {
 		playing = (*it);
 		if (!playing) {
+			it = m_playingStreams.erase(it);
 			continue;
 		}
 
@@ -1202,6 +1205,7 @@ void MilesAudioManager::stopAllAudioImmediately( void )
   for (it = m_fadingAudio.begin(); it != m_fadingAudio.end(); ) {
     playing = (*it);
     if (!playing) {
+      it = m_fadingAudio.erase(it);
       continue;
     }
     
@@ -1304,6 +1308,7 @@ void MilesAudioManager::stopAllSpeech( void )
 	for (it = m_playingStreams.begin(); it != m_playingStreams.end(); ) {
 		playing = (*it);
 		if (!playing) {
+			it = m_playingStreams.erase(it);
 			continue;
 		}
 
@@ -2493,6 +2498,7 @@ void MilesAudioManager::processFadingList( void )
 	for (it = m_fadingAudio.begin(); it != m_fadingAudio.end(); /* emtpy */) {
 		playing = *it;
 		if (!playing) {
+			it = m_fadingAudio.erase(it);
 			continue;
 		}
 		
@@ -2675,6 +2681,7 @@ void MilesAudioManager::closeAnySamplesUsingFile( const void *fileToClose )
 	for (it = m_playingSounds.begin(); it != m_playingSounds.end(); ) {
 		playing = *it;
 		if (!playing) {
+			it = m_playingSounds.erase(it);
 			continue;
 		}
 
@@ -2689,6 +2696,7 @@ void MilesAudioManager::closeAnySamplesUsingFile( const void *fileToClose )
 	for (it = m_playing3DSounds.begin(); it != m_playing3DSounds.end(); ) {
 		playing = *it;
 		if (!playing) {
+			it = m_playing3DSounds.erase(it);
 			continue;
 		}
 

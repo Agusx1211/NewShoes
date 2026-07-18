@@ -172,6 +172,16 @@ void FlightDeckBehavior::buildInfo(Bool createUnits)
 		return;
 
 	const FlightDeckBehaviorModuleData* data = getFlightDeckBehaviorModuleData();
+	std::size_t runwaySpaceCounts[ MAX_RUNWAYS ];
+	for( Int col = 0; col < MAX_RUNWAYS; ++col )
+		runwaySpaceCounts[ col ] = data->m_runwayInfo[ col ].m_spacesBoneNames.size();
+
+	if( !FlightDeckBehaviorModuleData::isValidRunwayLayout( data->m_numRows, data->m_numCols, runwaySpaceCounts ) )
+	{
+		DEBUG_CRASH(("FlightDeckBehavior has an invalid runway layout: %d spaces per runway, %d runways", data->m_numRows, data->m_numCols));
+		m_gotInfo = true;
+		return;
+	}
 
 	m_thingTemplate = TheThingFactory->findTemplate( data->m_thingTemplateName );
 
@@ -181,7 +191,7 @@ void FlightDeckBehavior::buildInfo(Bool createUnits)
 
 	//ProductionUpdateInterface* pu = getObject()->getProductionUpdateInterface();
 
-	m_spaces.reserve( data->m_numRows * data->m_numCols );
+	m_spaces.reserve( static_cast<std::size_t>( data->m_numRows ) * static_cast<std::size_t>( data->m_numCols ) );
 
 	//Initialize the spaces that planes will eventually be assigned to for parking purposes
 	FlightDeckInfo flightDeckInfo;
@@ -191,20 +201,11 @@ void FlightDeckBehavior::buildInfo(Bool createUnits)
 	{
 		for( Int col = 0; col < data->m_numCols; col++ )
 		{
-			std::vector<AsciiString> spaces = data->m_runwayInfo[ col ].m_spacesBoneNames;
-			std::vector<AsciiString>::const_iterator it;
-
-			Int counter = 0; 
-			for( it = spaces.begin(); it != spaces.end(), counter < row;	it++, counter++ )
-			{
-				//just iterate to the spaces.
-			}
-				
-			AsciiString tmp;
 			Matrix3D mtx;
 
 			//Convert the module data bone names into coordinates that we can use
-			getObject()->getSingleLogicalBonePosition( it->str(), &flightDeckInfo.m_prep, &mtx );
+			const AsciiString& spaceBoneName = data->m_runwayInfo[ col ].m_spacesBoneNames[ row ];
+			getObject()->getSingleLogicalBonePosition( spaceBoneName.str(), &flightDeckInfo.m_prep, &mtx );
 			flightDeckInfo.m_orientation = mtx.Get_Z_Rotation();
 
 			//Init basic runway stuff
@@ -240,8 +241,6 @@ void FlightDeckBehavior::buildInfo(Bool createUnits)
 	m_runways.reserve(data->m_numCols);
 	for( Int col = 0; col < data->m_numCols; ++col )
 	{
-		AsciiString tmp;
-
 		getObject()->getSingleLogicalBonePosition( data->m_runwayInfo[ col ].m_takeoffBoneNames[ RUNWAY_START_BONE ].str(), &info.m_start, NULL);
 		getObject()->getSingleLogicalBonePosition( data->m_runwayInfo[ col ].m_takeoffBoneNames[ RUNWAY_END_BONE ].str(), &info.m_end, NULL);
 		getObject()->getSingleLogicalBonePosition( data->m_runwayInfo[ col ].m_landingBoneNames[ RUNWAY_START_BONE ].str(), &info.m_landingStart, NULL);
@@ -607,6 +606,9 @@ ObjectID FlightDeckBehavior::getRunwayReservation( Int runway, RunwayReservation
 {
 	buildInfo();
 	purgeDead();
+	if( runway < 0 || runway >= static_cast<Int>( m_runways.size() ) )
+		return INVALID_ID;
+
 	switch( type )
 	{
 		case RESERVATION_TAKEOFF:
@@ -635,8 +637,7 @@ Bool FlightDeckBehavior::reserveRunway(ObjectID id, Bool forLanding)
 	if( !forLanding )
 	{
 		//Only look at the front spaces for takeoff. You can't take off from the back!
-		const FlightDeckBehaviorModuleData *data = getFlightDeckBehaviorModuleData();
-		for( Int i = 0; i < data->m_numCols; i++ )
+		for( Int i = 0; i < static_cast<Int>( m_runways.size() ); i++ )
 		{
 			if( m_spaces[ i ].m_objectInSpace == id )
 			{
@@ -799,10 +800,9 @@ Bool FlightDeckBehavior::isAbleToGiveUpParkingSpace( Object *jet )
 Bool FlightDeckBehavior::isInPositionToTakeoff( const Object &jet ) const
 {
 	const AIUpdateInterface *ai = jet.getAI();
-	const FlightDeckBehaviorModuleData *data = getFlightDeckBehaviorModuleData();
 	if( ai )
 	{
-		for( int i = 0; i < data->m_numCols; i++ )
+		for( Int i = 0; i < static_cast<Int>( m_runways.size() ); i++ )
 		{
 			if( m_spaces[ i ].m_objectInSpace == jet.getID() )
 			{
@@ -1135,7 +1135,7 @@ UpdateSleepTime FlightDeckBehavior::update()
 			{
 				//Either we don't have a jet, or the jet is busy (meaning it's not parked there). When a jet
 				//isn't in his spot, we will look for jets behind him to move up to take up his spot.
-				Int runwayCount = data->m_numCols;
+				Int runwayCount = static_cast<Int>( m_runways.size() );
 				Int tempID = spaceID;
 				for( tempIt = it; tempIt != m_spaces.end(); tempIt++, tempID++ )
 				{
@@ -1236,7 +1236,7 @@ UpdateSleepTime FlightDeckBehavior::update()
 	Drawable *draw = getObject()->getDrawable();
 
 	//Check for timer expiry -- are we allowed to launch the next wave yet?
-	for( int i = 0; i < data->m_numCols; i++ )
+	for( Int i = 0; i < static_cast<Int>( m_runways.size() ); i++ )
 	{
 		Object *jet = TheGameLogic->findObjectByID( m_spaces[ i ].m_objectInSpace );
 		if( jet && !isAbleToGiveUpParkingSpace( jet ) && isInPositionToTakeoff( *jet ) && hasTakeoffOrders() )

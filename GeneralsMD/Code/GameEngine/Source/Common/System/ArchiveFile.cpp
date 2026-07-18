@@ -207,7 +207,7 @@ const ArchivedFileInfo * ArchiveFile::getArchivedFileInfo(const AsciiString& fil
 
 	path.nextToken(&token, "\\/");
 
-	while ((token.find('.') == NULL) || (path.find('.') != NULL)) {
+	while (path.isNotEmpty()) {
 
 		DetailedArchivedDirectoryInfoMap::const_iterator it = dirInfo->m_directories.find(token);
 		if (it != dirInfo->m_directories.end())
