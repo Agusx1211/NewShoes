@@ -632,6 +632,11 @@ const d3d8PerfStats = {
   drawLightPayloadSkips: 0,
   drawDerivedCacheHits: 0,
   drawDerivedCacheMisses: 0,
+  drawFullStateInvalidations: 0,
+  drawTextureContentPreservations: 0,
+  drawTextureContentInvalidations: 0,
+  drawTextureContentInvalidatedEntries: 0,
+  drawTextureContentInvalidationMs: 0,
   drawUniformCacheHits: 0,
   drawUniformCacheMisses: 0,
   drawTransformUniformCacheHits: 0,
@@ -757,6 +762,7 @@ const d3d8PerfStats = {
   bufferMirrorMs: 0,
   bufferMirrorSkippedBytes: 0,
 };
+const d3d8DrawBatchFlushReasons = new Map();
 
 // Per-GL-op diagnostics are useful to the harness but measurable in draw-flood
 // frames. Lite mode keeps both clocks and counters out of the human-play hot
@@ -1084,6 +1090,9 @@ function d3d8PerfSummary() {
     drawBatchSavedDrawElements: d3d8PerfStats.drawBatchSavedDrawElements,
     drawBatchMergedIndices: d3d8PerfStats.drawBatchMergedIndices,
     drawBatchMaxRunLength: d3d8PerfStats.drawBatchMaxRunLength,
+    drawBatchFlushReasons: Object.fromEntries(
+      [...d3d8DrawBatchFlushReasons.entries()].sort((left, right) =>
+        right[1] - left[1] || left[0].localeCompare(right[0]))),
     drawDepthStencilOnlyProgramDraws: d3d8PerfStats.drawDepthStencilOnlyProgramDraws,
     drawDepthStencilNoDiscardDraws: d3d8PerfStats.drawDepthStencilNoDiscardDraws,
     drawDepthStencilOnlyFastDerivedDraws: d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws,
@@ -1113,6 +1122,13 @@ function d3d8PerfSummary() {
     drawLightPayloadSkips: d3d8PerfStats.drawLightPayloadSkips,
     drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
+    drawFullStateInvalidations: d3d8PerfStats.drawFullStateInvalidations,
+    drawTextureContentPreservations: d3d8PerfStats.drawTextureContentPreservations,
+    drawTextureContentInvalidations: d3d8PerfStats.drawTextureContentInvalidations,
+    drawTextureContentInvalidatedEntries:
+      d3d8PerfStats.drawTextureContentInvalidatedEntries,
+    drawTextureContentInvalidationMs:
+      roundedPerfMs(d3d8PerfStats.drawTextureContentInvalidationMs),
     drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
     drawUniformCacheMisses: d3d8PerfStats.drawUniformCacheMisses,
     drawTransformUniformCacheHits: d3d8PerfStats.drawTransformUniformCacheHits,
@@ -1250,6 +1266,7 @@ let d3d8GammaFilterNodes = null;
 
 function invalidateD3D8DrawStateCache() {
   flushD3D8PendingDrawBatch("stateInvalidated");
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawFullStateInvalidations += 1;
   harnessState.graphics.lastD3D8StateHash = 0;
   harnessState.graphics.lastD3D8UniformKey = null;
   harnessState.graphics.lastD3D8TextureUniformKey = null;
@@ -1308,6 +1325,64 @@ function unlinkD3D8DerivedDrawCacheEntry(entry) {
   }
   entry.lruPrevious = null;
   entry.lruNext = null;
+}
+
+function deleteD3D8DerivedDrawCacheEntry(entry) {
+  if (!entry) {
+    return;
+  }
+  const bucket = d3d8DerivedDrawCache.get(entry.derivedStateHash);
+  const bucketIndex = bucket?.indexOf(entry) ?? -1;
+  unlinkD3D8DerivedDrawCacheEntry(entry);
+  if (bucketIndex < 0) {
+    d3d8DerivedDrawCacheEntries = Math.max(0, d3d8DerivedDrawCacheEntries - 1);
+    return;
+  }
+  bucket.splice(bucketIndex, 1);
+  d3d8DerivedDrawCacheEntries -= 1;
+  if (bucket.length === 0) {
+    d3d8DerivedDrawCache.delete(entry.derivedStateHash);
+  }
+}
+
+function d3d8DerivedDrawCacheEntryUsesTexture(entry, textureId) {
+  return entry?.texture0Id === textureId ||
+    entry?.texture1Id === textureId ||
+    entry?.texture2Id === textureId ||
+    entry?.texture3Id === textureId;
+}
+
+function invalidateD3D8TextureContentState(textureId) {
+  const id = Number(textureId ?? 0) >>> 0;
+  if (id === 0) {
+    return;
+  }
+  const startedAt = d3d8PerfTimingEnabled ? perfNow() : 0;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureContentInvalidations += 1;
+  const currentEntryUsesTexture = d3d8DerivedDrawCacheEntryUsesTexture(d3d8LastDrawKey, id);
+  let invalidatedEntries = 0;
+  for (let entry = d3d8DerivedDrawCacheOldest; entry;) {
+    const next = entry.lruNext;
+    if (d3d8DerivedDrawCacheEntryUsesTexture(entry, id)) {
+      deleteD3D8DerivedDrawCacheEntry(entry);
+      invalidatedEntries += 1;
+    }
+    entry = next;
+  }
+  if (d3d8PerfCountersEnabled) {
+    d3d8PerfStats.drawTextureContentInvalidatedEntries += invalidatedEntries;
+  }
+  if (currentEntryUsesTexture) {
+    d3d8LastDrawKey = null;
+    d3d8CachedDerived = null;
+    // Texture metadata can change legacy semantic swizzles and the implicit
+    // alpha-cutout decision. Only the texture-layout group depends on those
+    // values; render state, transforms, and the active GL program do not.
+    harnessState.graphics.lastD3D8TextureUniformKey = null;
+  }
+  if (d3d8PerfTimingEnabled) {
+    d3d8PerfStats.drawTextureContentInvalidationMs += perfNow() - startedAt;
+  }
 }
 
 function d3d8DerivedDrawCacheEntryMatches(
@@ -1369,18 +1444,7 @@ function evictOldestD3D8DerivedDrawCacheEntry() {
   if (!entry) {
     return;
   }
-  const bucket = d3d8DerivedDrawCache.get(entry.derivedStateHash);
-  const bucketIndex = bucket?.indexOf(entry) ?? -1;
-  unlinkD3D8DerivedDrawCacheEntry(entry);
-  if (bucketIndex < 0) {
-    d3d8DerivedDrawCacheEntries = Math.max(0, d3d8DerivedDrawCacheEntries - 1);
-    return;
-  }
-  bucket.splice(bucketIndex, 1);
-  d3d8DerivedDrawCacheEntries -= 1;
-  if (bucket.length === 0) {
-    d3d8DerivedDrawCache.delete(entry.derivedStateHash);
-  }
+  deleteD3D8DerivedDrawCacheEntry(entry);
 }
 
 function rememberD3D8DerivedDrawCacheEntry(
@@ -3460,11 +3524,32 @@ function convertD3D8TextureBytes(format, bytes, width, height, depth = 1) {
 // DXT/BCn block decoders - CPU fallback when WEBGL_compressed_texture_s3tc unavailable
 // Reference: Wine wined3d/utils.c:440, standard DXT spec
 
+function dxtFourColorPalette(blockBytes) {
+  const c0 = blockBytes[0] | (blockBytes[1] << 8);
+  const c1 = blockBytes[2] | (blockBytes[3] << 8);
+  const r0 = scale5((c0 >> 11) & 0x1F);
+  const g0 = scale6((c0 >> 5) & 0x3F);
+  const b0 = scale5(c0 & 0x1F);
+  const r1 = scale5((c1 >> 11) & 0x1F);
+  const g1 = scale6((c1 >> 5) & 0x3F);
+  const b1 = scale5(c1 & 0x1F);
+  return [
+    { r: r0, g: g0, b: b0 },
+    { r: r1, g: g1, b: b1 },
+    { r: Math.round((2 * r0 + r1) / 3),
+      g: Math.round((2 * g0 + g1) / 3),
+      b: Math.round((2 * b0 + b1) / 3) },
+    { r: Math.round((r0 + 2 * r1) / 3),
+      g: Math.round((g0 + 2 * g1) / 3),
+      b: Math.round((b0 + 2 * b1) / 3) },
+  ];
+}
+
 /**
  * Decode a single DXT1 (BC1) block to 4x4 RGBA8
  * DXT1: 8 bytes -> 4x4 pixels. Two RGB565 endpoints + 4-color palette + 16×2-bit indices
  */
-function decodeDxt1Block(blockData, blockBytes, target, width, height, x, y) {
+function decodeDxt1Block(blockBytes, target, width, height, x, y) {
   const c0 = (blockBytes[0] | (blockBytes[1] << 8));
   const c1 = (blockBytes[2] | (blockBytes[3] << 8));
 
@@ -3521,7 +3606,7 @@ function decodeDxt1Block(blockData, blockBytes, target, width, height, x, y) {
  * Decode a single DXT3 (BC2) block to 4x4 RGBA8
  * DXT3: 16 bytes -> 4x4 pixels. 8 bytes explicit alpha (4-bit per pixel) + 8 bytes DXT1 color
  */
-function decodeDxt3Block(blockData, blockBytes, target, width, height, x, y) {
+function decodeDxt3Block(blockBytes, target, width, height, x, y) {
   // First 8 bytes: alpha values (4-bit each, 4 values per byte)
   const alphaBytes = blockBytes.subarray(0, 8);
   // Last 8 bytes: DXT1 color data
@@ -3537,31 +3622,9 @@ function decodeDxt3Block(blockData, blockBytes, target, width, height, x, y) {
     );
   }
 
-  // Decode color data (same as DXT1)
-  const c0 = (colorBytes[0] | (colorBytes[1] << 8));
-  const c1 = (colorBytes[2] | (colorBytes[3] << 8));
-
-  const r0 = scale5((c0 >> 11) & 0x1F);
-  const g0 = scale6((c0 >> 5) & 0x3F);
-  const b0 = scale5(c0 & 0x1F);
-
-  const r1 = scale5((c1 >> 11) & 0x1F);
-  const g1 = scale6((c1 >> 5) & 0x3F);
-  const b1 = scale5(c1 & 0x1F);
-
-  // Generate color palette per BC1 spec:
-  // c0 > c1: 4-color mode: [c0, c1, (2*c0 + c1)/3, (c0 + 2*c1)/3]
-  // c0 <= c1: 3-color + transparent mode: [c0, c1, (c0 + c1)/2, transparent black]
-  const colors = [
-    { r: r0, g: g0, b: b0 },
-    { r: r1, g: g1, b: b1 },
-    { r: c0 > c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
-      g: c0 > c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
-      b: c0 > c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
-    { r: c0 > c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
-      g: c0 > c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
-      b: c0 > c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
-  ];
+  // DXT3/BC2 color blocks always use four-color interpolation. The
+  // three-color-plus-transparent mode selected by c0 <= c1 is DXT1-only.
+  const colors = dxtFourColorPalette(colorBytes);
 
   // Extract color indices
   const colorIndices = colorBytes[4] | (colorBytes[5] << 8) | (colorBytes[6] << 16) | (colorBytes[7] << 24);
@@ -3592,12 +3655,10 @@ function decodeDxt3Block(blockData, blockBytes, target, width, height, x, y) {
  * Decode a single DXT5 (BC3) block to 4x4 RGBA8
  * DXT5: 16 bytes -> 4x4 pixels. 8 bytes alpha (2 endpoints + 6×3-bit indices) + 8 bytes DXT1 color
  */
-function decodeDxt5Block(blockData, blockBytes, target, width, height, x, y) {
+function decodeDxt5Block(blockBytes, target, width, height, x, y) {
   // First 8 bytes: alpha data
   const alpha0 = blockBytes[0];
   const alpha1 = blockBytes[1];
-  const alphaIndices = blockBytes[2] | (blockBytes[3] << 8) | (blockBytes[4] << 16) |
-                      (blockBytes[5] << 24) | (blockBytes[6] << 32) | (blockBytes[7] << 40);
 
   // Generate 8 alpha values per BC3 spec:
   // alpha0 > alpha1: 8-value interpolation mode
@@ -3616,31 +3677,9 @@ function decodeDxt5Block(blockData, blockBytes, target, width, height, x, y) {
   // Last 8 bytes: DXT1 color data
   const colorBytes = blockBytes.subarray(8, 16);
 
-  // Decode color data (same as DXT1)
-  const c0 = (colorBytes[0] | (colorBytes[1] << 8));
-  const c1 = (colorBytes[2] | (colorBytes[3] << 8));
-
-  const r0 = scale5((c0 >> 11) & 0x1F);
-  const g0 = scale6((c0 >> 5) & 0x3F);
-  const b0 = scale5(c0 & 0x1F);
-
-  const r1 = scale5((c1 >> 11) & 0x1F);
-  const g1 = scale6((c1 >> 5) & 0x3F);
-  const b1 = scale5(c1 & 0x1F);
-
-  // Generate color palette per BC1 spec:
-  // c0 > c1: 4-color mode: [c0, c1, (2*c0 + c1)/3, (c0 + 2*c1)/3]
-  // c0 <= c1: 3-color + transparent mode: [c0, c1, (c0 + c1)/2, transparent black]
-  const colors = [
-    { r: r0, g: g0, b: b0 },
-    { r: r1, g: g1, b: b1 },
-    { r: c0 > c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
-      g: c0 > c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
-      b: c0 > c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
-    { r: c0 > c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
-      g: c0 > c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
-      b: c0 > c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
-  ];
+  // DXT5/BC3 color blocks always use four-color interpolation. The
+  // three-color-plus-transparent mode selected by c0 <= c1 is DXT1-only.
+  const colors = dxtFourColorPalette(colorBytes);
 
   // Extract color indices
   const colorIndices = colorBytes[4] | (colorBytes[5] << 8) | (colorBytes[6] << 16) | (colorBytes[7] << 24);
@@ -3650,7 +3689,12 @@ function decodeDxt5Block(blockData, blockBytes, target, width, height, x, y) {
     for (let px = 0; px < 4; px++) {
       const pixelIndex = py * 4 + px;
       const colorIndex = (colorIndices >> (pixelIndex * 2)) & 0x03;
-      const alphaIndex = (alphaIndices >> (pixelIndex * 3)) & 0x07;
+      const alphaBitOffset = pixelIndex * 3;
+      const alphaByteOffset = 2 + Math.floor(alphaBitOffset / 8);
+      const alphaBitShift = alphaBitOffset & 0x07;
+      const alphaSelectorBits = blockBytes[alphaByteOffset] |
+        ((blockBytes[alphaByteOffset + 1] ?? 0) << 8);
+      const alphaIndex = (alphaSelectorBits >> alphaBitShift) & 0x07;
       const color = colors[colorIndex];
       const alpha = alphaValues[alphaIndex];
 
@@ -3725,7 +3769,7 @@ function decodeDxtToRgba8(bytes, width, height, dxtKind) {
       const x = bx * 4;
       const y = by * 4;
 
-      decoder(null, blockBytes, target, width, height, x, y);
+      decoder(blockBytes, target, width, height, x, y);
     }
   }
 
@@ -4169,30 +4213,7 @@ function d3d8TextureLayoutUniformKey({
   texture3Transform,
 }) {
   const values = [implicitAlphaCutoutThreshold];
-  const pushStage = (stage, canSampleTexture, coordinates, semanticMode, flipY,
-      textureTransform, includeCoordSet = false) => {
-    const transformApplied = Boolean(canSampleTexture && coordinates.transformApplied);
-    values.push(
-      canSampleTexture ? 1 : 0,
-      canSampleTexture ? coordinates.mode : D3DTSS_TCI_PASSTHRU,
-      transformApplied ? 1 : 0,
-      transformApplied ? coordinates.textureTransformComponentCount : 0,
-      transformApplied && coordinates.textureTransformProjected ? 1 : 0,
-      canSampleTexture ? Number(stage.mipMapLodBias ?? 0) >>> 0 : 0,
-      canSampleTexture ? semanticMode : 0,
-      canSampleTexture && flipY ? 1 : 0,
-    );
-    // Stages 2/3 select which vertex UV set feeds the shader, so the coordinate
-    // index participates in the layout key. Stages 0/1 always map coordSet->attr
-    // 1:1 in the vertex fetch, so their key is left unchanged.
-    if (includeCoordSet) {
-      values.push(canSampleTexture ? (coordinates.coordSet >>> 0) : 0);
-    }
-    if (transformApplied) {
-      values.push(...textureTransform);
-    }
-  };
-  pushStage(
+  appendD3D8TextureLayoutStageKey(values,
     renderState.textureStages[0],
     canSampleTexture0,
     texture0Coordinates,
@@ -4200,7 +4221,7 @@ function d3d8TextureLayoutUniformKey({
     texture0FlipY,
     texture0Transform,
   );
-  pushStage(
+  appendD3D8TextureLayoutStageKey(values,
     renderState.textureStages[1],
     canSampleTexture1,
     texture1Coordinates,
@@ -4208,7 +4229,7 @@ function d3d8TextureLayoutUniformKey({
     texture1FlipY,
     texture1Transform,
   );
-  pushStage(
+  appendD3D8TextureLayoutStageKey(values,
     renderState.textureStages[2],
     canSampleTexture2,
     texture2Coordinates,
@@ -4217,7 +4238,7 @@ function d3d8TextureLayoutUniformKey({
     texture2Transform,
     true,
   );
-  pushStage(
+  appendD3D8TextureLayoutStageKey(values,
     renderState.textureStages[3],
     canSampleTexture3,
     texture3Coordinates,
@@ -4227,6 +4248,30 @@ function d3d8TextureLayoutUniformKey({
     true,
   );
   return values.join(",");
+}
+
+function appendD3D8TextureLayoutStageKey(values, stage, canSampleTexture,
+    coordinates, semanticMode, flipY, textureTransform, includeCoordSet = false) {
+  const transformApplied = Boolean(canSampleTexture && coordinates.transformApplied);
+  values.push(
+    canSampleTexture ? 1 : 0,
+    canSampleTexture ? coordinates.mode : D3DTSS_TCI_PASSTHRU,
+    transformApplied ? 1 : 0,
+    transformApplied ? coordinates.textureTransformComponentCount : 0,
+    transformApplied && coordinates.textureTransformProjected ? 1 : 0,
+    canSampleTexture ? Number(stage.mipMapLodBias ?? 0) >>> 0 : 0,
+    canSampleTexture ? semanticMode : 0,
+    canSampleTexture && flipY ? 1 : 0,
+  );
+  // Stages 2/3 select which vertex UV set feeds the shader, so the coordinate
+  // index participates in the layout key. Stages 0/1 always map coordSet->attr
+  // 1:1 in the vertex fetch, so their key is left unchanged.
+  if (includeCoordSet) {
+    values.push(canSampleTexture ? (coordinates.coordSet >>> 0) : 0);
+  }
+  if (transformApplied) {
+    values.push(...textureTransform);
+  }
 }
 
 const D3D8_DEFAULT_LIGHT_DIRECTION = Object.freeze([0, 0, 1]);
@@ -6246,16 +6291,19 @@ function updateD3D8Texture(payload = {}) {
   }
   if (d3d8PerfCountersEnabled) d3d8PerfStats.textureConvertBytes += Number(payload.bytes.byteLength ?? 0) >>> 0;
   if (d3d8PerfCountersEnabled) d3d8PerfStats.textureConvertMs += perfNow() - convertStartedAt;
+  const previousSemanticMode = d3d8TextureSemanticMode(resource);
+  const previousAlphaCutoutState = d3d8TextureAlphaCutoutState(resource);
   resource.storage = info.storage;
   resource.semantic = info.semantic || null;
   const levelKey = String(level);
   const levelInitialized = resource.initializedLevels.has(levelKey);
   const levelFormat = resource.levelFormats.get(levelKey);
+  const storageChanged = !levelInitialized || levelFormat !== info.storage;
   // An FBO stays complete across ordinary texSubImage2D writes. If an upload
   // actually changes level-0 storage, discard any cached attachment now so the
   // next SetRenderTarget recreates and validates it once. This makes a
   // synchronous checkFramebufferStatus on every render-target bind unnecessary.
-  if (level === 0 && (!levelInitialized || levelFormat !== info.storage)) {
+  if (level === 0 && storageChanged) {
     releaseD3D8FramebufferEntriesForTexture(id);
   }
   let swizzleApplied = resource.swizzleApplied || null;
@@ -6263,7 +6311,7 @@ function updateD3D8Texture(payload = {}) {
   withPreservedD3D8TextureUnit(() => {
     gl.bindTexture(gl.TEXTURE_2D, resource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    if (!levelInitialized || levelFormat !== info.storage) {
+    if (storageChanged) {
       if (info.compressed && !info.dxtDecode) {
         gl.compressedTexImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0, uploadBytes);
       } else if (x === 0 && y === 0 && width === levelSize.width && height === levelSize.height) {
@@ -6293,7 +6341,25 @@ function updateD3D8Texture(payload = {}) {
   if (level0AlphaCoverage !== undefined) {
     resource.alphaCoverage = level0AlphaCoverage;
   }
-  invalidateD3D8DrawStateCache();
+  const derivedTextureStateChanged = !storageChanged &&
+    (previousSemanticMode !== d3d8TextureSemanticMode(resource) ||
+      previousAlphaCutoutState !== d3d8TextureAlphaCutoutState(resource));
+  if (storageChanged) {
+    // Allocating different storage can invalidate an attached framebuffer and
+    // changes texture readiness, so retain the conservative full reset.
+    invalidateD3D8DrawStateCache();
+  } else if (derivedTextureStateChanged) {
+    // texSubImage2D changes this texture's contents but preserves the current
+    // program, render state, transforms, viewport, and vertex-array bindings.
+    // If semantic or alpha-cutout metadata changed, retain those exact caches
+    // and discard only derived entries whose decisions depend on this resource.
+    invalidateD3D8TextureContentState(id);
+  } else if (d3d8PerfCountersEnabled) {
+    // Pixel contents do not participate in a derived-state key. Ordinary
+    // same-storage uploads therefore leave every cached decision valid when
+    // sampling readiness, semantic mode, and alpha-cutout eligibility match.
+    d3d8PerfStats.drawTextureContentPreservations += 1;
+  }
 
   resource.uploads += 1;
   d3d8TextureStats.updates += 1;
@@ -6561,7 +6627,6 @@ function bindD3D8Texture(payload = {}) {
   if (!gl) {
     return 0;
   }
-  flushD3D8PendingDrawBatch("textureBind");
   const stage = Number(payload.stage ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
   const maxTextureUnits = d3d8MaxCombinedTextureImageUnits ??
@@ -6577,8 +6642,12 @@ function bindD3D8Texture(payload = {}) {
     updateD3D8TextureBindSummary();
     return 0;
   }
+  const previousId = Number(d3d8BoundTextures.get(stage) ?? 0) >>> 0;
 
   if (id === 0) {
+    if (previousId !== 0) {
+      flushD3D8PendingDrawBatch("textureBind");
+    }
     d3d8BoundTextures.delete(stage);
     d3d8TextureStats.unbinds += 1;
     d3d8TextureStats.lastBind = {
@@ -6604,6 +6673,9 @@ function bindD3D8Texture(payload = {}) {
     return 0;
   }
 
+  if (previousId !== id) {
+    flushD3D8PendingDrawBatch("textureBind");
+  }
   d3d8BoundTextures.set(stage, id);
   d3d8TextureStats.binds += 1;
   d3d8TextureStats.lastBind = {
@@ -7888,7 +7960,7 @@ function d3d8CanUseParticleProgram({
 // SM1 shader-pair programs (absent uniforms resolve to null; every cached
 // uniform setter tolerates that).
 function buildD3D8DrawProgramLocations(program) {
-  return {
+  const locations = {
     program,
     position: gl.getAttribLocation(program, "aPosition"),
     normal: gl.getAttribLocation(program, "aNormal"),
@@ -8033,6 +8105,108 @@ function buildD3D8DrawProgramLocations(program) {
     fogStart: gl.getUniformLocation(program, "uFogStart"),
     fogEnd: gl.getUniformLocation(program, "uFogEnd"),
   };
+  locations.extendedTextureStageUniforms = [2, 3].map((stageIndex) => {
+    const prefix = `texture${stageIndex}`;
+    return {
+      samplerUnit: stageIndex,
+      coordinateMode: locations[`${prefix}CoordinateMode`],
+      coordSet: locations[`${prefix}CoordSet`],
+      useTransform: locations[`useTexture${stageIndex}Transform`],
+      transform: locations[`${prefix}Transform`],
+      transformComponentCount: locations[`${prefix}TransformComponentCount`],
+      transformProjected: locations[`${prefix}TransformProjected`],
+      useTexture: locations[`useTexture${stageIndex}`],
+      sampler: locations[prefix],
+      lodBias: locations[`${prefix}LodBias`],
+      semantic: locations[`${prefix}Semantic`],
+      flipY: locations[`${prefix}FlipY`],
+    };
+  });
+  locations.extendedCombinerStageUniforms = [2, 3].map((stageIndex) => {
+    const prefix = `stage${stageIndex}`;
+    return {
+      colorOp: locations[`${prefix}ColorOp`],
+      colorArg0: locations[`${prefix}ColorArg0`],
+      colorArg1: locations[`${prefix}ColorArg1`],
+      colorArg2: locations[`${prefix}ColorArg2`],
+      alphaOp: locations[`${prefix}AlphaOp`],
+      alphaArg0: locations[`${prefix}AlphaArg0`],
+      alphaArg1: locations[`${prefix}AlphaArg1`],
+      alphaArg2: locations[`${prefix}AlphaArg2`],
+      resultArg: locations[`${prefix}ResultArg`],
+    };
+  });
+  return locations;
+}
+
+function uploadD3D8ExtendedTextureStageUniforms(locations, textureStage,
+    canSample, coordinates, transform, semantic, flipY) {
+  if (!locations.coordinateMode && !locations.useTexture) {
+    return;
+  }
+  const transformApplied = Boolean(canSample && coordinates.transformApplied);
+  if (locations.coordinateMode) {
+    d3d8CachedUniform1i(
+      locations.coordinateMode,
+      canSample ? coordinates.mode : D3DTSS_TCI_PASSTHRU,
+    );
+  }
+  if (locations.coordSet) {
+    d3d8CachedUniform1i(locations.coordSet, canSample ? (coordinates.coordSet >>> 0) : 0);
+  }
+  if (locations.useTransform) {
+    d3d8CachedUniform1i(locations.useTransform, transformApplied ? 1 : 0);
+  }
+  if (locations.transformComponentCount) {
+    d3d8CachedUniform1i(
+      locations.transformComponentCount,
+      transformApplied ? coordinates.textureTransformComponentCount : 0,
+    );
+  }
+  if (locations.transformProjected) {
+    d3d8CachedUniform1i(
+      locations.transformProjected,
+      transformApplied && coordinates.textureTransformProjected ? 1 : 0,
+    );
+  }
+  if (locations.transform && transformApplied) {
+    d3d8CachedUniformMatrix4fv(locations.transform, transform);
+  }
+  if (locations.useTexture) {
+    d3d8CachedUniform1i(locations.useTexture, canSample ? 1 : 0);
+  }
+  if (locations.sampler) {
+    d3d8CachedUniform1i(locations.sampler, locations.samplerUnit);
+  }
+  if (locations.lodBias) {
+    d3d8CachedUniform1f(
+      locations.lodBias,
+      canSample
+        ? d3dDwordToFloat(textureStage.mipMapLodBias)
+        : 0.0,
+    );
+  }
+  if (locations.semantic) {
+    d3d8CachedUniform1i(locations.semantic, semantic);
+  }
+  if (locations.flipY) {
+    d3d8CachedUniform1i(locations.flipY, flipY ? 1 : 0);
+  }
+}
+
+function uploadD3D8ExtendedCombinerStageUniforms(locations, textureStage) {
+  if (!locations.colorOp) {
+    return;
+  }
+  d3d8CachedUniform1i(locations.colorOp, textureStage.colorOp);
+  d3d8CachedUniform1i(locations.colorArg0, textureStage.colorArg0);
+  d3d8CachedUniform1i(locations.colorArg1, textureStage.colorArg1);
+  d3d8CachedUniform1i(locations.colorArg2, textureStage.colorArg2);
+  d3d8CachedUniform1i(locations.alphaOp, textureStage.alphaOp);
+  d3d8CachedUniform1i(locations.alphaArg0, textureStage.alphaArg0);
+  d3d8CachedUniform1i(locations.alphaArg1, textureStage.alphaArg1);
+  d3d8CachedUniform1i(locations.alphaArg2, textureStage.alphaArg2);
+  d3d8CachedUniform1i(locations.resultArg, textureStage.resultArg);
 }
 
 // --- D3D8 SM1 (vs.1.1 / ps.1.x) token stream -> GLSL ES 3.00 translation ---
@@ -10099,7 +10273,14 @@ function createD3D8ShadeModeDrawInfo(
   return info;
 }
 
-function createD3D8LiteSolidDrawInfo(renderState, primitiveType, indexByteOffset, indexCount) {
+const d3d8LiteSolidDrawInfo = {
+  fillModeDraw: {},
+  shadeModeDraw: {},
+};
+
+// Lite draws consume this synchronously and never retain it, so one stable
+// object can carry the per-draw offsets without feeding the garbage collector.
+function setD3D8LiteSolidDrawInfo(renderState, primitiveType, indexByteOffset, indexCount) {
   const fillMode = Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0;
   const shadeMode = Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0;
   if (fillMode !== D3DFILL_SOLID || shadeMode === D3DSHADE_FLAT) {
@@ -10107,25 +10288,23 @@ function createD3D8LiteSolidDrawInfo(renderState, primitiveType, indexByteOffset
   }
   const glPrimitive = d3dPrimitiveToGl(primitiveType);
   const supported = d3d8GlPrimitiveSupported(glPrimitive);
-  return {
-    fillModeDraw: {
-      glPrimitive,
-      drawIndexCount: indexCount,
-      drawIndexByteOffset: indexByteOffset,
-      temporaryIndexBuffer: false,
-      supported,
-      fallbackReason: supported ? null : "unsupportedPrimitive",
-    },
-    shadeModeDraw: {
-      usesFlatShader: false,
-      usesFirstVertexConvention: false,
-      glPrimitive,
-      drawIndexCount: indexCount,
-      drawIndexByteOffset: indexByteOffset,
-      supported,
-      fallbackReason: supported ? null : "unsupportedPrimitive",
-    },
-  };
+  const fallbackReason = supported ? null : "unsupportedPrimitive";
+  const fillModeDraw = d3d8LiteSolidDrawInfo.fillModeDraw;
+  fillModeDraw.glPrimitive = glPrimitive;
+  fillModeDraw.drawIndexCount = indexCount;
+  fillModeDraw.drawIndexByteOffset = indexByteOffset;
+  fillModeDraw.temporaryIndexBuffer = false;
+  fillModeDraw.supported = supported;
+  fillModeDraw.fallbackReason = fallbackReason;
+  const shadeModeDraw = d3d8LiteSolidDrawInfo.shadeModeDraw;
+  shadeModeDraw.usesFlatShader = false;
+  shadeModeDraw.usesFirstVertexConvention = false;
+  shadeModeDraw.glPrimitive = glPrimitive;
+  shadeModeDraw.drawIndexCount = indexCount;
+  shadeModeDraw.drawIndexByteOffset = indexByteOffset;
+  shadeModeDraw.supported = supported;
+  shadeModeDraw.fallbackReason = fallbackReason;
+  return d3d8LiteSolidDrawInfo;
 }
 
 function d3d8FillModeProbeInfo(fillModeDraw) {
@@ -11842,7 +12021,7 @@ function queueD3D8PendingDrawBatch(batchInfo) {
   return true;
 }
 
-function flushD3D8PendingDrawBatch(_reason = "flush") {
+function flushD3D8PendingDrawBatch(reason = "flush") {
   const pending = d3d8PendingDrawBatch;
   if (!pending || !gl) {
     d3d8PendingDrawBatch = null;
@@ -11860,7 +12039,14 @@ function flushD3D8PendingDrawBatch(_reason = "flush") {
   if (d3d8PerfCountersEnabled) d3d8PerfStats.drawElements += 1;
   if (d3d8PerfCountersEnabled) d3d8PerfStats.drawIndices += Number(pending.indexCount ?? 0) >>> 0;
   if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
-  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBatchFlushes += 1;
+  if (d3d8PerfCountersEnabled) {
+    d3d8PerfStats.drawBatchFlushes += 1;
+    const reasonName = String(reason || "flush");
+    d3d8DrawBatchFlushReasons.set(
+      reasonName,
+      (d3d8DrawBatchFlushReasons.get(reasonName) ?? 0) + 1,
+    );
+  }
   return 1;
 }
 
@@ -13057,7 +13243,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     // Per-draw geometry setup: ALWAYS executed (not skippable — geometry changes
     // every draw even when render state is identical).
     const liteSolidDrawInfo = d3d8DiagLevel !== "full"
-      ? createD3D8LiteSolidDrawInfo(renderState, payload.primitiveType, indexByteOffset, indexCount)
+      ? setD3D8LiteSolidDrawInfo(renderState, payload.primitiveType, indexByteOffset, indexCount)
       : null;
     if (liteSolidDrawInfo) {
       fillModeDraw = liteSolidDrawInfo.fillModeDraw;
@@ -13119,7 +13305,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         ? ensureD3D8DynamicRangeUploaded(vertexResource, range)
         : null;
       if (slot) {
-        effectiveVertexResource = { buffer: slot.buffer };
+        effectiveVertexResource = slot;
         effectiveVertexBufferId = slot.id;
         effectiveVertexByteOffset = vertexByteOffset - range.start;
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicVertexRedirects += 1;
@@ -13127,7 +13313,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicVertexSharedFallbacks += 1;
         const sharedSlot = ensureD3D8DynamicSharedBufferCurrent(vertexResource);
         if (sharedSlot) {
-          effectiveVertexResource = { buffer: sharedSlot.buffer };
+          effectiveVertexResource = sharedSlot;
           effectiveVertexBufferId = sharedSlot.id;
         }
       }
@@ -13140,7 +13326,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         ? ensureD3D8DynamicRangeUploaded(indexResource, range)
         : null;
       if (slot) {
-        effectiveIndexResource = { buffer: slot.buffer };
+        effectiveIndexResource = slot;
         effectiveIndexBufferId = slot.id;
         shadeModeDraw.drawIndexByteOffset -= range.start;
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicIndexRedirects += 1;
@@ -13148,7 +13334,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicIndexSharedFallbacks += 1;
         const sharedSlot = ensureD3D8DynamicSharedBufferCurrent(indexResource);
         if (sharedSlot) {
-          effectiveIndexResource = { buffer: sharedSlot.buffer };
+          effectiveIndexResource = sharedSlot;
           effectiveIndexBufferId = sharedSlot.id;
         }
       }
@@ -13611,22 +13797,14 @@ function paintD3D8DrawIndexed(payload = {}) {
         // CURRENT/TEMP by D3DTSS_RESULTARG. A disabled stage (colorOp==DISABLE)
         // passes CURRENT through in the shader, so uploading these is harmless
         // for 0/1-only draws.
-        for (const stageIndex of [2, 3]) {
-          const stage = renderState.textureStages[stageIndex];
-          const p = bridgeProgram;
-          const colorOp = p[`stage${stageIndex}ColorOp`];
-          if (colorOp) {
-            d3d8CachedUniform1i(colorOp, stage.colorOp);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ColorArg0`], stage.colorArg0);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ColorArg1`], stage.colorArg1);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ColorArg2`], stage.colorArg2);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaOp`], stage.alphaOp);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaArg0`], stage.alphaArg0);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaArg1`], stage.alphaArg1);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaArg2`], stage.alphaArg2);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ResultArg`], stage.resultArg);
-          }
-        }
+        uploadD3D8ExtendedCombinerStageUniforms(
+          bridgeProgram.extendedCombinerStageUniforms[0],
+          renderState.textureStages[2],
+        );
+        uploadD3D8ExtendedCombinerStageUniforms(
+          bridgeProgram.extendedCombinerStageUniforms[1],
+          renderState.textureStages[3],
+        );
         d3d8LastStageUniformKey = stageUniformKey;
       }
       recordRenderUniformDetail?.("sortedDrawRenderStageUniformMs");
@@ -13889,68 +14067,24 @@ function paintD3D8DrawIndexed(payload = {}) {
       // Stages 2 and 3: coordinate mode, coordSet selection, texture transform,
       // sampler unit, LOD bias, semantic mode. The bridge samples texture unit
       // == stage index (uTexture2->unit 2, uTexture3->unit 3).
-      const p = bridgeProgram;
-      const stage23 = [
-        {
-          index: 2,
-          canSample: canSampleTexture2,
-          coords: texture2Coordinates,
-          transform: texture2Transform,
-          semantic: texture2SemanticMode,
-          flipY: texture2FlipY,
-        },
-        {
-          index: 3,
-          canSample: canSampleTexture3,
-          coords: texture3Coordinates,
-          transform: texture3Transform,
-          semantic: texture3SemanticMode,
-          flipY: texture3FlipY,
-        },
-      ];
-      for (const s of stage23) {
-        const coordModeLoc = p[`texture${s.index}CoordinateMode`];
-        if (!coordModeLoc && !p[`useTexture${s.index}`]) {
-          continue;
-        }
-        const transformApplied = Boolean(s.canSample && s.coords.transformApplied);
-        if (coordModeLoc) {
-          d3d8CachedUniform1i(coordModeLoc, s.canSample ? s.coords.mode : D3DTSS_TCI_PASSTHRU);
-        }
-        if (p[`texture${s.index}CoordSet`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}CoordSet`], s.canSample ? (s.coords.coordSet >>> 0) : 0);
-        }
-        if (p[`useTexture${s.index}Transform`]) {
-          d3d8CachedUniform1i(p[`useTexture${s.index}Transform`], transformApplied ? 1 : 0);
-        }
-        if (p[`texture${s.index}TransformComponentCount`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}TransformComponentCount`],
-            transformApplied ? s.coords.textureTransformComponentCount : 0);
-        }
-        if (p[`texture${s.index}TransformProjected`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}TransformProjected`],
-            transformApplied && s.coords.textureTransformProjected ? 1 : 0);
-        }
-        if (p[`texture${s.index}Transform`] && transformApplied) {
-          d3d8CachedUniformMatrix4fv(p[`texture${s.index}Transform`], s.transform);
-        }
-        if (p[`useTexture${s.index}`]) {
-          d3d8CachedUniform1i(p[`useTexture${s.index}`], s.canSample ? 1 : 0);
-        }
-        if (p[`texture${s.index}`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}`], s.index);
-        }
-        if (p[`texture${s.index}LodBias`]) {
-          d3d8CachedUniform1f(p[`texture${s.index}LodBias`],
-            s.canSample ? d3dDwordToFloat(renderState.textureStages[s.index].mipMapLodBias) : 0.0);
-        }
-        if (p[`texture${s.index}Semantic`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}Semantic`], s.semantic);
-        }
-        if (p[`texture${s.index}FlipY`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}FlipY`], s.flipY ? 1 : 0);
-        }
-      }
+      uploadD3D8ExtendedTextureStageUniforms(
+        bridgeProgram.extendedTextureStageUniforms[0],
+        renderState.textureStages[2],
+        canSampleTexture2,
+        texture2Coordinates,
+        texture2Transform,
+        texture2SemanticMode,
+        texture2FlipY,
+      );
+      uploadD3D8ExtendedTextureStageUniforms(
+        bridgeProgram.extendedTextureStageUniforms[1],
+        renderState.textureStages[3],
+        canSampleTexture3,
+        texture3Coordinates,
+        texture3Transform,
+        texture3SemanticMode,
+        texture3FlipY,
+      );
       harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;
     }
     // Fog-of-war shroud UV generation for trees.  The tree FVF (XYZNDUV1) has
@@ -14463,6 +14597,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     invalidateD3D8VertexArrayCacheForBufferId,
     rememberD3D8VertexArray,
     drainD3D8BufferRetirements,
+    queueD3D8PendingDrawBatch,
     ensureD3D8DynamicRangeUploaded,
     ensureD3D8DynamicSharedBufferCurrent,
     retireD3D8BufferSlots,

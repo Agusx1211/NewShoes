@@ -231,6 +231,8 @@ class SmokeMilesAudioManager : public MilesAudioManager
 public:
 	using MilesAudioManager::processPlayingList;
 	using MilesAudioManager::processRequest;
+	using MilesAudioManager::stopAllAudioImmediately;
+	using MilesAudioManager::stopAllSpeech;
 
 	void installSoundManager(SoundManager *sound) { m_sound = sound; }
 	UnsignedInt available2DSampleCount() const { return static_cast<UnsignedInt>(m_availableSamples.size()); }
@@ -240,6 +242,27 @@ public:
 		return m_playingSounds.empty()
 			? AsciiString::TheEmptyString
 			: m_playingSounds.front()->m_audioEventRTS->getFilename();
+	}
+	void addNullEntriesToAllPlayingLists()
+	{
+		m_playingSounds.push_back(nullptr);
+		m_playing3DSounds.push_back(nullptr);
+		m_playingStreams.push_back(nullptr);
+		m_fadingAudio.push_back(nullptr);
+	}
+	void addNullStreamEntry() { m_playingStreams.push_back(nullptr); }
+	void addNullFadingEntry() { m_fadingAudio.push_back(nullptr); }
+	void addNullSampleEntries()
+	{
+		m_playingSounds.push_back(nullptr);
+		m_playing3DSounds.push_back(nullptr);
+	}
+	Bool allPlayingListsEmpty() const
+	{
+		return m_playingSounds.empty() &&
+			m_playing3DSounds.empty() &&
+			m_playingStreams.empty() &&
+			m_fadingAudio.empty();
 	}
 	HSAMPLE playingSampleHandle() const
 	{
@@ -842,6 +865,26 @@ int main()
 		require(sound.playing2D() == 0, "SoundManager did not observe the 2D sample completion");
 		require(g_audio_event_release_count == 1, "releasePlayingAudio did not release the AudioEventRTS");
 
+		audio.addNullEntriesToAllPlayingLists();
+		audio.stopAllAudioImmediately();
+		require(audio.allPlayingListsEmpty(),
+			"stopAllAudioImmediately did not remove null playing entries");
+
+		audio.addNullStreamEntry();
+		audio.stopAllSpeech();
+		require(audio.allPlayingListsEmpty(),
+			"stopAllSpeech did not remove a null stream entry");
+
+		audio.addNullFadingEntry();
+		audio.processFadingList();
+		require(audio.allPlayingListsEmpty(),
+			"processFadingList did not remove a null fading entry");
+
+		audio.addNullSampleEntries();
+		audio.closeAnySamplesUsingFile(&audio);
+		require(audio.allPlayingListsEmpty(),
+			"closeAnySamplesUsingFile did not remove null sample entries");
+
 		// Optional second leg: play a real shipped IMA ADPCM WAV through the
 		// original AudioFileCache::openFile decode branch so the Miles
 		// boundary (AIL_WAV_info -> AIL_decompress_ADPCM) runs on real data.
@@ -1046,6 +1089,7 @@ int main()
 			<< ",\"manager\":{\"samples2D\":" << audio.getNum2DSamples()
 			<< ",\"available2DAfterRelease\":" << audio.available2DSampleCount()
 			<< ",\"playingSoundsAfterRelease\":" << audio.playingSoundCount()
+			<< ",\"nullCleanup\":true"
 			<< ",\"audioEventReleases\":" << g_audio_event_release_count
 			<< "}"
 			<< ",\"allSequence\":[";

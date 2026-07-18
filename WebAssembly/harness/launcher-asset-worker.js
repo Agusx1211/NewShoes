@@ -207,22 +207,40 @@ async function validateBigReader(reader, label, requiredEntries = []) {
   if (entryCount > MAX_BIG_ENTRIES) throw new Error(`${label}: unreasonable BIGF entry count ${entryCount}`);
 
   const chunkSize = 64 * 1024;
+  const linearGrowthLimit = chunkSize * 4;
   let directory = new Uint8Array(0);
+  let directoryLength = 0;
   let cursor = 0;
   let lowestOffset = { offset: Infinity, index: -1 };
   const required = new Map(requiredEntries.map((path) => [path.toLowerCase(), path]));
   const ensure = async (length, message) => {
     if (length > MAX_BIG_DIRECTORY_BYTES) throw new Error(`${label}: BIGF directory exceeds 64 MB`);
     if (length > archiveSize - 16) throw new Error(message);
-    while (directory.byteLength < length) {
-      const start = 16 + directory.byteLength;
+    while (directoryLength < length) {
+      const start = 16 + directoryLength;
       if (start >= archiveSize) throw new Error(message);
-      const next = await reader.read(start, Math.min(chunkSize, archiveSize - start));
+      const next = await reader.read(start, Math.min(
+        chunkSize,
+        archiveSize - start,
+        MAX_BIG_DIRECTORY_BYTES - directoryLength,
+      ));
       if (!next.byteLength) throw new Error(message);
-      const combined = new Uint8Array(directory.byteLength + next.byteLength);
-      combined.set(directory);
-      combined.set(next, directory.byteLength);
-      directory = combined;
+      const requiredCapacity = directoryLength + next.byteLength;
+      if (requiredCapacity > directory.byteLength) {
+        let capacity = directory.byteLength;
+        while (capacity < requiredCapacity) {
+          // Keep small archives tightly sized, then bound total recopying by
+          // doubling once repeated fixed-size growth would dominate.
+          capacity = capacity < linearGrowthLimit
+            ? capacity + chunkSize
+            : Math.min(capacity * 2, MAX_BIG_DIRECTORY_BYTES);
+        }
+        const expanded = new Uint8Array(capacity);
+        expanded.set(directory.subarray(0, directoryLength));
+        directory = expanded;
+      }
+      directory.set(next, directoryLength);
+      directoryLength = requiredCapacity;
     }
   };
 
@@ -232,12 +250,12 @@ async function validateBigReader(reader, label, requiredEntries = []) {
     const size = u32be(directory, cursor + 4);
     let pathEnd = cursor + 8;
     for (;;) {
-      while (pathEnd < directory.byteLength && directory[pathEnd] !== 0) pathEnd += 1;
+      while (pathEnd < directoryLength && directory[pathEnd] !== 0) pathEnd += 1;
       if (pathEnd - cursor - 8 > 260) {
         throw new Error(`${label}: BIGF entry ${index} path exceeds 260 bytes`);
       }
-      if (pathEnd < directory.byteLength) break;
-      await ensure(directory.byteLength + 1, `${label}: BIGF entry ${index} has no terminator`);
+      if (pathEnd < directoryLength) break;
+      await ensure(directoryLength + 1, `${label}: BIGF entry ${index} has no terminator`);
     }
     if (pathEnd === cursor + 8) throw new Error(`${label}: BIGF entry ${index} has an empty path`);
     if (required.size) {
