@@ -476,12 +476,12 @@ void AudioEventRTS::advanceNextPlayPortion( void )
 		case PP_Sound:
 			if (m_eventInfo && BitTest(m_eventInfo->m_control, AC_ALL)) 
 			{
-				if (m_allCount == m_eventInfo->m_sounds.size()) {
-					m_portionToPlayNext = PP_Decay;
-				}
-
 				// Advance the all count so that we move to the next sound.
 				++m_allCount;
+				if (m_allCount < static_cast<Int>(m_eventInfo->m_sounds.size())) {
+					generateFilename();
+					break;
+				}
 			}
 			if (!m_decayName.isEmpty()) {
 				m_portionToPlayNext = PP_Decay;
@@ -491,6 +491,8 @@ void AudioEventRTS::advanceNextPlayPortion( void )
 			break;
 		case PP_Decay:
 			m_portionToPlayNext = PP_Done;
+			break;
+		case PP_Done:
 			break;
 	}
 }
