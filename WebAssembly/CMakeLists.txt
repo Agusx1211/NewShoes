@@ -2197,6 +2197,9 @@ set_source_files_properties(${ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES} PROPERT
 set(WOL_BROWSER_COMPILE_BRIDGE "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_webbrowser_boundary.h")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  set_property(SOURCE "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainBackground.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=mismatched-new-delete"
+  )
   set_property(SOURCE "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLLoginMenu.cpp" APPEND PROPERTY
     COMPILE_OPTIONS "-Werror=mismatched-new-delete"
   )
