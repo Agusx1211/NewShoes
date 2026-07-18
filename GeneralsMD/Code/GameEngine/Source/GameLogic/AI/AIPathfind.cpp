@@ -1158,6 +1158,7 @@ PathfindCellInfo *PathfindCellInfo::getACellInfo(PathfindCell *cell,const ICoord
 		info->m_pathParent = NULL;
 		info->m_costSoFar = 0;		
 		info->m_totalCost = 0;
+		info->m_openBucketCost = 0;
 		info->m_open = 0;
 		info->m_closed = 0;
 		info->m_obstacleID = INVALID_ID;
@@ -1218,6 +1219,10 @@ void PathfindCell::reset( )
 	m_zone = 0;
 	m_aircraftGoal = false;
 	m_pinched = false;
+	m_pathfindCacheGeneration = 0;
+	m_pathfindCacheFlags = 0;
+	m_pathfindCacheLayer = LAYER_INVALID;
+	m_clearDiameterCacheValue = 0;
 	if (m_info) {
 		m_info->m_obstacleID = INVALID_ID;
 		PathfindCellInfo::releaseACellInfo(m_info);
@@ -1226,6 +1231,107 @@ void PathfindCell::reset( )
 	m_connectsToLayer = LAYER_INVALID;
 	m_layer = LAYER_GROUND;
 	
+}
+
+enum
+{
+	PATHFIND_CACHE_LAYER_MASK = 0x0f,
+	PATHFIND_CACHE_MOVEMENT_PASSABLE = 0x01,
+	PATHFIND_CACHE_ALLY_MOVING = 0x02,
+	PATHFIND_CACHE_ALLY_GOAL = 0x04,
+	PATHFIND_CACHE_ENEMY_FIXED = 0x08,
+	PATHFIND_CACHE_ALLY_FIXED = 0x10,
+	PATHFIND_CACHE_LINE_VALID = 0x20,
+	PATHFIND_CACHE_LINE_PASSABLE = 0x40,
+	PATHFIND_CACHE_MOVEMENT_VALID = 0x80,
+	PATHFIND_CACHE_CLEAR_VALID = 0x80
+};
+
+Bool PathfindCell::getCachedMovementCheck(UnsignedInt generation, PathfindLayerEnum layer, Bool &passable,
+	Int &allyFixedCount, Bool &allyMoving, Bool &allyGoal, Bool &enemyFixed) const
+{
+	if (generation == 0 || m_pathfindCacheGeneration != generation
+		|| (m_pathfindCacheLayer & PATHFIND_CACHE_LAYER_MASK) != layer
+		|| (m_pathfindCacheFlags & PATHFIND_CACHE_MOVEMENT_VALID) == 0) {
+		return false;
+	}
+	passable = (m_pathfindCacheFlags & PATHFIND_CACHE_MOVEMENT_PASSABLE) != 0;
+	allyMoving = (m_pathfindCacheFlags & PATHFIND_CACHE_ALLY_MOVING) != 0;
+	allyGoal = (m_pathfindCacheFlags & PATHFIND_CACHE_ALLY_GOAL) != 0;
+	enemyFixed = (m_pathfindCacheFlags & PATHFIND_CACHE_ENEMY_FIXED) != 0;
+	allyFixedCount = (m_pathfindCacheFlags & PATHFIND_CACHE_ALLY_FIXED) != 0 ? 1 : 0;
+	return true;
+}
+
+void PathfindCell::cacheMovementCheck(UnsignedInt generation, PathfindLayerEnum layer, Bool passable,
+	Int allyFixedCount, Bool allyMoving, Bool allyGoal, Bool enemyFixed)
+{
+	if (generation == 0) {
+		return;
+	}
+	const Bool sameGeneration = m_pathfindCacheGeneration == generation;
+	UnsignedByte lineFlags = sameGeneration
+		? m_pathfindCacheFlags & (PATHFIND_CACHE_LINE_VALID | PATHFIND_CACHE_LINE_PASSABLE) : 0;
+	UnsignedByte clearValid = sameGeneration ? m_pathfindCacheLayer & PATHFIND_CACHE_CLEAR_VALID : 0;
+	m_pathfindCacheGeneration = generation;
+	m_pathfindCacheLayer = clearValid | (layer & PATHFIND_CACHE_LAYER_MASK);
+	m_pathfindCacheFlags = lineFlags | PATHFIND_CACHE_MOVEMENT_VALID
+		| (passable ? PATHFIND_CACHE_MOVEMENT_PASSABLE : 0)
+		| (allyMoving ? PATHFIND_CACHE_ALLY_MOVING : 0)
+		| (allyGoal ? PATHFIND_CACHE_ALLY_GOAL : 0)
+		| (enemyFixed ? PATHFIND_CACHE_ENEMY_FIXED : 0)
+		| (allyFixedCount > 0 ? PATHFIND_CACHE_ALLY_FIXED : 0);
+}
+
+Bool PathfindCell::getCachedLinePassability(UnsignedInt generation, Bool &passable) const
+{
+	if (generation == 0 || m_pathfindCacheGeneration != generation
+		|| (m_pathfindCacheFlags & PATHFIND_CACHE_LINE_VALID) == 0) {
+		return false;
+	}
+	passable = (m_pathfindCacheFlags & PATHFIND_CACHE_LINE_PASSABLE) != 0;
+	return true;
+}
+
+void PathfindCell::cacheLinePassability(UnsignedInt generation, Bool passable)
+{
+	if (generation == 0) {
+		return;
+	}
+	if (m_pathfindCacheGeneration != generation) {
+		m_pathfindCacheFlags = 0;
+		m_pathfindCacheLayer = LAYER_INVALID;
+	}
+	m_pathfindCacheGeneration = generation;
+	m_pathfindCacheFlags = (m_pathfindCacheFlags
+		& ~(PATHFIND_CACHE_LINE_VALID | PATHFIND_CACHE_LINE_PASSABLE))
+		| PATHFIND_CACHE_LINE_VALID | (passable ? PATHFIND_CACHE_LINE_PASSABLE : 0);
+}
+
+Bool PathfindCell::getCachedClearDiameter(UnsignedInt generation, Int &clearDiameter) const
+{
+	if (generation == 0 || m_pathfindCacheGeneration != generation
+		|| (m_pathfindCacheLayer & PATHFIND_CACHE_CLEAR_VALID) == 0) {
+		return false;
+	}
+	clearDiameter = m_clearDiameterCacheValue;
+	return true;
+}
+
+void PathfindCell::cacheClearDiameter(UnsignedInt generation, Int clearDiameter)
+{
+	if (generation == 0) {
+		return;
+	}
+	if (m_pathfindCacheGeneration != generation) {
+		m_pathfindCacheFlags = 0;
+		m_pathfindCacheLayer = LAYER_INVALID;
+	}
+	DEBUG_ASSERTCRASH(clearDiameter >= 0 && clearDiameter <= 0xffff,
+		("Clear path diameter does not fit in the pathfind cache."));
+	m_pathfindCacheGeneration = generation;
+	m_pathfindCacheLayer |= PATHFIND_CACHE_CLEAR_VALID;
+	m_clearDiameterCacheValue = static_cast<UnsignedShort>(clearDiameter);
 }
 
 /**
@@ -1869,6 +1975,43 @@ static void __fastcall resolveBlockZones(Int srcZone, Int targetZone, zoneStorag
 	}
 }
 
+static zoneStorageType findZoneRoot(zoneStorageType *zoneEquivalency, Int zone)
+{
+	Int root = zone;
+	while (zoneEquivalency[root] != root) {
+		root = zoneEquivalency[root];
+	}
+	while (zoneEquivalency[zone] != zone) {
+		Int parent = zoneEquivalency[zone];
+		zoneEquivalency[zone] = static_cast<zoneStorageType>(root);
+		zone = parent;
+	}
+	return static_cast<zoneStorageType>(root);
+}
+
+static void resolveZonesFast(Int srcZone, Int targetZone, zoneStorageType *zoneEquivalency, Int sizeOfZE)
+{
+	DEBUG_ASSERTCRASH(srcZone > 0 && targetZone > 0 && srcZone < sizeOfZE && targetZone < sizeOfZE,
+		("Bad fast zone resolution."));
+	zoneStorageType srcRoot = findZoneRoot(zoneEquivalency, srcZone);
+	zoneStorageType targetRoot = findZoneRoot(zoneEquivalency, targetZone);
+	if (srcRoot == targetRoot) {
+		return;
+	}
+	if (targetRoot < srcRoot) {
+		zoneEquivalency[srcRoot] = targetRoot;
+	} else {
+		zoneEquivalency[targetRoot] = srcRoot;
+	}
+}
+
+static void materializeZoneRoots(zoneStorageType *zoneEquivalency, Int sizeOfZE)
+{
+	for (Int i = 0; i < sizeOfZE; i++) {
+		zoneEquivalency[i] = findZoneRoot(zoneEquivalency, i);
+	}
+}
+
 static void __fastcall resolveZones(Int srcZone, Int targetZone, zoneStorageType *zoneEquivalency, Int sizeOfZE)
 {
 	Int i;
@@ -1915,12 +2058,13 @@ static void flattenZones(zoneStorageType *zoneArray, zoneStorageType *zoneHierar
 #endif
 }
 
-inline void applyZone(PathfindCell &targetCell, const PathfindCell &sourceCell, zoneStorageType *zoneEquivalency, Int sizeOfZE)
+inline void applyZoneFast(PathfindCell &targetCell, const PathfindCell &sourceCell,
+	zoneStorageType *zoneEquivalency, Int sizeOfZE)
 {
 	DEBUG_ASSERTCRASH(sourceCell.getZone()!=0, ("Unset source zone."));
-	Int srcZone = zoneEquivalency[sourceCell.getZone()];
+	Int srcZone = findZoneRoot(zoneEquivalency, sourceCell.getZone());
 	//DEBUG_ASSERTCRASH(srcZone!=0, ("Bad zone equivalency zone."));
-	Int targetZone = zoneEquivalency[targetCell.getZone()];
+	Int targetZone = findZoneRoot(zoneEquivalency, targetCell.getZone());
 
 	if (targetZone == 0) {
 		targetCell.setZone(srcZone);
@@ -1929,7 +2073,7 @@ inline void applyZone(PathfindCell &targetCell, const PathfindCell &sourceCell, 
 	if (targetZone == srcZone) {
 		return; // already match.
 	}
-	resolveZones(srcZone, targetZone, zoneEquivalency, sizeOfZE);
+	resolveZonesFast(srcZone, targetZone, zoneEquivalency, sizeOfZE);
 
 }
 
@@ -2351,12 +2495,12 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 
 					if (i>bounds.lo.x) {
 						if (map[i][j].getType() == map[i-1][j].getType()) {
-							applyZone(map[i][j], map[i-1][j], zoneEquivalency, m_maxZone);
+							applyZoneFast(map[i][j], map[i-1][j], zoneEquivalency, m_maxZone);
 						}
 					}
 					if (j>bounds.lo.y) {
 						if (map[i][j].getType() == map[i][j-1].getType()) {
-							applyZone(map[i][j], map[i][j-1], zoneEquivalency, m_maxZone);
+							applyZoneFast(map[i][j], map[i][j-1], zoneEquivalency, m_maxZone);
 						}
 					}
 					if (cell->getZone()==0) {
@@ -2378,6 +2522,7 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 	}
 
 	Int totalZones = m_maxZone;
+	materializeZoneRoots(zoneEquivalency, totalZones);
 //	if (totalZones>maxZones/2) {
 //		DEBUG_LOG(("Max zones %d\n", m_maxZone));
 //	}
@@ -2654,7 +2799,7 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 				(r_thisCell.getType() == PathfindCell::CELL_CLEAR) ) 
       {
 				PathfindLayer *layer = layers + r_thisCell.getConnectLayer();
-				resolveZones(r_thisCell.getZone(), layer->getZone(), m_hierarchicalZones, maxZone);
+				resolveZonesFast(r_thisCell.getZone(), layer->getZone(), m_hierarchicalZones, maxZone);
 			}
 
 			if ( i > globalBounds.lo.x && r_thisCell.getZone() != map[i-1][j].getZone() ) 
@@ -2662,31 +2807,31 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
         const PathfindCell &r_leftCell = map[i-1][j];
 
 				if (r_thisCell.getType() == r_leftCell.getType()) 
-					applyZone(r_thisCell, r_leftCell, m_hierarchicalZones, maxZone);//if this is true, skip all the ones below
+					applyZoneFast(r_thisCell, r_leftCell, m_hierarchicalZones, maxZone);//if this is true, skip all the ones below
         else
         {
           Bool notTerrainOrCrusher = TRUE; // if this is false, skip the if-else-ladder below 
 
           if (terrain(r_thisCell, r_leftCell)) 
           {
-					  applyZone(r_thisCell, r_leftCell, m_terrainZones, maxZone);
+					  applyZoneFast(r_thisCell, r_leftCell, m_terrainZones, maxZone);
             notTerrainOrCrusher = FALSE;
           }
 
           if (crusherGround(r_thisCell, r_leftCell)) 
           {
-					  applyZone(r_thisCell, r_leftCell, m_crusherZones, maxZone); 
+					  applyZoneFast(r_thisCell, r_leftCell, m_crusherZones, maxZone);
             notTerrainOrCrusher = FALSE;
           }
 
           if ( notTerrainOrCrusher )
           {
             if (waterGround(r_thisCell, r_leftCell)) 
-					    applyZone(r_thisCell, r_leftCell, m_groundWaterZones, maxZone);
+					    applyZoneFast(r_thisCell, r_leftCell, m_groundWaterZones, maxZone);
             else if (groundRubble(r_thisCell, r_leftCell)) 
-					    applyZone(r_thisCell, r_leftCell, m_groundRubbleZones, maxZone);
+					    applyZoneFast(r_thisCell, r_leftCell, m_groundRubbleZones, maxZone);
             else if (groundCliff(r_thisCell, r_leftCell)) 
-					    applyZone(r_thisCell, r_leftCell, m_groundCliffZones, maxZone);
+					    applyZoneFast(r_thisCell, r_leftCell, m_groundCliffZones, maxZone);
           }
 
         }
@@ -2698,29 +2843,29 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
         const PathfindCell &r_topCell = map[i][j-1];
 
         if (r_thisCell.getType() == r_topCell.getType()) 
-					applyZone(r_thisCell, r_topCell, m_hierarchicalZones, maxZone);
+					applyZoneFast(r_thisCell, r_topCell, m_hierarchicalZones, maxZone);
         else
         {
           Bool notTerrainOrCrusher = TRUE; // if this is false, skip the if-else-ladder below 
 
           if (terrain(r_thisCell, r_topCell)) 
           {
-            applyZone(r_thisCell, r_topCell, m_terrainZones, maxZone);
+			applyZoneFast(r_thisCell, r_topCell, m_terrainZones, maxZone);
             notTerrainOrCrusher = FALSE;
           }
 
           if (crusherGround(r_thisCell, r_topCell)) 
           {
-					  applyZone(r_thisCell, r_topCell, m_crusherZones, maxZone);
+					  applyZoneFast(r_thisCell, r_topCell, m_crusherZones, maxZone);
             notTerrainOrCrusher = FALSE;
           }
 
           if (waterGround(r_thisCell,r_topCell)) 
-					  applyZone(r_thisCell, r_topCell, m_groundWaterZones, maxZone);
+					  applyZoneFast(r_thisCell, r_topCell, m_groundWaterZones, maxZone);
           else if (groundRubble(r_thisCell, r_topCell)) 
-					  applyZone(r_thisCell, r_topCell, m_groundRubbleZones, maxZone);
+					  applyZoneFast(r_thisCell, r_topCell, m_groundRubbleZones, maxZone);
           else if (groundCliff(r_thisCell,r_topCell)) 
-					  applyZone(r_thisCell, r_topCell, m_groundCliffZones, maxZone);
+					  applyZoneFast(r_thisCell, r_topCell, m_groundCliffZones, maxZone);
 
         }
 
@@ -2741,6 +2886,12 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 
 
 
+	materializeZoneRoots(m_groundCliffZones, maxZone);
+	materializeZoneRoots(m_groundWaterZones, maxZone);
+	materializeZoneRoots(m_groundRubbleZones, maxZone);
+	materializeZoneRoots(m_terrainZones, maxZone);
+	materializeZoneRoots(m_crusherZones, maxZone);
+	materializeZoneRoots(m_hierarchicalZones, maxZone);
 
 //	if (m_maxZone >= m_zonesAllocated) {
 //		RELEASE_CRASH("Pathfind allocation error - fatal. see jba.");
@@ -3825,15 +3976,24 @@ void PathfindLayer::classifyWallMapCell( Int i, Int j , PathfindCell *cell, Obje
 
 //----------------------- Pathfinder ---------------------------------------
 
-Pathfinder::Pathfinder( void ) :m_map(NULL)
+Pathfinder::Pathfinder( void ) :
+	m_map(NULL),
+	m_fastOpenBucketHeads(NULL),
+	m_fastOpenBucketTails(NULL)
 {
 	debugPath = NULL;
 	PathfindCellInfo::allocateCellInfos();
+	m_fastOpenBucketHeads = new PathfindCell *[1 << 16]();
+	m_fastOpenBucketTails = new PathfindCell *[1 << 16]();
 	reset();
 }
 
 Pathfinder::~Pathfinder( void )
 {
+	delete [] m_fastOpenBucketHeads;
+	delete [] m_fastOpenBucketTails;
+	m_fastOpenBucketHeads = NULL;
+	m_fastOpenBucketTails = NULL;
 	PathfindCellInfo::releaseCellInfos();
 }
 
@@ -3841,6 +4001,8 @@ void Pathfinder::reset( void )
 {
 	frameToShowObstacles = 0;
 	DEBUG_LOG(("Pathfind cell is %d bytes, PathfindCellInfo is %d bytes\n", sizeof(PathfindCell), sizeof(PathfindCellInfo)));
+	memset(m_fastOpenBucketHeads, 0, (1 << 16) * sizeof(*m_fastOpenBucketHeads));
+	memset(m_fastOpenBucketTails, 0, (1 << 16) * sizeof(*m_fastOpenBucketTails));
 
 	if (m_blockOfMapCells) {
 		delete []m_blockOfMapCells;
@@ -3861,6 +4023,9 @@ void Pathfinder::reset( void )
 	m_logicalExtent.lo.x=m_logicalExtent.lo.y=m_logicalExtent.hi.x=m_logicalExtent.hi.y=0;
 	m_openList = NULL;
 	m_closedList = NULL;
+	m_fastOpenCount = 0;
+	m_fastOpenMinimumCost = 1 << 16;
+	m_fastOpenQueueActive = false;
 
 	m_ignoreObstacleID = INVALID_ID;
 	m_isTunneling = false;
@@ -3870,6 +4035,7 @@ void Pathfinder::reset( void )
 	// pathfind grid cells have not been classified yet
 	m_isMapReady = false;
 	m_cumulativeCellsAllocated = 0;
+	m_pathfindCacheGeneration = 0;
 
 	debugPathPos.x = 0.0f;
 	debugPathPos.y = 0.0f;
@@ -4806,12 +4972,101 @@ Bool Pathfinder::validMovementTerrain( PathfindLayerEnum layer, const Locomotor*
 	return true;
 }
 
+void Pathfinder::startFastOpenQueue(PathfindCell *startCell)
+{
+	// putOnSortedOpenList inserts after existing cells with the same cost. Each
+	// cost bucket is therefore FIFO so A* tie ordering remains byte-for-byte
+	// equivalent without repeatedly walking the full sorted list.
+	DEBUG_ASSERTCRASH(startCell && startCell->getOpen(), ("Invalid fast open queue start cell."));
+	DEBUG_ASSERTCRASH(m_fastOpenCount == 0, ("Fast open queue was not empty."));
+	UnsignedInt cost = startCell->m_info->m_totalCost;
+	DEBUG_ASSERTCRASH(m_fastOpenBucketHeads[cost] == NULL && m_fastOpenBucketTails[cost] == NULL,
+		("Fast open queue bucket was not empty."));
+	m_fastOpenBucketHeads[cost] = startCell;
+	m_fastOpenBucketTails[cost] = startCell;
+	startCell->m_info->m_openBucketCost = static_cast<UnsignedShort>(cost);
+	m_fastOpenCount = 1;
+	m_fastOpenMinimumCost = cost;
+	m_fastOpenQueueActive = true;
+	m_openList = NULL;
+}
+
+void Pathfinder::pushFastOpenQueue(PathfindCell *cell)
+{
+	DEBUG_ASSERTCRASH(cell->m_info && !cell->m_info->m_open && !cell->m_info->m_closed,
+		("Invalid cell added to fast open queue."));
+	UnsignedInt cost = cell->m_info->m_totalCost;
+	cell->m_info->m_openBucketCost = static_cast<UnsignedShort>(cost);
+	PathfindCell *tail = m_fastOpenBucketTails[cost];
+	cell->m_info->m_prevOpen = tail ? tail->m_info : NULL;
+	cell->m_info->m_nextOpen = NULL;
+	if (tail) {
+		tail->m_info->m_nextOpen = cell->m_info;
+	} else {
+		m_fastOpenBucketHeads[cost] = cell;
+	}
+	m_fastOpenBucketTails[cost] = cell;
+	cell->m_info->m_open = true;
+	cell->m_info->m_closed = false;
+	m_fastOpenCount++;
+	if (cost < m_fastOpenMinimumCost) {
+		m_fastOpenMinimumCost = cost;
+	}
+}
+
+void Pathfinder::removeFastOpenQueue(PathfindCell *cell)
+{
+	DEBUG_ASSERTCRASH(cell->m_info && cell->m_info->m_open && !cell->m_info->m_closed,
+		("Cell is not in the fast open queue."));
+	UnsignedInt cost = cell->m_info->m_openBucketCost;
+	PathfindCellInfo *prev = cell->m_info->m_prevOpen;
+	PathfindCellInfo *next = cell->m_info->m_nextOpen;
+	if (prev) {
+		prev->m_nextOpen = next;
+	} else {
+		DEBUG_ASSERTCRASH(m_fastOpenBucketHeads[cost] == cell, ("Invalid fast open queue head."));
+		m_fastOpenBucketHeads[cost] = next ? next->m_cell : NULL;
+	}
+	if (next) {
+		next->m_prevOpen = prev;
+	} else {
+		DEBUG_ASSERTCRASH(m_fastOpenBucketTails[cost] == cell, ("Invalid fast open queue tail."));
+		m_fastOpenBucketTails[cost] = prev ? prev->m_cell : NULL;
+	}
+	cell->m_info->m_prevOpen = NULL;
+	cell->m_info->m_nextOpen = NULL;
+	cell->m_info->m_open = false;
+	m_fastOpenCount--;
+}
+
+PathfindCell *Pathfinder::popFastOpenQueue(void)
+{
+	if (m_fastOpenCount == 0) {
+		return NULL;
+	}
+	while (m_fastOpenMinimumCost < (1U << 16)
+		&& m_fastOpenBucketHeads[m_fastOpenMinimumCost] == NULL) {
+		m_fastOpenMinimumCost++;
+	}
+	DEBUG_ASSERTCRASH(m_fastOpenMinimumCost < (1U << 16), ("Fast open queue has no minimum cell."));
+	PathfindCell *cell = m_fastOpenBucketHeads[m_fastOpenMinimumCost];
+	removeFastOpenQueue(cell);
+	return cell;
+}
+
 //
 // Releases the cells on the open & closed lists.
 //
 void Pathfinder::cleanOpenAndClosedLists(void) {
 	Int count = 0;
-	if (m_openList) {
+	if (m_fastOpenQueueActive) {
+		while (m_fastOpenCount != 0) {
+			PathfindCell *cell = popFastOpenQueue();
+			cell->releaseInfo();
+			count++;
+		}
+		m_openList = NULL;
+	} else if (m_openList) {
 		count += PathfindCell::releaseOpenList(m_openList);
 		m_openList = NULL;
 	}		 
@@ -4819,6 +5074,9 @@ void Pathfinder::cleanOpenAndClosedLists(void) {
 		count += PathfindCell::releaseClosedList(m_closedList);
 		m_closedList = NULL;
 	}		 
+	m_fastOpenCount = 0;
+	m_fastOpenMinimumCost = 1 << 16;
+	m_fastOpenQueueActive = false;
 	m_cumulativeCellsAllocated += count;
 //#ifdef _DEBUG
 #if 0
@@ -5997,8 +6255,11 @@ void Pathfinder::checkChangeLayers(PathfindCell *parentCell)
 					// store cost of this path
 					newCell->setCostSoFar(parentCell->getCostSoFar()); // same as parent cost
 					newCell->setTotalCost(parentCell->getTotalCost()) ;
-					// insert newCell in open list such that open list is sorted, smallest total path cost first
-					m_openList = newCell->putOnSortedOpenList( m_openList );
+					if (m_fastOpenQueueActive) {
+						pushFastOpenQueue(newCell);
+					} else {
+						m_openList = newCell->putOnSortedOpenList(m_openList);
+					}
 
 				}
 			}
@@ -6015,6 +6276,7 @@ struct ExamineCellsStruct
 	Int									radius;
 	const Object				*obj;
 	PathfindCell				*goalCell;
+	UnsignedInt				movementCacheGeneration;
 };
 
 /*static*/ Int Pathfinder::examineCellsCallback(Pathfinder* pathfinder, PathfindCell* from, PathfindCell* to, Int to_x, Int to_y, void* userData)
@@ -6023,10 +6285,49 @@ struct ExamineCellsStruct
 	Bool isCrusher = d->obj ? d->obj->getCrusherLevel() > 0 : false;
 	if (d->thePathfinder->m_isTunneling) return 1; // abort.
 	if (from && to) {
-			if (!d->thePathfinder->validMovementPosition( isCrusher, d->theLoco->getValidSurfaces(), to, from )) {
-				return 1;
+			Bool linePassable = false;
+			if (!to->getCachedLinePassability(d->movementCacheGeneration, linePassable)) {
+				linePassable = d->thePathfinder->validMovementPosition(
+					isCrusher, d->theLoco->getValidSurfaces(), to, from);
+				if (linePassable && to->getLayer() == LAYER_GROUND
+					&& !d->thePathfinder->m_zoneManager.isPassable(to_x, to_y)) {
+					linePassable = false;
+				}
+				if (linePassable && to->getPinched()) {
+					linePassable = false;
+				}
+				if (linePassable && d->isHuman
+					&& (to_x < d->thePathfinder->m_logicalExtent.lo.x
+						|| to_y < d->thePathfinder->m_logicalExtent.lo.y
+						|| to_x > d->thePathfinder->m_logicalExtent.hi.x
+						|| to_y > d->thePathfinder->m_logicalExtent.hi.y)) {
+					linePassable = false;
+				}
+				TCheckMovementInfo info;
+				if (linePassable) {
+					info.cell.x = to_x;
+					info.cell.y = to_y;
+					info.layer = from->getLayer();
+					info.centerInCell = d->centerInCell;
+					info.radius = d->radius;
+					info.considerTransient = false;
+					info.acceptableSurfaces = d->theLoco->getValidSurfaces();
+					Bool movementPassable = false;
+					if (to->getCachedMovementCheck(d->movementCacheGeneration, info.layer, movementPassable,
+						info.allyFixedCount, info.allyMoving, info.allyGoal, info.enemyFixed)) {
+					} else {
+						movementPassable = d->thePathfinder->checkForMovement(d->obj, info);
+						to->cacheMovementCheck(d->movementCacheGeneration, info.layer, movementPassable,
+							info.allyFixedCount, info.allyMoving, info.allyGoal, info.enemyFixed);
+					}
+					linePassable = movementPassable && !info.enemyFixed && !info.allyFixedCount;
+				}
+				if (linePassable && to->getType() == PathfindCell::CELL_CLIFF) {
+					linePassable = false;
+				}
+				to->cacheLinePassability(d->movementCacheGeneration, linePassable);
 			}
-			if ( (to->getLayer() == LAYER_GROUND) && !d->thePathfinder->m_zoneManager.isPassable(to_x, to_y) ) {
+			if (!linePassable) {
 				return 1;
 			}
 			Bool onList = false;
@@ -6037,48 +6338,15 @@ struct ExamineCellsStruct
 					onList = true;
 				}
 			}
-			if (to->getPinched()) {
-				return 1; // abort.
-			}
-			if (d->isHuman) {
-				// check if new cell is in logical map.	(computer can move off logical map)
-				if (to_x < d->thePathfinder->m_logicalExtent.lo.x) return 1; // abort
-				if (to_y < d->thePathfinder->m_logicalExtent.lo.y) return 1; // abort 
-				if (to_x > d->thePathfinder->m_logicalExtent.hi.x) return 1; // abort 
-				if (to_y > d->thePathfinder->m_logicalExtent.hi.y) return 1; // abort 
-			}
-			TCheckMovementInfo info;
-			info.cell.x = to_x;
-			info.cell.y = to_y;
-			info.layer = from->getLayer();
-			info.centerInCell = d->centerInCell;
-			info.radius = d->radius;
-			info.considerTransient = false;
-			info.acceptableSurfaces = d->theLoco->getValidSurfaces();
-			if (!d->thePathfinder->checkForMovement(d->obj, info) || info.enemyFixed) {
-				return 1; //abort.
-			}	
-			if (info.enemyFixed) {
-				return 1; //abort.
-			}
 			ICoord2D newCellCoord;
 			newCellCoord.x = to_x;
 			newCellCoord.y = to_y;
 
 			UnsignedInt newCostSoFar = from->getCostSoFar( ) + 0.5f*COST_ORTHOGONAL;
-			if (to->getType() == PathfindCell::CELL_CLIFF ) {
-				return 1;
-			}
-			if (info.allyFixedCount) {
-				return 1;
-			} else if (info.enemyFixed) {
-				return 1;
-			}
-
 			if (!to->allocateInfo(newCellCoord)) {
 				// Out of cells for pathing...
  				return 1;
-			}								
+			}
 			to->setBlockedByAlly(false);
 			Int costRemaining = 0;
 			costRemaining = to->costToGoal( d->goalCell );
@@ -6089,7 +6357,7 @@ struct ExamineCellsStruct
 				// already on one of the lists - if existing costSoFar is less, 
 				// the new cell is on a longer path, so skip it
 				if (to->getCostSoFar() <= newCostSoFar)
-					return 0; // keep going.
+					return 0;	// keep going
 			}
 			to->setCostSoFar(newCostSoFar);
 			// keep track of path we're building - point back to cell we moved here from
@@ -6105,14 +6373,109 @@ struct ExamineCellsStruct
 				d->thePathfinder->m_closedList = to->removeFromClosedList( d->thePathfinder->m_closedList );
 
 			// if the to was already on the open list, remove it so it can be re-inserted in order
-			if (to->getOpen())
-				d->thePathfinder->m_openList = to->removeFromOpenList( d->thePathfinder->m_openList );
+			if (to->getOpen()) {
+				if (d->thePathfinder->m_fastOpenQueueActive) {
+					d->thePathfinder->removeFastOpenQueue(to);
+				} else {
+					d->thePathfinder->m_openList = to->removeFromOpenList(d->thePathfinder->m_openList);
+				}
+			}
 
-			// insert to in open list such that open list is sorted, smallest total path cost first
-			d->thePathfinder->m_openList = to->putOnSortedOpenList( d->thePathfinder->m_openList );
+			if (d->thePathfinder->m_fastOpenQueueActive) {
+				d->thePathfinder->pushFastOpenQueue(to);
+			} else {
+				d->thePathfinder->m_openList = to->putOnSortedOpenList(d->thePathfinder->m_openList);
+			}
 	}
 
 	return 0;	// keep going
+}
+
+Int Pathfinder::examineLineCell(PathfindCell *from, PathfindCell *to, Int toX, Int toY, void *userData)
+{
+	ExamineCellsStruct *info = static_cast<ExamineCellsStruct *>(userData);
+	if (from && to) {
+		Bool linePassable = false;
+		if (to->getCachedLinePassability(info->movementCacheGeneration, linePassable)) {
+			if (!linePassable) {
+				return 1;
+			}
+			if (to->hasInfo() && !to->isBlockedByAlly()
+				&& (to->getOpen() || to->getClosed())
+				&& to->getCostSoFar() <= from->getCostSoFar() + COST_ORTHOGONAL / 2) {
+				return 0;
+			}
+		}
+	}
+	return examineCellsCallback(this, from, to, toX, toY, userData);
+}
+
+Int Pathfinder::examineCellsAlongLine(const ICoord2D &start, const ICoord2D &end,
+	PathfindLayerEnum layer, void *userData)
+{
+	Int deltaX = abs(end.x - start.x);
+	Int deltaY = abs(end.y - start.y);
+	Int x = start.x;
+	Int y = start.y;
+	Int xinc1 = end.x >= start.x ? 1 : -1;
+	Int xinc2 = xinc1;
+	Int yinc1 = end.y >= start.y ? 1 : -1;
+	Int yinc2 = yinc1;
+	Int denominator;
+	Int numerator;
+	Int numeratorAdd;
+	Int pixelCount;
+	if (deltaX >= deltaY) {
+		xinc1 = 0;
+		yinc2 = 0;
+		denominator = deltaX;
+		numerator = deltaX / 2;
+		numeratorAdd = deltaY;
+		pixelCount = deltaX;
+	} else {
+		xinc2 = 0;
+		yinc1 = 0;
+		denominator = deltaY;
+		numerator = deltaY / 2;
+		numeratorAdd = deltaX;
+		pixelCount = deltaY;
+	}
+
+	PathfindCell *from = NULL;
+	const Bool groundLayer = layer == LAYER_GROUND;
+	for (Int pixel = 0; pixel <= pixelCount; pixel++) {
+		// Both endpoints are map cells, so every Bresenham step between them is
+		// in bounds. Ground paths can avoid repeating getCell's bounds and layer
+		// checks for every cell along every candidate ray.
+		PathfindCell *to = groundLayer ? &m_map[x][y] : getCell(layer, x, y);
+		if (to == NULL) {
+			return 0;
+		}
+		Int result = examineLineCell(from, to, x, y, userData);
+		if (result != 0) {
+			return result;
+		}
+
+		numerator += numeratorAdd;
+		if (numerator >= denominator) {
+			numerator -= denominator;
+			x += xinc1;
+			y += yinc1;
+			from = to;
+			to = groundLayer ? &m_map[x][y] : getCell(layer, x, y);
+			if (to == NULL) {
+				return 0;
+			}
+			result = examineLineCell(from, to, x, y, userData);
+			if (result != 0) {
+				return result;
+			}
+		}
+		x += xinc2;
+		y += yinc2;
+		from = to;
+	}
+	return 0;
 }
 
 
@@ -6120,7 +6483,8 @@ struct ExamineCellsStruct
 
 Int Pathfinder::examineNeighboringCells(PathfindCell *parentCell, PathfindCell *goalCell, const LocomotorSet& locomotorSet, 
 																				 Bool isHuman, Bool centerInCell, Int radius, const ICoord2D &startCellNdx,
-																				 const Object *obj, Int attackDistance)
+																				 const Object *obj, Int attackDistance,
+																				 UnsignedInt movementCacheGeneration)
 {
 		Bool canPathThroughUnits = false;
 		if (obj && obj->getAIUpdateInterface()) {
@@ -6136,12 +6500,17 @@ Int Pathfinder::examineNeighboringCells(PathfindCell *parentCell, PathfindCell *
 			info.obj = obj;
 			info.isHuman = isHuman;
 			info.goalCell = goalCell;
+			info.movementCacheGeneration = movementCacheGeneration;
 			ICoord2D start, end;
 			start.x = parentCell->getXIndex();
 			start.y = parentCell->getYIndex();
 			end.x = goalCell->getXIndex();
 			end.y = goalCell->getYIndex();
-			iterateCellsAlongLine(start, end, parentCell->getLayer(), examineCellsCallback, &info);
+			if (movementCacheGeneration != 0) {
+				examineCellsAlongLine(start, end, parentCell->getLayer(), &info);
+			} else {
+				iterateCellsAlongLine(start, end, parentCell->getLayer(), examineCellsCallback, &info);
+			}
 		}
 
 		Int cellCount = 0;
@@ -6230,7 +6599,7 @@ Int Pathfinder::examineNeighboringCells(PathfindCell *parentCell, PathfindCell *
 
 			Bool movementValid = true;
 			Bool dozerHack = false;
-			if (validMovementPosition( isCrusher, locomotorSet.getValidSurfaces(), newCell, parentCell )) {
+			if (validMovementPosition(isCrusher, locomotorSet.getValidSurfaces(), newCell, parentCell)) {
 			}	else {
 				movementValid = false;
 				if (obj->isKindOf(KINDOF_DOZER)) {
@@ -6262,7 +6631,15 @@ Int Pathfinder::examineNeighboringCells(PathfindCell *parentCell, PathfindCell *
 			if (dy<0) dy = -dy;
 			if (dx>1+radius) info.considerTransient = false;
 			if (dy>1+radius) info.considerTransient = false;
-			if (!checkForMovement(obj, info) || info.enemyFixed) {
+			Bool movementPassable = false;
+			if (newCell->getCachedMovementCheck(movementCacheGeneration, info.layer, movementPassable,
+				info.allyFixedCount, info.allyMoving, info.allyGoal, info.enemyFixed)) {
+			} else {
+				movementPassable = checkForMovement(obj, info);
+				newCell->cacheMovementCheck(movementCacheGeneration, info.layer, movementPassable,
+					info.allyFixedCount, info.allyMoving, info.allyGoal, info.enemyFixed);
+			}
+			if (!movementPassable || info.enemyFixed) {
 				if (!m_isTunneling) {
 					continue;
 				}
@@ -6371,11 +6748,19 @@ Int Pathfinder::examineNeighboringCells(PathfindCell *parentCell, PathfindCell *
 				m_closedList = newCell->removeFromClosedList( m_closedList );
 
 			// if the newCell was already on the open list, remove it so it can be re-inserted in order
-			if (newCell->getOpen())
-				m_openList = newCell->removeFromOpenList( m_openList );
+			if (newCell->getOpen()) {
+				if (m_fastOpenQueueActive) {
+					removeFastOpenQueue(newCell);
+				} else {
+					m_openList = newCell->removeFromOpenList(m_openList);
+				}
+			}
 
-			// insert newCell in open list such that open list is sorted, smallest total path cost first
-			m_openList = newCell->putOnSortedOpenList( m_openList );
+			if (m_fastOpenQueueActive) {
+				pushFastOpenQueue(newCell);
+			} else {
+				m_openList = newCell->putOnSortedOpenList(m_openList);
+			}
 		}
 	return cellCount;
 }
@@ -6600,21 +6985,25 @@ Path *Pathfinder::internalFindPath( Object *obj, const LocomotorSet& locomotorSe
 
 	// initialize "open" list to contain start cell
 	m_openList = parentCell;
+	startFastOpenQueue(parentCell);
 
 	// "closed" list is initially empty
 	m_closedList = NULL;
 
 	Int cellCount = 0;
+	if (++m_pathfindCacheGeneration == 0) {
+		++m_pathfindCacheGeneration;
+	}
+	const UnsignedInt movementCacheGeneration = m_pathfindCacheGeneration;
 
 	//
 	// Continue search until "open" list is empty, or
 	// until goal is found.
 	//
-	while( m_openList != NULL )
+	while (m_fastOpenCount != 0)
 	{
 		// take head cell off of open list - it has lowest estimated total path cost
-		parentCell = m_openList;
-		m_openList = parentCell->removeFromOpenList(m_openList);
+		parentCell = popFastOpenQueue();
 
 		if (parentCell == goalCell)
 		{
@@ -6652,7 +7041,8 @@ Path *Pathfinder::internalFindPath( Object *obj, const LocomotorSet& locomotorSe
 		// Check to see if we can change layers in this cell.
 		checkChangeLayers(parentCell);
 
-		cellCount += examineNeighboringCells(parentCell, goalCell, locomotorSet, isHuman, centerInCell, radius, startCellNdx, obj, NO_ATTACK);
+		cellCount += examineNeighboringCells(parentCell, goalCell, locomotorSet, isHuman, centerInCell, radius,
+			startCellNdx, obj, NO_ATTACK, movementCacheGeneration);
 
 	}
 
@@ -6781,6 +7171,21 @@ Int Pathfinder::clearCellForDiameter(Bool crusher, Int cellX, Int cellY, Pathfin
 	}
 	if (pathDiameter < 2) return 0;
 	return clearCellForDiameter(crusher, cellX, cellY, layer, pathDiameter-2);
+}
+
+Int Pathfinder::cachedClearCellForDiameter(UnsignedInt generation, Bool crusher, Int cellX, Int cellY,
+	PathfindLayerEnum layer, Int pathDiameter)
+{
+	PathfindCell *cell = getCell(layer, cellX, cellY);
+	Int clearDiameter = 0;
+	if (cell && cell->getCachedClearDiameter(generation, clearDiameter)) {
+		return clearDiameter;
+	}
+	clearDiameter = clearCellForDiameter(crusher, cellX, cellY, layer, pathDiameter);
+	if (cell) {
+		cell->cacheClearDiameter(generation, clearDiameter);
+	}
+	return clearDiameter;
 }
 
 /**
@@ -6954,6 +7359,7 @@ struct GroundCellsStruct
 	Int									pathDiameter;
 	PathfindCell				*goalCell;
 	Bool								crusher;
+	UnsignedInt				clearDiameterCacheGeneration;
 };
 
 /*static*/ Int Pathfinder::groundCellsCallback(Pathfinder* pathfinder, PathfindCell* from, PathfindCell* to, Int to_x, Int to_y, void* userData)
@@ -6968,7 +7374,8 @@ struct GroundCellsStruct
 				}
 			}
 			// See how wide the cell is.
-			Int clearDiameter = d->thePathfinder->clearCellForDiameter(d->crusher, to_x, to_y, to->getLayer(), d->pathDiameter); 
+			Int clearDiameter = d->thePathfinder->cachedClearCellForDiameter(
+				d->clearDiameterCacheGeneration, d->crusher, to_x, to_y, to->getLayer(), d->pathDiameter);
 			if (clearDiameter != d->pathDiameter) {
 				return 1;
 			}
@@ -6990,8 +7397,7 @@ struct GroundCellsStruct
 			to->setParentCell(from) ;
 			to->setTotalCost(to->getCostSoFar() + costRemaining) ;
 
-			// insert to in open list such that open list is sorted, smallest total path cost first
-			d->thePathfinder->m_openList = to->putOnSortedOpenList( d->thePathfinder->m_openList );
+			d->thePathfinder->pushFastOpenQueue(to);
 	}
 
 	return 0;	// keep going
@@ -7012,6 +7418,10 @@ Path *Pathfinder::findGroundPath( const Coord3D *from,
 	DEBUG_LOG(("Find ground path..."));
 #endif	
 	Bool centerInCell = false;
+	if (++m_pathfindCacheGeneration == 0) {
+		++m_pathfindCacheGeneration;
+	}
+	const UnsignedInt clearDiameterCacheGeneration = m_pathfindCacheGeneration;
 	
 	m_zoneManager.clearPassableFlags();
 	Bool isHuman = true;
@@ -7044,28 +7454,37 @@ Path *Pathfinder::findGroundPath( const Coord3D *from,
 	ICoord2D cell;
 	worldToCell( to, &cell );
 
-	if (pathDiameter!=clearCellForDiameter(crusher, cell.x, cell.y, destinationLayer, pathDiameter)) {
+	if (pathDiameter != cachedClearCellForDiameter(clearDiameterCacheGeneration,
+		crusher, cell.x, cell.y, destinationLayer, pathDiameter)) {
 		Int offset=1;
 		ICoord2D newCell;
 		const Int MAX_OFFSET = 8;
 		while (offset<MAX_OFFSET) {
 			newCell = cell;
 			cell.x += offset;
-			if (clearCellForDiameter(crusher, cell.x, cell.y, destinationLayer, pathDiameter)==pathDiameter) break;
+			if (cachedClearCellForDiameter(clearDiameterCacheGeneration, crusher,
+				cell.x, cell.y, destinationLayer, pathDiameter) == pathDiameter) break;
 			cell.y += offset;
-			if (clearCellForDiameter(crusher, cell.x, cell.y, destinationLayer, pathDiameter)==pathDiameter) break;
+			if (cachedClearCellForDiameter(clearDiameterCacheGeneration, crusher,
+				cell.x, cell.y, destinationLayer, pathDiameter) == pathDiameter) break;
 			cell.x -= offset;
-			if (clearCellForDiameter(crusher, cell.x, cell.y, destinationLayer, pathDiameter)==pathDiameter) break;
+			if (cachedClearCellForDiameter(clearDiameterCacheGeneration, crusher,
+				cell.x, cell.y, destinationLayer, pathDiameter) == pathDiameter) break;
 			cell.x -= offset;
-			if (clearCellForDiameter(crusher, cell.x, cell.y, destinationLayer, pathDiameter)==pathDiameter) break;
+			if (cachedClearCellForDiameter(clearDiameterCacheGeneration, crusher,
+				cell.x, cell.y, destinationLayer, pathDiameter) == pathDiameter) break;
 			cell.y -= offset;
-			if (clearCellForDiameter(crusher, cell.x, cell.y, destinationLayer, pathDiameter)==pathDiameter) break;
+			if (cachedClearCellForDiameter(clearDiameterCacheGeneration, crusher,
+				cell.x, cell.y, destinationLayer, pathDiameter) == pathDiameter) break;
 			cell.y -= offset;
-			if (clearCellForDiameter(crusher, cell.x, cell.y, destinationLayer, pathDiameter)==pathDiameter) break;
+			if (cachedClearCellForDiameter(clearDiameterCacheGeneration, crusher,
+				cell.x, cell.y, destinationLayer, pathDiameter) == pathDiameter) break;
 			cell.x += offset;
-			if (clearCellForDiameter(crusher, cell.x, cell.y, destinationLayer, pathDiameter)==pathDiameter) break;
+			if (cachedClearCellForDiameter(clearDiameterCacheGeneration, crusher,
+				cell.x, cell.y, destinationLayer, pathDiameter) == pathDiameter) break;
 			cell.x += offset;
-			if (clearCellForDiameter(crusher, cell.x, cell.y, destinationLayer, pathDiameter)==pathDiameter) break;
+			if (cachedClearCellForDiameter(clearDiameterCacheGeneration, crusher,
+				cell.x, cell.y, destinationLayer, pathDiameter) == pathDiameter) break;
 			offset++;
 			cell = newCell;
 		}
@@ -7115,6 +7534,7 @@ Path *Pathfinder::findGroundPath( const Coord3D *from,
 
 	// initialize "open" list to contain start cell
 	m_openList = parentCell;
+	startFastOpenQueue(parentCell);
 
 	// "closed" list is initially empty
 	m_closedList = NULL;
@@ -7124,11 +7544,10 @@ Path *Pathfinder::findGroundPath( const Coord3D *from,
 	// until goal is found.
 	//
 	Int cellCount = 0;
-	while( m_openList != NULL )
+	while (m_fastOpenCount != 0)
 	{
 		// take head cell off of open list - it has lowest estimated total path cost
-		parentCell = m_openList;
-		m_openList = parentCell->removeFromOpenList(m_openList);
+		parentCell = popFastOpenQueue();
 
 		if (parentCell == goalCell)
 		{
@@ -7162,6 +7581,7 @@ Path *Pathfinder::findGroundPath( const Coord3D *from,
 		info.pathDiameter = pathDiameter;
 		info.goalCell = goalCell;
 		info.crusher = crusher;
+		info.clearDiameterCacheGeneration = clearDiameterCacheGeneration;
 		ICoord2D start, end;
 		start.x = parentCell->getXIndex();
 		start.y = parentCell->getYIndex();
@@ -7227,9 +7647,9 @@ Path *Pathfinder::findGroundPath( const Coord3D *from,
 						continue;
 					}
 				}
-
 				// See how wide the cell is.
-				clearDiameter = clearCellForDiameter(crusher, newCellCoord.x, newCellCoord.y, newCell->getLayer(), pathDiameter); 
+				clearDiameter = cachedClearCellForDiameter(clearDiameterCacheGeneration, crusher,
+					newCellCoord.x, newCellCoord.y, newCell->getLayer(), pathDiameter);
 				if (newCell->getType() != PathfindCell::CELL_CLEAR) {
 					continue;
 				}
@@ -7280,11 +7700,11 @@ Path *Pathfinder::findGroundPath( const Coord3D *from,
 				m_closedList = newCell->removeFromClosedList( m_closedList );
 
 			// if the newCell was already on the open list, remove it so it can be re-inserted in order
-			if (newCell->getOpen())
-				m_openList = newCell->removeFromOpenList( m_openList );
+			if (newCell->getOpen()) {
+				removeFastOpenQueue(newCell);
+			}
 
-			// insert newCell in open list such that open list is sorted, smallest total path cost first
-			m_openList = newCell->putOnSortedOpenList( m_openList );
+			pushFastOpenQueue(newCell);
 		}
 
 
@@ -8792,9 +9212,14 @@ Path *Pathfinder::findClosestPath( Object *obj, const LocomotorSet& locomotorSet
 	PathfindCell *closesetCell = NULL;
 	Real closestDistanceSqr = FLT_MAX;
 	Real closestDistScreenSqr = FLT_MAX;
+	if (++m_pathfindCacheGeneration == 0) {
+		++m_pathfindCacheGeneration;
+	}
+	const UnsignedInt movementCacheGeneration = m_pathfindCacheGeneration;
 
 	// initialize "open" list to contain start cell
 	m_openList = parentCell;
+	startFastOpenQueue(parentCell);
 
 	// "closed" list is initially empty
 	m_closedList = NULL;
@@ -8804,14 +9229,13 @@ Path *Pathfinder::findClosestPath( Object *obj, const LocomotorSet& locomotorSet
 	// until goal is found.
 	//
 	Bool foundGoal = false;
-	while( m_openList != NULL )
+	while( m_fastOpenCount != 0 )
 	{
 		Real dx;
 		Real dy;
 		Real distSqr;
 		// take head cell off of open list - it has lowest estimated total path cost
-		parentCell = m_openList;
-		m_openList = parentCell->removeFromOpenList(m_openList);
+		parentCell = popFastOpenQueue();
 
 		if (parentCell == goalCell)
 		{
@@ -8895,7 +9319,8 @@ Path *Pathfinder::findClosestPath( Object *obj, const LocomotorSet& locomotorSet
 		if (!foundGoal) {
 			// Check to see if we can change layers in this cell.
 			checkChangeLayers(parentCell);
-			count += examineNeighboringCells(parentCell, goalCell, locomotorSet, isHuman, centerInCell, radius, startCellNdx, obj, NO_ATTACK);
+			count += examineNeighboringCells(parentCell, goalCell, locomotorSet, isHuman,
+				centerInCell, radius, startCellNdx, obj, NO_ATTACK, movementCacheGeneration);
 		}
 	}
 
@@ -9621,13 +10046,15 @@ struct GroundPathPassableStruct
 {
 	Int		diameter;
 	Bool	crusher;
+	UnsignedInt clearDiameterCacheGeneration;
 };
 
 /*static*/ Int Pathfinder::groundPathPassableCallback(Pathfinder* pathfinder, PathfindCell* from, PathfindCell* to, Int to_x, Int to_y, void* userData)
 {
 	const GroundPathPassableStruct* d = (const GroundPathPassableStruct*)userData;
 
-	Int curDiameter = pathfinder->clearCellForDiameter(d->crusher, to_x, to_y, to->getLayer(), d->diameter);
+	Int curDiameter = pathfinder->cachedClearCellForDiameter(d->clearDiameterCacheGeneration,
+		d->crusher, to_x, to_y, to->getLayer(), d->diameter);
 	if (curDiameter==d->diameter) return 0;	//  good to go.
 	if (from && to->getLayer() != LAYER_GROUND && from->getLayer() == to->getLayer()) {
 		return 0;
@@ -9673,6 +10100,7 @@ Bool Pathfinder::isGroundPathPassable( Bool isCrusher, const Coord3D& startWorld
 
 	info.diameter = pathDiameter;
 	info.crusher = isCrusher;
+	info.clearDiameterCacheGeneration = m_fastOpenQueueActive ? m_pathfindCacheGeneration : 0;
 
 	Int ret = iterateCellsAlongLine(startWorld, endWorld, startLayer, groundPathPassableCallback, (void*)&info);
 	return ret == 0;

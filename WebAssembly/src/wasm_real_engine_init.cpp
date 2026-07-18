@@ -787,6 +787,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_player_diagnostics
 	g_player_runtime_diagnostics_enabled = enabled != 0;
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_render_disabled(int disabled)
+{
+	if (TheWritableGlobalData == NULL) return 0;
+	TheWritableGlobalData->m_disableRender = disabled != 0;
+	return TheWritableGlobalData->m_disableRender == (disabled != 0) ? 1 : 0;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_last_update_target()
 {
 	return g_last_engine_update_target.c_str();
@@ -801,6 +808,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_engine_update_brea
 extern "C" void cnc_port_note_game_logic_step(const char *name)
 {
 	g_last_game_logic_step = name != nullptr ? name : "";
+	note_engine_frame_profile_marker(name);
 	if (g_last_game_logic_step.rfind("GameEngine.init.", 0) == 0
 		|| g_last_game_logic_step.rfind("GameLogic.reset.", 0) == 0
 		|| g_last_game_logic_step.rfind("W3DTerrainLogic.reset.", 0) == 0
@@ -841,6 +849,10 @@ extern "C" void cnc_port_note_script_step(
 	g_last_script_side_index = side_index;
 	g_last_script_condition_type = condition_type;
 	g_last_script_action_type = action_type;
+	if (g_engine_frame_profile_enabled && g_last_script_phase == "executeActions.action") {
+		const std::string label = "ScriptAction." + std::to_string(action_type);
+		note_engine_frame_profile_marker(label.c_str());
+	}
 }
 
 extern "C" void cnc_port_note_texture_apply(
@@ -4217,6 +4229,28 @@ void append_ai_runtime_state(std::string &json)
 	json += "}";
 }
 
+void append_recorder_state(std::string &json)
+{
+	json += ",\"recorder\":{";
+	json += "\"ready\":";
+	json += TheRecorder != NULL ? "true" : "false";
+	if (TheRecorder != NULL) {
+		json += ",\"mode\":" + std::to_string(static_cast<Int>(TheRecorder->getMode()));
+		json += ",\"recording\":";
+		json += TheRecorder->isRecording() ? "true" : "false";
+		json += ",\"playback\":";
+		json += TheRecorder->isPlayingBack() ? "true" : "false";
+		json += ",\"crcMismatch\":";
+		json += TheRecorder->sawPlaybackCRCMismatch() ? "true" : "false";
+		json += ",\"currentReplay\":\"" + json_escape(
+			TheRecorder->getCurrentReplayFilename().str()) + "\"";
+	} else {
+		json += ",\"mode\":null,\"recording\":false,\"playback\":false,"
+			"\"crcMismatch\":false,\"currentReplay\":null";
+	}
+	json += "}";
+}
+
 void append_real_engine_frame_summary_state(std::string &json)
 {
 	json += ",\"inputSettings\":{\"useAlternateMouse\":";
@@ -4258,6 +4292,7 @@ void append_real_engine_frame_summary_state(std::string &json)
 		json += "\"gameLogicReady\":false,\"inGame\":null,\"gameMode\":null,"
 			"\"logicFrame\":null,\"objectCount\":0,\"loadingMap\":null";
 	}
+	append_recorder_state(json);
 	if (TheGameClient != NULL) {
 		json += ",\"gameClientReady\":true";
 		json += ",\"clientFrame\":" + std::to_string(TheGameClient->getFrame());
@@ -5135,21 +5170,7 @@ void append_real_engine_client_state(std::string &json)
 			"\"loadingSave\":null,\"clearingGameData\":null,\"gamePaused\":null,"
 		"\"logicFrame\":null,\"objectCount\":0,\"progressComplete\":null";
 	}
-	json += ",\"recorder\":{";
-	json += "\"ready\":";
-	json += TheRecorder != NULL ? "true" : "false";
-	if (TheRecorder != NULL) {
-		json += ",\"mode\":" + std::to_string(static_cast<Int>(TheRecorder->getMode()));
-		json += ",\"recording\":";
-		json += TheRecorder->isRecording() ? "true" : "false";
-		json += ",\"playback\":";
-		json += TheRecorder->isPlayingBack() ? "true" : "false";
-		json += ",\"currentReplay\":\"" + json_escape(
-			TheRecorder->getCurrentReplayFilename().str()) + "\"";
-	} else {
-		json += ",\"mode\":null,\"recording\":false,\"playback\":false,\"currentReplay\":null";
-	}
-	json += "}";
+	append_recorder_state(json);
 	json += ",\"lifecycleDebug\":{";
 	json += "\"newGameCount\":" + std::to_string(cnc_port_logic_dispatch_new_game_count());
 	json += ",\"lastNewGameMode\":" + std::to_string(cnc_port_logic_dispatch_last_new_game_mode());
@@ -6527,6 +6548,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int
 	char elapsed[64];
 	std::snprintf(elapsed, sizeof(elapsed), ",\"lastFrameMs\":%.1f", g_frame_state.last_frame_ms);
 	json += elapsed;
+	append_recorder_state(json);
+	append_engine_frame_profile_json(json);
 	json += "}";
 	g_frame_json = json;
 	return g_frame_json.c_str();

@@ -16,6 +16,7 @@ const D3DTOP_DISABLE = 1;
 const WM_MOUSEMOVE = 0x0200;
 const WM_LBUTTONDOWN = 0x0201;
 const WM_LBUTTONUP = 0x0202;
+const omitAudioArchives = process.env.SKIRMISH_START_OMIT_AUDIO_ARCHIVES === "1";
 
 const archiveSpecs = [
   { name: "INIZH.big" },
@@ -48,7 +49,9 @@ const archiveSpecs = [
   { name: "ZZBase_SpeechEnglish.big", sourceName: "base-generals/SpeechEnglish.big" },
   { name: "ZZBase_Maps.big", sourceName: "base-generals/Maps.big" },
   { name: "Gensec.big" },
-];
+].filter((spec) => !omitAudioArchives
+  || !/^(?:(?:AudioEnglish|SpeechEnglish)ZH|base-generals\/(?:Audio(?:English)?|Speech(?:English)?))\.big$/i
+    .test(spec.sourceName ?? spec.name));
 
 const screenshotPath = resolve(
   process.env.SKIRMISH_START_SCREENSHOT ??
@@ -84,6 +87,21 @@ const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "
 const expectLightPulseProbe = process.env.SKIRMISH_START_LIGHT_PULSE_PROBE === "1";
 const expectReplayRoundTrip = process.env.SKIRMISH_START_REPLAY_ROUNDTRIP === "1";
 const retailReplayFixture = String(process.env.SKIRMISH_REPLAY_FIXTURE ?? "").trim();
+const expectReplayPerformance = process.env.SKIRMISH_START_REPLAY_PERFORMANCE === "1";
+const requireReplayPerformanceVisible =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_REQUIRE_VISIBLE !== "0";
+const disableReplayPerformanceRender =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_DISABLE_RENDER === "1";
+const profileReplayPerformance =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_PROFILE !== "0";
+const replayPerformanceClientFps = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_CLIENT_FPS", 60);
+const replayPerformanceLogicFps = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_LOGIC_FPS", 30);
+const replayPerformanceCatchup = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_CATCHUP", 2);
+const replayPerformanceEndFrame = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_END_FRAME", Number.MAX_SAFE_INTEGER);
 const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
 const expectParticleVisibilityProbe =
   process.env.SKIRMISH_START_PARTICLE_VISIBILITY_PROBE === "1";
@@ -110,6 +128,12 @@ if ((requestedModLocalPath || requestedModLocalDir) && !requestedModPackage) {
 }
 if (requestedModLocalPath && requestedModLocalDir) {
   throw new Error("Choose either SKIRMISH_START_MOD_LOCAL_PATH or SKIRMISH_START_MOD_LOCAL_DIR");
+}
+if (expectReplayPerformance && !retailReplayFixture) {
+  throw new Error("SKIRMISH_START_REPLAY_PERFORMANCE requires SKIRMISH_REPLAY_FIXTURE");
+}
+if (expectReplayPerformance && replayPerformanceClientFps < replayPerformanceLogicFps) {
+  throw new Error("Replay performance client FPS must be at least the logic FPS");
 }
 
 function parsePositiveInt(name, fallback) {
@@ -152,6 +176,7 @@ function compactGameplay(frame) {
   return {
     framesCompleted: frame?.framesCompleted ?? null,
     gameMode: gameplay?.gameMode ?? null,
+    logicFrame: gameplay?.logicFrame ?? null,
     inGame: gameplay?.inGame ?? null,
     loadingMap: gameplay?.loadingMap ?? null,
     objectCount: gameplay?.objectCount ?? null,
@@ -161,6 +186,7 @@ function compactGameplay(frame) {
     localPlayer: gameplay?.localPlayer ?? null,
     ai: gameplay?.ai ?? null,
     playerDiagnostics: gameplay?.playerDiagnostics ?? null,
+    recorder: gameplay?.recorder ?? null,
     display,
   };
 }
@@ -1177,6 +1203,347 @@ async function driveReplayRoundTrip(page) {
   };
 }
 
+function replayFrameDuration(bytes) {
+  expect(bytes.length >= 18 && bytes.subarray(0, 6).toString("ascii") === "GENREP",
+    "retail replay fixture has an invalid header", { bytes: bytes.length });
+  const frames = bytes.readUInt32LE(14);
+  expect(frames > 0, "retail replay fixture does not declare a completed duration", { frames });
+  return frames;
+}
+
+function performanceDistribution(values) {
+  const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
+  const percentile = (fraction) => finite.length === 0
+    ? null
+    : finite[Math.min(finite.length - 1, Math.floor((finite.length - 1) * fraction))];
+  return {
+    count: finite.length,
+    p50Ms: percentile(0.5),
+    p95Ms: percentile(0.95),
+    p99Ms: percentile(0.99),
+    maxMs: finite.at(-1) ?? null,
+    over16_7Ms: finite.filter((value) => value > 1000 / 60).length,
+    over33_3Ms: finite.filter((value) => value > 1000 / 30).length,
+    over50Ms: finite.filter((value) => value > 50).length,
+    over100Ms: finite.filter((value) => value > 100).length,
+  };
+}
+
+async function importPerformanceReplay(page) {
+  const fixturePath = resolve(retailReplayFixture);
+  const fixtureBytes = await readFile(fixturePath);
+  const expectedLogicFrames = replayFrameDuration(fixtureBytes);
+  console.error(`[skirmish-start] import performance replay (${expectedLogicFrames} frames)`);
+  const imported = await rpc(page, "importReplay", {
+    name: basename(fixturePath),
+    bytesBase64: fixtureBytes.toString("base64"),
+    persist: false,
+  });
+  expect(imported?.ok === true && imported?.persisted === false,
+    "performance replay fixture could not be imported as a volatile test fixture", imported);
+  return { fixturePath, expectedLogicFrames, imported };
+}
+
+async function driveReplayPerformance(page, performanceReplay) {
+  const { fixturePath, expectedLogicFrames, imported } = performanceReplay;
+  const shellLoop = await rpc(page, "threadedStartLoop", { clientFps: 60, logicFps: 30 });
+  expect(shellLoop?.ok === true, "performance replay shell loop did not start", shellLoop);
+  await page.waitForFunction(() =>
+    Number(window.CnCPort?.state?.threadedEngine?.loop?.clientFrames ?? 0) >= 5,
+  null, { timeout: 10 * 60_000, polling: 250 });
+  const shellStopped = await rpc(page, "threadedStopLoop", { timeoutMs: 120000 });
+  expect(shellStopped?.ok === true, "performance replay shell loop did not stop", shellStopped);
+  const mainMenu = await revealMainMenu(page);
+
+  await clickButton(page, mainMenu.frame.clientState.mainMenu.buttonSinglePlayer,
+    mainMenu.frame.clientState.mainMenu.underButtonSinglePlayerCenter,
+    "performance replay single player");
+  const singlePlayerMenu = await waitForCondition(
+    page, "performance replay single-player menu",
+    (clientState) => clientState.mainMenu?.buttonLoadReplay?.clickable === true
+      || clientState.mainMenu?.buttonSingleBack?.clickable === true,
+    180);
+  if (singlePlayerMenu.frame.clientState.mainMenu.buttonLoadReplay?.clickable !== true) {
+    await clickButton(page, singlePlayerMenu.frame.clientState.mainMenu.buttonSingleBack,
+      null, "performance replay single-player back");
+  }
+  const loadReplay = singlePlayerMenu.frame.clientState.mainMenu.buttonLoadReplay?.clickable === true
+    ? singlePlayerMenu
+    : await waitForCondition(
+      page,
+      "performance replay load entry",
+      (clientState) => clientState.mainMenu?.buttonLoadReplay?.clickable === true,
+      180);
+  await clickButton(page, loadReplay.frame.clientState.mainMenu.buttonLoadReplay,
+    null, "performance replay load replay");
+  const replayButton = await waitForCondition(
+    page,
+    "performance replay list entry",
+    (clientState) => clientState.mainMenu?.buttonReplay?.clickable === true,
+    180);
+  await clickButton(page, replayButton.frame.clientState.mainMenu.buttonReplay,
+    null, "performance replay list");
+  const replayMenu = await waitForCondition(
+    page,
+    "performance replay menu populated",
+    (clientState) => clientState.replayMenu?.parent?.found === true
+      && clientState.replayMenu?.buttonLoad?.clickable === true
+      && clientState.replayMenu?.entryCount > 0,
+    240);
+  const importedDisplayName = imported.name.replace(/\.rep$/i, "");
+  expect(replayMenu.frame.clientState.replayMenu.selectedName === importedDisplayName,
+    "performance replay menu did not select the imported replay", {
+      imported: imported.name,
+      expectedDisplayName: importedDisplayName,
+      selected: replayMenu.frame.clientState.replayMenu.selectedName,
+    });
+  if (requireReplayPerformanceVisible) {
+    await page.locator("#viewport").screenshot({ path: replayMenuScreenshotPath });
+  }
+  let renderDisabled = false;
+  if (disableReplayPerformanceRender && !requireReplayPerformanceVisible) {
+    const disabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
+    expect(disabled?.ok === true && disabled?.disabled === true,
+      "performance replay could not disable rendering for CPU isolation", disabled);
+    renderDisabled = true;
+  }
+  await clickButton(page, replayMenu.frame.clientState.replayMenu.buttonLoad,
+    null, "performance replay play");
+  const versionPrompt = await runFrames(page, 2, "performance replay version prompt");
+  if (versionPrompt.frame.clientState.messageBox?.buttonOk?.clickable === true) {
+    await clickWindowByName(page, "MessageBox.wnd:ButtonOk",
+      "performance replay version confirmation");
+  }
+  const playback = await waitForCondition(
+    page,
+    "performance replay playback",
+    (clientState) => clientState.gameplay?.gameMode === 3
+      && clientState.gameplay?.inGame === true
+      && clientState.gameplay?.loadingMap === false
+      && clientState.gameplay?.recorder?.playback === true,
+    maxStartFrames);
+  if (requireReplayPerformanceVisible) {
+    await runFrames(page, 30, "performance replay visible playback settle");
+    await page.locator("#viewport").screenshot({ path: replayPlaybackScreenshotPath });
+  }
+  const startRenderProbe = requireReplayPerformanceVisible
+    ? await sampleViewportGrid(page)
+    : null;
+  if (requireReplayPerformanceVisible) {
+    expect(startRenderProbe.ok === true && startRenderProbe.visibleSampleCount > 0
+        && startRenderProbe.uniqueColorCount > 1,
+      "performance replay start frame is not visibly rendered", startRenderProbe);
+  }
+  if (disableReplayPerformanceRender && !renderDisabled) {
+    const disabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
+    expect(disabled?.ok === true && disabled?.disabled === true,
+      "performance replay could not disable rendering for CPU isolation", disabled);
+    renderDisabled = true;
+  }
+  const profilingFrame = await rpc(page, "realEngineFrameSummary", {
+    frames: 1,
+    profile: profileReplayPerformance,
+  });
+  expect(profilingFrame?.ok === true
+      && profilingFrame.frame?.profile?.enabled === profileReplayPerformance,
+    "performance replay CPU profiling mode was not applied", profilingFrame);
+
+  await page.evaluate(() => {
+    window.__cncSetD3D8PerfCounters?.(true);
+    const capture = {
+      engineFrameMs: [],
+      presentationFrameMs: [],
+      statuses: [],
+      lastClientFrames: 0,
+      lastEngineFrameSamples: 0,
+      maxLogicFrame: 0,
+      lastReplayLogicFrame: null,
+      replayEndEngineFrameSample: null,
+      replayEnded: false,
+      replayPlaybackSeen: false,
+      crcMismatch: false,
+      slowFrameProfiles: [],
+      startedAt: null,
+    };
+    window.__cncReplayPerformanceCapture = capture;
+    window.addEventListener("cncport:threadedstatus", (event) => {
+      const status = event.detail;
+      const loop = status?.loop;
+      if (!loop || !Number.isFinite(loop.clientFrames)) return;
+      if (capture.startedAt !== loop.startedAt) {
+        capture.startedAt = loop.startedAt;
+        capture.lastClientFrames = 0;
+        capture.lastEngineFrameSamples = 0;
+      }
+      const addedClientFrames = Math.max(0, loop.clientFrames - capture.lastClientFrames);
+      const addedEngineFrames = Math.max(0,
+        Number(loop.engineFrameSamples ?? 0) - capture.lastEngineFrameSamples);
+      const appendTail = (target, source, added) => {
+        if (!Array.isArray(source) || added <= 0) return [];
+        const tail = source.slice(-Math.min(added, source.length)).filter(Number.isFinite);
+        target.push(...tail);
+        return tail;
+      };
+      const engineTimes = status.timing?.engineFrameMs;
+      const engineLogicFrames = status.timing?.engineLogicFrames;
+      const engineFrameMs = [];
+      if (Array.isArray(engineTimes) && Array.isArray(engineLogicFrames)
+          && addedEngineFrames > 0) {
+        const tailCount = Math.min(addedEngineFrames, engineTimes.length,
+          engineLogicFrames.length);
+        const firstTailIndex = engineTimes.length - tailCount;
+        const firstEngineFrameSample = Number(loop.engineFrameSamples) - tailCount + 1;
+        for (let i = firstTailIndex; i < engineTimes.length; i += 1) {
+          const frameMs = Number(engineTimes[i]);
+          const logicFrame = Number(engineLogicFrames[i]);
+          const engineFrameSample = firstEngineFrameSample + i - firstTailIndex;
+          if (!Number.isFinite(frameMs) || !Number.isFinite(logicFrame)) continue;
+          if (!capture.replayEnded && capture.lastReplayLogicFrame !== null
+              && logicFrame < capture.lastReplayLogicFrame) {
+            capture.replayEnded = true;
+            capture.replayEndEngineFrameSample = engineFrameSample;
+          }
+          if (capture.replayEnded) continue;
+          capture.lastReplayLogicFrame = logicFrame;
+          capture.engineFrameMs.push(frameMs);
+          engineFrameMs.push(frameMs);
+        }
+      }
+      const presentationFrameMs = appendTail(capture.presentationFrameMs,
+        status.timing?.presentationFrameMs, addedClientFrames);
+      capture.lastClientFrames = loop.clientFrames;
+      capture.lastEngineFrameSamples = Number(loop.engineFrameSamples ?? 0);
+      capture.maxLogicFrame = Math.max(capture.maxLogicFrame,
+        Number(status.frame?.logicFrame ?? 0));
+      const recorder = status.frame?.recorder;
+      if (loop.replayPlaybackSeen === true) {
+        capture.replayPlaybackSeen = true;
+      }
+      if (loop.crcMismatch === true) {
+        capture.crcMismatch = true;
+      }
+      if (Array.isArray(status.timing?.slowFrameProfiles)) {
+        capture.slowFrameProfiles = status.timing.slowFrameProfiles;
+      }
+      capture.statuses.push({
+        now: status.now,
+        clientFrames: loop.clientFrames,
+        engineFrameSamples: loop.engineFrameSamples ?? null,
+        logicFrames: loop.logicFrames,
+        logicFrame: status.frame?.logicFrame ?? null,
+        lastFrameMs: status.frame?.lastFrameMs ?? null,
+        recorder: recorder ?? null,
+        active: loop.active,
+        contextLost: status.contextLost,
+        renderer: status.graphics?.renderer ?? null,
+        d3d8Perf: status.graphics?.d3d8Perf ?? null,
+        engineFrameMs,
+        presentationFrameMs,
+      });
+    });
+  });
+
+  const started = await rpc(page, "threadedStartLoop", {
+    clientFps: replayPerformanceClientFps,
+    logicFps: replayPerformanceLogicFps,
+    catchup: replayPerformanceCatchup,
+    profilingEnabled: profileReplayPerformance,
+  });
+  expect(started?.ok === true, "performance replay paced loop did not start", started);
+  const targetLogicFrame = Math.min(expectedLogicFrames, replayPerformanceEndFrame);
+  const expectedWallMs = targetLogicFrame / replayPerformanceLogicFps * 1000;
+  const completionThreshold = targetLogicFrame === expectedLogicFrames
+    ? Math.max(1, expectedLogicFrames - Math.max(120, replayPerformanceLogicFps * 2))
+    : targetLogicFrame;
+  const waitForReplayEnd = targetLogicFrame === expectedLogicFrames;
+  let completionError = null;
+  try {
+    await page.waitForFunction(
+      ({ target, replayEnd }) => {
+        const capture = window.__cncReplayPerformanceCapture;
+        return replayEnd ? capture?.replayEnded === true : capture?.maxLogicFrame >= target;
+      },
+      { target: completionThreshold, replayEnd: waitForReplayEnd },
+      { timeout: Math.max(600_000, expectedWallMs * 3 + 120_000), polling: 500 });
+  } catch (error) {
+    completionError = error instanceof Error ? error.message : String(error);
+  }
+  const stopped = await rpc(page, "threadedStopLoop", { timeoutMs: 120000 });
+  const finalFrame = await runSummary(page, 1, "performance replay final state");
+  const capture = await page.evaluate(() => window.__cncReplayPerformanceCapture);
+  const endRenderProbe = requireReplayPerformanceVisible
+    ? await sampleViewportGrid(page)
+    : null;
+  const finalScreenshotPath = requireReplayPerformanceVisible ? screenshotPath : null;
+  if (finalScreenshotPath) {
+    await page.locator("#viewport").screenshot({ path: finalScreenshotPath });
+  }
+  const contextLosses = capture.statuses.filter((status) => status.contextLost === true).length;
+  expect(contextLosses === 0, "performance replay lost the WebGL context", { contextLosses });
+
+  const completed = waitForReplayEnd
+    ? capture.replayEnded === true && capture.maxLogicFrame >= completionThreshold
+    : capture.maxLogicFrame >= completionThreshold;
+  const recorder = finalFrame.frame?.gameplay?.recorder
+    ?? finalFrame.frame?.clientState?.gameplay?.recorder ?? null;
+  const deterministic = capture.replayPlaybackSeen && capture.crcMismatch === false;
+  const playbackStateValid = targetLogicFrame === expectedLogicFrames
+    || recorder?.playback === true;
+  const slowFrameProfiles = capture.slowFrameProfiles.filter((entry) =>
+    capture.replayEndEngineFrameSample === null
+      || !Number.isFinite(Number(entry?.engineFrameSample))
+      || Number(entry.engineFrameSample) < capture.replayEndEngineFrameSample);
+  const postReplaySlowFrameProfiles = capture.slowFrameProfiles.filter((entry) =>
+    capture.replayEndEngineFrameSample !== null
+      && Number.isFinite(Number(entry?.engineFrameSample))
+      && Number(entry.engineFrameSample) >= capture.replayEndEngineFrameSample);
+  return {
+    ok: completed && stopped?.ok === true && deterministic && playbackStateValid,
+    source: "skirmish-start-replay-performance",
+    fixture: fixturePath,
+    importedReplay: imported.name,
+    expectedLogicFrames,
+    clientFps: replayPerformanceClientFps,
+    logicFps: replayPerformanceLogicFps,
+    catchup: replayPerformanceCatchup,
+    targetLogicFrame,
+    visualRequired: requireReplayPerformanceVisible,
+    renderDisabled: disableReplayPerformanceRender,
+    playbackStart: compactGameplay(playback.frame),
+    finalGameplay: compactGameplay(finalFrame.frame),
+    recorder,
+    replayPlaybackSeen: capture.replayPlaybackSeen,
+    crcMismatch: capture.crcMismatch,
+    deterministic,
+    playbackStateValid,
+    timing: {
+      engine: performanceDistribution(capture.engineFrameMs),
+      presentation: performanceDistribution(capture.presentationFrameMs),
+    },
+    maxLogicFrame: capture.maxLogicFrame,
+    replayEnded: capture.replayEnded,
+    replayEndEngineFrameSample: capture.replayEndEngineFrameSample,
+    completionThreshold,
+    completionError,
+    stopResult: stopped,
+    statusSamples: capture.statuses,
+    slowFrameProfiles,
+    postReplaySlowFrameProfiles,
+    contextLosses,
+    graphics: {
+      renderer: capture.statuses.findLast((status) => status.renderer)?.renderer ?? null,
+      contextLost: contextLosses > 0,
+    },
+    startRenderProbe,
+    endRenderProbe,
+    screenshots: {
+      menu: requireReplayPerformanceVisible ? replayMenuScreenshotPath : null,
+      playbackStart: requireReplayPerformanceVisible ? replayPlaybackScreenshotPath : null,
+      final: finalScreenshotPath,
+    },
+  };
+}
+
 async function driveEscMenuResume(page) {
   const before = await runFrames(page, 1, "esc menu precheck");
   expect(before.frame?.clientState?.gameplay?.inGame === true &&
@@ -2013,7 +2380,7 @@ async function main() {
     console.error("[skirmish-start] real init");
     const init = await rpc(page, "realEngineInit", {
       runDirectory: "/assets/skirmish-start",
-      shellMap: true,
+      shellMap: !expectReplayPerformance,
       modDirectory: mount.modDirectory ?? "",
     });
     expect(init?.ok === true && init?.aborted === false && init?.frontier?.initReturned === true,
@@ -2021,6 +2388,36 @@ async function main() {
     if (activeMod) {
       expect(init.frontier.commandLine?.includes("-mod /assets/cnc-mods-active"),
         "real engine did not receive the imported mod directory", init.frontier);
+    }
+
+    if (expectReplayPerformance) {
+      const performanceReplay = await importPerformanceReplay(page);
+      const result = await driveReplayPerformance(page, performanceReplay);
+      await writeFile(outputPath, JSON.stringify(result, null, 2));
+      console.log(JSON.stringify({
+        ok: result.ok,
+        output: outputPath,
+        expectedLogicFrames: result.expectedLogicFrames,
+        completionThreshold: result.completionThreshold,
+        maxLogicFrame: result.maxLogicFrame,
+        recorder: result.recorder,
+        deterministic: result.deterministic,
+        playbackStateValid: result.playbackStateValid,
+        timing: result.timing,
+        completionError: result.completionError,
+      }, null, 2));
+      expect(result.ok, "performance replay did not complete", {
+        output: outputPath,
+        expectedLogicFrames: result.expectedLogicFrames,
+        completionThreshold: result.completionThreshold,
+        maxLogicFrame: result.maxLogicFrame,
+        recorder: result.recorder,
+        deterministic: result.deterministic,
+        playbackStateValid: result.playbackStateValid,
+        completionError: result.completionError,
+        stopResult: result.stopResult,
+      });
+      return;
     }
 
     if (expectReplayRoundTrip) {

@@ -209,6 +209,7 @@ class PathfindCell;
 class PathfindCellInfo
 {
 	friend class PathfindCell;
+	friend class Pathfinder;
 public:
 	static void allocateCellInfos(void);
 	static void releaseCellInfos(void);
@@ -227,6 +228,7 @@ protected:
 	PathfindCell *m_cell;															///< Cell this info belongs to currently.
 
 	UnsignedShort m_totalCost, m_costSoFar;	///< cost estimates for A* search
+	UnsignedShort m_openBucketCost;
 
 	/// have to include cell's coordinates, since cells are often accessed via pointer only
 	ICoord2D m_pos;
@@ -236,7 +238,6 @@ protected:
 	ObjectID m_goalAircraftID; ///< The objectID of the aircraft whose goal this is.
 
 	ObjectID m_obstacleID;	///< the object ID who overlaps this cell
-	
 	UnsignedInt m_isFree:1;
 	UnsignedInt m_blockedByAlly:1;///< True if this cell is blocked by an allied unit.
 	UnsignedInt m_obstacleIsFence:1;///< True if occupied by a fence.
@@ -254,6 +255,7 @@ protected:
  */
 class PathfindCell
 {
+	friend class Pathfinder;
 public:
 
 	enum CellType
@@ -348,6 +350,14 @@ public:
 	Bool allocateInfo(const ICoord2D &pos);
 	void releaseInfo(void);
 	Bool hasInfo(void) const {return m_info!=NULL;}
+	Bool getCachedMovementCheck(UnsignedInt generation, PathfindLayerEnum layer, Bool &passable,
+		Int &allyFixedCount, Bool &allyMoving, Bool &allyGoal, Bool &enemyFixed) const;
+	void cacheMovementCheck(UnsignedInt generation, PathfindLayerEnum layer, Bool passable,
+		Int allyFixedCount, Bool allyMoving, Bool allyGoal, Bool enemyFixed);
+	Bool getCachedLinePassability(UnsignedInt generation, Bool &passable) const;
+	void cacheLinePassability(UnsignedInt generation, Bool passable);
+	Bool getCachedClearDiameter(UnsignedInt generation, Int &clearDiameter) const;
+	void cacheClearDiameter(UnsignedInt generation, Int clearDiameter);
 	zoneStorageType getZone(void) const {return m_zone;}
 	void setZone(zoneStorageType zone) {m_zone = zone;}
 	void setGoalUnit(ObjectID unit, const ICoord2D &pos );
@@ -375,6 +385,12 @@ private:
 	UnsignedByte m_flags:4;			///< what type of units are in or moving through this cell.
 	UnsignedByte m_connectsToLayer:4;	///< This cell can pathfind onto this layer, if > LAYER_TOP.
   UnsignedByte m_layer:4;					 ///< Layer of this cell.
+	// Scratch results are tagged per search, so no simulation state or snapshot
+	// data depends on them.
+	UnsignedInt m_pathfindCacheGeneration;
+	UnsignedShort m_clearDiameterCacheValue;
+	UnsignedByte m_pathfindCacheFlags;
+	UnsignedByte m_pathfindCacheLayer;
 };
 
 typedef PathfindCell *PathfindCellP;
@@ -756,6 +772,12 @@ protected:
 	void adjustCoordToCell(Int cellX, Int cellY, Bool centerInCell, Coord3D &pos, PathfindLayerEnum layer);
 	Bool checkDestination(const Object *obj, Int cellX, Int cellY, PathfindLayerEnum layer, Int iRadius, Bool centerInCell);
 	Bool checkForMovement(const Object *obj, TCheckMovementInfo &info);
+	void startFastOpenQueue(PathfindCell *startCell);
+	PathfindCell *popFastOpenQueue(void);
+	void pushFastOpenQueue(PathfindCell *cell);
+	void removeFastOpenQueue(PathfindCell *cell);
+	Int cachedClearCellForDiameter(UnsignedInt generation, Bool crusher, Int cellX, Int cellY,
+		PathfindLayerEnum layer, Int pathDiameter);
 	Bool segmentIntersectsTallBuilding(const PathNode *curNode, PathNode *nextNode,  
 		ObjectID ignoreBuilding, Coord3D *insertPos1, Coord3D *insertPos2, Coord3D *insertPos3);	///< Return true if the straight line between the given points intersects a tall building.
 	Bool circleClipsTallBuilding(const Coord3D *from, const Coord3D *to, Real radius, ObjectID ignoreBuilding, Coord3D *adjustTo);	///< Return true if the circle at the end of the line between the given points intersects a tall building.
@@ -764,7 +786,8 @@ protected:
 	Int examineNeighboringCells(PathfindCell *parentCell, PathfindCell *goalCell,
 										const LocomotorSet& locomotorSet, Bool isHumanPlayer, 
 										Bool centerInCell, Int radius, const ICoord2D &startCellNdx,
-										const Object *obj, Int attackDistance);
+										const Object *obj, Int attackDistance,
+										UnsignedInt movementCacheGeneration = 0);
 
  	Bool pathDestination( Object *obj, const LocomotorSet& locomotorSet, Coord3D *dest, 
 		PathfindLayerEnum layer, const Coord3D *groupDest);	///< Checks cost between given locations
@@ -786,6 +809,9 @@ protected:
 
 	Int iterateCellsAlongLine(const ICoord2D &start, const ICoord2D &end, 
 		PathfindLayerEnum layer, CellAlongLineProc proc, void* userData);
+	Int examineCellsAlongLine(const ICoord2D &start, const ICoord2D &end,
+		PathfindLayerEnum layer, void *userData);
+	Int examineLineCell(PathfindCell *from, PathfindCell *to, Int toX, Int toY, void *userData);
 
 	static Int linePassableCallback(Pathfinder* pathfinder, PathfindCell* from, PathfindCell* to, Int to_x, Int to_y, void* userData);
 	static Int groundPathPassableCallback(Pathfinder* pathfinder, PathfindCell* from, PathfindCell* to, Int to_x, Int to_y, void* userData);
@@ -869,6 +895,12 @@ private:
 	Int						m_queuePRHead;
 	Int						m_queuePRTail;
 	Int						m_cumulativeCellsAllocated;
+	UnsignedInt	m_pathfindCacheGeneration;
+	PathfindCell **m_fastOpenBucketHeads;
+	PathfindCell **m_fastOpenBucketTails;
+	UnsignedInt m_fastOpenCount;
+	UnsignedInt m_fastOpenMinimumCost;
+	Bool m_fastOpenQueueActive;
 };
 
 

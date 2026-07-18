@@ -1965,6 +1965,17 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "realEngineSetRenderDisabled": {
+      try {
+        const disabled = payload.disabled === true;
+        const applied = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_render_disabled", "number", ["number"],
+          [disabled ? 1 : 0]);
+        return { ok: applied === 1, command, disabled, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "querySelection": {
       try {
         const result = await threadedEngine.engineCall(
@@ -6396,6 +6407,11 @@ async function loadWasmModule() {
       realEngineSetPlayerDiagnostics: module.cwrap(
         "cnc_port_real_engine_set_player_diagnostics",
         null,
+        ["number"],
+      ),
+      realEngineSetRenderDisabled: module.cwrap(
+        "cnc_port_real_engine_set_render_disabled",
+        "number",
         ["number"],
       ),
       realEngineDoFX: module.cwrap(
@@ -12523,7 +12539,11 @@ async function rpc(command, payload = {}) {
     case "importReplay":
       {
         try {
-          const result = await replayFileStore.importFile(payload.name, base64ToBytes(payload.bytesBase64));
+          const result = await replayFileStore.importFile(
+            payload.name,
+            base64ToBytes(payload.bytesBase64),
+            { durable: payload.persist !== false },
+          );
           return { command, ...result };
         } catch (error) {
           return { ok: false, command, error: error?.message ?? String(error) };
@@ -13499,6 +13519,16 @@ async function rpc(command, payload = {}) {
           result,
           state: snapshotState(),
         };
+      }
+    case "realEngineSetRenderDisabled":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSetRenderDisabled");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        const disabled = payload.disabled === true;
+        const applied = moduleResult.wasmModule.realEngineSetRenderDisabled(disabled ? 1 : 0);
+        return { ok: applied === 1, command, disabled, state: snapshotState() };
       }
     case "revealLocalMap":
       {
