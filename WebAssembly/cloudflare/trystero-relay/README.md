@@ -8,11 +8,14 @@ travel directly between peers over encrypted WebRTC data channels.
 
 The relay validates event hashes and Schnorr signatures, accepts only
 Trystero's ephemeral event-kind and `x`-topic shape, bounds subscriptions and
-message sizes, retains at most 512 events for two minutes, and permits browser
-connections only from the configured Project New Shoes origins. The Origin
-check is an abuse-reduction boundary, not authentication: non-browser clients
-can forge that header. Do not put secrets in the browser configuration or in
-Nostr events.
+message sizes, retains at most 512 events for two minutes in warm memory, and
+permits browser connections only from the configured Project New Shoes origins.
+Subscriptions survive Durable Object hibernation in WebSocket attachments; the
+ephemeral event cache does not. Trystero's periodic announcements restore peer
+discovery after the object wakes without consuming Durable Object storage row
+writes. The Origin check is an abuse-reduction boundary, not authentication:
+non-browser clients can forge that header. Do not put secrets in the browser
+configuration or in Nostr events.
 
 Run the local Worker protocol gate with:
 
