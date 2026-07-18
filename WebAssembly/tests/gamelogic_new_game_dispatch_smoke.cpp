@@ -50,6 +50,7 @@
 #include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/VictoryConditions.h"
+#include "W3DDevice/GameClient/W3DAssetManager.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
 #include "W3DDevice/GameClient/W3DBridgeBuffer.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
@@ -57,6 +58,8 @@
 #include "W3DDevice/GameClient/W3DRoadBuffer.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
+#include "WW3D2/WW3D.h"
+#include "wasm_d3d8_shim.h"
 
 // Storage-only owners for globals referenced by unentered original
 // GameLogic/GameState sections. Real linked owners override these weak symbols.
@@ -1639,6 +1642,20 @@ int main()
 	TheTerrainTypes = &terrain_types;
 	TerrainRoadCollection terrain_roads;
 	TheTerrainRoads = &terrain_roads;
+	wasm_d3d8_reset_state();
+	const Bool dx8_wrapper_initialized =
+		WW3D::Init(nullptr, nullptr, false) == WW3D_ERROR_OK;
+	const Bool dx8_render_device_initialized = dx8_wrapper_initialized
+		&& WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true)
+			== WW3D_ERROR_OK;
+	if (!expect(dx8_render_device_initialized,
+			"browser DX8 device should initialize before the real terrain render object")) {
+		return 1;
+	}
+	W3DAssetManager asset_manager;
+	const WasmD3D8ShimState *d3d8_state = wasm_d3d8_get_state();
+	const UINT terrain_vertex_buffers_before = d3d8_state->create_vertex_buffer_calls;
+	const UINT terrain_index_buffers_before = d3d8_state->create_index_buffer_calls;
 	CachedFileInputStream terrain_render_map_stream;
 	const Bool terrain_render_map_opened = terrain_render_map_stream.open(global_data.m_mapName);
 	WorldHeightMap *terrain_render_map = nullptr;
@@ -1657,6 +1674,16 @@ int main()
 	}
 	SmokeTerrainRenderObject *terrain_render_object =
 		NEW_REF(SmokeTerrainRenderObject, ());
+	d3d8_state = wasm_d3d8_get_state();
+	const UINT terrain_vertex_buffers_after = d3d8_state->create_vertex_buffer_calls;
+	const UINT terrain_index_buffers_after = d3d8_state->create_index_buffer_calls;
+	const Bool terrain_gpu_buffers_created =
+		terrain_vertex_buffers_after > terrain_vertex_buffers_before
+		&& terrain_index_buffers_after > terrain_index_buffers_before;
+	if (!expect(terrain_gpu_buffers_created,
+			"real terrain render object should create vertex and index buffers through the browser DX8 device")) {
+		return 1;
+	}
 	const Bool terrain_road_collection_owned = TheTerrainRoads == &terrain_roads;
 	const Bool terrain_type_collection_owned = TheTerrainTypes == &terrain_types;
 	const Bool terrain_render_object_owned = TheTerrainRenderObject == terrain_render_object;
@@ -1907,7 +1934,7 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp/WW3D.cpp/DX8Wrapper.cpp/DX8VertexBuffer.cpp/DX8IndexBuffer.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":0,"
 		<< "\"playerCount\":" << player_list->getPlayerCount() << ","
@@ -2038,6 +2065,13 @@ int main()
 		<< "\"terrainRenderMapOpened\":" << jsonBool(terrain_render_map_opened) << ","
 		<< "\"terrainRenderMapLoaded\":" << jsonBool(terrain_render_map_loaded) << ","
 		<< "\"terrainRenderObjectOwned\":" << jsonBool(terrain_render_object_owned) << ","
+		<< "\"dx8WrapperInitialized\":" << jsonBool(dx8_wrapper_initialized) << ","
+		<< "\"dx8RenderDeviceInitialized\":" << jsonBool(dx8_render_device_initialized) << ","
+		<< "\"terrainVertexBuffersBefore\":" << terrain_vertex_buffers_before << ","
+		<< "\"terrainVertexBuffersAfter\":" << terrain_vertex_buffers_after << ","
+		<< "\"terrainIndexBuffersBefore\":" << terrain_index_buffers_before << ","
+		<< "\"terrainIndexBuffersAfter\":" << terrain_index_buffers_after << ","
+		<< "\"terrainGpuBuffersCreated\":" << jsonBool(terrain_gpu_buffers_created) << ","
 		<< "\"terrainRenderMapAttached\":" << jsonBool(terrain_render_map_attached) << ","
 		<< "\"terrainRenderMapWidth\":" << terrain_render_map_width << ","
 		<< "\"terrainRenderMapHeight\":" << terrain_render_map_height << ","
@@ -2095,7 +2129,7 @@ int main()
 		<< "\"InGameUI client-quiet remains focused UI boundary\","
 		<< "\"OptionPreferences user preference getters remain focused non-network browser preference boundary\","
 		<< "\"bridge-like map-object creation remains focused ThingFactory/Object ownership boundary after ordered no-candidate startup scan\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\",\"TerrainTypeCollection empty texture-class lookup for render heightmap parsing\",\"TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff\",\"W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup\",\"W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan\",\"GameLogic bridge-like map-object scan ordered after terrain newMap\",\"Radar::refreshTerrain after bridge-like map-object scan\",\"Pathfinder::newMap terrain grid allocation/classification ordered after bridge-like scan\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\",\"TerrainTypeCollection empty texture-class lookup for render heightmap parsing\",\"TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff\",\"WW3D browser D3D8 device and terrain-adjacent vertex/index buffers\",\"W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup\",\"W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan\",\"GameLogic bridge-like map-object scan ordered after terrain newMap\",\"Radar::refreshTerrain after bridge-like map-object scan\",\"Pathfinder::newMap terrain grid allocation/classification ordered after bridge-like scan\"],"
 		<< "\"nextRequired\":\"load real object templates into gamelogic-new-game-dispatch-smoke and promote the bridge-like map-object creation branch when a map supplies bridge or walk-on-wall templates, then continue the original ordered startNewGame sequence beyond Pathfinder::newMap\"}"
 		<< "\n";
 

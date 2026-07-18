@@ -170,9 +170,10 @@ work.
 
 The original UDP and lockstep packet paths are retained behind a browser
 transport adapter. Dedicated WebRTC data channels carry game packets, while
-Trystero uses redundant public Nostr relays only for decentralized discovery
-and encrypted SDP exchange. A short four-player threaded match is verified;
-disconnect behavior and long determinism runs remain open.
+Trystero uses the project Nostr relay plus deterministic public fallbacks only
+for decentralized discovery and encrypted SDP exchange. A short four-player
+threaded match is verified; disconnect behavior and long determinism runs
+remain open.
 
 ## Launcher and lifecycle
 
