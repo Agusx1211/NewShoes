@@ -64,6 +64,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Reject CAMEO_FLASH actions when their command button is unavailable ([PR #235](https://github.com/Agusx1211/NewShoes/pull/235)).
 - Correct Vector3 quick-length component ordering ([PR #236](https://github.com/Agusx1211/NewShoes/pull/236)).
 - Reject invalid ENEMY_SIGHTED relationships before partition filtering ([PR #239](https://github.com/Agusx1211/NewShoes/pull/239)).
+- Set version 0.4.0 and complete its audited release inventory ([PR #244](https://github.com/Agusx1211/NewShoes/pull/244)).
 
 ## [0.3.0] - 2026-07-16
 
