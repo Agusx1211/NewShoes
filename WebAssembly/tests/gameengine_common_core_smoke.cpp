@@ -539,23 +539,40 @@ bool expect_data_chunk_output_wire_format(const std::vector<char> &bytes)
 			"DataChunkOutput AsciiString length byte order changed");
 }
 
-std::vector<char> make_smoke_big_archive(const Char *archived_path, const Char *payload, Int payload_size)
+struct SmokeBigEntry
 {
-	const UnsignedInt path_bytes = static_cast<UnsignedInt>(std::strlen(archived_path) + 1);
+	const Char *path;
+	const Char *payload;
+	Int payload_size;
+};
+
+std::vector<char> make_smoke_big_archive(const std::vector<SmokeBigEntry> &entries)
+{
 	const UnsignedInt directory_offset = 0x10;
-	const UnsignedInt file_offset = directory_offset + 8 + path_bytes;
-	const UnsignedInt archive_size = file_offset + static_cast<UnsignedInt>(payload_size);
+	UnsignedInt file_offset = directory_offset;
+	UnsignedInt archive_size = directory_offset;
+	for (const SmokeBigEntry &entry : entries) {
+		file_offset += 8 + static_cast<UnsignedInt>(std::strlen(entry.path) + 1);
+		archive_size += 8 + static_cast<UnsignedInt>(std::strlen(entry.path) + 1) +
+			static_cast<UnsignedInt>(entry.payload_size);
+	}
 
 	std::vector<char> archive;
 	archive.reserve(archive_size);
 	archive.insert(archive.end(), { 'B', 'I', 'G', 'F' });
 	append_be32(archive, archive_size);
-	append_be32(archive, 1);
+	append_be32(archive, static_cast<UnsignedInt>(entries.size()));
 	append_be32(archive, 0);
-	append_be32(archive, file_offset);
-	append_be32(archive, static_cast<UnsignedInt>(payload_size));
-	archive.insert(archive.end(), archived_path, archived_path + path_bytes);
-	archive.insert(archive.end(), payload, payload + payload_size);
+	for (const SmokeBigEntry &entry : entries) {
+		const UnsignedInt path_bytes = static_cast<UnsignedInt>(std::strlen(entry.path) + 1);
+		append_be32(archive, file_offset);
+		append_be32(archive, static_cast<UnsignedInt>(entry.payload_size));
+		archive.insert(archive.end(), entry.path, entry.path + path_bytes);
+		file_offset += static_cast<UnsignedInt>(entry.payload_size);
+	}
+	for (const SmokeBigEntry &entry : entries) {
+		archive.insert(archive.end(), entry.payload, entry.payload + entry.payload_size);
+	}
 	return archive;
 }
 
@@ -797,9 +814,11 @@ bool exercise_win32_local_file_system()
 {
 	const char directory[] = "local-smoke-dir";
 	const char path[] = "local-smoke-dir/local-file.txt";
+	const char extensionless_path[] = "local-smoke-dir/config.v1/manifest";
 	const char payload[] = "23 4.5 USA\nline2";
 	const Int payload_size = static_cast<Int>(std::strlen(payload));
 	::remove(path);
+	::remove(extensionless_path);
 
 	Win32LocalFileSystem local_file_system;
 	FileSystem file_system;
@@ -867,7 +886,20 @@ bool exercise_win32_local_file_system()
 		"Win32LocalFile readEntireAndClose failed") && ok;
 	delete[] entire;
 
+	File *extensionless = local_file_system.openFile(
+		extensionless_path, File::WRITE | File::BINARY | File::CREATE);
+	ok = expect(extensionless != nullptr,
+		"Win32LocalFileSystem extensionless write path failed") && ok;
+	if (extensionless != nullptr) {
+		ok = expect(extensionless->write(payload, payload_size) == payload_size,
+			"Win32LocalFile extensionless write failed") && ok;
+		extensionless->close();
+	}
+	ok = expect(local_file_system.doesFileExist(extensionless_path),
+		"Win32LocalFileSystem extensionless file missing after write") && ok;
+
 	::remove(path);
+	::remove(extensionless_path);
 	TheFileSystem = nullptr;
 	TheArchiveFileSystem = nullptr;
 	TheLocalFileSystem = nullptr;
@@ -877,9 +909,15 @@ bool exercise_win32_local_file_system()
 bool exercise_archive_big_files()
 {
 	const char archived_path[] = "Data\\INI\\Worker.ini";
+	const char extensionless_path[] = "Data\\config.v1\\manifest";
 	const char payload[] = "WorkerObject = AmericaInfantryRanger";
+	const char extensionless_payload[] = "extensionless archive entry";
 	const Int payload_size = static_cast<Int>(std::strlen(payload));
-	const std::vector<char> big_archive = make_smoke_big_archive(archived_path, payload, payload_size);
+	const Int extensionless_payload_size = static_cast<Int>(std::strlen(extensionless_payload));
+	const std::vector<char> big_archive = make_smoke_big_archive({
+		{ archived_path, payload, payload_size },
+		{ extensionless_path, extensionless_payload, extensionless_payload_size },
+	});
 
 	NameKeyGenerator generator;
 	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
@@ -901,6 +939,14 @@ bool exercise_archive_big_files()
 		"ArchiveFileSystem indexed BIG file path failed") && ok;
 	ok = expect(std::strcmp(archive_file_system.getArchiveFilenameForFile(archived_path).str(), "Smoke.big") == 0,
 		"ArchiveFileSystem archive owner lookup failed") && ok;
+	ok = expect(archive_file_system.doesFileExist(extensionless_path),
+		"ArchiveFileSystem extensionless BIG path failed") && ok;
+	ok = expect(std::strcmp(
+			archive_file_system.getArchiveFilenameForFile(extensionless_path).str(),
+			"Smoke.big") == 0,
+		"ArchiveFileSystem extensionless archive owner lookup failed") && ok;
+	ok = expect(!archive_file_system.doesFileExist("Data\\config.v1"),
+		"ArchiveFileSystem treated a dotted directory as an extensionless file") && ok;
 
 	FileInfo file_info = {};
 	ok = expect(archive_file_system.getFileInfo(AsciiString(archived_path), &file_info) &&
@@ -937,6 +983,17 @@ bool exercise_archive_big_files()
 		"FileSystem archive fallback read failed") && ok;
 	if (opened != nullptr) {
 		opened->close();
+	}
+
+	File *extensionless = file_system.openFile(extensionless_path, File::READ | File::BINARY);
+	char extensionless_readback[sizeof(extensionless_payload)] = {};
+	const Int extensionless_bytes = extensionless != nullptr
+		? extensionless->read(extensionless_readback, extensionless_payload_size) : 0;
+	ok = expect(extensionless != nullptr && extensionless_bytes == extensionless_payload_size &&
+			std::memcmp(extensionless_readback, extensionless_payload, extensionless_payload_size) == 0,
+		"FileSystem extensionless archive read failed") && ok;
+	if (extensionless != nullptr) {
+		extensionless->close();
 	}
 
 	File *streaming = archive_file_system.openFile(archived_path, File::READ | File::BINARY | File::STREAMING);
