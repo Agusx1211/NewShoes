@@ -10170,7 +10170,14 @@ function createD3D8ShadeModeDrawInfo(
   return info;
 }
 
-function createD3D8LiteSolidDrawInfo(renderState, primitiveType, indexByteOffset, indexCount) {
+const d3d8LiteSolidDrawInfo = {
+  fillModeDraw: {},
+  shadeModeDraw: {},
+};
+
+// Lite draws consume this synchronously and never retain it, so one stable
+// object can carry the per-draw offsets without feeding the garbage collector.
+function setD3D8LiteSolidDrawInfo(renderState, primitiveType, indexByteOffset, indexCount) {
   const fillMode = Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0;
   const shadeMode = Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0;
   if (fillMode !== D3DFILL_SOLID || shadeMode === D3DSHADE_FLAT) {
@@ -10178,25 +10185,23 @@ function createD3D8LiteSolidDrawInfo(renderState, primitiveType, indexByteOffset
   }
   const glPrimitive = d3dPrimitiveToGl(primitiveType);
   const supported = d3d8GlPrimitiveSupported(glPrimitive);
-  return {
-    fillModeDraw: {
-      glPrimitive,
-      drawIndexCount: indexCount,
-      drawIndexByteOffset: indexByteOffset,
-      temporaryIndexBuffer: false,
-      supported,
-      fallbackReason: supported ? null : "unsupportedPrimitive",
-    },
-    shadeModeDraw: {
-      usesFlatShader: false,
-      usesFirstVertexConvention: false,
-      glPrimitive,
-      drawIndexCount: indexCount,
-      drawIndexByteOffset: indexByteOffset,
-      supported,
-      fallbackReason: supported ? null : "unsupportedPrimitive",
-    },
-  };
+  const fallbackReason = supported ? null : "unsupportedPrimitive";
+  const fillModeDraw = d3d8LiteSolidDrawInfo.fillModeDraw;
+  fillModeDraw.glPrimitive = glPrimitive;
+  fillModeDraw.drawIndexCount = indexCount;
+  fillModeDraw.drawIndexByteOffset = indexByteOffset;
+  fillModeDraw.temporaryIndexBuffer = false;
+  fillModeDraw.supported = supported;
+  fillModeDraw.fallbackReason = fallbackReason;
+  const shadeModeDraw = d3d8LiteSolidDrawInfo.shadeModeDraw;
+  shadeModeDraw.usesFlatShader = false;
+  shadeModeDraw.usesFirstVertexConvention = false;
+  shadeModeDraw.glPrimitive = glPrimitive;
+  shadeModeDraw.drawIndexCount = indexCount;
+  shadeModeDraw.drawIndexByteOffset = indexByteOffset;
+  shadeModeDraw.supported = supported;
+  shadeModeDraw.fallbackReason = fallbackReason;
+  return d3d8LiteSolidDrawInfo;
 }
 
 function d3d8FillModeProbeInfo(fillModeDraw) {
@@ -13135,7 +13140,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     // Per-draw geometry setup: ALWAYS executed (not skippable — geometry changes
     // every draw even when render state is identical).
     const liteSolidDrawInfo = d3d8DiagLevel !== "full"
-      ? createD3D8LiteSolidDrawInfo(renderState, payload.primitiveType, indexByteOffset, indexCount)
+      ? setD3D8LiteSolidDrawInfo(renderState, payload.primitiveType, indexByteOffset, indexCount)
       : null;
     if (liteSolidDrawInfo) {
       fillModeDraw = liteSolidDrawInfo.fillModeDraw;
@@ -13197,7 +13202,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         ? ensureD3D8DynamicRangeUploaded(vertexResource, range)
         : null;
       if (slot) {
-        effectiveVertexResource = { buffer: slot.buffer };
+        effectiveVertexResource = slot;
         effectiveVertexBufferId = slot.id;
         effectiveVertexByteOffset = vertexByteOffset - range.start;
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicVertexRedirects += 1;
@@ -13205,7 +13210,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicVertexSharedFallbacks += 1;
         const sharedSlot = ensureD3D8DynamicSharedBufferCurrent(vertexResource);
         if (sharedSlot) {
-          effectiveVertexResource = { buffer: sharedSlot.buffer };
+          effectiveVertexResource = sharedSlot;
           effectiveVertexBufferId = sharedSlot.id;
         }
       }
@@ -13218,7 +13223,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         ? ensureD3D8DynamicRangeUploaded(indexResource, range)
         : null;
       if (slot) {
-        effectiveIndexResource = { buffer: slot.buffer };
+        effectiveIndexResource = slot;
         effectiveIndexBufferId = slot.id;
         shadeModeDraw.drawIndexByteOffset -= range.start;
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicIndexRedirects += 1;
@@ -13226,7 +13231,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDynamicIndexSharedFallbacks += 1;
         const sharedSlot = ensureD3D8DynamicSharedBufferCurrent(indexResource);
         if (sharedSlot) {
-          effectiveIndexResource = { buffer: sharedSlot.buffer };
+          effectiveIndexResource = sharedSlot;
           effectiveIndexBufferId = sharedSlot.id;
         }
       }
