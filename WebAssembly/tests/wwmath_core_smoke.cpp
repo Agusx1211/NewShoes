@@ -20,6 +20,7 @@
 #include "vector2.h"
 #include "vector3.h"
 #include "vp.h"
+#include "wwmath.h"
 
 namespace {
 bool near(float actual, float expected, float epsilon = 0.0001f)
@@ -106,6 +107,31 @@ int collected_count(CullSystem &system)
 
 int main()
 {
+	struct FloorCase
+	{
+		float Input;
+		int Expected;
+	};
+	const FloorCase floor_cases[] = {
+		{ 0.0f, 0 },
+		{ 0.25f, 0 },
+		{ -0.25f, -1 },
+		{ 1.0f, 1 },
+		{ -1.0f, -1 },
+		{ 1.25f, 1 },
+		{ -1.25f, -2 },
+		{ 65534.5f, 65534 },
+		{ 65535.0f, 65535 },
+	};
+	for (const FloorCase &floor_case : floor_cases) {
+		volatile float runtime_input = floor_case.Input;
+		const float input = runtime_input;
+		if (!expect(WWMath::Float_To_Int_Floor(input) == floor_case.Expected,
+				"WWMath floor conversion mismatch")) {
+			return 1;
+		}
+	}
+
 	if (!expect(Find_POT(0) == 1, "Find_POT(0) mismatch")) {
 		return 1;
 	}
@@ -379,7 +405,7 @@ int main()
 	}
 
 	std::cout << "{\"ok\":true,\"library\":\"WWMath\","
-		"\"compiled\":\"core geometry, collision, Matrix3D, vector processor, culling, ODE, randomizers\","
+		"\"compiled\":\"floor conversion, core geometry, collision, Matrix3D, vector processor, culling, ODE, randomizers\","
 		"\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }
