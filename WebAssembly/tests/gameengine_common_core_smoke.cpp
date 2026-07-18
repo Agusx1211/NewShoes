@@ -770,10 +770,11 @@ bool exercise_file_interfaces()
 bool exercise_file_system_dispatch()
 {
 	SmokeLocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
 	FileSystem file_system;
 	TheLocalFileSystem = &local_file_system;
 	TheFileSystem = &file_system;
-	TheArchiveFileSystem = nullptr;
+	TheArchiveFileSystem = &archive_file_system;
 
 	File *opened = file_system.openFile("local-smoke.txt", File::READ | File::BINARY);
 	const bool open_ok =
@@ -788,9 +789,18 @@ bool exercise_file_system_dispatch()
 	const bool missing_ok = expect(file_system.openFile("missing.txt", File::READ) == nullptr,
 		"FileSystem missing local/archive file should fail");
 
+	FileInfo missing_info = { 1, 2, 3, 4 };
+	const bool missing_info_ok =
+		expect(!file_system.getFileInfo(AsciiString("missing.txt"), &missing_info),
+			"FileSystem missing file info should fail") &&
+		expect(missing_info.sizeHigh == 0 && missing_info.sizeLow == 0 &&
+				missing_info.timestampHigh == 0 && missing_info.timestampLow == 0,
+			"FileSystem missing file info was not fully cleared");
+
 	TheFileSystem = nullptr;
+	TheArchiveFileSystem = nullptr;
 	TheLocalFileSystem = nullptr;
-	return open_ok && missing_ok;
+	return open_ok && missing_ok && missing_info_ok;
 }
 
 bool exercise_win32_local_file_system()
