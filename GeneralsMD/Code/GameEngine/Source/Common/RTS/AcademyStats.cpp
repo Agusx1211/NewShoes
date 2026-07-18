@@ -46,6 +46,7 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
 #include "Common/AcademyStats.h"
+#include "Common/RTS/AcademyStatsDozerSearch.h"
 #include "Common/Energy.h"
 #include "Common/GlobalData.h"
 #include "Common/Player.h"
@@ -89,14 +90,15 @@ AcademyStats::AcademyStats()
 //------------------------------------------------------------------------------------------------
 void findDozerCommandSet( Object *object, void *userData )
 {
-	const CommandSet *dozerCommandSet = (const CommandSet*)userData;
-	if( dozerCommandSet )
+	if( AcademyStatsDozerSearch::hasResult( userData ) )
 	{
 		return;
 	}
 	if( object && object->isKindOf( KINDOF_DOZER ) )
 	{
-		dozerCommandSet = TheControlBar->findCommandSet( object->getCommandSetString() );
+		AcademyStatsDozerSearch::recordFirst(
+			userData,
+			TheControlBar->findCommandSet( object->getCommandSetString() ) );
 	}
 }
 
@@ -129,7 +131,7 @@ void AcademyStats::init( const Player *player )
 	//Find the command set for our dozer... so we can extract information about things
 	//we can build.
 	m_dozerCommandSet = NULL;
-	player->iterateObjects( findDozerCommandSet, (void*)m_dozerCommandSet );
+	player->iterateObjects( findDozerCommandSet, &m_dozerCommandSet );
 
 	m_commandCenterTemplate = NULL;
 	m_supplyCenterTemplate = NULL;
