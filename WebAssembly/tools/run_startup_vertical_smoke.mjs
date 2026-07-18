@@ -123,6 +123,16 @@ const sourceChecks = [
         'GameLogic new-game dispatch frontier did not prove prepare/start calls');
       expect(payload.startNewGame?.firstCallDefersBeforeTerrainLoad === true,
         'GameLogic new-game dispatch frontier did not prove the first startNewGame deferral');
+      const loadStepLabels = new Set((payload.startNewGame?.loadSession?.sequence ?? [])
+        .map(entry => entry.label));
+      expect(loadStepLabels.has('terrain load')
+          && loadStepLabels.has('advance to players step')
+          && loadStepLabels.has('partition init')
+          && loadStepLabels.has('bridge-like map-object scan')
+          && loadStepLabels.has('radar refresh terrain')
+          && loadStepLabels.has('pathfinder new map')
+          && loadStepLabels.has('advance to reveal step'),
+        'GameLogic new-game dispatch frontier did not prove the stepped load sequence');
       expect(payload.currentShellSmokeBoundary?.originalGameLogicCppLinked === false
         && payload.currentShellSmokeBoundary?.originalGameLogicDispatchCppLinked === false,
         'GameLogic new-game dispatch frontier no longer sees the current shell-smoke shim boundary');

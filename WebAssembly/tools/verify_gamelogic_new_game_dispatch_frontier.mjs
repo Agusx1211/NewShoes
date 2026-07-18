@@ -292,7 +292,7 @@ const startNewGame = functionBody(
   /void\s+GameLogic::startNewGame\s*\(\s*Bool\s+loadingSaveGame\s*\)/,
   "GameLogic::startNewGame",
 );
-const startLines = expectOrderedInBody(
+const startEntryLines = expectOrderedInBody(
   gameLogic,
   startNewGame,
   [
@@ -311,16 +311,85 @@ const startLines = expectOrderedInBody(
     },
     { label: "first-call return", pattern: /return\s*;/ },
     {
-      label: "later terrain load",
+      label: "begin stepped load session",
+      pattern: /beginLoadSession\s*\(\s*loadingSaveGame\s*\)\s*;/,
+    },
+    {
+      label: "native synchronous step drain",
+      pattern: /while\s*\(\s*runNextLoadStep\s*\(\s*\)\s*\)/,
+    },
+  ],
+  "GameLogic::startNewGame first-call deferral and stepped-session handoff",
+);
+
+const runNextLoadStep = functionBody(
+  gameLogic,
+  /Bool\s+GameLogic::runNextLoadStep\s*\(\s*void\s*\)/,
+  "GameLogic::runNextLoadStep",
+);
+const loadStepLines = expectOrderedInBody(
+  gameLogic,
+  runNextLoadStep,
+  [
+    {
+      label: "map-INI step",
+      pattern: /case\s+StartNewGameSession::LOAD_STEP_MAP_INI\s*:/,
+    },
+    {
+      label: "map INI load",
+      pattern: /loadMapINI\s*\(\s*TheGlobalData->m_mapName\s*\)\s*;/,
+    },
+    {
+      label: "advance to terrain-load step",
+      pattern: /s->step\s*=\s*StartNewGameSession::LOAD_STEP_TERRAIN_LOAD\s*;/,
+    },
+    {
+      label: "terrain-load step",
+      pattern: /case\s+StartNewGameSession::LOAD_STEP_TERRAIN_LOAD\s*:/,
+    },
+    {
+      label: "terrain load",
       pattern: /TheTerrainLogic->loadMap\s*\(\s*TheGlobalData->m_mapName\s*,\s*false\s*\)\s*;/,
+    },
+    {
+      label: "advance to sides step",
+      pattern: /s->step\s*=\s*StartNewGameSession::LOAD_STEP_SIDES\s*;/,
+    },
+    {
+      label: "sides step",
+      pattern: /case\s+StartNewGameSession::LOAD_STEP_SIDES\s*:/,
+    },
+    {
+      label: "advance to players step",
+      pattern: /s->step\s*=\s*StartNewGameSession::LOAD_STEP_PLAYERS\s*;/,
+    },
+    {
+      label: "players step",
+      pattern: /case\s+StartNewGameSession::LOAD_STEP_PLAYERS\s*:/,
     },
     {
       label: "player list new game",
       pattern: /ThePlayerList->newGame\s*\(\s*\)\s*;/,
     },
     {
+      label: "advance to scripts step",
+      pattern: /s->step\s*=\s*StartNewGameSession::LOAD_STEP_SCRIPTS\s*;/,
+    },
+    {
+      label: "scripts step",
+      pattern: /case\s+StartNewGameSession::LOAD_STEP_SCRIPTS\s*:/,
+    },
+    {
       label: "script engine new map",
       pattern: /TheScriptEngine->newMap\s*\(\s*\)\s*;/,
+    },
+    {
+      label: "advance to radar-victory-partition step",
+      pattern: /s->step\s*=\s*StartNewGameSession::LOAD_STEP_RADAR_VICTORY_PARTITION\s*;/,
+    },
+    {
+      label: "radar-victory-partition step",
+      pattern: /case\s+StartNewGameSession::LOAD_STEP_RADAR_VICTORY_PARTITION\s*:/,
     },
     {
       label: "radar new map",
@@ -363,8 +432,24 @@ const startLines = expectOrderedInBody(
       pattern: /TheGhostObjectManager->reset\s*\(\s*\)\s*;/,
     },
     {
+      label: "advance to terrain-new-map step",
+      pattern: /s->step\s*=\s*StartNewGameSession::LOAD_STEP_TERRAIN_NEW_MAP\s*;/,
+    },
+    {
+      label: "terrain-new-map step",
+      pattern: /case\s+StartNewGameSession::LOAD_STEP_TERRAIN_NEW_MAP\s*:/,
+    },
+    {
       label: "terrain logic new map",
       pattern: /TheTerrainLogic->newMap\s*\(\s*loadingSaveGame\s*\)\s*;/,
+    },
+    {
+      label: "advance to bridges step",
+      pattern: /s->step\s*=\s*StartNewGameSession::LOAD_STEP_BRIDGES\s*;/,
+    },
+    {
+      label: "bridges step",
+      pattern: /case\s+StartNewGameSession::LOAD_STEP_BRIDGES\s*:/,
     },
     {
       label: "bridge-like map-object scan",
@@ -403,11 +488,23 @@ const startLines = expectOrderedInBody(
       pattern: /TheRadar->refreshTerrain\s*\(\s*TheTerrainLogic\s*\)\s*;/,
     },
     {
+      label: "advance to pathfind step",
+      pattern: /s->step\s*=\s*StartNewGameSession::LOAD_STEP_PATHFIND\s*;/,
+    },
+    {
+      label: "pathfind step",
+      pattern: /case\s+StartNewGameSession::LOAD_STEP_PATHFIND\s*:/,
+    },
+    {
       label: "pathfinder new map",
       pattern: /TheAI->pathfinder\s*\(\s*\)->newMap\s*\(\s*\)\s*;/,
     },
+    {
+      label: "advance to reveal step",
+      pattern: /s->step\s*=\s*StartNewGameSession::LOAD_STEP_REVEAL\s*;/,
+    },
   ],
-  "GameLogic::startNewGame first-call deferral, post-radar partition handoff, bridge-like scan, radar refresh, and pathfinder handoff",
+  "GameLogic::runNextLoadStep terrain, partition, bridge, radar, and pathfinder sequence",
 );
 
 const targetSources = cmakeInvocationBlock(
@@ -1171,7 +1268,11 @@ console.log(JSON.stringify({
     source: paths.gameLogic,
     line: startNewGame.line,
     firstCallDefersBeforeTerrainLoad: true,
-    setup: startLines,
+    setup: startEntryLines,
+    loadSession: {
+      line: runNextLoadStep.line,
+      sequence: loadStepLines,
+    },
   },
   currentShellSmokeBoundary: {
     smokeSource: paths.shellSmoke,
@@ -1332,7 +1433,7 @@ console.log(JSON.stringify({
     "MSG_NEW_GAME reads game mode, difficulty, rank points, and game speed arguments",
     "MSG_NEW_GAME applies the FPS limit, calls prepareNewGame, then calls startNewGame(FALSE)",
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
-    "startNewGame(FALSE) records the pristine map, defers the first call before terrain load, then orders the original post-terrain bridge-like map-object scan, Radar::refreshTerrain, and Pathfinder::newMap sequence",
+    "startNewGame(FALSE) records the pristine map and defers its first call before handing the original load body to the ordered runNextLoadStep terrain, partition, bridge-like map-object scan, Radar::refreshTerrain, and Pathfinder::newMap sequence",
     "w3d-window-layout-script-smoke uses the original GameLogic header while keeping sentinel gameplay owners and not linking original GameLogic.cpp/GameLogicDispatch.cpp",
     "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/FunctionLexicon.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/SidesList.cpp plus the W3D terrain runtime and original DX8Wrapper/RenderObj support, then calls GameLogic::processCommandList at runtime through original GlobalData, FunctionLexicon, PlayerList, ScriptEngine, Shell, archive-backed BlankWindow ownership, MapsZH.big MD_GLA03 promotion, original default and Zero Hour startup INI/GameData parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, TeamFactory::initFromSides, PlayerList::newGame, AIPlayer construction, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, the ordered post-terrain bridge-like map-object no-candidate scan, Radar::refreshTerrain, and original Pathfinder::newMap grid allocation/classification",
   ],
