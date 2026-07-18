@@ -47,14 +47,18 @@
 #include "GameLogic/Module/BridgeBehavior.h"
 #include "GameLogic/Module/BridgeScaffoldBehavior.h"
 #include "GameLogic/Module/BridgeTowerBehavior.h"
+#include "GameLogic/Module/GarrisonContain.h"
 #include "GameLogic/Module/ImmortalBody.h"
+#include "GameLogic/Module/MissileAIUpdate.h"
 #include "GameLogic/GhostObject.h"
+#include "GameLogic/Object.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/PolygonTrigger.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/Scripts.h"
 #include "GameLogic/TerrainLogic.h"
+#include "GameLogic/Weapon.h"
 #include "GameClient/DisplayStringManager.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/FXList.h"
@@ -162,6 +166,7 @@ std::string g_ww3d_terrain_prop_buffer_scene_probe_json;
 std::string g_ww3d_terrain_tree_buffer_scene_probe_json;
 std::string g_ww3d_terrain_road_buffer_scene_probe_json;
 std::string g_ww3d_terrain_bridge_buffer_scene_probe_json;
+std::string g_missile_garrison_bound_probe_json;
 std::string g_ww3d_shader_manager_probe_json;
 
 constexpr int kMapCells = 16;
@@ -2650,6 +2655,17 @@ public:
 		addModule(ActiveBody);
 		addModule(ImmortalBody);
 		addModule(W3DDefaultDraw);
+	}
+};
+
+class ProbeMissileGarrisonModuleFactory final : public ModuleFactory
+{
+public:
+	void init() override
+	{
+		addModule(ActiveBody);
+		addModule(GarrisonContain);
+		addModule(MissileAIUpdate);
 	}
 };
 
@@ -5148,6 +5164,422 @@ protected:
 private:
 	Region3D m_extent;
 };
+
+struct ProbeMissileGarrisonBoundReport
+{
+	std::string stage = "not-started";
+	std::string error;
+	bool archiveLoaded = false;
+	bool snippetExists = false;
+	bool moduleFactoryReady = false;
+	bool gameLogicReady = false;
+	bool partitionReady = false;
+	bool damageFXReady = false;
+	bool armorReady = false;
+	bool snippetLoaded = false;
+	bool projectileTemplateFound = false;
+	bool targetTemplateFound = false;
+	bool occupantTemplateFound = false;
+	bool projectileCreated = false;
+	bool targetCreated = false;
+	bool occupantCreated = false;
+	bool garrisonReady = false;
+	bool occupantSeeded = false;
+	bool projectileInterfaceReady = false;
+	bool projectileArmed = false;
+	bool collisionInvoked = false;
+	bool collisionReturned = false;
+	bool occupantKilled = false;
+	bool missileDestroyed = false;
+	bool cleanupComplete = false;
+	UnsignedInt objectCountBefore = 0;
+	UnsignedInt objectCountAfterCreate = 0;
+	UnsignedInt objectCountAfterCleanup = 0;
+	Int containedCountBeforeCollision = 0;
+};
+
+void configure_global_data(GlobalData &global_data, bool enable_shroud);
+
+const char *run_missile_garrison_bound_probe(
+	std::string &target_json,
+	const char *ini_archive_path,
+	const char *snippet_path)
+{
+	initMemoryManager();
+	ProbeMissileGarrisonBoundReport report;
+
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	FileSystem *old_file_system = TheFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	ModuleFactory *old_module_factory = TheModuleFactory;
+	GameLogic *old_game_logic = TheGameLogic;
+	TerrainLogic *old_terrain_logic = TheTerrainLogic;
+	ScriptEngine *old_script_engine = TheScriptEngine;
+	AudioManager *old_audio = TheAudio;
+	PlayerList *old_player_list = ThePlayerList;
+	Radar *old_radar = TheRadar;
+	GhostObjectManager *old_ghost_object_manager = TheGhostObjectManager;
+	PartitionManager *old_partition_manager = ThePartitionManager;
+	FXListStore *old_fx_list_store = TheFXListStore;
+	DamageFXStore *old_damage_fx_store = TheDamageFXStore;
+	ArmorStore *old_armor_store = TheArmorStore;
+	FontLibrary *old_font_library = TheFontLibrary;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	GlobalLanguage *old_global_language = TheGlobalLanguageData;
+	AI *old_ai = TheAI;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator name_key_generator;
+	GlobalData *global_data = NEW GlobalData;
+	ProbeTerrainDrawableFontLibrary drawable_font_library;
+	ProbeTerrainDrawableDisplayStringManager drawable_display_string_manager;
+	GlobalLanguage drawable_global_language;
+
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = &archive_file_system;
+	TheFileSystem = &file_system;
+	local_file_system.init();
+	archive_file_system.init();
+	file_system.init();
+
+	std::string archive_directory;
+	std::string archive_mask;
+	report.stage = "load-archive";
+	if (ini_archive_path != nullptr && ini_archive_path[0] != '\0') {
+		report.archiveLoaded = load_big_archive_path(
+			archive_file_system,
+			ini_archive_path,
+			archive_directory,
+			archive_mask);
+	}
+	report.snippetExists =
+		snippet_path != nullptr &&
+		snippet_path[0] != '\0' &&
+		TheFileSystem->doesFileExist(snippet_path);
+
+	name_key_generator.init();
+	TheNameKeyGenerator = &name_key_generator;
+	TheFontLibrary = &drawable_font_library;
+	TheDisplayStringManager = &drawable_display_string_manager;
+	TheGlobalLanguageData = &drawable_global_language;
+	if (global_data != nullptr) {
+		configure_global_data(*global_data, true);
+		TheWritableGlobalData = global_data;
+	}
+
+	if (report.archiveLoaded && report.snippetExists && global_data != nullptr) {
+		MapCache map_cache;
+		ProbeTerrainLogicGameClient &game_client =
+			shared_probe_terrain_logic_game_client();
+		game_client.resetProbeState();
+		ThingFactory thing_factory;
+		ProbeMissileGarrisonModuleFactory module_factory;
+		GameLogic game_logic;
+		ProbeNoopAudioManager audio;
+		PlayerList player_list;
+		ProbeShroudCountingRadar radar;
+		GhostObjectManager ghost_object_manager;
+		PartitionManager partition_manager;
+		FXListStore fx_list_store;
+		DamageFXStore damage_fx_store;
+		ArmorStore armor_store;
+		ProbePartitionTerrainLogic terrain_logic(1024.0f, 1024.0f, 128.0f);
+		AI ai;
+		ai.init();
+
+		TheModuleFactory = &module_factory;
+		module_factory.init();
+		report.moduleFactoryReady = TheModuleFactory == &module_factory;
+		TheGameLogic = &game_logic;
+		game_logic.setObjectIDCounter(static_cast<ObjectID>(1));
+		report.gameLogicReady = TheGameLogic == &game_logic;
+		TheAudio = &audio;
+		ThePlayerList = &player_list;
+		TheRadar = &radar;
+		TheGhostObjectManager = &ghost_object_manager;
+		ThePartitionManager = &partition_manager;
+		partition_manager.init();
+		report.partitionReady = ThePartitionManager == &partition_manager;
+		TheFXListStore = &fx_list_store;
+		fx_list_store.init();
+		TheDamageFXStore = &damage_fx_store;
+		damage_fx_store.init();
+		TheArmorStore = &armor_store;
+		armor_store.init();
+		TheAI = &ai;
+
+		Object *projectile = nullptr;
+		Object *target = nullptr;
+		Object *occupant = nullptr;
+		ContainModuleInterface *contain = nullptr;
+		WeaponTemplate *detonation_weapon = nullptr;
+		{
+			ProbeLogicalTerrainGlobalScope logical_scope(
+				&map_cache,
+				&game_client,
+				&thing_factory,
+				&terrain_logic);
+			ProbeNoopScriptEngineScope script_engine_scope;
+
+			try {
+				report.stage = "load-damage-fx";
+				initDamageTypeFlags();
+				INI damage_fx_ini;
+				damage_fx_ini.load(
+					AsciiString(kArchiveDamageFXIniEntry),
+					INI_LOAD_OVERWRITE,
+					nullptr);
+				report.damageFXReady =
+					damage_fx_store.findDamageFX(AsciiString("StructureDamageFX")) != nullptr;
+
+				report.stage = "load-armor";
+				INI armor_ini;
+				armor_ini.load(
+					AsciiString(kArchiveArmorIniEntry),
+					INI_LOAD_OVERWRITE,
+					nullptr);
+				report.armorReady =
+					armor_store.findArmorTemplate(AsciiString("StructureArmor")) != nullptr;
+
+				report.stage = "load-snippet";
+				thing_factory.init();
+				INI snippet_ini;
+				snippet_ini.load(AsciiString(snippet_path), INI_LOAD_OVERWRITE, nullptr);
+				report.snippetLoaded = true;
+
+				const ThingTemplate *projectile_template = thing_factory.findTemplate(
+					AsciiString("CncPortMissileGarrisonProbeProjectile"),
+					FALSE);
+				const ThingTemplate *target_template = thing_factory.findTemplate(
+					AsciiString("CncPortMissileGarrisonProbeTarget"),
+					FALSE);
+				const ThingTemplate *occupant_template = thing_factory.findTemplate(
+					AsciiString("CncPortMissileGarrisonProbeOccupant"),
+					FALSE);
+				report.projectileTemplateFound = projectile_template != nullptr;
+				report.targetTemplateFound = target_template != nullptr;
+				report.occupantTemplateFound = occupant_template != nullptr;
+
+				if (projectile_template != nullptr &&
+						target_template != nullptr &&
+						occupant_template != nullptr &&
+						report.damageFXReady &&
+						report.armorReady) {
+					report.stage = "create-objects";
+					report.objectCountBefore = game_logic.getObjectCount();
+					target = thing_factory.newObject(target_template, nullptr);
+					occupant = thing_factory.newObject(occupant_template, nullptr);
+					projectile = thing_factory.newObject(projectile_template, nullptr);
+					report.targetCreated = target != nullptr;
+					report.occupantCreated = occupant != nullptr;
+					report.projectileCreated = projectile != nullptr;
+					report.objectCountAfterCreate = game_logic.getObjectCount();
+				}
+
+				if (target != nullptr && occupant != nullptr && projectile != nullptr) {
+					Coord3D target_position;
+					target_position.set(32.0f, 0.0f, 0.0f);
+					target->setPosition(&target_position);
+					occupant->setPosition(&target_position);
+
+					contain = target->getContain();
+					report.garrisonReady =
+						contain != nullptr &&
+						contain->isGarrisonable() &&
+						!contain->isImmuneToClearBuildingAttacks();
+					if (report.garrisonReady) {
+						contain->addToContainList(occupant);
+						occupant->friend_setContainedBy(target);
+						report.containedCountBeforeCollision = contain->getContainCount();
+						report.occupantSeeded =
+							report.containedCountBeforeCollision == 1 &&
+							occupant->getContainedBy() == target;
+					}
+
+					ProjectileUpdateInterface *projectile_interface =
+						projectile->getProjectileUpdateInterface();
+					report.projectileInterfaceReady = projectile_interface != nullptr;
+					if (report.occupantSeeded && projectile_interface != nullptr) {
+						detonation_weapon = newInstance(WeaponTemplate);
+						projectile_interface->projectileFireAtObjectOrPosition(
+							target,
+							&target_position,
+							detonation_weapon,
+							nullptr);
+						projectile->getAIUpdateInterface()->update();
+						report.projectileArmed = projectile_interface->projectileIsArmed();
+						if (report.projectileArmed) {
+							report.stage = "projectile-handle-collision";
+							report.collisionInvoked = true;
+							report.collisionReturned =
+								projectile_interface->projectileHandleCollision(target);
+							report.occupantKilled = occupant->isEffectivelyDead();
+							report.missileDestroyed = projectile->isDestroyed();
+						}
+					}
+				}
+				report.stage = "cleanup";
+			} catch (const INIException &exception) {
+				report.error = exception.mFailureMessage != nullptr ?
+					exception.mFailureMessage : "INIException";
+			} catch (ErrorCode error) {
+				char error_buffer[64];
+				std::snprintf(
+					error_buffer,
+					sizeof(error_buffer),
+					"ErrorCode 0x%08x",
+					static_cast<unsigned int>(error));
+				report.error = error_buffer;
+			} catch (...) {
+				report.error = "exception at " + report.stage;
+			}
+
+			if (contain != nullptr &&
+					occupant != nullptr &&
+					occupant->getContainedBy() == target) {
+				contain->removeFromContain(occupant);
+			}
+			if (occupant != nullptr && !occupant->isDestroyed()) {
+				game_logic.destroyObject(occupant);
+			}
+			if (target != nullptr && !target->isDestroyed()) {
+				game_logic.destroyObject(target);
+			}
+			if (projectile != nullptr && !projectile->isDestroyed()) {
+				game_logic.destroyObject(projectile);
+			}
+			game_logic.cncPortProcessDestroyListForProbe();
+			if (detonation_weapon != nullptr) {
+				detonation_weapon->deleteInstance();
+			}
+			report.objectCountAfterCleanup = game_logic.getObjectCount();
+			report.cleanupComplete =
+				report.objectCountAfterCleanup == report.objectCountBefore;
+		}
+
+		TheScriptEngine = nullptr;
+		ThePartitionManager = nullptr;
+		TheGhostObjectManager = nullptr;
+		TheTerrainLogic = nullptr;
+	}
+
+	const bool ok =
+		report.error.empty() &&
+		report.archiveLoaded &&
+		report.snippetExists &&
+		report.moduleFactoryReady &&
+		report.gameLogicReady &&
+		report.partitionReady &&
+		report.damageFXReady &&
+		report.armorReady &&
+		report.snippetLoaded &&
+		report.projectileTemplateFound &&
+		report.targetTemplateFound &&
+		report.occupantTemplateFound &&
+		report.projectileCreated &&
+		report.targetCreated &&
+		report.occupantCreated &&
+		report.garrisonReady &&
+		report.occupantSeeded &&
+		report.projectileInterfaceReady &&
+		report.projectileArmed &&
+		report.collisionInvoked &&
+		report.collisionReturned &&
+		report.occupantKilled &&
+		report.missileDestroyed &&
+		report.objectCountAfterCreate == report.objectCountBefore + 3 &&
+		report.cleanupComplete;
+
+	const std::string archive_path_json =
+		json_string(ini_archive_path != nullptr ? ini_archive_path : "");
+	const std::string snippet_path_json =
+		json_string(snippet_path != nullptr ? snippet_path : "");
+	const std::string error_json = json_string(report.error);
+	char buffer[6000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"missile_garrison_bound_probe\","
+		"\"ok\":%s,"
+		"\"path\":\"ThingFactory::newObject -> GarrisonContain::addToContainList -> "
+		"MissileAIUpdate::projectileFireAtObjectOrPosition/update -> "
+		"MissileAIUpdate::projectileHandleCollision -> Object::kill -> "
+		"GameLogic::destroyObject/processDestroyList\","
+		"\"archive\":%s,\"snippet\":%s,\"stage\":%s,\"error\":%s,"
+		"\"results\":{"
+		"\"archiveLoaded\":%s,\"snippetExists\":%s,"
+		"\"moduleFactoryReady\":%s,\"gameLogicReady\":%s,"
+		"\"partitionReady\":%s,\"damageFXReady\":%s,\"armorReady\":%s,"
+		"\"snippetLoaded\":%s,\"projectileTemplateFound\":%s,"
+		"\"targetTemplateFound\":%s,\"occupantTemplateFound\":%s,"
+		"\"projectileCreated\":%s,\"targetCreated\":%s,\"occupantCreated\":%s,"
+		"\"garrisonReady\":%s,\"occupantSeeded\":%s,"
+		"\"projectileInterfaceReady\":%s,\"projectileArmed\":%s,"
+		"\"collisionInvoked\":%s,\"collisionReturned\":%s,"
+		"\"occupantKilled\":%s,\"missileDestroyed\":%s,"
+		"\"cleanupComplete\":%s,\"containedCountBeforeCollision\":%d,"
+		"\"objectCountBefore\":%u,\"objectCountAfterCreate\":%u,"
+		"\"objectCountAfterCleanup\":%u}}",
+		bool_json(ok),
+		archive_path_json.c_str(),
+		snippet_path_json.c_str(),
+		json_string(report.stage).c_str(),
+		error_json.c_str(),
+		bool_json(report.archiveLoaded),
+		bool_json(report.snippetExists),
+		bool_json(report.moduleFactoryReady),
+		bool_json(report.gameLogicReady),
+		bool_json(report.partitionReady),
+		bool_json(report.damageFXReady),
+		bool_json(report.armorReady),
+		bool_json(report.snippetLoaded),
+		bool_json(report.projectileTemplateFound),
+		bool_json(report.targetTemplateFound),
+		bool_json(report.occupantTemplateFound),
+		bool_json(report.projectileCreated),
+		bool_json(report.targetCreated),
+		bool_json(report.occupantCreated),
+		bool_json(report.garrisonReady),
+		bool_json(report.occupantSeeded),
+		bool_json(report.projectileInterfaceReady),
+		bool_json(report.projectileArmed),
+		bool_json(report.collisionInvoked),
+		bool_json(report.collisionReturned),
+		bool_json(report.occupantKilled),
+		bool_json(report.missileDestroyed),
+		bool_json(report.cleanupComplete),
+		report.containedCountBeforeCollision,
+		report.objectCountBefore,
+		report.objectCountAfterCreate,
+		report.objectCountAfterCleanup);
+	target_json = buffer;
+
+	TheAI = old_ai;
+	TheArmorStore = old_armor_store;
+	TheDamageFXStore = old_damage_fx_store;
+	TheFXListStore = old_fx_list_store;
+	ThePartitionManager = old_partition_manager;
+	TheGhostObjectManager = old_ghost_object_manager;
+	TheRadar = old_radar;
+	ThePlayerList = old_player_list;
+	TheAudio = old_audio;
+	TheGlobalLanguageData = old_global_language;
+	TheDisplayStringManager = old_display_string_manager;
+	TheFontLibrary = old_font_library;
+	TheScriptEngine = old_script_engine;
+	TheTerrainLogic = old_terrain_logic;
+	TheGameLogic = old_game_logic;
+	TheModuleFactory = old_module_factory;
+	TheWritableGlobalData = old_writable_global_data;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+	delete global_data;
+	return target_json.c_str();
+}
 
 Int expected_shroud_level_for_status(CellShroudStatus status)
 {
@@ -13285,6 +13717,16 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 		"ww3d_terrain_tile_probe",
 		nullptr,
 		false);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_missile_garrison_bound(
+	const char *ini_archive_path,
+	const char *snippet_path)
+{
+	return run_missile_garrison_bound_probe(
+		g_missile_garrison_bound_probe_json,
+		ini_archive_path,
+		snippet_path);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile_archive(const char *terrain_archive_path)
