@@ -736,6 +736,7 @@ void ReleaseCrashLocalized(const AsciiString& p, const AsciiString& m)
 
 	UnicodeString prompt = TheGameText->fetch(p);
 	UnicodeString mesg = TheGameText->fetch(m);
+	AsciiString mesgA;
 
 
 	/// do additional reporting on the crash, if possible
@@ -749,12 +750,13 @@ void ReleaseCrashLocalized(const AsciiString& p, const AsciiString& m)
 	if (TheSystemIsUnicode) 
 	{
 		::MessageBoxW(NULL, mesg.str(), prompt.str(), MB_OK|MB_SYSTEMMODAL|MB_ICONERROR);
+		mesgA.translate(mesg);
 	} 
 	else 
 	{
 		// However, if we're using the default version of the message box, we need to 
 		// translate the string into an AsciiString
-		AsciiString promptA, mesgA;
+		AsciiString promptA;
 		promptA.translate(prompt);
 		mesgA.translate(mesg);
 		//Make sure main window is not TOP_MOST
@@ -776,7 +778,7 @@ void ReleaseCrashLocalized(const AsciiString& p, const AsciiString& m)
 	theReleaseCrashLogFile = fopen(curbuf, "w");
 	if (theReleaseCrashLogFile)
 	{
-		fprintf(theReleaseCrashLogFile, "Release Crash at %s; Reason %s\n", getCurrentTimeString(), mesg.str());
+		fprintf(theReleaseCrashLogFile, "Release Crash at %s; Reason %s\n", getCurrentTimeString(), mesgA.str());
 
 		const int STACKTRACE_SIZE	= 12;
 		const int STACKTRACE_SKIP = 6;
