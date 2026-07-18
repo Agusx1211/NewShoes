@@ -36,6 +36,17 @@ bool expect(bool condition, const char *message)
 	return true;
 }
 
+bool expect_obbox_relation(
+	OBBoxClass &left,
+	OBBoxClass &right,
+	bool expected_equal,
+	const char *message)
+{
+	return expect(
+		(left == right) == expected_equal && (left != right) == !expected_equal,
+		message);
+}
+
 bool inside_sphere(const Vector3 &vector, float radius)
 {
 	return vector.Length2() <= radius * radius + 0.0001f;
@@ -241,6 +252,30 @@ int main()
 
 	OBBoxClass obox(Vector3(0.0f, 0.0f, 0.0f), Vector3(1.0f, 2.0f, 3.0f));
 	OBBoxClass obox2(Vector3(0.5f, 0.0f, 0.0f), Vector3(1.0f, 2.0f, 3.0f));
+	OBBoxClass equal_obox(obox);
+	OBBoxClass extent_changed_obox(
+		Vector3(0.0f, 0.0f, 0.0f),
+		Vector3(1.0f, 2.0f, 4.0f));
+	OBBoxClass basis_changed_obox(
+		Vector3(0.0f, 0.0f, 0.0f),
+		Vector3(1.0f, 2.0f, 3.0f),
+		Matrix3x3(Vector3(0.0f, 0.0f, 1.0f), 0.5f));
+	if (!expect_obbox_relation(obox, equal_obox, true,
+			"OBBox equal comparison mismatch")) {
+		return 1;
+	}
+	if (!expect_obbox_relation(obox, obox2, false,
+			"OBBox center inequality mismatch")) {
+		return 1;
+	}
+	if (!expect_obbox_relation(obox, extent_changed_obox, false,
+			"OBBox extent inequality mismatch")) {
+		return 1;
+	}
+	if (!expect_obbox_relation(obox, basis_changed_obox, false,
+			"OBBox basis inequality mismatch")) {
+		return 1;
+	}
 	if (!expect(near(obox.Volume(), 48.0f), "OBBox volume mismatch")) {
 		return 1;
 	}
