@@ -1088,6 +1088,11 @@ void RecorderClass::handleCRCMessage(UnsignedInt newCRC, Int playerIndex, Bool f
 	//DEBUG_LOG(("RecorderClass::handleCRCMessage() - Skipping CRC of %8.8X from %d (our index is %d)\n", newCRC, playerIndex, localPlayerIndex));
 }
 
+Bool RecorderClass::sawPlaybackCRCMismatch()
+{
+	return m_crcInfo != NULL && m_crcInfo->sawCRCMismatch();
+}
+
 /**
  * Return true if this version of the file is the same as our version of the game
  */

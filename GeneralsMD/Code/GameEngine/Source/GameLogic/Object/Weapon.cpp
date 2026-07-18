@@ -2566,7 +2566,7 @@ Bool Weapon::privateFireWeapon(
 				}
 
 				// it's a mine, but doesn't have LandMineInterface...
-				if( !found && victimObj->isKindOf( KINDOF_MINE ) || victimObj->isKindOf( KINDOF_BOOBY_TRAP ) || victimObj->isKindOf( KINDOF_DEMOTRAP ) )
+				if( !found && ( victimObj->isKindOf( KINDOF_MINE ) || victimObj->isKindOf( KINDOF_BOOBY_TRAP ) || victimObj->isKindOf( KINDOF_DEMOTRAP ) ) )
 				{
 					VeterancyLevel v = sourceObj->getVeterancyLevel();
 					FXList::doFXPos(m_template->getFireFX(v), victimObj->getPosition(), victimObj->getTransformMatrix(), 0, victimObj->getPosition(), 0);

@@ -33,6 +33,8 @@
 #define __FLIGHT_DECK_BEHAVIOR_H
 
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
+#include <cstddef>
+
 #include "GameLogic/Module/BehaviorModule.h"
 #include "GameLogic/Module/DieModule.h"
 #include "GameLogic/Module/AIUpdate.h"
@@ -86,6 +88,21 @@ public:
 	FlightDeckBehaviorModuleData();
 	static void buildFieldParse( MultiIniFieldParse& p );
 	static void parseRunwayStrip( INI* ini, void *instance, void *store, const void* /*userData*/ );
+	static Bool isValidRunwayLayout( Int numRows, Int numCols,
+			const std::size_t (&runwaySpaceCounts)[ MAX_RUNWAYS ] )
+	{
+		if( numRows < 0 || numCols < 0 || numCols > MAX_RUNWAYS ||
+				(numCols > 0 && numRows == 0) )
+			return FALSE;
+
+		for( Int col = 0; col < numCols; ++col )
+		{
+			if( runwaySpaceCounts[ col ] < static_cast<std::size_t>( numRows ) )
+				return FALSE;
+		}
+
+		return TRUE;
+	}
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -230,4 +247,3 @@ private:
 };
 
 #endif // __FLIGHT_DECK_BEHAVIOR_H
-

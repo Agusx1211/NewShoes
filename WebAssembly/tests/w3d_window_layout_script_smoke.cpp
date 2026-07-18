@@ -402,6 +402,7 @@ class ScriptLocalFileSystem : public LocalFileSystem
 {
 public:
 	explicit ScriptLocalFileSystem(const std::string &payload) : m_payload(payload) {}
+	void setPayload(const std::string &payload) { m_payload = payload; }
 
 	void init() override {}
 	void reset() override {}
@@ -811,6 +812,24 @@ const char *blank_window_script()
 		"END\n";
 }
 
+const char *unknown_gadget_window_script()
+{
+	return
+		"FILE_VERSION = 2\n"
+		"STARTLAYOUTBLOCK\n"
+		"LAYOUTINIT = [None];\n"
+		"LAYOUTUPDATE = [None];\n"
+		"LAYOUTSHUTDOWN = [None];\n"
+		"ENDLAYOUTBLOCK\n"
+		"WINDOW\n"
+		"WINDOWTYPE = UNKNOWN_GADGET;\n"
+		"SCREENRECT = UPPERLEFT: 0 0 BOTTOMRIGHT: 100 100 CREATIONRESOLUTION: 800 600;\n"
+		"NAME = \"BlankWindow.wnd:UnknownGadget\";\n"
+		"STATUS = ENABLED;\n"
+		"STYLE = USER;\n"
+		"END\n";
+}
+
 bool exercise_w3d_layout_script()
 {
 	bool ok = true;
@@ -899,6 +918,19 @@ bool exercise_w3d_layout_script()
 	window_manager.update();
 	ok = expect(window_manager.winGetWindowList() == nullptr,
 		"destroying the parsed layout should clear the original window list") && ok;
+
+	local_file_system.setPayload(unknown_gadget_window_script());
+	WindowLayout *unknown_gadget_layout =
+		TheWindowManager->winCreateLayout(AsciiString("Menus/BlankWindow.wnd"));
+	ok = expect(unknown_gadget_layout == nullptr,
+		"unknown WND gadget type should fail layout creation without fabricating a window") && ok;
+	if (unknown_gadget_layout != nullptr) {
+		unknown_gadget_layout->destroyWindows();
+		unknown_gadget_layout->deleteInstance();
+	}
+	window_manager.update();
+	ok = expect(window_manager.winGetWindowList() == nullptr,
+		"unknown WND gadget type should leave the window manager list empty") && ok;
 
 	TheFunctionLexicon = old_function_lexicon;
 	TheWindowManager = old_window_manager;
@@ -3349,6 +3381,7 @@ int main()
 		<< "\"library\":\"W3DFunctionLexicon\","
 		<< "\"path\":\"WindowLayout::load->GameWindowManager::winCreateFromScript\","
 		<< "\"layout\":\"Menus/BlankWindow.wnd\","
+		<< "\"unknownGadgetRejected\":true,"
 		<< "\"archive\":\"" << archive_path << "\","
 		<< "\"archiveLayouts\":[\"Menus/MessageBox.wnd\",\"Menus/QuitMessageBox.wnd\",\"Menus/MainMenu.wnd\",\"Menus/CreditsMenu.wnd\",\"Menus/SkirmishGameOptionsMenu.wnd\"],"
 		<< "\"assetArchives\":[\"WindowZH.big\",\"INIZH.big\"],"

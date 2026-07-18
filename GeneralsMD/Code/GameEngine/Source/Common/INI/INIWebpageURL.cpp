@@ -44,6 +44,20 @@
 // PRIVATE DATA ///////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace
+{
+	struct IgnoredWebpageURL
+	{
+		AsciiString m_url;
+	};
+
+	const FieldParse ignoredWebpageURLFieldParse[] =
+	{
+		{ "URL", INI::parseAsciiString, NULL, offsetof( IgnoredWebpageURL, m_url ) },
+		{ NULL, NULL, NULL, 0 },
+	};
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // PUBLIC FUNCTIONS ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -83,20 +97,25 @@ AsciiString encodeURL(AsciiString source)
 void INI::parseWebpageURLDefinition( INI* ini )
 {
 	AsciiString tag;
-	WebBrowserURL *url;
 
 	// read the name
 	const char* c = ini->getNextToken();
 	tag.set( c );
 
-	if (TheWebBrowser != NULL)
+	if (TheWebBrowser == NULL)
 	{
-		url = TheWebBrowser->findURL(tag);
+		// The browser subsystem is optional, but the enclosing INI stream still
+		// needs this definition validated and consumed before parsing continues.
+		IgnoredWebpageURL ignoredURL;
+		ini->initFromINI( &ignoredURL, ignoredWebpageURLFieldParse );
+		return;
+	}
 
-		if (url == NULL)
-		{
-			url = TheWebBrowser->makeNewURL(tag);
-		}
+	WebBrowserURL *url = TheWebBrowser->findURL(tag);
+
+	if (url == NULL)
+	{
+		url = TheWebBrowser->makeNewURL(tag);
 	}
 
 	// find existing item if present
@@ -124,5 +143,3 @@ void INI::parseWebpageURLDefinition( INI* ini )
 		DEBUG_LOG(("INI::parseWebpageURLDefinition() - converted URL to [%s]\n", url->m_url.str()));
 	}
 }  // end parseMusicTrackDefinition
-
-
