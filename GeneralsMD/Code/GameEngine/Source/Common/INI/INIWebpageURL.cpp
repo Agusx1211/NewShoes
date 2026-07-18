@@ -82,21 +82,29 @@ AsciiString encodeURL(AsciiString source)
 //-------------------------------------------------------------------------------------------------
 void INI::parseWebpageURLDefinition( INI* ini )
 {
+	if (TheWebBrowser == NULL)
+	{
+		DEBUG_CRASH(("INI::parseWebpageURLDefinition: Web browser is not initialized."));
+		return;
+	}
+
 	AsciiString tag;
-	WebBrowserURL *url;
 
 	// read the name
 	const char* c = ini->getNextToken();
 	tag.set( c );
 
-	if (TheWebBrowser != NULL)
-	{
-		url = TheWebBrowser->findURL(tag);
+	WebBrowserURL *url = TheWebBrowser->findURL(tag);
 
-		if (url == NULL)
-		{
-			url = TheWebBrowser->makeNewURL(tag);
-		}
+	if (url == NULL)
+	{
+		url = TheWebBrowser->makeNewURL(tag);
+	}
+
+	if (url == NULL)
+	{
+		DEBUG_CRASH(("INI::parseWebpageURLDefinition: Unable to allocate URL '%s'.", tag.str()));
+		return;
 	}
 
 	// find existing item if present
@@ -124,5 +132,4 @@ void INI::parseWebpageURLDefinition( INI* ini )
 		DEBUG_LOG(("INI::parseWebpageURLDefinition() - converted URL to [%s]\n", url->m_url.str()));
 	}
 }  // end parseMusicTrackDefinition
-
 
