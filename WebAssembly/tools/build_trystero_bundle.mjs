@@ -15,7 +15,7 @@ const banner = [
 
 const result = await build({
   stdin: {
-    contents: 'export { getRelaySockets, joinRoom, selfId } from "trystero";',
+    contents: 'export { defaultRelayUrls, getRelaySockets, joinRoom, selfId } from "trystero";',
     loader: "js",
     resolveDir: wasmRoot,
     sourcefile: "trystero-browser-entry.mjs",

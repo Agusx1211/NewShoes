@@ -1,5 +1,9 @@
+#include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <string>
+
+#include <emscripten/emscripten.h>
 
 #include "Common/WellKnownKeys.h"
 
@@ -27,6 +31,7 @@
 #include "Common/ThingTemplate.h"
 #include "Common/UserPreferences.h"
 #include "GameClient/Display.h"
+#include "GameClient/CampaignManager.h"
 #include "GameClient/GameClient.h"
 #include "GameClient/GameText.h"
 #include "GameClient/GameWindow.h"
@@ -46,10 +51,12 @@
 #include "GameLogic/GhostObject.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/RankInfo.h"
+#include "GameLogic/ScriptActions.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/VictoryConditions.h"
+#include "W3DDevice/GameClient/W3DAssetManager.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
 #include "W3DDevice/GameClient/W3DBridgeBuffer.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
@@ -57,6 +64,8 @@
 #include "W3DDevice/GameClient/W3DRoadBuffer.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
+#include "WW3D2/WW3D.h"
+#include "wasm_d3d8_shim.h"
 
 // Storage-only owners for globals referenced by unentered original
 // GameLogic/GameState sections. Real linked owners override these weak symbols.
@@ -126,6 +135,7 @@ class UpgradeCenter;
 class VictoryConditionsInterface;
 class View;
 class W3DShadowManager;
+class WebBrowser;
 class WeaponStore;
 
 AI *TheAI WEAK_SINGLETON = nullptr;
@@ -191,6 +201,7 @@ UpgradeCenter *TheUpgradeCenter WEAK_SINGLETON = nullptr;
 VictoryConditionsInterface *TheVictoryConditions WEAK_SINGLETON = nullptr;
 View *TheTacticalView WEAK_SINGLETON = nullptr;
 W3DShadowManager *TheW3DShadowManager WEAK_SINGLETON = nullptr;
+WebBrowser *TheWebBrowser WEAK_SINGLETON = nullptr;
 WeaponStore *TheWeaponStore WEAK_SINGLETON = nullptr;
 Dict MapObject::TheWorldDict WEAK_SINGLETON;
 OVERRIDE<WaterTransparencySetting> TheWaterTransparency WEAK_SINGLETON = nullptr;
@@ -386,6 +397,19 @@ bool expect(bool condition, const char *message)
 	}
 	return true;
 }
+
+class ScriptEngineConditionTeamProbe : public ScriptEngine
+{
+public:
+	bool preservesConditionTeamAcrossRunScript(Team *condition_team, Team *calling_team)
+	{
+		m_conditionTeam = condition_team;
+		runScript("__condition_team_restore_probe__", calling_team);
+		const bool restored = m_conditionTeam == condition_team;
+		m_conditionTeam = nullptr;
+		return restored;
+	}
+};
 
 std::string jsonEscape(const char *value)
 {
@@ -697,6 +721,60 @@ private:
 	Bool m_timeOfDayNotified = FALSE;
 	TimeOfDay m_notifiedTimeOfDay = TIME_OF_DAY_INVALID;
 };
+
+class SmokeScriptActions : public ScriptActions
+{
+public:
+	using ScriptActions::doRevealMapAtWaypoint;
+};
+
+bool exerciseScriptHumanPlayerMask(
+	PlayerList &player_list,
+	TerrainLogic &terrain_logic,
+	PartitionManager &partition_manager)
+{
+	Waypoint *script_waypoint = terrain_logic.getFirstWaypoint();
+	if (!expect(script_waypoint != nullptr, "shipped map should provide a script waypoint")) {
+		return false;
+	}
+
+	Int human_player_count = 0;
+	Bool all_players_initially_shrouded = TRUE;
+	for (Int player_index = 0; player_index < player_list.getPlayerCount(); ++player_index) {
+		const Player *player = player_list.getNthPlayer(player_index);
+		if (player->getPlayerType() == PLAYER_HUMAN) {
+			++human_player_count;
+		}
+		all_players_initially_shrouded = all_players_initially_shrouded &&
+			partition_manager.getShroudStatusForPlayer(
+				player_index, script_waypoint->getLocation()) == CELLSHROUD_SHROUDED;
+	}
+
+	SmokeScriptActions *script_actions = new SmokeScriptActions;
+	TheScriptActions = script_actions;
+	script_actions->doRevealMapAtWaypoint(
+		script_waypoint->getName(), 1.0f, AsciiString::TheEmptyString);
+
+	Bool all_human_players_explored = TRUE;
+	Bool all_non_human_players_unchanged = TRUE;
+	for (Int player_index = 0; player_index < player_list.getPlayerCount(); ++player_index) {
+		const Player *player = player_list.getNthPlayer(player_index);
+		const CellShroudStatus status = partition_manager.getShroudStatusForPlayer(
+			player_index, script_waypoint->getLocation());
+		if (player->getPlayerType() == PLAYER_HUMAN) {
+			all_human_players_explored = all_human_players_explored && status == CELLSHROUD_FOGGED;
+		} else {
+			all_non_human_players_unchanged =
+				all_non_human_players_unchanged && status == CELLSHROUD_SHROUDED;
+		}
+	}
+
+	return expect(human_player_count > 0
+			&& all_players_initially_shrouded
+			&& all_human_players_explored
+			&& all_non_human_players_unchanged,
+		"ScriptActions waypoint reveal should target every human player and no others");
+}
 
 class SmokeTerrainVisual : public TerrainVisual
 {
@@ -1243,8 +1321,51 @@ extern "C" bool cnc_port_w3d_bridge_buffer_defer_gpu_buffers(void)
 	return true;
 }
 
+bool exerciseWebpageURLWithoutBrowser()
+{
+	const char filename[] = "issue-182-webpage-url-smoke.ini";
+	const char payload[] =
+		"WebpageURL ProjectHome\n"
+		"  URL = https://www.newshoes.gg/project\n"
+		"End\n";
+
+	std::remove(filename);
+	std::FILE *file = ::fopen(filename, "wb");
+	if (!expect(file != nullptr, "WebpageURL smoke should create its INI fixture")) {
+		return false;
+	}
+	const std::size_t payload_size = std::strlen(payload);
+	const bool wrote = ::fwrite(payload, 1, payload_size, file) == payload_size;
+	::fclose(file);
+	if (!expect(wrote, "WebpageURL smoke should write its complete INI fixture")) {
+		std::remove(filename);
+		return false;
+	}
+
+	bool loaded = false;
+	try {
+		INI ini;
+		ini.load(AsciiString(filename), INI_LOAD_OVERWRITE, nullptr);
+		loaded = true;
+	} catch (...) {
+	}
+	std::remove(filename);
+
+	return expect(loaded,
+		"WebpageURL INI definition should be consumed when the browser subsystem is unavailable");
+}
+
+EM_JS(int, scriptHumanMaskOnly, (), {
+	return typeof process !== 'undefined' && process.env.CNC_SCRIPT_HUMAN_MASK_ONLY === '1';
+});
+
 int main()
 {
+	const bool script_human_mask_only = scriptHumanMaskOnly() != 0;
+	const bool condition_team_restore_only = EM_ASM_INT({
+		const argv = typeof process !== "undefined" ? process.argv : [];
+		return argv.includes("--condition-team-restore-only") ? 1 : 0;
+	}) != 0;
 	const char *window_archive_path = "artifacts/real-assets/Window.big";
 	const char *maps_archive_path = "artifacts/real-assets/MapsZH.big";
 	const char *zh_ini_archive_path = "artifacts/real-assets/INIZH.big";
@@ -1284,6 +1405,18 @@ int main()
 	TheLocalFileSystem = &local_file_system;
 	TheArchiveFileSystem = &archive_file_system;
 	TheFileSystem = &file_system;
+	const bool webpage_url_without_browser_consumed = exerciseWebpageURLWithoutBrowser();
+	if (!webpage_url_without_browser_consumed) {
+		return 1;
+	}
+	const bool webpage_url_smoke_only = emscripten_run_script_int(
+		"typeof process !== 'undefined' && process.env.CNC_WEBPAGE_URL_SMOKE_ONLY === '1'");
+	if (webpage_url_smoke_only) {
+		std::printf("{\"ok\":true,\"path\":\"INI::load -> INI::parseWebpageURLDefinition\","
+			"\"webpageURLWithoutBrowserConsumed\":true}\n");
+		std::fflush(stdout);
+		return 0;
+	}
 	g_blank_layout_archive_path = window_archive_path;
 	g_blank_window_archive_loaded =
 		archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
@@ -1400,6 +1533,8 @@ int main()
 
 	GameState game_state;
 	TheGameState = &game_state;
+	CampaignManager campaign_manager;
+	TheCampaignManager = &campaign_manager;
 
 	SmokeGameWindowManager *window_manager = new SmokeGameWindowManager;
 	TheWindowManager = window_manager;
@@ -1413,7 +1548,7 @@ int main()
 	GameLogic *logic = new GameLogic;
 	TheGameLogic = logic;
 
-	ScriptEngine *script_engine = new ScriptEngine;
+	ScriptEngineConditionTeamProbe *script_engine = new ScriptEngineConditionTeamProbe;
 	TheScriptEngine = script_engine;
 	if (!expect(script_engine->getGlobalDifficulty() == DIFFICULTY_NORMAL,
 			"original ScriptEngine constructor should initialize normal difficulty")) {
@@ -1585,6 +1720,20 @@ int main()
 	Team *local_default_team = local_player ? local_player->getDefaultTeam() : nullptr;
 	Team *neutral_default_team = neutral_player ? neutral_player->getDefaultTeam() : nullptr;
 	const Int side_scripts_before_script_new_map = countSideScripts(sides_list);
+	ok = expect(script_engine->preservesConditionTeamAcrossRunScript(
+			local_default_team, neutral_default_team),
+		"original ScriptEngine::runScript should restore the caller's THIS_TEAM condition context") && ok;
+	if (condition_team_restore_only) {
+		if (!ok) {
+			return 1;
+		}
+		std::cout
+			<< "{\"ok\":true,"
+			<< "\"path\":\"script-condition-team-restore\","
+			<< "\"source\":\"GeneralsMD original ScriptEngine.cpp\"}"
+			<< std::endl;
+		return 0;
+	}
 	script_engine->newMap();
 	const Int side_scripts_after_script_new_map = countSideScripts(sides_list);
 	SmokeRadar *radar = new SmokeRadar;
@@ -1626,6 +1775,15 @@ int main()
 	const Int partition_cell_count_y = partition_manager->getCellCountY();
 	const Int partition_total_cells = partition_cell_count_x * partition_cell_count_y;
 	partition_manager->refreshShroudForLocalPlayer();
+	if (script_human_mask_only) {
+		const bool script_mask_ok = exerciseScriptHumanPlayerMask(
+			*player_list, terrain_logic, *partition_manager);
+		if (script_mask_ok) {
+			std::cout << "{\"ok\":true,\"path\":\"ScriptActions::doRevealMapAtWaypoint\","
+				"\"players\":" << player_list->getPlayerCount() << "}\n";
+		}
+		return script_mask_ok ? 0 : 1;
+	}
 	GhostObjectManager *ghost_object_manager = new GhostObjectManager;
 	TheGhostObjectManager = ghost_object_manager;
 	const Int ghost_local_player_index_before = ghost_object_manager->getLocalPlayerIndex();
@@ -1639,6 +1797,20 @@ int main()
 	TheTerrainTypes = &terrain_types;
 	TerrainRoadCollection terrain_roads;
 	TheTerrainRoads = &terrain_roads;
+	wasm_d3d8_reset_state();
+	const Bool dx8_wrapper_initialized =
+		WW3D::Init(nullptr, nullptr, false) == WW3D_ERROR_OK;
+	const Bool dx8_render_device_initialized = dx8_wrapper_initialized
+		&& WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true)
+			== WW3D_ERROR_OK;
+	if (!expect(dx8_render_device_initialized,
+			"browser DX8 device should initialize before the real terrain render object")) {
+		return 1;
+	}
+	W3DAssetManager asset_manager;
+	const WasmD3D8ShimState *d3d8_state = wasm_d3d8_get_state();
+	const UINT terrain_vertex_buffers_before = d3d8_state->create_vertex_buffer_calls;
+	const UINT terrain_index_buffers_before = d3d8_state->create_index_buffer_calls;
 	CachedFileInputStream terrain_render_map_stream;
 	const Bool terrain_render_map_opened = terrain_render_map_stream.open(global_data.m_mapName);
 	WorldHeightMap *terrain_render_map = nullptr;
@@ -1657,6 +1829,16 @@ int main()
 	}
 	SmokeTerrainRenderObject *terrain_render_object =
 		NEW_REF(SmokeTerrainRenderObject, ());
+	d3d8_state = wasm_d3d8_get_state();
+	const UINT terrain_vertex_buffers_after = d3d8_state->create_vertex_buffer_calls;
+	const UINT terrain_index_buffers_after = d3d8_state->create_index_buffer_calls;
+	const Bool terrain_gpu_buffers_created =
+		terrain_vertex_buffers_after > terrain_vertex_buffers_before
+		&& terrain_index_buffers_after > terrain_index_buffers_before;
+	if (!expect(terrain_gpu_buffers_created,
+			"real terrain render object should create vertex and index buffers through the browser DX8 device")) {
+		return 1;
+	}
 	const Bool terrain_road_collection_owned = TheTerrainRoads == &terrain_roads;
 	const Bool terrain_type_collection_owned = TheTerrainTypes == &terrain_types;
 	const Bool terrain_render_object_owned = TheTerrainRenderObject == terrain_render_object;
@@ -1907,7 +2089,7 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIWebpageURL.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp/WW3D.cpp/DX8Wrapper.cpp/DX8VertexBuffer.cpp/DX8IndexBuffer.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":0,"
 		<< "\"playerCount\":" << player_list->getPlayerCount() << ","
@@ -1924,6 +2106,7 @@ int main()
 		<< "\"zhIniArchiveLoaded\":" << jsonBool(g_zh_ini_archive_loaded) << ","
 		<< "\"baseIniArchive\":\"" << jsonEscape(g_base_ini_archive_path.str()) << "\","
 		<< "\"baseIniArchiveLoaded\":" << jsonBool(g_base_ini_archive_loaded) << ","
+		<< "\"webpageURLWithoutBrowserConsumed\":" << jsonBool(webpage_url_without_browser_consumed) << ","
 		<< "\"playerTemplateDefaultIniFileExists\":" << jsonBool(g_player_template_default_ini_file_exists) << ","
 		<< "\"playerTemplateIniFileExists\":" << jsonBool(g_player_template_ini_file_exists) << ","
 		<< "\"gameDataDefaultIniFileExists\":" << jsonBool(g_game_data_default_ini_file_exists) << ","
@@ -2038,6 +2221,13 @@ int main()
 		<< "\"terrainRenderMapOpened\":" << jsonBool(terrain_render_map_opened) << ","
 		<< "\"terrainRenderMapLoaded\":" << jsonBool(terrain_render_map_loaded) << ","
 		<< "\"terrainRenderObjectOwned\":" << jsonBool(terrain_render_object_owned) << ","
+		<< "\"dx8WrapperInitialized\":" << jsonBool(dx8_wrapper_initialized) << ","
+		<< "\"dx8RenderDeviceInitialized\":" << jsonBool(dx8_render_device_initialized) << ","
+		<< "\"terrainVertexBuffersBefore\":" << terrain_vertex_buffers_before << ","
+		<< "\"terrainVertexBuffersAfter\":" << terrain_vertex_buffers_after << ","
+		<< "\"terrainIndexBuffersBefore\":" << terrain_index_buffers_before << ","
+		<< "\"terrainIndexBuffersAfter\":" << terrain_index_buffers_after << ","
+		<< "\"terrainGpuBuffersCreated\":" << jsonBool(terrain_gpu_buffers_created) << ","
 		<< "\"terrainRenderMapAttached\":" << jsonBool(terrain_render_map_attached) << ","
 		<< "\"terrainRenderMapWidth\":" << terrain_render_map_width << ","
 		<< "\"terrainRenderMapHeight\":" << terrain_render_map_height << ","
@@ -2095,7 +2285,7 @@ int main()
 		<< "\"InGameUI client-quiet remains focused UI boundary\","
 		<< "\"OptionPreferences user preference getters remain focused non-network browser preference boundary\","
 		<< "\"bridge-like map-object creation remains focused ThingFactory/Object ownership boundary after ordered no-candidate startup scan\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\",\"TerrainTypeCollection empty texture-class lookup for render heightmap parsing\",\"TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff\",\"W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup\",\"W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan\",\"GameLogic bridge-like map-object scan ordered after terrain newMap\",\"Radar::refreshTerrain after bridge-like map-object scan\",\"Pathfinder::newMap terrain grid allocation/classification ordered after bridge-like scan\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"HeaderTemplateManager empty template lookup\",\"Shell::push seeded BlankWindow\",\"GameWindowManager::winCreateLayout BlankWindow archive parse\",\"Shell::hideShell\",\"Win32BIGFileSystem MapsZH.big map archive\",\"Win32BIGFileSystem INIZH.big and INI.big startup data archives\",\"INI::load Default/GameData.ini, GameData.ini, Multiplayer.ini, Science.ini, AIData.ini, and PlayerTemplate.ini\",\"GlobalData::parseGameDataDefinition production partition cell size\",\"WeaponBonusSet::parseWeaponBonusSetPtr GameData parser\",\"MultiplayerSettings shipped color table\",\"ScienceStore shipped science table\",\"AI shipped AIData table\",\"PlayerTemplateStore shipped player templates\",\"W3DTerrainLogic::loadMap(false) MD_GLA03 map parse\",\"TerrainLogic::loadMap TerrainVisual::load handoff\",\"WorldHeightMap logical map-object list\",\"SidesList::ParseSidesDataChunk\",\"SidesList::validateSides\",\"AIPlayer construction for non-human sides\",\"TeamFactory::reset/initFromSides\",\"PlayerList::newGame side population\",\"ScriptEngine::newMap side script scan\",\"Radar::newMap terrain extent and LeftHUD ownership\",\"GameLogic width/height from terrain extent\",\"PartitionManager::init loaded-map cell grid\",\"PartitionManager::refreshShroudForLocalPlayer display/radar shroud refresh\",\"GhostObjectManager local-player index and reset\",\"TerrainTypeCollection empty texture-class lookup for render heightmap parsing\",\"TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff\",\"WW3D browser D3D8 device and terrain-adjacent vertex/index buffers\",\"W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup\",\"W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan\",\"GameLogic bridge-like map-object scan ordered after terrain newMap\",\"Radar::refreshTerrain after bridge-like map-object scan\",\"Pathfinder::newMap terrain grid allocation/classification ordered after bridge-like scan\"],"
 		<< "\"nextRequired\":\"load real object templates into gamelogic-new-game-dispatch-smoke and promote the bridge-like map-object creation branch when a map supplies bridge or walk-on-wall templates, then continue the original ordered startNewGame sequence beyond Pathfinder::newMap\"}"
 		<< "\n";
 
