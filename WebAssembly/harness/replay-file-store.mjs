@@ -119,13 +119,16 @@ export function createReplayFileStore({
     return new Uint8Array(bytes);
   }
 
-  async function importFile(name, value) {
+  async function importFile(name, value, { durable = true } = {}) {
     const requested = replayName(name);
     const bytes = replayBytes(value);
     const FS = await filesystem();
     const finalName = uniqueReplayName(FS, requested, directory);
     const path = `${directory}/${finalName}`;
     FS.writeFile(path, bytes, { canOwn: false });
+    if (!durable) {
+      return { ok: true, name: finalName, size: bytes.byteLength, persisted: false };
+    }
     const result = await persist("replay-import");
     if (!result?.ok) {
       try { FS.unlink(path); } catch { /* best-effort rollback */ }

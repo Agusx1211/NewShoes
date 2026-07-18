@@ -78,6 +78,7 @@ public:
 
 public:
 	void handleCRCMessage(UnsignedInt newCRC, Int playerIndex, Bool fromPlayback);
+	Bool sawPlaybackCRCMismatch();
 protected:
 	CRCInfo *m_crcInfo;
 public:
