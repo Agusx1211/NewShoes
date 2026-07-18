@@ -6163,6 +6163,11 @@ async function loadWasmModule() {
         "string",
         ["string", "string"],
       ),
+      probeMissileGarrisonBound: module.cwrap(
+        "cnc_port_probe_missile_garrison_bound",
+        "string",
+        ["string", "string"],
+      ),
       registerArchiveSet: module.cwrap(
         "cnc_port_register_archive_set",
         "string",
@@ -12497,6 +12502,26 @@ async function rpc(command, payload = {}) {
           probe = JSON.parse(raw);
         } catch (error) {
           probe = { ok: false, error: `snippet probe returned invalid JSON: ${error}`, raw };
+        }
+        return { ok: Boolean(probe?.ok), command, probe, state: snapshotState() };
+      }
+    case "probeMissileGarrisonBound":
+      {
+        const moduleResult = await getWasmModuleForArchives("probeMissileGarrisonBound");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        const path = typeof payload.path === "string" && payload.path.length > 0
+          ? payload.path
+          : "/assets/INIZH.big";
+        const snippetPath = "/assets/__missile_garrison_bound_probe.ini";
+        moduleResult.wasmModule.fs.writeFile(snippetPath, String(payload.snippetText ?? ""));
+        const raw = moduleResult.wasmModule.probeMissileGarrisonBound(path, snippetPath);
+        let probe = null;
+        try {
+          probe = JSON.parse(raw);
+        } catch (error) {
+          probe = { ok: false, error: `missile garrison probe returned invalid JSON: ${error}`, raw };
         }
         return { ok: Boolean(probe?.ok), command, probe, state: snapshotState() };
       }
