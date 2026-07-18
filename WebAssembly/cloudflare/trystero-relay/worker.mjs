@@ -8,6 +8,9 @@ const MAX_FUTURE_SKEW_SECONDS = 60;
 const MAX_SUBSCRIPTIONS = 64;
 const MAX_FILTERS = 4;
 const MAX_TOPICS_PER_FILTER = 250;
+// Durable Object WebSocket attachments are capped at 16 KiB. Keeping the JSON
+// representation below 14 KiB leaves headroom for structured-clone metadata.
+const MAX_ATTACHMENT_JSON_BYTES = 14 * 1024;
 const TRYSTERO_KIND_MIN = 20000;
 const TRYSTERO_KIND_MAX = 29999;
 const HEX_32 = /^[0-9a-f]{64}$/;
@@ -321,10 +324,19 @@ export class TrysteroNostrRelay {
   }
 
   attachSession(socket, session) {
-    socket.serializeAttachment({
+    const attachment = {
       id: session.id,
       subscriptions: [...session.subscriptions.entries()],
-    });
+    };
+    if (encoder.encode(JSON.stringify(attachment)).byteLength > MAX_ATTACHMENT_JSON_BYTES) {
+      return false;
+    }
+    try {
+      socket.serializeAttachment(attachment);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async webSocketMessage(socket, rawMessage) {
@@ -355,8 +367,16 @@ export class TrysteroNostrRelay {
         send(socket, ["CLOSED", first, "restricted: subscription limit reached"]);
         return;
       }
-      session.subscriptions.set(first, rest);
-      this.attachSession(socket, session);
+      const nextSession = {
+        ...session,
+        subscriptions: new Map(session.subscriptions),
+      };
+      nextSession.subscriptions.set(first, rest);
+      if (!this.attachSession(socket, nextSession)) {
+        send(socket, ["CLOSED", first, "restricted: subscription state is too large"]);
+        return;
+      }
+      this.sessions.set(socket, nextSession);
       const nowSeconds = Math.floor(Date.now() / 1000);
       for (const event of this.retainedEvents(rest, nowSeconds)) send(socket, ["EVENT", first, event]);
       send(socket, ["EOSE", first]);
@@ -364,8 +384,12 @@ export class TrysteroNostrRelay {
     }
     if (type === "CLOSE") {
       if (typeof first === "string") {
-        session.subscriptions.delete(first);
-        this.attachSession(socket, session);
+        const nextSession = {
+          ...session,
+          subscriptions: new Map(session.subscriptions),
+        };
+        nextSession.subscriptions.delete(first);
+        if (this.attachSession(socket, nextSession)) this.sessions.set(socket, nextSession);
       }
       return;
     }

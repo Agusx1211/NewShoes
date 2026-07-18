@@ -1,10 +1,12 @@
 # Trystero discovery relay
 
-This Worker is the project-owned discovery/signaling relay for browser
-multiplayer. It implements the narrow Nostr NIP-01 subset used by Trystero
-0.25.2 and routes all WebSocket connections through one hibernating Durable
-Object. Game datagrams never pass through this service; after discovery they
-travel directly between peers over encrypted WebRTC data channels.
+This Worker is the project-owned anchor in the browser runtime's hybrid
+discovery/signaling set. Shipping clients also connect to four deterministic
+public Nostr relays, so this service is not a single point of discovery
+failure. It implements the narrow Nostr NIP-01 subset used by Trystero 0.25.2
+and routes all WebSocket connections through one hibernating Durable Object.
+Game datagrams never pass through any Nostr relay; after discovery they travel
+directly between peers over encrypted WebRTC data channels.
 
 The relay validates event hashes and Schnorr signatures, accepts only
 Trystero's ephemeral event-kind and `x`-topic shape, bounds subscriptions and
@@ -17,7 +19,9 @@ writes. The Origin check is an abuse-reduction boundary, not authentication:
 non-browser clients can forge that header. Do not put secrets in the browser
 configuration or in Nostr events.
 
-Run the local Worker protocol gate with:
+The local gate uses Cloudflare's Workers test runtime to force real Durable
+Object eviction with hibernating WebSockets, then also exercises the Worker
+through Wrangler's local server:
 
 ```sh
 cd WebAssembly
