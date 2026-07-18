@@ -4876,6 +4876,12 @@ target_compile_options(zh_gameengine_real_lifecycle_runtime PRIVATE
   -Wno-writable-strings
 )
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set_property(SOURCE "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/LobbyUtils.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=user-defined-warnings"
+  )
+endif()
+
 target_link_libraries(zh_gameengine_real_lifecycle_runtime PUBLIC
   zh_gameengine_globaldata_runtime
 )
@@ -6432,6 +6438,31 @@ target_compile_options(gameengine-header-case-smoke PRIVATE
 )
 
 target_link_options(gameengine-header-case-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
+add_executable(gamespy-lobby-sort-smoke
+  tests/gamespy_lobby_sort_smoke.cpp
+)
+
+set_target_properties(gamespy-lobby-sort-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_include_directories(gamespy-lobby-sort-smoke PRIVATE
+  "${GAMEENGINE_DIR}/Source"
+)
+
+target_compile_options(gamespy-lobby-sort-smoke PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+)
+
+target_link_options(gamespy-lobby-sort-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   ${CNC_ASSERTIONS_LINK_OPTION}
