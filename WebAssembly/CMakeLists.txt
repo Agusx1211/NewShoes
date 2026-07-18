@@ -2148,6 +2148,13 @@ set_source_files_properties(${ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES} PROPERTIES
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  # Chinook combat-drop states are custom raw state IDs, not AIStateType values.
+  set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/AIUpdate/ChinookAIUpdate.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS
+      "-Werror=enum-compare"
+      "-Werror=tautological-constant-out-of-range-compare"
+  )
+
   # Old-script compatibility tables must use representable ConditionType sentinels.
   set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp" APPEND PROPERTY
     COMPILE_OPTIONS "-Werror=tautological-constant-out-of-range-compare"
