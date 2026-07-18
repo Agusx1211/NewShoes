@@ -615,14 +615,10 @@ UpdateSleepTime StealthUpdate::update( void )
 	Object *self = getObject();
 	Object *stealthOwner = calcStealthOwner();
 
-	UnsignedInt stealthDelay;
+	const StealthUpdateModuleData *data = getStealthUpdateModuleData();
+	UnsignedInt stealthDelay = data->m_stealthDelay;
 
-	if( self == stealthOwner )
-	{
-		const StealthUpdateModuleData *data = getStealthUpdateModuleData();
-		stealthDelay = data->m_stealthDelay;
-	}
-	else
+	if( self != stealthOwner )
 	{
 		//Extract the rules from the rider's stealthupdate module data instead
 		//of our own, because the rider determines if the container can stealth or not.
@@ -647,7 +643,6 @@ UpdateSleepTime StealthUpdate::update( void )
 
 	if( draw )
 	{
-		const StealthUpdateModuleData *data = getStealthUpdateModuleData();
 		//Are we disguise transitioning (either gaining or losing disguise look?)
 		/** @todo srj -- evil hack here... this whole heat-vision thing is fucked.
 			don't want it on mines but no good way to do that. hack for now. */
@@ -872,15 +867,10 @@ void StealthUpdate::markAsDetected(UnsignedInt numFrames)
 	Object *self = getObject();
 	Object *stealthOwner = calcStealthOwner();
 
-	UnsignedInt stealthDelay, orderIdlesToAttack;
-	if( self == stealthOwner )
-	{
-		const StealthUpdateModuleData *data = getStealthUpdateModuleData();
-		//Use the standard module data information (because we stealth ourself)
-		stealthDelay = data->m_stealthDelay;
-		orderIdlesToAttack = data->m_orderIdleEnemiesToAttackMeUponReveal;
-	}
-	else
+	const StealthUpdateModuleData *data = getStealthUpdateModuleData();
+	UnsignedInt stealthDelay = data->m_stealthDelay;
+	Bool orderIdlesToAttack = data->m_orderIdleEnemiesToAttackMeUponReveal;
+	if( self != stealthOwner )
 	{
 		//Extract the rules from the rider's stealthupdate module data instead
 		//of our own, because the rider determines if the container can stealth or not.

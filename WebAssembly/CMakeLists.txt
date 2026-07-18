@@ -2148,6 +2148,11 @@ set_source_files_properties(${ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES} PROPERTIES
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  # Rider-less stealth fallbacks must remain initialized before gameplay uses them.
+  set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/StealthUpdate.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=sometimes-uninitialized"
+  )
+
   # EMP and leaflet radii may be zero, which must remain a valid empty iteration.
   set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/EMPUpdate.cpp" APPEND PROPERTY
     COMPILE_OPTIONS "-Werror=sometimes-uninitialized"
