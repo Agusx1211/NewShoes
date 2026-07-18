@@ -633,6 +633,7 @@ const d3d8PerfStats = {
   drawDerivedCacheHits: 0,
   drawDerivedCacheMisses: 0,
   drawFullStateInvalidations: 0,
+  drawTextureContentPreservations: 0,
   drawTextureContentInvalidations: 0,
   drawTextureContentInvalidatedEntries: 0,
   drawTextureContentInvalidationMs: 0,
@@ -1122,6 +1123,7 @@ function d3d8PerfSummary() {
     drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
     drawFullStateInvalidations: d3d8PerfStats.drawFullStateInvalidations,
+    drawTextureContentPreservations: d3d8PerfStats.drawTextureContentPreservations,
     drawTextureContentInvalidations: d3d8PerfStats.drawTextureContentInvalidations,
     drawTextureContentInvalidatedEntries:
       d3d8PerfStats.drawTextureContentInvalidatedEntries,
@@ -1327,21 +1329,20 @@ function unlinkD3D8DerivedDrawCacheEntry(entry) {
 
 function deleteD3D8DerivedDrawCacheEntry(entry) {
   if (!entry) {
-    return false;
+    return;
   }
   const bucket = d3d8DerivedDrawCache.get(entry.derivedStateHash);
   const bucketIndex = bucket?.indexOf(entry) ?? -1;
   unlinkD3D8DerivedDrawCacheEntry(entry);
   if (bucketIndex < 0) {
     d3d8DerivedDrawCacheEntries = Math.max(0, d3d8DerivedDrawCacheEntries - 1);
-    return true;
+    return;
   }
   bucket.splice(bucketIndex, 1);
   d3d8DerivedDrawCacheEntries -= 1;
   if (bucket.length === 0) {
     d3d8DerivedDrawCache.delete(entry.derivedStateHash);
   }
-  return true;
 }
 
 function d3d8DerivedDrawCacheEntryUsesTexture(entry, textureId) {
@@ -1362,8 +1363,8 @@ function invalidateD3D8TextureContentState(textureId) {
   let invalidatedEntries = 0;
   for (let entry = d3d8DerivedDrawCacheOldest; entry;) {
     const next = entry.lruNext;
-    if (d3d8DerivedDrawCacheEntryUsesTexture(entry, id) &&
-        deleteD3D8DerivedDrawCacheEntry(entry)) {
+    if (d3d8DerivedDrawCacheEntryUsesTexture(entry, id)) {
+      deleteD3D8DerivedDrawCacheEntry(entry);
       invalidatedEntries += 1;
     }
     entry = next;
@@ -1374,10 +1375,9 @@ function invalidateD3D8TextureContentState(textureId) {
   if (currentEntryUsesTexture) {
     d3d8LastDrawKey = null;
     d3d8CachedDerived = null;
-    // Content uploads can change readiness, legacy semantic swizzles, and the
-    // implicit alpha-cutout decision. Only the texture-layout group depends
-    // on those values; render state, transforms, and the active GL program do
-    // not.
+    // Texture metadata can change legacy semantic swizzles and the implicit
+    // alpha-cutout decision. Only the texture-layout group depends on those
+    // values; render state, transforms, and the active GL program do not.
     harnessState.graphics.lastD3D8TextureUniformKey = null;
   }
   if (d3d8PerfTimingEnabled) {
@@ -6290,6 +6290,8 @@ function updateD3D8Texture(payload = {}) {
   }
   if (d3d8PerfCountersEnabled) d3d8PerfStats.textureConvertBytes += Number(payload.bytes.byteLength ?? 0) >>> 0;
   if (d3d8PerfCountersEnabled) d3d8PerfStats.textureConvertMs += perfNow() - convertStartedAt;
+  const previousSemanticMode = d3d8TextureSemanticMode(resource);
+  const previousAlphaCutoutState = d3d8TextureAlphaCutoutState(resource);
   resource.storage = info.storage;
   resource.semantic = info.semantic || null;
   const levelKey = String(level);
@@ -6338,16 +6340,24 @@ function updateD3D8Texture(payload = {}) {
   if (level0AlphaCoverage !== undefined) {
     resource.alphaCoverage = level0AlphaCoverage;
   }
+  const derivedTextureStateChanged = !storageChanged &&
+    (previousSemanticMode !== d3d8TextureSemanticMode(resource) ||
+      previousAlphaCutoutState !== d3d8TextureAlphaCutoutState(resource));
   if (storageChanged) {
     // Allocating different storage can invalidate an attached framebuffer and
     // changes texture readiness, so retain the conservative full reset.
     invalidateD3D8DrawStateCache();
-  } else {
+  } else if (derivedTextureStateChanged) {
     // texSubImage2D changes this texture's contents but preserves the current
     // program, render state, transforms, viewport, and vertex-array bindings.
-    // Retain those exact caches and discard only derived entries whose texture
-    // readiness/semantic/alpha decisions depend on this resource.
+    // If semantic or alpha-cutout metadata changed, retain those exact caches
+    // and discard only derived entries whose decisions depend on this resource.
     invalidateD3D8TextureContentState(id);
+  } else if (d3d8PerfCountersEnabled) {
+    // Pixel contents do not participate in a derived-state key. Ordinary
+    // same-storage uploads therefore leave every cached decision valid when
+    // sampling readiness, semantic mode, and alpha-cutout eligibility match.
+    d3d8PerfStats.drawTextureContentPreservations += 1;
   }
 
   resource.uploads += 1;

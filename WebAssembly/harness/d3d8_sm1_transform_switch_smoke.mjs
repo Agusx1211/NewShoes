@@ -101,7 +101,7 @@ try {
       levels: 1,
       format: 21, // D3DFMT_A8R8G8B8
     }) === 1, "texture creation failed");
-    const updateTexture = () => hooks.cncPortD3D8TextureUpdate({
+    const updateTexture = (bytes = textureBytes) => hooks.cncPortD3D8TextureUpdate({
       id: textureId,
       level: 0,
       x: 0,
@@ -109,7 +109,7 @@ try {
       width: 4,
       height: 4,
       format: 21,
-      bytes: textureBytes,
+      bytes,
     });
     expect(updateTexture() === 1, "initial texture upload failed");
     expect(hooks.cncPortD3D8TextureBind({ stage: 0, id: textureId }) === 1,
@@ -182,9 +182,9 @@ try {
     const beforeContentUpdate = diag.d3d8PerfSummary();
     expect(updateTexture() === 1, "same-storage texture update failed");
     const afterContentUpdate = diag.d3d8PerfSummary();
-    expect(afterContentUpdate.drawTextureContentInvalidations ===
-        beforeContentUpdate.drawTextureContentInvalidations + 1,
-      "same-storage texture update did not use scoped invalidation", {
+    expect(afterContentUpdate.drawTextureContentPreservations ===
+        beforeContentUpdate.drawTextureContentPreservations + 1,
+      "metadata-stable texture update did not preserve derived state", {
         beforeContentUpdate,
         afterContentUpdate,
       });
@@ -194,11 +194,45 @@ try {
         beforeContentUpdate,
         afterContentUpdate,
       });
-    expect(afterContentUpdate.drawTextureContentInvalidatedEntries >=
-        beforeContentUpdate.drawTextureContentInvalidatedEntries + 1,
-      "bound texture update did not invalidate its derived entry", {
+    expect(afterContentUpdate.drawTextureContentInvalidations ===
+        beforeContentUpdate.drawTextureContentInvalidations,
+      "metadata-stable texture update invalidated derived state", {
         beforeContentUpdate,
         afterContentUpdate,
+      });
+    expect(draw(1, 0, 101) === 1, "post-update fixed-function draw failed");
+    const afterPreservedDraw = diag.d3d8PerfSummary();
+    expect(afterPreservedDraw.drawDerivedCacheHits >=
+        afterContentUpdate.drawDerivedCacheHits + 1,
+      "metadata-stable texture update lost its derived cache entry", {
+        afterContentUpdate,
+        afterPreservedDraw,
+      });
+
+    const transparentTextureBytes = textureBytes.slice();
+    for (let offset = 3; offset < transparentTextureBytes.length; offset += 4) {
+      transparentTextureBytes[offset] = 0;
+    }
+    expect(updateTexture(transparentTextureBytes) === 1,
+      "alpha-metadata texture update failed");
+    const afterMetadataUpdate = diag.d3d8PerfSummary();
+    expect(afterMetadataUpdate.drawTextureContentInvalidations ===
+        afterPreservedDraw.drawTextureContentInvalidations + 1,
+      "alpha-metadata texture update did not use scoped invalidation", {
+        afterPreservedDraw,
+        afterMetadataUpdate,
+      });
+    expect(afterMetadataUpdate.drawFullStateInvalidations ===
+        afterPreservedDraw.drawFullStateInvalidations,
+      "alpha-metadata texture update reset unrelated draw state", {
+        afterPreservedDraw,
+        afterMetadataUpdate,
+      });
+    expect(afterMetadataUpdate.drawTextureContentInvalidatedEntries >=
+        afterPreservedDraw.drawTextureContentInvalidatedEntries + 1,
+      "alpha-metadata texture update did not invalidate its derived entry", {
+        afterPreservedDraw,
+        afterMetadataUpdate,
       });
     expect(draw(2, pixelShaderHandle, 202) === 1, "translated shader draw failed");
     diag.flushD3D8PendingDrawBatch("sm1-transform-switch-smoke");
