@@ -2147,6 +2147,10 @@ set_source_files_properties(${ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES} PROPERTIES
   COMPILE_OPTIONS "-U__PRERTS_H__;-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
 )
 
+set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptActions.cpp" APPEND PROPERTY
+  COMPILE_OPTIONS "-Werror=logical-op-parentheses"
+)
+
 set_property(SOURCE "${GAMEENGINE_COMMON_DIR}/System/Debug.cpp" APPEND PROPERTY
   COMPILE_OPTIONS "-Werror=format"
 )
@@ -2177,6 +2181,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/FlightDeckBehavior.cpp" APPEND PROPERTY
     COMPILE_OPTIONS "-Werror=unused-comparison"
   )
+
+  set_property(SOURCE
+    "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIGuard.cpp"
+    "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIGuardRetaliate.cpp"
+    "${GAMEENGINE_GAMELOGIC_DIR}/AI/AITNGuard.cpp"
+    APPEND PROPERTY COMPILE_OPTIONS "-Werror=vexing-parse"
+  )
 endif()
 
 set(ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES
@@ -2191,6 +2202,15 @@ set_source_files_properties(${ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES} PROPERT
 # Browser-owned WOL declarations must not route real-header targets through
 # the shadow GameNetwork/WOLBrowser/WebBrowser.h shim.
 set(WOL_BROWSER_COMPILE_BRIDGE "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_webbrowser_boundary.h")
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  set_property(SOURCE "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainBackground.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=mismatched-new-delete"
+  )
+  set_property(SOURCE "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLLoginMenu.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=mismatched-new-delete"
+  )
+endif()
 
 set_source_files_properties("${GAMEENGINE_COMMON_DIR}/GameEngine.cpp" PROPERTIES
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/atlbase.h;-include${WASM_SHIMS_DIR}/mmsystem.h;${WOL_BROWSER_COMPILE_BRIDGE}"
@@ -4913,6 +4933,12 @@ target_compile_options(zh_gameengine_real_lifecycle_runtime PRIVATE
   -Wno-writable-strings
 )
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set_property(SOURCE "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/LobbyUtils.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=user-defined-warnings"
+  )
+endif()
+
 target_link_libraries(zh_gameengine_real_lifecycle_runtime PUBLIC
   zh_gameengine_globaldata_runtime
 )
@@ -6473,6 +6499,56 @@ target_compile_options(gameengine-header-case-smoke PRIVATE
 )
 
 target_link_options(gameengine-header-case-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
+add_executable(academy-stats-dozer-search-smoke
+  tests/academy_stats_dozer_search_smoke.cpp
+)
+
+set_target_properties(academy-stats-dozer-search-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_include_directories(academy-stats-dozer-search-smoke PRIVATE
+  "${GAMEENGINE_DIR}/Source"
+)
+
+target_compile_options(academy-stats-dozer-search-smoke PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+)
+
+target_link_options(academy-stats-dozer-search-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
+add_executable(gamespy-lobby-sort-smoke
+  tests/gamespy_lobby_sort_smoke.cpp
+)
+
+set_target_properties(gamespy-lobby-sort-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_include_directories(gamespy-lobby-sort-smoke PRIVATE
+  "${GAMEENGINE_DIR}/Source"
+)
+
+target_compile_options(gamespy-lobby-sort-smoke PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+)
+
+target_link_options(gamespy-lobby-sort-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   ${CNC_ASSERTIONS_LINK_OPTION}
@@ -8734,6 +8810,7 @@ target_compile_definitions(gameengine-common-core-smoke PRIVATE
 )
 
 target_compile_options(gameengine-common-core-smoke PRIVATE
+  ${CNC_EXCEPTION_COMPILE_OPTION}
   "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
@@ -8762,6 +8839,7 @@ target_link_options(gameengine-common-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   ${CNC_ASSERTIONS_LINK_OPTION}
+  ${CNC_EXCEPTION_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
