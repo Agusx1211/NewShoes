@@ -158,6 +158,22 @@ try {
       bytes.set(body, 8);
       return bytes;
     }
+    function syntheticBinkContainer() {
+      const bytes = new Uint8Array(64);
+      const view = new DataView(bytes.buffer);
+      bytes.set(new TextEncoder().encode("BIKi"));
+      view.setUint32(4, bytes.byteLength - 8, true);
+      view.setUint32(8, 1, true);
+      view.setUint32(12, 8, true);
+      view.setUint32(16, 1, true);
+      view.setUint32(20, 1, true);
+      view.setUint32(24, 1, true);
+      view.setUint32(28, 1, true);
+      view.setUint32(32, 1, true);
+      view.setUint32(44, 56 | 1, true); // Frame payload offset plus the keyframe bit.
+      view.setUint32(48, bytes.byteLength, true);
+      return bytes;
+    }
     const root = "Command & Conquer Generals - Zero Hour";
     const baseRoot = `${root}/ZH_Generals`;
     const files = [];
@@ -181,9 +197,7 @@ try {
       files.push(sourceFile(`${root}/Data/Cursors/SCCPointer.ani`, syntheticAni(7)));
       files.push(sourceFile(`${root}/Data/Cursors/SCCAttack.ani`, syntheticAni(11)));
     }
-    const bink = new Uint8Array(64);
-    bink.set(new TextEncoder().encode("BIKi"));
-    files.push(sourceFile(`${root}/Data/English/Movies/EA_LOGO.BIK`, bink));
+    files.push(sourceFile(`${root}/Data/English/Movies/EA_LOGO.BIK`, syntheticBinkContainer()));
     files.push(sourceFile(`${root}/PatchZH.big`, new Uint8Array([0, 1, 2, 3])));
     const result = await window.ZeroHAssetLibrary.scan(files);
     window.ZeroHAssetLibrary.includeVideos = true;
@@ -214,11 +228,32 @@ try {
   assert.deepEqual(steamFolderScan.errors, []);
   assert.match(steamFolderScan.gensec?.source || "", /ZH_Generals\/gensec\.big$/);
   assert.equal(steamFolderScan.scripts?.sourceName, "loose installer scripts");
-  assert.ok(steamFolderScan.videoCount >= 1);
-  assert.ok(steamFolderScan.videoBytes >= 64);
+  assert.equal(steamFolderScan.videoCount, 1);
+  assert.equal(steamFolderScan.videoBytes, 64);
   assert.equal(steamFolderScan.preparedVideos?.length, steamFolderScan.videoCount);
-  assert.ok(steamFolderScan.preparedVideos?.some((video) =>
-    /\/movies\/EA_LOGO\.BIK$/i.test(video.opfsPath || "")));
+  const preparedLogo = steamFolderScan.preparedVideos?.find((video) =>
+    /\/movies\/EA_LOGO\.BIK$/i.test(video.opfsPath || ""));
+  assert.deepEqual({
+    name: preparedLogo?.name,
+    bytes: preparedLogo?.bytes,
+    signature: preparedLogo?.signature,
+    frames: preparedLogo?.frames,
+    width: preparedLogo?.width,
+    height: preparedLogo?.height,
+    fpsNum: preparedLogo?.fpsNum,
+    fpsDen: preparedLogo?.fpsDen,
+    audioTracks: preparedLogo?.audioTracks,
+  }, {
+    name: "EA_LOGO.BIK",
+    bytes: 64,
+    signature: "BIKi",
+    frames: 1,
+    width: 1,
+    height: 1,
+    fpsNum: 1,
+    fpsDen: 1,
+    audioTracks: 0,
+  });
   assert.ok(steamFolderScan.cursorCount >= 2);
   assert.deepEqual(steamFolderScan.cursorMissing, []);
   assert.equal(steamFolderScan.cursorAsset?.name, "OriginalCursors.big");
