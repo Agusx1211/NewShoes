@@ -66,6 +66,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Correct Vector3 quick-length component ordering ([PR #236](https://github.com/Agusx1211/NewShoes/pull/236)).
 - Reject invalid ENEMY_SIGHTED relationships before partition filtering ([PR #239](https://github.com/Agusx1211/NewShoes/pull/239)).
 - Set version 0.4.0 and complete its audited release inventory ([PR #244](https://github.com/Agusx1211/NewShoes/pull/244)).
+- Clear focus-latched selection modes so unit clicks and friendly transport commands recover ([PR #249](https://github.com/Agusx1211/NewShoes/pull/249)).
 
 ## [0.3.0] - 2026-07-16
 

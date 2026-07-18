@@ -129,6 +129,8 @@ const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
 const expectParticleVisibilityProbe =
   process.env.SKIRMISH_START_PARTICLE_VISIBILITY_PROBE === "1";
 const expectTouchControlsProbe = process.env.SKIRMISH_START_TOUCH_PROBE === "1";
+const expectSelectionFocusLossProbe =
+  process.env.SKIRMISH_START_SELECTION_FOCUS_LOSS_PROBE === "1";
 const particleVisibilityFrames = parsePositiveInt(
   "SKIRMISH_START_PARTICLE_VISIBILITY_FRAMES", 30);
 const distDir = parseDistDir();
@@ -1044,6 +1046,120 @@ async function driveTouchControlsProbe(page) {
     renderGeometry,
     graphics,
     screenshot,
+  };
+}
+
+async function driveSelectionFocusLossProbe(page) {
+  console.error("[skirmish-start] verify selection modifier focus loss");
+  const query = async () => (await rpc(page, "querySelection"))?.result ?? null;
+  const before = await query();
+  expect(before?.modes?.preferSelection === false,
+    "selection focus-loss probe did not start with additive selection disabled", before);
+
+  await page.keyboard.down("Shift");
+  await page.waitForTimeout(40);
+  await runFrames(page, 4, "selection modifier down");
+  const held = await query();
+  expect(held?.modes?.preferSelection === true,
+    "Shift did not enable additive selection through the real input path", held);
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("blur"));
+  });
+  await page.waitForTimeout(80);
+  await runFrames(page, 4, "selection modifier focus loss");
+  const blurred = await query();
+  expect(blurred?.modes?.preferSelection === false,
+    "focus loss left additive selection enabled", { before, held, blurred });
+
+  await page.keyboard.up("Shift");
+  await page.locator("#viewport").focus();
+  await page.waitForTimeout(40);
+  await runFrames(page, 4, "selection modifier focus restore");
+  const restored = await query();
+  expect(restored?.modes?.preferSelection === false,
+    "focus restore re-enabled additive selection", restored);
+
+  const clickSelect = async (drawable, label) => {
+    const point = {
+      x: Math.round(drawable.screenPos.x),
+      y: Math.round(drawable.screenPos.y),
+    };
+    await postMouse(page, WM_MOUSEMOVE, point);
+    await runFrames(page, 2, `${label} move`);
+    await postMouse(page, WM_LBUTTONDOWN, point);
+    await postMouse(page, WM_LBUTTONUP, point);
+    await runFrames(page, 6, `${label} click`);
+    return query();
+  };
+
+  const displaySize = await page.evaluate(() =>
+    window.CnCPort.state.engineDisplaySize ?? { width: 800, height: 600 });
+  const playableUnits = (drawables) => drawables.filter((drawable) =>
+    drawable?.localOwned === true && drawable?.structure !== true
+      && drawable?.kindOf?.selectable === true && drawable?.onScreen === true
+      && drawable?.screenPos?.x > 80
+      && drawable?.screenPos?.x < displaySize.width - 80
+      && drawable?.screenPos?.y > 80
+      && drawable?.screenPos?.y < displaySize.height - 120);
+
+  let drawablesReply = await rpc(page, "queryDrawables");
+  expect(drawablesReply?.ok === true,
+    "selection focus-loss drawable query failed", drawablesReply);
+  let drawableState = drawablesReply.result ?? drawablesReply.drawables ?? {};
+  let allDrawables = drawableState.allDrawables ?? drawableState.drawables ?? [];
+  let candidates = playableUnits(allDrawables);
+  if (candidates.length === 0) {
+    const offscreenUnit = allDrawables.find((drawable) =>
+      drawable?.localOwned === true && drawable?.structure !== true
+        && drawable?.kindOf?.selectable === true && drawable?.worldPos != null);
+    expect(Boolean(offscreenUnit),
+      "selection focus-loss probe found no selectable local unit", drawableState.stats);
+    const lookAt = await rpc(page, "tacticalViewLookAt", {
+      worldPos: offscreenUnit.worldPos,
+    });
+    expect(lookAt?.ok === true,
+      "selection focus-loss probe could not frame its local unit", { offscreenUnit, lookAt });
+    await runFrames(page, 10, "selection focus-loss frame unit");
+    drawablesReply = await rpc(page, "queryDrawables");
+    expect(drawablesReply?.ok === true,
+      "selection focus-loss drawable query failed after framing", drawablesReply);
+    drawableState = drawablesReply.result ?? drawablesReply.drawables ?? {};
+    allDrawables = drawableState.allDrawables ?? drawableState.drawables ?? [];
+    candidates = playableUnits(allDrawables);
+  }
+  expect(candidates.length > 0,
+    "selection focus-loss probe could not place a local unit in the playable viewport", {
+      stats: drawableState.stats,
+      local: allDrawables.filter((drawable) => drawable?.localOwned === true),
+    });
+
+  const firstUnit = candidates[0];
+  const secondUnit = candidates[1] ?? firstUnit;
+  const selectedFirst = await clickSelect(firstUnit, "selection focus-loss first unit");
+  expect(selectedFirst?.selectCount === 1
+      && selectedFirst.selected?.some((entry) => Number(entry.id) === Number(firstUnit.id)),
+    "first ordinary unit click did not replace the previous selection", selectedFirst);
+  const selectedSecond = await clickSelect(secondUnit, "selection focus-loss second unit");
+  expect(selectedSecond?.selectCount === 1
+      && selectedSecond.selected?.some((entry) => Number(entry.id) === Number(secondUnit.id)),
+    "ordinary unit clicks still accumulated or toggled selection after focus restore", {
+      firstUnit,
+      secondUnit,
+      selectedFirst,
+      selectedSecond,
+    });
+  return {
+    before,
+    held,
+    blurred,
+    restored,
+    selectionClicks: {
+      firstUnit: { id: firstUnit.id, name: firstUnit.name },
+      secondUnit: { id: secondUnit.id, name: secondUnit.name },
+      afterFirst: selectedFirst,
+      afterSecond: selectedSecond,
+    },
   };
 }
 
@@ -3103,6 +3219,9 @@ async function main() {
     const touchControlsProbe = expectTouchControlsProbe
       ? await driveTouchControlsProbe(page)
       : null;
+    const selectionFocusLossProbe = expectSelectionFocusLossProbe
+      ? await driveSelectionFocusLossProbe(page)
+      : null;
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
     expect(renderProbe.ok === true,
@@ -3321,6 +3440,7 @@ async function main() {
       scorchProbe,
       particleVisibilityProbe,
       touchControlsProbe,
+      selectionFocusLossProbe,
       lightPulseProbe,
       replayRoundTrip,
       renderProbe,

@@ -61,6 +61,7 @@
 #endif
 
 MetaMap *TheMetaMap = NULL;
+static MetaEventTranslator *TheMetaEventTranslator = NULL;
 
 #ifdef _INTERNAL
 // for occasional debugging...
@@ -375,6 +376,8 @@ MetaEventTranslator::MetaEventTranslator() :
 	m_lastKeyDown(MK_NONE),
 	m_lastModState(0)
 {
+	TheMetaEventTranslator = this;
+
 	for (Int i = 0; i < NUM_MOUSE_BUTTONS; ++i) {
 		m_nextUpShouldCreateDoubleClick[i] = FALSE;
 	}
@@ -385,6 +388,38 @@ MetaEventTranslator::MetaEventTranslator() :
 //-------------------------------------------------------------------------------------------------
 MetaEventTranslator::~MetaEventTranslator()
 {
+	if (TheMetaEventTranslator == this)
+		TheMetaEventTranslator = NULL;
+}
+
+//-------------------------------------------------------------------------------------------------
+void MetaEventTranslator::resetForFocusLoss()
+{
+	m_lastKeyDown = MK_NONE;
+	m_lastModState = 0;
+
+	for (Int i = 0; i < NUM_MOUSE_BUTTONS; ++i) {
+		m_nextUpShouldCreateDoubleClick[i] = FALSE;
+	}
+
+	if (!TheInGameUI || !TheMessageStream)
+		return;
+
+	if (TheInGameUI->isInForceMoveToMode())
+		TheMessageStream->appendMessage(GameMessage::MSG_META_END_FORCEMOVE);
+	if (TheInGameUI->isInWaypointMode())
+		TheMessageStream->appendMessage(GameMessage::MSG_META_END_WAYPOINTS);
+	if (TheInGameUI->isInPreferSelectionMode())
+		TheMessageStream->appendMessage(GameMessage::MSG_META_END_PREFER_SELECTION);
+	if (TheInGameUI->isInForceAttackMode())
+		TheMessageStream->appendMessage(GameMessage::MSG_META_END_FORCEATTACK);
+}
+
+//-------------------------------------------------------------------------------------------------
+void resetMetaEventTranslatorForFocusLoss()
+{
+	if (TheMetaEventTranslator)
+		TheMetaEventTranslator->resetForFocusLoss();
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -723,4 +758,3 @@ MetaMapRec *MetaMap::getMetaMapRec(GameMessage::Type t)
 {
 	MetaMap::parseMetaMap(ini);
 }
-

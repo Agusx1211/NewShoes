@@ -346,6 +346,7 @@ private:
 public:
 	MetaEventTranslator();
 	~MetaEventTranslator();
+	void resetForFocusLoss();
 	virtual GameMessageDisposition translateGameMessage(const GameMessage *msg);
 };	
 
@@ -375,5 +376,7 @@ public:
 };
 
 extern MetaMap *TheMetaMap;
+
+void resetMetaEventTranslatorForFocusLoss();
 
 #endif
