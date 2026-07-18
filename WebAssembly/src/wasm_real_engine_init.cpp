@@ -87,6 +87,7 @@
 #include "wasm_browser_mouse.h"
 #include "GameLogic/AI.h"
 #include "GameLogic/Module/AIUpdate.h"
+#include "GameLogic/Module/WorkerAIUpdate.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptEngine.h"
@@ -787,6 +788,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_player_diagnostics
 	g_player_runtime_diagnostics_enabled = enabled != 0;
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_render_disabled(int disabled)
+{
+	if (TheWritableGlobalData == NULL) return 0;
+	TheWritableGlobalData->m_disableRender = disabled != 0;
+	return TheWritableGlobalData->m_disableRender == (disabled != 0) ? 1 : 0;
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_last_update_target()
 {
 	return g_last_engine_update_target.c_str();
@@ -801,6 +809,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_real_engine_set_engine_update_brea
 extern "C" void cnc_port_note_game_logic_step(const char *name)
 {
 	g_last_game_logic_step = name != nullptr ? name : "";
+	note_engine_frame_profile_marker(name);
 	if (g_last_game_logic_step.rfind("GameEngine.init.", 0) == 0
 		|| g_last_game_logic_step.rfind("GameLogic.reset.", 0) == 0
 		|| g_last_game_logic_step.rfind("W3DTerrainLogic.reset.", 0) == 0
@@ -841,6 +850,10 @@ extern "C" void cnc_port_note_script_step(
 	g_last_script_side_index = side_index;
 	g_last_script_condition_type = condition_type;
 	g_last_script_action_type = action_type;
+	if (g_engine_frame_profile_enabled && g_last_script_phase == "executeActions.action") {
+		const std::string label = "ScriptAction." + std::to_string(action_type);
+		note_engine_frame_profile_marker(label.c_str());
+	}
 }
 
 extern "C" void cnc_port_note_texture_apply(
@@ -4217,6 +4230,28 @@ void append_ai_runtime_state(std::string &json)
 	json += "}";
 }
 
+void append_recorder_state(std::string &json)
+{
+	json += ",\"recorder\":{";
+	json += "\"ready\":";
+	json += TheRecorder != NULL ? "true" : "false";
+	if (TheRecorder != NULL) {
+		json += ",\"mode\":" + std::to_string(static_cast<Int>(TheRecorder->getMode()));
+		json += ",\"recording\":";
+		json += TheRecorder->isRecording() ? "true" : "false";
+		json += ",\"playback\":";
+		json += TheRecorder->isPlayingBack() ? "true" : "false";
+		json += ",\"crcMismatch\":";
+		json += TheRecorder->sawPlaybackCRCMismatch() ? "true" : "false";
+		json += ",\"currentReplay\":\"" + json_escape(
+			TheRecorder->getCurrentReplayFilename().str()) + "\"";
+	} else {
+		json += ",\"mode\":null,\"recording\":false,\"playback\":false,"
+			"\"crcMismatch\":false,\"currentReplay\":null";
+	}
+	json += "}";
+}
+
 void append_real_engine_frame_summary_state(std::string &json)
 {
 	json += ",\"inputSettings\":{\"useAlternateMouse\":";
@@ -4258,6 +4293,7 @@ void append_real_engine_frame_summary_state(std::string &json)
 		json += "\"gameLogicReady\":false,\"inGame\":null,\"gameMode\":null,"
 			"\"logicFrame\":null,\"objectCount\":0,\"loadingMap\":null";
 	}
+	append_recorder_state(json);
 	if (TheGameClient != NULL) {
 		json += ",\"gameClientReady\":true";
 		json += ",\"clientFrame\":" + std::to_string(TheGameClient->getFrame());
@@ -5135,21 +5171,7 @@ void append_real_engine_client_state(std::string &json)
 			"\"loadingSave\":null,\"clearingGameData\":null,\"gamePaused\":null,"
 		"\"logicFrame\":null,\"objectCount\":0,\"progressComplete\":null";
 	}
-	json += ",\"recorder\":{";
-	json += "\"ready\":";
-	json += TheRecorder != NULL ? "true" : "false";
-	if (TheRecorder != NULL) {
-		json += ",\"mode\":" + std::to_string(static_cast<Int>(TheRecorder->getMode()));
-		json += ",\"recording\":";
-		json += TheRecorder->isRecording() ? "true" : "false";
-		json += ",\"playback\":";
-		json += TheRecorder->isPlayingBack() ? "true" : "false";
-		json += ",\"currentReplay\":\"" + json_escape(
-			TheRecorder->getCurrentReplayFilename().str()) + "\"";
-	} else {
-		json += ",\"mode\":null,\"recording\":false,\"playback\":false,\"currentReplay\":null";
-	}
-	json += "}";
+	append_recorder_state(json);
 	json += ",\"lifecycleDebug\":{";
 	json += "\"newGameCount\":" + std::to_string(cnc_port_logic_dispatch_new_game_count());
 	json += ",\"lastNewGameMode\":" + std::to_string(cnc_port_logic_dispatch_last_new_game_mode());
@@ -6527,6 +6549,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int
 	char elapsed[64];
 	std::snprintf(elapsed, sizeof(elapsed), ",\"lastFrameMs\":%.1f", g_frame_state.last_frame_ms);
 	json += elapsed;
+	append_recorder_state(json);
+	append_engine_frame_profile_json(json);
 	json += "}";
 	g_frame_json = json;
 	return g_frame_json.c_str();
@@ -8856,6 +8880,114 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_skirmish_ma
 	json += ",\"applied\":\"" + json_escape(it->first.str()) + "\"";
 	append_map_metadata_json(json, "metadata", &it->second);
 	append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_skirmish_seed(Int seed)
+{
+	static std::string json;
+	json = "{";
+	json += "\"ok\":false";
+	json += ",\"requested\":" + std::to_string(static_cast<long long>(seed));
+
+	if (TheSkirmishGameInfo == NULL) {
+		json += ",\"error\":\"skirmishGameInfoNotReady\"";
+		json += "}";
+		return json.c_str();
+	}
+	if (TheSkirmishGameInfo->isGameInProgress()) {
+		json += ",\"error\":\"skirmishAlreadyStarted\"";
+		json += "}";
+		return json.c_str();
+	}
+
+	TheSkirmishGameInfo->setSeed(seed);
+	json = "{";
+	json += "\"ok\":true";
+	json += ",\"applied\":" + std::to_string(static_cast<long long>(TheSkirmishGameInfo->getSeed()));
+	append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_supply_exit()
+{
+	static std::string json;
+	Object *worker_object = NULL;
+	WorkerAIUpdate *worker_update = NULL;
+	if (TheGameLogic != NULL) {
+		for (Object *obj = TheGameLogic->getFirstObject(); obj != NULL; obj = obj->getNextObject()) {
+			AIUpdateInterface *ai = obj->getAIUpdateInterface();
+			if (ai != NULL && ai->getWorkerAIInterface() != NULL) {
+				WorkerAIUpdate *candidate = static_cast<WorkerAIUpdate *>(ai);
+				if (candidate->isSupplyTruckBrainActive()) {
+					continue;
+				}
+				worker_object = obj;
+				worker_update = candidate;
+				break;
+			}
+		}
+	}
+
+	json = "{";
+	json += "\"ok\":false";
+	if (worker_object == NULL || worker_update == NULL) {
+		json += ",\"error\":\"workerNotFound\"}";
+		return json.c_str();
+	}
+
+	const ObjectID worker_id = worker_object->getID();
+	const Bool active_before_prepare = worker_update->isSupplyTruckBrainActive();
+	const UnsignedInt reentries_before =
+		worker_update->getSupplyTruckExitReentryCountForDiagnostics();
+	const Bool prepared_for_exit = worker_update->prepareSupplyTruckExitForDiagnostics();
+	const Bool active_before_exit = worker_update->isSupplyTruckBrainActive();
+	const Bool ferrying_before_exit = worker_update->isCurrentlyFerryingSupplies();
+	const StateID supply_state_before_exit =
+		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const DWORD started_at = GetTickCount();
+	worker_update->exitingSupplyTruckState();
+	const DWORD elapsed_ms = GetTickCount() - started_at;
+	const UnsignedInt reentries_after =
+		worker_update->getSupplyTruckExitReentryCountForDiagnostics();
+	const UnsignedInt reentry_delta = reentries_after - reentries_before;
+	const Bool active_after_exit = worker_update->isSupplyTruckBrainActive();
+	const StateID supply_state_after_exit =
+		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const Bool worker_survived = TheGameLogic->findObjectByID(worker_id) == worker_object;
+	const Bool ok = !active_before_prepare && prepared_for_exit
+		&& active_before_exit && ferrying_before_exit && supply_state_before_exit == ST_WANTING
+		&& !active_after_exit && supply_state_after_exit == ST_IDLE
+		&& reentry_delta == 1 && worker_survived;
+
+	json = "{";
+	json += "\"ok\":";
+	json += ok ? "true" : "false";
+	json += ",\"workerId\":" + std::to_string(static_cast<unsigned long long>(worker_id));
+	const ThingTemplate *worker_template = worker_object->getTemplate();
+	json += ",\"template\":\"" + json_escape(
+		worker_template != NULL ? worker_template->getName().str() : "") + "\"";
+	json += ",\"activeBeforePrepare\":";
+	json += active_before_prepare ? "true" : "false";
+	json += ",\"preparedForExit\":";
+	json += prepared_for_exit ? "true" : "false";
+	json += ",\"activeBeforeExit\":";
+	json += active_before_exit ? "true" : "false";
+	json += ",\"ferryingBeforeExit\":";
+	json += ferrying_before_exit ? "true" : "false";
+	json += ",\"wantingBeforeExit\":";
+	json += supply_state_before_exit == ST_WANTING ? "true" : "false";
+	json += ",\"activeAfterExit\":";
+	json += active_after_exit ? "true" : "false";
+	json += ",\"idleAfterExit\":";
+	json += supply_state_after_exit == ST_IDLE ? "true" : "false";
+	json += ",\"suppressedReentries\":"
+		+ std::to_string(static_cast<unsigned long long>(reentry_delta));
+	json += ",\"elapsedMs\":" + std::to_string(static_cast<unsigned long long>(elapsed_ms));
+	json += ",\"workerSurvived\":";
+	json += worker_survived ? "true" : "false";
 	json += "}";
 	return json.c_str();
 }

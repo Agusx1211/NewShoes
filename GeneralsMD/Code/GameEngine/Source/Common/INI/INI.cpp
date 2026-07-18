@@ -564,6 +564,29 @@ void INI::parseUnsignedInt( INI* ini, void * /*instance*/, void *store, const vo
 }
 
 //-------------------------------------------------------------------------------------------------
+/** Parse an unsigned integer constrained by the inclusive INIUnsignedIntRange in userData. */
+//-------------------------------------------------------------------------------------------------
+void INI::parseUnsignedIntRange( INI* ini, void * /*instance*/, void *store, const void* userData )
+{
+	const INIUnsignedIntRange *range = (const INIUnsignedIntRange *)userData;
+	if (range == NULL || range->minimum > range->maximum)
+	{
+		DEBUG_CRASH(("Invalid range INI::parseUnsignedIntRange"));
+		throw INI_INVALID_PARAMS;
+	}
+
+	const UnsignedInt value = scanUnsignedInt(ini->getNextToken());
+	if (!range->contains(value))
+	{
+		DEBUG_CRASH(("Value %u outside INI::parseUnsignedIntRange bounds %u..%u",
+			value, range->minimum, range->maximum));
+		throw INI_INVALID_DATA;
+	}
+
+	*(UnsignedInt *)store = value;
+}
+
+//-------------------------------------------------------------------------------------------------
 /** Parse real from buffer and assign at location 'store' */
 //-------------------------------------------------------------------------------------------------
 void INI::parseReal( INI* ini, void * /*instance*/, void *store, const void* /*userData*/ )

@@ -1751,6 +1751,14 @@ void W3DDisplay::draw( void )
 	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.fpsBefore");
 	updateAverageFPS();
 	CNC_PORT_NOTE_W3D_DISPLAY_STEP("W3DDisplay.draw.fpsAfter");
+	// The disable-render switch is also used to isolate simulation work in
+	// deterministic replay profiling. Avoid all view, shroud, particle, and
+	// render-target updates while it is set; the old Begin_Render-only check
+	// still performed most of the GPU work before suppressing presentation.
+	if (TheGlobalData->m_disableRender)
+	{
+		return;
+	}
 	if (TheGlobalData->m_enableDynamicLOD && TheGameLogic->getShowDynamicLOD())
 	{
 		DynamicGameLODLevel lod=TheGameLODManager->findDynamicLODLevel(m_averageFPS);
