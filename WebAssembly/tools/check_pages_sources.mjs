@@ -55,6 +55,8 @@ const scripts = [
   "harness/launcher-desktop-apps.js",
   "harness/launcher-device-transfer.mjs",
   "harness/launcher-entry.mjs",
+  "harness/launcher-file-collector.mjs",
+  "harness/launcher_file_collector_unit.mjs",
   "harness/launcher-games.mjs",
   "harness/launcher_games_browser_smoke.mjs",
   "harness/launcher-hardware-info.js",
