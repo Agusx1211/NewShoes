@@ -163,6 +163,21 @@ int main()
 		return 1;
 	}
 
+	const Vector3 quick_length_axis_orders[] = {
+		Vector3(1.0f, 2.0f, 3.0f),
+		Vector3(-1.0f, -3.0f, 2.0f),
+		Vector3(2.0f, -1.0f, -3.0f),
+		Vector3(-2.0f, 3.0f, -1.0f),
+		Vector3(3.0f, -1.0f, 2.0f),
+		Vector3(-3.0f, 2.0f, -1.0f),
+	};
+	for (const Vector3 &axis_order : quick_length_axis_orders) {
+		if (!expect(near(axis_order.Quick_Length(), 3.9375f),
+				"Vector3 quick length depends on axis ordering")) {
+			return 1;
+		}
+	}
+
 	if (!expect(near(Vector2::Perp_Dot_Product(Vector2(1.0f, 0.0f), Vector2(0.0f, 1.0f)), -1.0f),
 			"Vector2 perp dot mismatch")) {
 		return 1;

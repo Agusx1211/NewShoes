@@ -60,6 +60,13 @@ constexpr const char *kSoundPath = "Data\\Audio\\Sounds\\PortSmoke.wav";
 constexpr const char *kAdpcmEventName = "PortSmokeADPCM2D";
 constexpr const char *kAdpcmSoundBaseName = "PortSmokeADPCM";
 constexpr const char *kAdpcmSoundPath = "Data\\Audio\\Sounds\\PortSmokeADPCM.wav";
+constexpr const char *kAllEventName = "PortSmokeAll2D";
+constexpr const char *kAllSoundBaseName1 = "PortSmokeAll1";
+constexpr const char *kAllSoundBaseName2 = "PortSmokeAll2";
+constexpr const char *kAllSoundBaseName3 = "PortSmokeAll3";
+constexpr const char *kAllSoundPath1 = "Data\\Audio\\Sounds\\PortSmokeAll1.wav";
+constexpr const char *kAllSoundPath2 = "Data\\Audio\\Sounds\\PortSmokeAll2.wav";
+constexpr const char *kAllSoundPath3 = "Data\\Audio\\Sounds\\PortSmokeAll3.wav";
 constexpr U32 kSampleRate = 44100;
 constexpr U32 kChannels = 2;
 constexpr U32 kBitsPerSample = 16;
@@ -230,6 +237,12 @@ public:
 	void installSoundManager(SoundManager *sound) { m_sound = sound; }
 	UnsignedInt available2DSampleCount() const { return static_cast<UnsignedInt>(m_availableSamples.size()); }
 	UnsignedInt playingSoundCount() const { return static_cast<UnsignedInt>(m_playingSounds.size()); }
+	AsciiString playingFilename() const
+	{
+		return m_playingSounds.empty()
+			? AsciiString::TheEmptyString
+			: m_playingSounds.front()->m_audioEventRTS->getFilename();
+	}
 	void addNullEntriesToAllPlayingLists()
 	{
 		m_playingSounds.push_back(nullptr);
@@ -769,6 +782,9 @@ int main()
 	NameKeyGenerator name_key_generator;
 	const std::vector<char> wave = makePcmWave();
 	local_file_system.addFile(kSoundPath, wave);
+	local_file_system.addFile(kAllSoundPath1, wave);
+	local_file_system.addFile(kAllSoundPath2, wave);
+	local_file_system.addFile(kAllSoundPath3, wave);
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -999,6 +1015,57 @@ int main()
 			adpcmJson = adpcmOut.str();
 		}
 
+		const UnsignedInt releasesBeforeAll = g_audio_event_release_count;
+		StackAudioEventInfo allInfo;
+		configureAudioEventInfo(allInfo);
+		allInfo.m_audioName = kAllEventName;
+		allInfo.m_control = AC_ALL;
+		allInfo.m_sounds.clear();
+		allInfo.m_sounds.push_back(kAllSoundBaseName1);
+		allInfo.m_sounds.push_back(kAllSoundBaseName2);
+		allInfo.m_sounds.push_back(kAllSoundBaseName3);
+
+		AudioEventRTS allEvent(kAllEventName);
+		allEvent.setAudioEventInfo(&allInfo);
+		allEvent.generateFilename();
+		allEvent.generatePlayInfo();
+		allEvent.setPlayingHandle(AHSV_FirstHandle + 2);
+
+		StackAudioRequest allRequest;
+		allRequest.m_request = AR_Play;
+		allRequest.m_pendingEvent = &allEvent;
+		allRequest.m_usePendingEvent = TRUE;
+		allRequest.m_requiresCheckForSample = FALSE;
+		audio.processRequest(&allRequest);
+
+		const HSAMPLE allSample = audio.playingSampleHandle();
+		const MSSBrowserSampleState *allSampleState = MSSBrowserFindSample(allSample);
+		require(allSample != 0 && allSampleState != nullptr,
+			"AC_ALL event did not start its first sample");
+		require(audio.playingFilename() == kAllSoundPath1,
+			"AC_ALL event did not start with its first filename");
+
+		AIL_end_sample(allSample);
+		require(allSampleState->status == SMP_PLAYING,
+			"AC_ALL event stopped after its first sample");
+		require(audio.playingFilename() == kAllSoundPath2,
+			"AC_ALL event did not advance to its second filename");
+
+		AIL_end_sample(allSample);
+		require(allSampleState->status == SMP_PLAYING,
+			"AC_ALL event stopped after its second sample");
+		require(audio.playingFilename() == kAllSoundPath3,
+			"AC_ALL event did not advance to its third filename");
+
+		AIL_end_sample(allSample);
+		require(allSampleState->status == SMP_DONE,
+			"AC_ALL event did not finish after its final sample");
+		audio.processPlayingList();
+		require(audio.playingSoundCount() == 0,
+			"completed AC_ALL event remained in the playing list");
+		require(g_audio_event_release_count == releasesBeforeAll + 1,
+			"completed AC_ALL event did not release its AudioEventRTS");
+
 		std::cout
 			<< "{\"ok\":true"
 			<< ",\"path\":\"MilesAudioManager::processRequest->playAudioEvent->playSample\""
@@ -1025,6 +1092,14 @@ int main()
 			<< ",\"nullCleanup\":true"
 			<< ",\"audioEventReleases\":" << g_audio_event_release_count
 			<< "}"
+			<< ",\"allSequence\":[";
+		writeJsonString(std::cout, kAllSoundPath1);
+		std::cout << ',';
+		writeJsonString(std::cout, kAllSoundPath2);
+		std::cout << ',';
+		writeJsonString(std::cout, kAllSoundPath3);
+		std::cout
+			<< "]"
 			<< ",\"adpcm\":" << adpcmJson
 			<< "}\n";
 	}
