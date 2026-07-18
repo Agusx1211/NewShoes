@@ -65,7 +65,7 @@ File * Win32LocalFileSystem::openFile(const Char *filename, Int access /* = 0 */
 		AsciiString dirName;
 		string.nextToken(&token, "\\/");
 		dirName = token;
-		while ((token.find('.') == NULL) || (string.find('.') != NULL)) {
+		while (string.isNotEmpty()) {
 			createDirectory(dirName);
 			string.nextToken(&token, "\\/");
 			dirName.concat('\\');

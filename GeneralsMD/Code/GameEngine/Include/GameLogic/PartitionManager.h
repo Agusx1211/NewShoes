@@ -424,6 +424,9 @@ private:
 	*/
 	void freeCoiArray();
 
+	/// Remove this data from the manager's pending update list before severing its owner.
+	void cancelPendingUpdate();
+
 	/**
 			marks self as touching no cells. (and any previous cells as not touching self!)
 	*/
