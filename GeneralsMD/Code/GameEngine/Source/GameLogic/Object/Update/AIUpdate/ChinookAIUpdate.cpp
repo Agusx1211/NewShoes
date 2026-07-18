@@ -26,6 +26,8 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include <type_traits>
+
 #define DEFINE_VETERANCY_NAMES				// for TheVeterancyNames[]
 
 #include "Common/ActionManager.h"
@@ -182,12 +184,14 @@ public:
 		return STATE_CONTINUE;
 	}
 
-	void onExit()
+	virtual void onExit( StateExitType )
 	{
 		Object *owner = getMachineOwner();
 		owner->clearStatus( MAKE_OBJECT_STATUS_MASK( OBJECT_STATUS_RIDER8 ) );
 	}
 };
+static_assert(std::is_same_v<decltype(&ChinookHeadOffMapState::onExit),
+	void (ChinookHeadOffMapState::*)(StateExitType)>);
 EMPTY_DTOR(ChinookHeadOffMapState)
 
 //-------------------------------------------------------------------------------------------------

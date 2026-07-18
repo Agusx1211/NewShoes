@@ -38,6 +38,48 @@ function pushBounded(list, value, limit) {
   }
 }
 
+class RetainedEventQueue {
+  constructor() {
+    this._items = [];
+    this._head = 0;
+  }
+
+  get length() {
+    return this._items.length - this._head;
+  }
+
+  push(value, limit) {
+    this._items.push(value);
+    const overflow = this.length - limit;
+    if (overflow > 0) {
+      this._head += overflow;
+    }
+    if (this._head > 0 && this._head * 2 >= this._items.length) {
+      this._items = this._items.slice(this._head);
+      this._head = 0;
+    }
+  }
+
+  toArray() {
+    return this._items.slice(this._head);
+  }
+
+  tail(count) {
+    return this._items.slice(Math.max(this._head, this._items.length - count));
+  }
+
+  filter(callback) {
+    const matches = [];
+    for (let index = this._head; index < this._items.length; index += 1) {
+      const event = this._items[index];
+      if (callback(event)) {
+        matches.push(event);
+      }
+    }
+    return matches;
+  }
+}
+
 function safeJsonSize(value) {
   try {
     return JSON.stringify(value).length;
@@ -803,7 +845,7 @@ class IssueRecorder {
     this.startedAt = nowIso();
     this.recording = false;
     this.rpc = null;
-    this.events = [];
+    this._events = new RetainedEventQueue();
     this.frameSamples = [];
     this.issues = [];
     this.session = {};
@@ -833,6 +875,10 @@ class IssueRecorder {
     this.dumpBusy = false;
     this.lastStatusRefreshMs = Number.NEGATIVE_INFINITY;
     this.setStatus("idle");
+  }
+
+  get events() {
+    return this._events.toArray();
   }
 
   async init() {
@@ -1133,10 +1179,7 @@ class IssueRecorder {
     canvas.addEventListener("pointercancel", finish);
   }
 
-  record(type, data = {}, { force = false } = {}) {
-    if (!this.recording && !force && this.events.length >= DEFAULT_LIMITS.preRecordEvents) {
-      this.events.shift();
-    }
+  record(type, data = {}) {
     const base = eventBase(type);
     const event = {
       seq: ++this.sequence,
@@ -1144,7 +1187,7 @@ class IssueRecorder {
       frame: this.currentEngineFrame(base.frame),
       data: redactLarge(data),
     };
-    pushBounded(this.events, event, this.recording ? DEFAULT_LIMITS.events : DEFAULT_LIMITS.preRecordEvents);
+    this._events.push(event, this.recording ? DEFAULT_LIMITS.events : DEFAULT_LIMITS.preRecordEvents);
     this.refreshStatus();
     return event;
   }
@@ -1514,10 +1557,10 @@ class IssueRecorder {
 
   timelineWindow(frame, radius = 600) {
     if (!Number.isFinite(Number(frame))) {
-      return this.events.slice(-1_000);
+      return this._events.tail(1_000);
     }
     const target = Number(frame);
-    return this.events.filter((event) => {
+    return this._events.filter((event) => {
       const eventFrame = Number(event.frame);
       return Number.isFinite(eventFrame) && Math.abs(eventFrame - target) <= radius;
     }).slice(-2_000);
@@ -1609,7 +1652,7 @@ class IssueRecorder {
           configuredDiagLevel: this.getConfiguredDiagLevel?.() ?? null,
         },
         counts: {
-          events: this.events.length,
+          events: this._events.length,
           frameSamples: this.frameSamples.length,
           issues: this.issues.length,
           logs: logs.length,
@@ -1635,7 +1678,7 @@ class IssueRecorder {
         })),
         note: "Replay helper reboots the harness and replays captured input events by engine frame. Exact deterministic state still depends on the original engine replay/save ownership.",
       },
-      timeline: this.events,
+      timeline: this._events.toArray(),
       frameSamples: this.frameSamples,
       animReports,
       animReportSamples: this.animReportSamples,
@@ -1663,7 +1706,7 @@ class IssueRecorder {
         updatedAt: nowIso(),
         reason,
         issueCount: this.issues.length,
-        eventCount: this.events.length,
+        eventCount: this._events.length,
         bundle,
       };
       const result = await putStoredDump(record);
@@ -1743,7 +1786,7 @@ class IssueRecorder {
     this.lastStatusRefreshMs = now;
     const label = this.recording ? "rec" : "idle";
     if (this.statusNode) {
-      this.statusNode.textContent = `${label} ${this.events.length}e ${this.issues.length}i`;
+      this.statusNode.textContent = `${label} ${this._events.length}e ${this.issues.length}i`;
     }
     this.refreshCaptureOverlay(now);
   }
@@ -1777,7 +1820,7 @@ class IssueRecorder {
       this.controls.captureTitle.textContent = this.recording ? "Recording issue dump" : "Capture stopped";
     }
     if (this.controls.captureStats) {
-      this.controls.captureStats.textContent = `${minutes}:${seconds} · ${this.events.length} events · ${packetCount} packets`;
+      this.controls.captureStats.textContent = `${minutes}:${seconds} · ${this._events.length} events · ${packetCount} packets`;
     }
     if (this.controls.captureStatus) {
       const packetCapture = network?.enabled === true ? " · packet capture on" : "";

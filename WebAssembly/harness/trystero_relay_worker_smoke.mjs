@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { schnorr, utils } from "@noble/secp256k1";
 import WebSocket from "ws";
+import { TrysteroNostrRelay } from "../cloudflare/trystero-relay/worker.mjs";
 
 const wasmRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const config = resolve(wasmRoot, "cloudflare/trystero-relay/wrangler.jsonc");
@@ -134,8 +135,71 @@ async function signedEvent(topic, content) {
   return event;
 }
 
+function memorySocket(attachment) {
+  let savedAttachment = structuredClone(attachment);
+  return {
+    messages: [],
+    deserializeAttachment() {
+      return structuredClone(savedAttachment);
+    },
+    serializeAttachment(value) {
+      savedAttachment = structuredClone(value);
+    },
+    savedAttachment() {
+      return structuredClone(savedAttachment);
+    },
+    send(message) {
+      this.messages.push(JSON.parse(message));
+    },
+    close() {},
+  };
+}
+
+async function verifyMemoryOnlyRelay() {
+  const topic = "c".repeat(40);
+  const filter = { kinds: [23456], "#x": [topic] };
+  const subscriber = memorySocket({
+    id: "subscriber",
+    subscriptions: [["restored-subscription", [filter]]],
+  });
+  const lateSubscriber = memorySocket({ id: "late-subscriber", subscriptions: [] });
+  const publisher = memorySocket({ id: "publisher", subscriptions: [] });
+  const sockets = [subscriber, lateSubscriber, publisher];
+  const ctx = {
+    getWebSockets: () => sockets,
+    get storage() {
+      throw new Error("Trystero relay must not access Durable Object storage");
+    },
+  };
+  const relay = new TrysteroNostrRelay(ctx);
+  const firstEvent = await signedEvent(topic, "memory-only-first-event");
+  await relay.webSocketMessage(publisher, JSON.stringify(["EVENT", firstEvent]));
+  expect(subscriber.messages.some((message) => message[0] === "EVENT"
+    && message[1] === "restored-subscription" && message[2]?.id === firstEvent.id),
+  "subscription attachment was not restored for live routing", subscriber.messages);
+
+  lateSubscriber.messages.length = 0;
+  await relay.webSocketMessage(lateSubscriber, JSON.stringify([
+    "REQ", "late-subscription", { ...filter, since: firstEvent.created_at },
+  ]));
+  expect(lateSubscriber.messages.some((message) => message[0] === "EVENT"
+    && message[2]?.id === firstEvent.id),
+  "warm in-memory event was not replayed to a late subscriber", lateSubscriber.messages);
+  expect(lateSubscriber.savedAttachment().subscriptions[0]?.[0] === "late-subscription",
+    "subscription was not saved in the WebSocket attachment", lateSubscriber.savedAttachment());
+
+  lateSubscriber.messages.length = 0;
+  const rehydratedRelay = new TrysteroNostrRelay(ctx);
+  const secondEvent = await signedEvent(topic, "memory-only-second-event");
+  await rehydratedRelay.webSocketMessage(publisher, JSON.stringify(["EVENT", secondEvent]));
+  expect(lateSubscriber.messages.some((message) => message[0] === "EVENT"
+    && message[1] === "late-subscription" && message[2]?.id === secondEvent.id),
+  "subscription attachment was not restored after relay reconstruction", lateSubscriber.messages);
+}
+
 const sockets = [];
 try {
+  await verifyMemoryOnlyRelay();
   const health = await waitForHealth();
   expect(health.ok === true && health.gameplayTraffic === false,
     "relay health contract is incorrect", health);
@@ -204,6 +268,7 @@ try {
     invalidEventRejected: true,
     originGate: true,
     opaqueAgentSignaling: true,
+    durableObjectStorageWrites: false,
   }));
 } finally {
   for (const socket of sockets) socket.close();
