@@ -688,6 +688,38 @@ bool exercise_ini_multi_field_bridge()
 		expect(built_parse.getNthExtraOffset(0) == 8, "INI multi-field builder extra offset failed");
 }
 
+void parse_unsigned_int_range(char *line, const INIUnsignedIntRange &range, UnsignedInt *value)
+{
+	INI ini;
+	std::strtok(line, " \t\r\n=");
+	INI::parseUnsignedIntRange(&ini, nullptr, value, &range);
+}
+
+bool exercise_ini_unsigned_int_range()
+{
+	const INIUnsignedIntRange outer_node_range = { 0, 16 };
+	char zero_line[] = "OuterEffectNumBones = 0";
+	char maximum_line[] = "OuterEffectNumBones = 16";
+
+	UnsignedInt value = 99;
+	parse_unsigned_int_range(zero_line, outer_node_range, &value);
+	if (!expect(value == 0,
+			"bounded unsigned parser rejected zero")) {
+		return false;
+	}
+	parse_unsigned_int_range(maximum_line, outer_node_range, &value);
+	if (!expect(value == 16,
+			"bounded unsigned parser rejected its inclusive maximum")) {
+		return false;
+	}
+
+	return expect(outer_node_range.contains(0), "bounded unsigned range rejected zero") &&
+		expect(outer_node_range.contains(16), "bounded unsigned range rejected its maximum") &&
+		expect(!outer_node_range.contains(17), "bounded unsigned range accepted overflow") &&
+		expect(!outer_node_range.contains(static_cast<UnsignedInt>(-1)),
+			"bounded unsigned range accepted a negative token representation");
+}
+
 bool exercise_file_interfaces()
 {
 	SmokeFile invalid;
@@ -1968,6 +2000,7 @@ int main()
 		exercise_quoted_printable() &&
 		exercise_file_interfaces() &&
 		exercise_ini_multi_field_bridge() &&
+		exercise_ini_unsigned_int_range() &&
 		exercise_file_system_dispatch() &&
 		exercise_win32_local_file_system() &&
 		exercise_archive_big_files() &&
