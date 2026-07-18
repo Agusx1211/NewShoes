@@ -708,6 +708,68 @@ bool exercise_ini_multi_field_bridge()
 		expect(built_parse.getNthExtraOffset(0) == 8, "INI multi-field builder extra offset failed");
 }
 
+void parse_unsigned_int_range(char *line, const INIUnsignedIntRange &range, UnsignedInt *value)
+{
+	INI ini;
+	std::strtok(line, " \t\r\n=");
+	INI::parseUnsignedIntRange(&ini, nullptr, value, &range);
+}
+
+bool expect_unsigned_int_range_rejection(
+	char *line,
+	const INIUnsignedIntRange &range,
+	const char *rejection_message,
+	const char *destination_message)
+{
+	UnsignedInt value = 99;
+	try {
+		parse_unsigned_int_range(line, range, &value);
+	} catch (...) {
+		// INI status codes come from an anonymous enum, so their exception type
+		// is translation-unit-local and cannot be named here.
+		return expect(value == 99, destination_message);
+	}
+
+	return expect(false, rejection_message);
+}
+
+bool exercise_ini_unsigned_int_range()
+{
+	const INIUnsignedIntRange outer_node_range = { 0, 16 };
+	char zero_line[] = "OuterEffectNumBones = 0";
+	char maximum_line[] = "OuterEffectNumBones = 16";
+	char overflow_line[] = "OuterEffectNumBones = 17";
+	char negative_line[] = "OuterEffectNumBones = -1";
+
+	UnsignedInt value = 99;
+	parse_unsigned_int_range(zero_line, outer_node_range, &value);
+	if (!expect(value == 0,
+			"bounded unsigned parser rejected zero")) {
+		return false;
+	}
+	parse_unsigned_int_range(maximum_line, outer_node_range, &value);
+	if (!expect(value == 16,
+			"bounded unsigned parser rejected its inclusive maximum")) {
+		return false;
+	}
+
+	return expect_unsigned_int_range_rejection(
+		overflow_line,
+		outer_node_range,
+		"bounded unsigned parser accepted overflow",
+		"bounded unsigned parser stored overflow before rejection") &&
+		expect_unsigned_int_range_rejection(
+			negative_line,
+			outer_node_range,
+			"bounded unsigned parser accepted a negative token",
+			"bounded unsigned parser stored a negative token before rejection") &&
+		expect(outer_node_range.contains(0), "bounded unsigned range rejected zero") &&
+		expect(outer_node_range.contains(16), "bounded unsigned range rejected its maximum") &&
+		expect(!outer_node_range.contains(17), "bounded unsigned range accepted overflow") &&
+		expect(!outer_node_range.contains(static_cast<UnsignedInt>(-1)),
+			"bounded unsigned range accepted a negative token representation");
+}
+
 bool exercise_file_interfaces()
 {
 	SmokeFile invalid;
@@ -2102,6 +2164,7 @@ int main()
 		exercise_quoted_printable() &&
 		exercise_file_interfaces() &&
 		exercise_ini_multi_field_bridge() &&
+		exercise_ini_unsigned_int_range() &&
 		exercise_file_system_dispatch() &&
 		exercise_win32_local_file_system() &&
 		exercise_archive_big_files() &&
