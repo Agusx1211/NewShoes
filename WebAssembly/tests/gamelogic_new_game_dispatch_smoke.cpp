@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string>
 
+#include <emscripten/emscripten.h>
+
 #include "Common/WellKnownKeys.h"
 
 #include "Common/ArchiveFileSystem.h"
@@ -27,6 +29,7 @@
 #include "Common/ThingTemplate.h"
 #include "Common/UserPreferences.h"
 #include "GameClient/Display.h"
+#include "GameClient/CampaignManager.h"
 #include "GameClient/GameClient.h"
 #include "GameClient/GameText.h"
 #include "GameClient/GameWindow.h"
@@ -46,6 +49,7 @@
 #include "GameLogic/GhostObject.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/RankInfo.h"
+#include "GameLogic/ScriptActions.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Scripts.h"
 #include "GameLogic/SidesList.h"
@@ -698,6 +702,60 @@ private:
 	TimeOfDay m_notifiedTimeOfDay = TIME_OF_DAY_INVALID;
 };
 
+class SmokeScriptActions : public ScriptActions
+{
+public:
+	using ScriptActions::doRevealMapAtWaypoint;
+};
+
+bool exerciseScriptHumanPlayerMask(
+	PlayerList &player_list,
+	TerrainLogic &terrain_logic,
+	PartitionManager &partition_manager)
+{
+	Waypoint *script_waypoint = terrain_logic.getFirstWaypoint();
+	if (!expect(script_waypoint != nullptr, "shipped map should provide a script waypoint")) {
+		return false;
+	}
+
+	Int human_player_count = 0;
+	Bool all_players_initially_shrouded = TRUE;
+	for (Int player_index = 0; player_index < player_list.getPlayerCount(); ++player_index) {
+		const Player *player = player_list.getNthPlayer(player_index);
+		if (player->getPlayerType() == PLAYER_HUMAN) {
+			++human_player_count;
+		}
+		all_players_initially_shrouded = all_players_initially_shrouded &&
+			partition_manager.getShroudStatusForPlayer(
+				player_index, script_waypoint->getLocation()) == CELLSHROUD_SHROUDED;
+	}
+
+	SmokeScriptActions *script_actions = new SmokeScriptActions;
+	TheScriptActions = script_actions;
+	script_actions->doRevealMapAtWaypoint(
+		script_waypoint->getName(), 1.0f, AsciiString::TheEmptyString);
+
+	Bool all_human_players_explored = TRUE;
+	Bool all_non_human_players_unchanged = TRUE;
+	for (Int player_index = 0; player_index < player_list.getPlayerCount(); ++player_index) {
+		const Player *player = player_list.getNthPlayer(player_index);
+		const CellShroudStatus status = partition_manager.getShroudStatusForPlayer(
+			player_index, script_waypoint->getLocation());
+		if (player->getPlayerType() == PLAYER_HUMAN) {
+			all_human_players_explored = all_human_players_explored && status == CELLSHROUD_FOGGED;
+		} else {
+			all_non_human_players_unchanged =
+				all_non_human_players_unchanged && status == CELLSHROUD_SHROUDED;
+		}
+	}
+
+	return expect(human_player_count > 0
+			&& all_players_initially_shrouded
+			&& all_human_players_explored
+			&& all_non_human_players_unchanged,
+		"ScriptActions waypoint reveal should target every human player and no others");
+}
+
 class SmokeTerrainVisual : public TerrainVisual
 {
 public:
@@ -1243,8 +1301,13 @@ extern "C" bool cnc_port_w3d_bridge_buffer_defer_gpu_buffers(void)
 	return true;
 }
 
+EM_JS(int, scriptHumanMaskOnly, (), {
+	return typeof process !== 'undefined' && process.env.CNC_SCRIPT_HUMAN_MASK_ONLY === '1';
+});
+
 int main()
 {
+	const bool script_human_mask_only = scriptHumanMaskOnly() != 0;
 	const char *window_archive_path = "artifacts/real-assets/Window.big";
 	const char *maps_archive_path = "artifacts/real-assets/MapsZH.big";
 	const char *zh_ini_archive_path = "artifacts/real-assets/INIZH.big";
@@ -1400,6 +1463,8 @@ int main()
 
 	GameState game_state;
 	TheGameState = &game_state;
+	CampaignManager campaign_manager;
+	TheCampaignManager = &campaign_manager;
 
 	SmokeGameWindowManager *window_manager = new SmokeGameWindowManager;
 	TheWindowManager = window_manager;
@@ -1626,6 +1691,15 @@ int main()
 	const Int partition_cell_count_y = partition_manager->getCellCountY();
 	const Int partition_total_cells = partition_cell_count_x * partition_cell_count_y;
 	partition_manager->refreshShroudForLocalPlayer();
+	if (script_human_mask_only) {
+		const bool script_mask_ok = exerciseScriptHumanPlayerMask(
+			*player_list, terrain_logic, *partition_manager);
+		if (script_mask_ok) {
+			std::cout << "{\"ok\":true,\"path\":\"ScriptActions::doRevealMapAtWaypoint\","
+				"\"players\":" << player_list->getPlayerCount() << "}\n";
+		}
+		return script_mask_ok ? 0 : 1;
+	}
 	GhostObjectManager *ghost_object_manager = new GhostObjectManager;
 	TheGhostObjectManager = ghost_object_manager;
 	const Int ghost_local_player_index_before = ghost_object_manager->getLocalPlayerIndex();
