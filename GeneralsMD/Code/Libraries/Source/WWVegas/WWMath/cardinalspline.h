@@ -80,7 +80,7 @@ class CardinalSpline1DClass : public HermiteSpline1DClass
 {
 public:
 
-	virtual int			Add_Key(float point,float t);
+	virtual int			Add_Key(float point,float t,unsigned int extra=0);
 	virtual void		Remove_Key(int i);
 	virtual void		Clear_Keys(void);
 
@@ -101,4 +101,3 @@ protected:
 
 
 #endif
-
