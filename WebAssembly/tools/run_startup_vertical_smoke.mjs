@@ -82,10 +82,12 @@ const sourceChecks = [
       expect(payload.createGameEngine?.line === 1125,
         'GameEngine startup-order verifier did not prove CreateGameEngine line');
       const byKey = new Map((payload.initOrder ?? []).map(entry => [entry.key, entry]));
-      expect(byKey.get('createFileSystem')?.line === 305,
-        'GameEngine startup-order verifier did not prove createFileSystem line');
-      expect(byKey.get('createAudioManager')?.line === 434,
-        'GameEngine startup-order verifier did not prove createAudioManager line');
+      expect(byKey.get('createFileSystem')?.line === 446
+          && byKey.get('createFileSystem')?.step === 'INIT_STEP_CORE',
+        'GameEngine startup-order verifier did not prove createFileSystem line and step');
+      expect(byKey.get('createAudioManager')?.line === 639
+          && byKey.get('createAudioManager')?.step === 'INIT_STEP_AUDIO',
+        'GameEngine startup-order verifier did not prove createAudioManager line and step');
       expect(payload.factoryMappings?.createAudioManager?.actual === 'MilesAudioManager',
         'GameEngine startup-order verifier did not prove MilesAudioManager factory mapping');
     },
@@ -99,7 +101,7 @@ const sourceChecks = [
         'W3DModuleFactory frontier verifier emitted the wrong path');
       expect(payload.factory?.concrete === 'W3DModuleFactory',
         'W3DModuleFactory frontier verifier did not prove the factory concrete');
-      expect(payload.factory?.createModuleFactoryLine === 95 && payload.gameEngineCall?.line === 447,
+      expect(payload.factory?.createModuleFactoryLine === 95 && payload.gameEngineCall?.line === 659,
         'W3DModuleFactory frontier verifier did not prove the expected source lines');
       expect(payload.registration?.w3dDrawModules >= 19,
         'W3DModuleFactory frontier verifier did not see the expected W3D draw registrations');
@@ -123,6 +125,16 @@ const sourceChecks = [
         'GameLogic new-game dispatch frontier did not prove prepare/start calls');
       expect(payload.startNewGame?.firstCallDefersBeforeTerrainLoad === true,
         'GameLogic new-game dispatch frontier did not prove the first startNewGame deferral');
+      const loadStepLabels = new Set((payload.startNewGame?.loadSession?.sequence ?? [])
+        .map(entry => entry.label));
+      expect(loadStepLabels.has('terrain load')
+          && loadStepLabels.has('advance to players step')
+          && loadStepLabels.has('partition init')
+          && loadStepLabels.has('bridge-like map-object scan')
+          && loadStepLabels.has('radar refresh terrain')
+          && loadStepLabels.has('pathfinder new map')
+          && loadStepLabels.has('advance to reveal step'),
+        'GameLogic new-game dispatch frontier did not prove the stepped load sequence');
       expect(payload.currentShellSmokeBoundary?.originalGameLogicCppLinked === false
         && payload.currentShellSmokeBoundary?.originalGameLogicDispatchCppLinked === false,
         'GameLogic new-game dispatch frontier no longer sees the current shell-smoke shim boundary');
