@@ -2302,7 +2302,10 @@ ParticleInfo ParticleSystem::mergeRelatedParticleSystems( ParticleSystem *master
 	if (!masterParticleSystem || !slaveParticleSystem) {
 		DEBUG_CRASH(("masterParticleSystem or slaveParticleSystem was NULL. Should not happen. JKMCD"));
 		ParticleInfo bogus;
-		memset( &bogus, 0, sizeof( bogus ) );
+		for (Int i = 0; i < MAX_KEYFRAMES; ++i) {
+			bogus.m_alphaKey[i] = Keyframe{};
+			bogus.m_colorKey[i] = RGBColorKeyframe{};
+		}
 		return bogus;
 	}
 

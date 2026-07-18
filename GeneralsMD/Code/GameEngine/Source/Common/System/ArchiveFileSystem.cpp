@@ -145,7 +145,7 @@ void ArchiveFileSystem::loadIntoDirectoryTree(const ArchiveFile *archiveFile, co
 		Bool infoInPath;
 		infoInPath = path.nextToken(&token, "\\/");
 
-		while (infoInPath && (!token.find('.') || path.find('.'))) {
+		while (infoInPath && path.isNotEmpty()) {
 			ArchivedDirectoryInfoMap::iterator tempiter = dirInfo->m_directories.find(token);
 			if (tempiter == dirInfo->m_directories.end()) 
 			{
@@ -209,7 +209,7 @@ Bool ArchiveFileSystem::doesFileExist(const Char *filename) const
 
 	path.nextToken(&token, "\\/");
 
-	while (!token.find('.') || path.find('.')) 
+	while (path.isNotEmpty())
 	{
 		ArchivedDirectoryInfoMap::const_iterator tempiter = dirInfo->m_directories.find(token);
 		if (tempiter != dirInfo->m_directories.end()) 
@@ -277,7 +277,7 @@ AsciiString ArchiveFileSystem::getArchiveFilenameForFile(const AsciiString& file
 
 	path.nextToken(&token, "\\/");
 
-	while (!token.find('.') || path.find('.')) {
+	while (path.isNotEmpty()) {
 
 		ArchivedDirectoryInfoMap::const_iterator it = dirInfo->m_directories.find(token);
 		if (it != dirInfo->m_directories.end())
