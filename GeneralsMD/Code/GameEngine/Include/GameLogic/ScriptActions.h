@@ -86,6 +86,14 @@ public:
 
 	void doEnableOrDisableObjectDifficultyBonuses(Bool enableBonuses);
 
+	static Bool isValidSpecificBuildingGarrisonTarget(
+		Bool isStructure,
+		PlayerMaskType occupantMask,
+		PlayerMaskType controllerMask)
+	{
+		return isStructure && (occupantMask == 0 || occupantMask == controllerMask);
+	}
+
 protected:
 
 	static GameWindow *m_messageWindow;

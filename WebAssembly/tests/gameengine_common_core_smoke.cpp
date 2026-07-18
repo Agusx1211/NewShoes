@@ -55,6 +55,7 @@
 #include "GameLogic/ArmorSet.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/LogicRandomValue.h"
+#include "GameLogic/ScriptActions.h"
 #include "GameNetwork/GameInfo.h"
 #include "Lib/Trig.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
@@ -1747,6 +1748,23 @@ bool exercise_game_common()
 			"normalizeAngle negative wrap failed");
 }
 
+bool exercise_script_garrison_policy()
+{
+	constexpr PlayerMaskType controller = 0x04;
+	constexpr PlayerMaskType other_player = 0x02;
+
+	return expect(!ScriptActions::isValidSpecificBuildingGarrisonTarget(FALSE, 0, controller),
+			"script garrison accepted an empty non-structure container") &&
+		expect(!ScriptActions::isValidSpecificBuildingGarrisonTarget(FALSE, controller, controller),
+			"script garrison accepted a same-player non-structure container") &&
+		expect(ScriptActions::isValidSpecificBuildingGarrisonTarget(TRUE, 0, controller),
+			"script garrison rejected an empty structure") &&
+		expect(ScriptActions::isValidSpecificBuildingGarrisonTarget(TRUE, controller, controller),
+			"script garrison rejected a same-player structure") &&
+		expect(!ScriptActions::isValidSpecificBuildingGarrisonTarget(TRUE, other_player, controller),
+			"script garrison accepted another player's structure");
+}
+
 std::uintptr_t dynamic_type_word(const ParticleInfo &info)
 {
 	std::uintptr_t word = 0;
@@ -2092,6 +2110,7 @@ int main()
 		exercise_dict() &&
 		exercise_trig() &&
 		exercise_game_common() &&
+		exercise_script_garrison_policy() &&
 		exercise_particle_info_merge_fallback() &&
 		exercise_list_and_circle() &&
 		exercise_bezier() &&
