@@ -2147,6 +2147,18 @@ set_source_files_properties(${ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES} PROPERTIES
   COMPILE_OPTIONS "-U__PRERTS_H__;-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
 )
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  # Rider-less stealth fallbacks must remain initialized before gameplay uses them.
+  set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/StealthUpdate.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=sometimes-uninitialized"
+  )
+
+  # EMP and leaflet radii may be zero, which must remain a valid empty iteration.
+  set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/EMPUpdate.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=sometimes-uninitialized"
+  )
+endif()
+
 set(ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyChat.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyGP.cpp"
@@ -6185,6 +6197,8 @@ target_link_libraries(wwmath-core-smoke PRIVATE
 
 target_compile_options(wwmath-core-smoke PRIVATE
   -include "${WWVEGAS_PORT_SHIM}"
+  -fsanitize=undefined
+  -fno-sanitize-recover=undefined
   -fms-extensions
   -Wall
   -Wextra
@@ -6202,6 +6216,8 @@ target_compile_options(wwmath-core-smoke PRIVATE
 target_link_options(wwmath-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
+  -fsanitize=undefined
+  -fno-sanitize-recover=undefined
   ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
@@ -7072,6 +7088,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIWebpageURL.cpp"
   "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/FunctionLexicon.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
@@ -7090,6 +7107,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
   "${GAMEENGINE_COMMON_DIR}/UserPreferences.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/CampaignManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainRoads.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
@@ -7103,6 +7121,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIPlayer.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/GhostObject.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Weapon.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptActions.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/Squad.cpp"
@@ -7279,6 +7298,90 @@ target_compile_options(partition-detach-dirty-smoke PRIVATE
 )
 
 target_link_options(partition-detach-dirty-smoke PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-Wl,--unresolved-symbols=ignore-all"
+  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
+add_executable(stealth-module-data-default-smoke
+  tests/stealth_module_data_default_smoke.cpp
+  "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/Snapshot.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/StealthUpdate.cpp"
+)
+
+set_target_properties(stealth-module-data-default-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_compile_definitions(stealth-module-data-default-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
+target_include_directories(stealth-module-data-default-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(stealth-module-data-default-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -ffunction-sections
+  -fdata-sections
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-invalid-offsetof
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(stealth-module-data-default-smoke PRIVATE
   "SHELL:-Wl,--gc-sections"
   "SHELL:-Wl,--unresolved-symbols=ignore-all"
   "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=0"
