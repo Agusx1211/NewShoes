@@ -227,7 +227,7 @@ public:
 	SimpleSceneClass(void);
 	virtual ~SimpleSceneClass(void);
 
-	virtual int	Get_Scene_ID(void)	{	return SCENE_ID_SIMPLE;	}
+	virtual int	Get_Scene_ID(void) const	{	return SCENE_ID_SIMPLE;	}
 
 	virtual void Add_Render_Object(RenderObjClass * obj);
 	virtual void Remove_Render_Object(RenderObjClass * obj);

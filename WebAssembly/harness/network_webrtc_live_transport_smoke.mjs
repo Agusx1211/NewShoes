@@ -102,7 +102,9 @@ try {
   if (!publicDiscovery && configuredRelayUrls.length === 0) {
     testRelay = await startNostrTestRelayServer();
   }
-  relayUrls = testRelay ? [testRelay.url] : configuredRelayUrls;
+  // Every local run includes an unreachable relay so the shipping transport
+  // proves that one failed discovery provider does not block room formation.
+  relayUrls = testRelay ? ["ws://127.0.0.1:1/nostr", testRelay.url] : configuredRelayUrls;
   browser = await chromium.launch();
   const harnessUrl = new URL("harness/index.html", server.url).href;
   const room = `webrtc-transport-${Date.now()}`;
@@ -189,7 +191,13 @@ try {
     { sourceDiagnostics, destinationDiagnostics });
 
   expect(sourceConnect.runtime?.endpoint?.openRelays > 0
-      && destinationConnect.runtime?.endpoint?.openRelays > 0,
+      && destinationConnect.runtime?.endpoint?.openRelays > 0
+      && sourceConnect.runtime?.endpoint?.relaySource === "configured"
+      && destinationConnect.runtime?.endpoint?.relaySource === "configured"
+      && sourceConnect.runtime?.endpoint?.relays?.length === 2
+      && destinationConnect.runtime?.endpoint?.relays?.length === 2
+      && sourceConnect.runtime.endpoint.relays.some((relay) => relay.state !== 1)
+      && destinationConnect.runtime.endpoint.relays.some((relay) => relay.state !== 1),
     "Trystero did not connect each browser to a discovery relay", { sourceConnect, destinationConnect });
   const browserFailures = browserEvents.filter((event) =>
     event.type === "pageerror" || event.type === "crash");

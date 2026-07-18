@@ -11,6 +11,7 @@ import {
 } from "./original-cursor-assets.mjs";
 import { DEVICE_TRANSFER_VERSION } from "./device-transfer-protocol.mjs";
 import { parseBrowserBinkHeader } from "./bink_decoder.mjs";
+import { filesFromHandles } from "./launcher-file-collector.mjs";
 
 const INSTALLED_KEY = "zeroh-installed-library.v5";
 const OLD_INSTALLED_KEYS = ["zeroh-installed-library.v4", "zeroh-installed-library.v3", "zeroh-installed-library.v2", "zeroh-installed-library.v1"];
@@ -185,41 +186,6 @@ async function clearHandles() {
   } finally {
     db.close();
   }
-}
-
-async function filesFromDirectory(handle, prefix = handle.name) {
-  const files = [];
-  for await (const [name, entry] of handle.entries()) {
-    const relativePath = `${prefix}/${name}`;
-    if (entry.kind === "directory") {
-      files.push(...await filesFromDirectory(entry, relativePath));
-    } else {
-      const file = await entry.getFile();
-      Object.defineProperty(file, "relativePath", { value: relativePath, configurable: true });
-      files.push(file);
-    }
-  }
-  return files;
-}
-
-async function filesFromHandles(handles, requestPermission = false) {
-  const files = [];
-  for (const handle of handles) {
-    let permission = await handle.queryPermission?.({ mode: "read" });
-    if (permission !== "granted" && requestPermission) {
-      permission = await handle.requestPermission?.({ mode: "read" });
-    }
-    if (permission !== "granted") {
-      throw new Error(`Permission is required to read ${handle.name}`);
-    }
-    if (handle.kind === "directory") files.push(...await filesFromDirectory(handle));
-    else {
-      const file = await handle.getFile();
-      Object.defineProperty(file, "relativePath", { value: handle.name, configurable: true });
-      files.push(file);
-    }
-  }
-  return files;
 }
 
 class AssetLibrary {

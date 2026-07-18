@@ -115,17 +115,16 @@ void CachedFileInputStream::close(void)
 
 Int CachedFileInputStream::read(void *pData, Int numBytes)
 {
-	if (m_buffer) {
-		if ((numBytes+m_pos)>m_size) {
-			numBytes=m_size-m_pos;
-		}
-		if (numBytes) {
-			memcpy(pData,m_buffer+m_pos,numBytes);
-			m_pos+=numBytes;
-		}
-		return(numBytes);
+	if (!m_buffer || numBytes <= 0 || m_pos >= m_size) {
+		return 0;
 	}
-	return 0;
+	const Int bytesRemaining = m_size-m_pos;
+	if (numBytes>bytesRemaining) {
+		numBytes=bytesRemaining;
+	}
+	memcpy(pData,m_buffer+m_pos,numBytes);
+	m_pos+=numBytes;
+	return(numBytes);
 }
 
 UnsignedInt CachedFileInputStream::tell(void)

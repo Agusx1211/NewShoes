@@ -111,6 +111,8 @@ AudioEventRTS ThingTemplate::s_audioEventNoSound;
 */
 
 // NOTE NOTE NOTE -- s_objectFieldParseTable and s_objectReskinFieldParseTable must be updated in tandem -- see comment above
+static const UnsignedInt BODY_MODULE_PARSE_TOKEN = 999;
+
 const FieldParse ThingTemplate::s_objectFieldParseTable[] = 
 {
 	{ "DisplayName",					INI::parseAndTranslateLabel,					NULL,								offsetof( ThingTemplate, m_displayName ) },
@@ -158,7 +160,7 @@ const FieldParse ThingTemplate::s_objectFieldParseTable[] =
 
 // NOTE NOTE NOTE -- s_objectFieldParseTable and s_objectReskinFieldParseTable must be updated in tandem -- see comment above
 	{ "Behavior",							ThingTemplate::parseModuleName,		(const void*)MODULETYPE_BEHAVIOR, offsetof(ThingTemplate, m_behaviorModuleInfo) },
-	{ "Body",									ThingTemplate::parseModuleName,		(const void*)999, offsetof(ThingTemplate, m_behaviorModuleInfo) },
+	{ "Body",									ThingTemplate::parseModuleName,		(const void*)BODY_MODULE_PARSE_TOKEN, offsetof(ThingTemplate, m_behaviorModuleInfo) },
 	{ "Draw",									ThingTemplate::parseModuleName,		(const void*)MODULETYPE_DRAW, offsetof(ThingTemplate, m_drawModuleInfo) },
 	{ "ClientUpdate",					ThingTemplate::parseModuleName,		(const void*)MODULETYPE_CLIENT_UPDATE, offsetof(ThingTemplate, m_clientUpdateModuleInfo) },
 // NOTE NOTE NOTE -- s_objectFieldParseTable and s_objectReskinFieldParseTable must be updated in tandem -- see comment above
@@ -511,7 +513,9 @@ void ThingTemplate::parseModuleName(INI* ini, void *instance, void* store, const
 {
 	ThingTemplate* self = (ThingTemplate*)instance;
 	ModuleInfo* mi = (ModuleInfo*)store;
-	ModuleType type = (ModuleType)(UnsignedInt)userData;
+	const UnsignedInt moduleTypeToken = (UnsignedInt)userData;
+	const Bool isBodyModule = moduleTypeToken == BODY_MODULE_PARSE_TOKEN;
+	const ModuleType type = isBodyModule ? MODULETYPE_BEHAVIOR : (ModuleType)moduleTypeToken;
 	const char* token = ini->getNextToken();
 	AsciiString tokenStr = token;
 
@@ -534,10 +538,9 @@ void ThingTemplate::parseModuleName(INI* ini, void *instance, void* store, const
 	Int interfaceMask;
 
 	// ugh -- special case for "Body".
-	if (type == 999)
+	if (isBodyModule)
 	{
-		type = MODULETYPE_BEHAVIOR;
-	// what interface(s) does this module support?
+		// what interface(s) does this module support?
 		interfaceMask = TheModuleFactory->findModuleInterfaceMask(tokenStr, type);
 		if ((interfaceMask & (MODULEINTERFACE_BODY)) == 0)
 		{

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   compactRpcResult,
+  createIssueRecorder,
   dataUrlSizeBytes,
   jsonBlobFromValue,
   jsonStringifyParts,
@@ -109,5 +110,39 @@ assert.deepEqual(JSON.parse(jsonStringifyParts("🙂", { chunkChars: 1 }).join("
 const circular = {};
 circular.self = circular;
 assert.throws(() => jsonStringifyParts(circular), /circular structure/i);
+
+globalThis.window = globalThis.window ?? {};
+const recorder = createIssueRecorder();
+recorder.recording = true;
+const originalShift = Array.prototype.shift;
+const originalSplice = Array.prototype.splice;
+let frontRemovalCalls = 0;
+try {
+  Array.prototype.shift = function instrumentedShift(...args) {
+    frontRemovalCalls += 1;
+    return originalShift.apply(this, args);
+  };
+  Array.prototype.splice = function instrumentedSplice(start, deleteCount, ...items) {
+    if (start === 0 && deleteCount > 0) {
+      frontRemovalCalls += 1;
+    }
+    return originalSplice.call(this, start, deleteCount, ...items);
+  };
+  for (let index = 0; index < 20_128; index += 1) {
+    recorder.record("retention.test", { index });
+  }
+} finally {
+  Array.prototype.shift = originalShift;
+  Array.prototype.splice = originalSplice;
+}
+assert.equal(frontRemovalCalls, 0, "saturated event retention must not copy the array front per event");
+const retainedEvents = recorder.events;
+assert.equal(retainedEvents.length, 20_000);
+assert.equal(retainedEvents[0].seq, 129);
+assert.equal(retainedEvents.at(-1).seq, 20_128);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(retainedEvents)).map((event) => event.seq),
+  retainedEvents.map((event) => event.seq),
+);
 
 console.log("issue recorder unit checks passed");
