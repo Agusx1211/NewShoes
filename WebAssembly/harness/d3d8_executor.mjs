@@ -3460,11 +3460,32 @@ function convertD3D8TextureBytes(format, bytes, width, height, depth = 1) {
 // DXT/BCn block decoders - CPU fallback when WEBGL_compressed_texture_s3tc unavailable
 // Reference: Wine wined3d/utils.c:440, standard DXT spec
 
+function dxtFourColorPalette(blockBytes) {
+  const c0 = blockBytes[0] | (blockBytes[1] << 8);
+  const c1 = blockBytes[2] | (blockBytes[3] << 8);
+  const r0 = scale5((c0 >> 11) & 0x1F);
+  const g0 = scale6((c0 >> 5) & 0x3F);
+  const b0 = scale5(c0 & 0x1F);
+  const r1 = scale5((c1 >> 11) & 0x1F);
+  const g1 = scale6((c1 >> 5) & 0x3F);
+  const b1 = scale5(c1 & 0x1F);
+  return [
+    { r: r0, g: g0, b: b0 },
+    { r: r1, g: g1, b: b1 },
+    { r: Math.round((2 * r0 + r1) / 3),
+      g: Math.round((2 * g0 + g1) / 3),
+      b: Math.round((2 * b0 + b1) / 3) },
+    { r: Math.round((r0 + 2 * r1) / 3),
+      g: Math.round((g0 + 2 * g1) / 3),
+      b: Math.round((b0 + 2 * b1) / 3) },
+  ];
+}
+
 /**
  * Decode a single DXT1 (BC1) block to 4x4 RGBA8
  * DXT1: 8 bytes -> 4x4 pixels. Two RGB565 endpoints + 4-color palette + 16×2-bit indices
  */
-function decodeDxt1Block(blockData, blockBytes, target, width, height, x, y) {
+function decodeDxt1Block(blockBytes, target, width, height, x, y) {
   const c0 = (blockBytes[0] | (blockBytes[1] << 8));
   const c1 = (blockBytes[2] | (blockBytes[3] << 8));
 
@@ -3521,7 +3542,7 @@ function decodeDxt1Block(blockData, blockBytes, target, width, height, x, y) {
  * Decode a single DXT3 (BC2) block to 4x4 RGBA8
  * DXT3: 16 bytes -> 4x4 pixels. 8 bytes explicit alpha (4-bit per pixel) + 8 bytes DXT1 color
  */
-function decodeDxt3Block(blockData, blockBytes, target, width, height, x, y) {
+function decodeDxt3Block(blockBytes, target, width, height, x, y) {
   // First 8 bytes: alpha values (4-bit each, 4 values per byte)
   const alphaBytes = blockBytes.subarray(0, 8);
   // Last 8 bytes: DXT1 color data
@@ -3537,31 +3558,9 @@ function decodeDxt3Block(blockData, blockBytes, target, width, height, x, y) {
     );
   }
 
-  // Decode color data (same as DXT1)
-  const c0 = (colorBytes[0] | (colorBytes[1] << 8));
-  const c1 = (colorBytes[2] | (colorBytes[3] << 8));
-
-  const r0 = scale5((c0 >> 11) & 0x1F);
-  const g0 = scale6((c0 >> 5) & 0x3F);
-  const b0 = scale5(c0 & 0x1F);
-
-  const r1 = scale5((c1 >> 11) & 0x1F);
-  const g1 = scale6((c1 >> 5) & 0x3F);
-  const b1 = scale5(c1 & 0x1F);
-
-  // Generate color palette per BC1 spec:
-  // c0 > c1: 4-color mode: [c0, c1, (2*c0 + c1)/3, (c0 + 2*c1)/3]
-  // c0 <= c1: 3-color + transparent mode: [c0, c1, (c0 + c1)/2, transparent black]
-  const colors = [
-    { r: r0, g: g0, b: b0 },
-    { r: r1, g: g1, b: b1 },
-    { r: c0 > c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
-      g: c0 > c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
-      b: c0 > c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
-    { r: c0 > c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
-      g: c0 > c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
-      b: c0 > c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
-  ];
+  // DXT3/BC2 color blocks always use four-color interpolation. The
+  // three-color-plus-transparent mode selected by c0 <= c1 is DXT1-only.
+  const colors = dxtFourColorPalette(colorBytes);
 
   // Extract color indices
   const colorIndices = colorBytes[4] | (colorBytes[5] << 8) | (colorBytes[6] << 16) | (colorBytes[7] << 24);
@@ -3592,12 +3591,10 @@ function decodeDxt3Block(blockData, blockBytes, target, width, height, x, y) {
  * Decode a single DXT5 (BC3) block to 4x4 RGBA8
  * DXT5: 16 bytes -> 4x4 pixels. 8 bytes alpha (2 endpoints + 6×3-bit indices) + 8 bytes DXT1 color
  */
-function decodeDxt5Block(blockData, blockBytes, target, width, height, x, y) {
+function decodeDxt5Block(blockBytes, target, width, height, x, y) {
   // First 8 bytes: alpha data
   const alpha0 = blockBytes[0];
   const alpha1 = blockBytes[1];
-  const alphaIndices = blockBytes[2] | (blockBytes[3] << 8) | (blockBytes[4] << 16) |
-                      (blockBytes[5] << 24) | (blockBytes[6] << 32) | (blockBytes[7] << 40);
 
   // Generate 8 alpha values per BC3 spec:
   // alpha0 > alpha1: 8-value interpolation mode
@@ -3616,31 +3613,9 @@ function decodeDxt5Block(blockData, blockBytes, target, width, height, x, y) {
   // Last 8 bytes: DXT1 color data
   const colorBytes = blockBytes.subarray(8, 16);
 
-  // Decode color data (same as DXT1)
-  const c0 = (colorBytes[0] | (colorBytes[1] << 8));
-  const c1 = (colorBytes[2] | (colorBytes[3] << 8));
-
-  const r0 = scale5((c0 >> 11) & 0x1F);
-  const g0 = scale6((c0 >> 5) & 0x3F);
-  const b0 = scale5(c0 & 0x1F);
-
-  const r1 = scale5((c1 >> 11) & 0x1F);
-  const g1 = scale6((c1 >> 5) & 0x3F);
-  const b1 = scale5(c1 & 0x1F);
-
-  // Generate color palette per BC1 spec:
-  // c0 > c1: 4-color mode: [c0, c1, (2*c0 + c1)/3, (c0 + 2*c1)/3]
-  // c0 <= c1: 3-color + transparent mode: [c0, c1, (c0 + c1)/2, transparent black]
-  const colors = [
-    { r: r0, g: g0, b: b0 },
-    { r: r1, g: g1, b: b1 },
-    { r: c0 > c1 ? Math.round((2 * r0 + r1) / 3) : Math.round((r0 + r1) / 2),
-      g: c0 > c1 ? Math.round((2 * g0 + g1) / 3) : Math.round((g0 + g1) / 2),
-      b: c0 > c1 ? Math.round((2 * b0 + b1) / 3) : Math.round((b0 + b1) / 2) },
-    { r: c0 > c1 ? Math.round((r0 + 2 * r1) / 3) : 0,
-      g: c0 > c1 ? Math.round((g0 + 2 * g1) / 3) : 0,
-      b: c0 > c1 ? Math.round((b0 + 2 * b1) / 3) : 0 }
-  ];
+  // DXT5/BC3 color blocks always use four-color interpolation. The
+  // three-color-plus-transparent mode selected by c0 <= c1 is DXT1-only.
+  const colors = dxtFourColorPalette(colorBytes);
 
   // Extract color indices
   const colorIndices = colorBytes[4] | (colorBytes[5] << 8) | (colorBytes[6] << 16) | (colorBytes[7] << 24);
@@ -3650,7 +3625,12 @@ function decodeDxt5Block(blockData, blockBytes, target, width, height, x, y) {
     for (let px = 0; px < 4; px++) {
       const pixelIndex = py * 4 + px;
       const colorIndex = (colorIndices >> (pixelIndex * 2)) & 0x03;
-      const alphaIndex = (alphaIndices >> (pixelIndex * 3)) & 0x07;
+      const alphaBitOffset = pixelIndex * 3;
+      const alphaByteOffset = 2 + Math.floor(alphaBitOffset / 8);
+      const alphaBitShift = alphaBitOffset & 0x07;
+      const alphaSelectorBits = blockBytes[alphaByteOffset] |
+        ((blockBytes[alphaByteOffset + 1] ?? 0) << 8);
+      const alphaIndex = (alphaSelectorBits >> alphaBitShift) & 0x07;
       const color = colors[colorIndex];
       const alpha = alphaValues[alphaIndex];
 
@@ -3725,7 +3705,7 @@ function decodeDxtToRgba8(bytes, width, height, dxtKind) {
       const x = bx * 4;
       const y = by * 4;
 
-      decoder(null, blockBytes, target, width, height, x, y);
+      decoder(blockBytes, target, width, height, x, y);
     }
   }
 

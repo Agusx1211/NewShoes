@@ -160,7 +160,7 @@ static Condition::ConditionType ParameterChangesVer2[] =
 	Condition::TEAM_ENTERED_AREA_ENTIRELY, 
 	Condition::TEAM_EXITED_AREA_ENTIRELY, 
 	Condition::TEAM_EXITED_AREA_PARTIALLY, 
-	(Condition::ConditionType) -1,
+	Condition::NUM_ITEMS,
 };
 
 enum { AT_END = 0x00FFFFFF };
@@ -1728,7 +1728,7 @@ Bool Condition::ParseConditionDataChunk(DataChunkInput &file, DataChunkInfo *inf
 	}
 	
 	if (file.getChunkVersion() < K_SCRIPT_CONDITION_VERSION_2) {
-		for (int j = 0; ParameterChangesVer2[j] != -1; ++j) {
+		for (int j = 0; ParameterChangesVer2[j] != Condition::NUM_ITEMS; ++j) {
 			if (pCondition->m_conditionType == ParameterChangesVer2[j]) {
 				pCondition->m_parms[pCondition->m_numParms] = newInstance(Parameter)(Parameter::SURFACES_ALLOWED, 3);
 				pCondition->m_numParms = 3;
