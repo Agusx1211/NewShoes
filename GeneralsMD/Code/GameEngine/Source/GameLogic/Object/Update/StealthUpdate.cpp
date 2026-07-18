@@ -80,6 +80,7 @@ StealthUpdateModuleData::StealthUpdateModuleData()
     m_friendlyOpacityMax = 1.0f;
     m_pulseFrames = 30;
     m_teamDisguised		= false;
+    m_useRiderStealth = false;
     m_revealDistanceFromTarget = 0.0f;
     m_orderIdleEnemiesToAttackMeUponReveal = false;
     m_innateStealth   = true;

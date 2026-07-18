@@ -7199,6 +7199,90 @@ target_link_options(gamelogic-new-game-dispatch-smoke PRIVATE
   "SHELL:-sNODERAWFS=1"
 )
 
+add_executable(stealth-module-data-default-smoke
+  tests/stealth_module_data_default_smoke.cpp
+  "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/Snapshot.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/StealthUpdate.cpp"
+)
+
+set_target_properties(stealth-module-data-default-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_compile_definitions(stealth-module-data-default-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
+target_include_directories(stealth-module-data-default-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(stealth-module-data-default-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -ffunction-sections
+  -fdata-sections
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-invalid-offsetof
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(stealth-module-data-default-smoke PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-Wl,--unresolved-symbols=ignore-all"
+  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
 add_executable(win32-gameengine-message-pump-smoke
   tests/win32_gameengine_message_pump_smoke.cpp
 )
