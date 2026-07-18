@@ -488,8 +488,9 @@ const steps = [
           && payload.source.includes('GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp')
           && payload.source.includes('GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp')
           && payload.source.includes('GameWindowManagerScript.cpp/HeaderTemplate.cpp')
-          && payload.source.includes('TerrainRoads.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp'),
-        'GameLogic new-game runtime smoke did not link the original GlobalData/INI/AI/PlayerList/GameLogic/Radar/Partition/WindowLayout/Terrain parser sources');
+          && payload.source.includes('TerrainRoads.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp')
+          && payload.source.includes('WW3D.cpp/DX8Wrapper.cpp/DX8VertexBuffer.cpp/DX8IndexBuffer.cpp'),
+        'GameLogic new-game runtime smoke did not link the original GlobalData/INI/AI/PlayerList/GameLogic/Radar/Partition/WindowLayout/Terrain/WW3D sources');
       expect(payload.message === 'MSG_NEW_GAME' && payload.playerLookupIndex === 0,
         'GameLogic new-game runtime smoke did not process the expected MSG_NEW_GAME player lookup');
       expect(payload.playerCount === 11
@@ -610,6 +611,11 @@ const steps = [
           && payload.terrainRenderMapOpened === true
           && payload.terrainRenderMapLoaded === true
           && payload.terrainRenderObjectOwned === true
+          && payload.dx8WrapperInitialized === true
+          && payload.dx8RenderDeviceInitialized === true
+          && payload.terrainVertexBuffersAfter > payload.terrainVertexBuffersBefore
+          && payload.terrainIndexBuffersAfter > payload.terrainIndexBuffersBefore
+          && payload.terrainGpuBuffersCreated === true
           && payload.terrainRenderMapAttached === true
           && payload.terrainRenderMapWidth === 480
           && payload.terrainRenderMapHeight === 480
@@ -658,7 +664,7 @@ const steps = [
           && payload.pathfinderExtentXAfterNewMap === payload.pathfinderExpectedExtentX
           && payload.pathfinderExtentYAfterNewMap === payload.pathfinderExpectedExtentY
           && payload.pathfinderCenterGroundCellReady === true,
-        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script/Radar/Partition/GhostObject/W3DBridgeBuffer/bridge-like-scan/Pathfinder MD_GLA03 load ownership');
+        'GameLogic new-game runtime smoke did not prove original W3DTerrainLogic/INI/player/script/Radar/Partition/GhostObject/WW3D-D3D8-buffer/W3DBridgeBuffer/bridge-like-scan/Pathfinder MD_GLA03 load ownership');
       expect(payload.runtimeBoundaries?.includes('InGameUI client-quiet remains focused UI boundary')
           && payload.runtimeBoundaries?.includes('OptionPreferences user preference getters remain focused non-network browser preference boundary')
           && payload.runtimeBoundaries?.includes('bridge-like map-object creation remains focused ThingFactory/Object ownership boundary after ordered no-candidate startup scan')
@@ -701,12 +707,13 @@ const steps = [
           && payload.originalOwners?.includes('GhostObjectManager local-player index and reset')
           && payload.originalOwners?.includes('TerrainTypeCollection empty texture-class lookup for render heightmap parsing')
           && payload.originalOwners?.includes('TerrainRoadCollection empty road table for W3DTerrainLogic::newMap road-buffer handoff')
+          && payload.originalOwners?.includes('WW3D browser D3D8 device and terrain-adjacent vertex/index buffers')
           && payload.originalOwners?.includes('W3DTerrainLogic::newMap road-buffer handoff and TerrainLogic waypoint/water setup')
           && payload.originalOwners?.includes('W3DBridgeBuffer::loadBridges empty MD_GLA03 bridge scan')
           && payload.originalOwners?.includes('GameLogic bridge-like map-object scan ordered after terrain newMap')
           && payload.originalOwners?.includes('Radar::refreshTerrain after bridge-like map-object scan')
           && payload.originalOwners?.includes('Pathfinder::newMap terrain grid allocation/classification ordered after bridge-like scan'),
-        'GameLogic new-game runtime smoke did not report original GlobalData/INI/AI/PlayerList/ScriptEngine/Shell/GameWindowManager/Terrain/Partition ownership');
+        'GameLogic new-game runtime smoke did not report original GlobalData/INI/AI/PlayerList/ScriptEngine/Shell/GameWindowManager/Terrain/WW3D/Partition ownership');
     },
   },
 ];
@@ -742,7 +749,7 @@ console.log(JSON.stringify({
     'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'archive-backed startup mounts all shipped Object INI definitions and proves original W3DThingFactory parses representative unit templates through the real ThingFactory/INI path while the first unowned factory remains createFunctionLexicon',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
-    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, the ordered post-terrain bridge-like map-object no-candidate scan, Radar::refreshTerrain, and original Pathfinder::newMap grid allocation/classification',
+    'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, base Window.big archive-backed BlankWindow parsing, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, first-call startNewGame(FALSE) deferral, MapsZH.big MD_GLA03 promotion, INIZH/INI startup data plus default and Zero Hour GameData.ini parsing, original W3DTerrainLogic::loadMap(false), WorldHeightMap object/waypoint/sides parsing, SidesList::validateSides, AIPlayer construction, TeamFactory::initFromSides, PlayerList::newGame, ScriptEngine::newMap, Radar::newMap, GameLogic width/height copying, PartitionManager::init/refreshShroudForLocalPlayer, GhostObjectManager local-player index/reset, TerrainRoadCollection/TerrainTypeCollection render-map setup through a real browser D3D8 device with terrain-adjacent vertex/index buffer creation, original W3DTerrainLogic::newMap road-buffer and W3DBridgeBuffer::loadBridges handoff, TerrainLogic waypoint/water setup, the ordered post-terrain bridge-like map-object no-candidate scan, Radar::refreshTerrain, and original Pathfinder::newMap grid allocation/classification',
   ],
   nextRequired: [
     'replace the remaining base FunctionLexicon callback owner groups, starting with non-network owners such as PopupReplay score-screen-dependent System/Update, QuitMenuSystem, and ScoreScreen when their real owners are runtime-owned',
