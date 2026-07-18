@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <string>
 
@@ -133,6 +135,7 @@ class UpgradeCenter;
 class VictoryConditionsInterface;
 class View;
 class W3DShadowManager;
+class WebBrowser;
 class WeaponStore;
 
 AI *TheAI WEAK_SINGLETON = nullptr;
@@ -198,6 +201,7 @@ UpgradeCenter *TheUpgradeCenter WEAK_SINGLETON = nullptr;
 VictoryConditionsInterface *TheVictoryConditions WEAK_SINGLETON = nullptr;
 View *TheTacticalView WEAK_SINGLETON = nullptr;
 W3DShadowManager *TheW3DShadowManager WEAK_SINGLETON = nullptr;
+WebBrowser *TheWebBrowser WEAK_SINGLETON = nullptr;
 WeaponStore *TheWeaponStore WEAK_SINGLETON = nullptr;
 Dict MapObject::TheWorldDict WEAK_SINGLETON;
 OVERRIDE<WaterTransparencySetting> TheWaterTransparency WEAK_SINGLETON = nullptr;
@@ -1317,6 +1321,40 @@ extern "C" bool cnc_port_w3d_bridge_buffer_defer_gpu_buffers(void)
 	return true;
 }
 
+bool exerciseWebpageURLWithoutBrowser()
+{
+	const char filename[] = "issue-182-webpage-url-smoke.ini";
+	const char payload[] =
+		"WebpageURL ProjectHome\n"
+		"  URL = https://www.newshoes.gg/project\n"
+		"End\n";
+
+	std::remove(filename);
+	std::FILE *file = ::fopen(filename, "wb");
+	if (!expect(file != nullptr, "WebpageURL smoke should create its INI fixture")) {
+		return false;
+	}
+	const std::size_t payload_size = std::strlen(payload);
+	const bool wrote = ::fwrite(payload, 1, payload_size, file) == payload_size;
+	::fclose(file);
+	if (!expect(wrote, "WebpageURL smoke should write its complete INI fixture")) {
+		std::remove(filename);
+		return false;
+	}
+
+	bool loaded = false;
+	try {
+		INI ini;
+		ini.load(AsciiString(filename), INI_LOAD_OVERWRITE, nullptr);
+		loaded = true;
+	} catch (...) {
+	}
+	std::remove(filename);
+
+	return expect(loaded,
+		"WebpageURL INI definition should be consumed when the browser subsystem is unavailable");
+}
+
 EM_JS(int, scriptHumanMaskOnly, (), {
 	return typeof process !== 'undefined' && process.env.CNC_SCRIPT_HUMAN_MASK_ONLY === '1';
 });
@@ -1367,6 +1405,18 @@ int main()
 	TheLocalFileSystem = &local_file_system;
 	TheArchiveFileSystem = &archive_file_system;
 	TheFileSystem = &file_system;
+	const bool webpage_url_without_browser_consumed = exerciseWebpageURLWithoutBrowser();
+	if (!webpage_url_without_browser_consumed) {
+		return 1;
+	}
+	const bool webpage_url_smoke_only = emscripten_run_script_int(
+		"typeof process !== 'undefined' && process.env.CNC_WEBPAGE_URL_SMOKE_ONLY === '1'");
+	if (webpage_url_smoke_only) {
+		std::printf("{\"ok\":true,\"path\":\"INI::load -> INI::parseWebpageURLDefinition\","
+			"\"webpageURLWithoutBrowserConsumed\":true}\n");
+		std::fflush(stdout);
+		return 0;
+	}
 	g_blank_layout_archive_path = window_archive_path;
 	g_blank_window_archive_loaded =
 		archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
@@ -2039,7 +2089,7 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp/WW3D.cpp/DX8Wrapper.cpp/DX8VertexBuffer.cpp/DX8IndexBuffer.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/INI.cpp/INIWebpageURL.cpp/INIGameData.cpp/INIAiData.cpp/INIMultiplayer.cpp/UserPreferences.cpp/MultiplayerSettings.cpp/Science.cpp/PlayerTemplate.cpp/FunctionLexicon.cpp/PlayerList.cpp/Player.cpp/AI.cpp/AIPathfind.cpp/AIPlayer.cpp/GhostObject.cpp/Weapon.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/TerrainTypes.cpp/Radar.cpp/PartitionManager.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp/GameWindowManagerScript.cpp/HeaderTemplate.cpp/TerrainRoads.cpp/TerrainLogic.cpp/W3DTerrainLogic.cpp/WorldHeightMap.cpp/TerrainVisual.cpp/SidesList.cpp/ThingFactory.cpp/WW3D.cpp/DX8Wrapper.cpp/DX8VertexBuffer.cpp/DX8IndexBuffer.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":0,"
 		<< "\"playerCount\":" << player_list->getPlayerCount() << ","
@@ -2056,6 +2106,7 @@ int main()
 		<< "\"zhIniArchiveLoaded\":" << jsonBool(g_zh_ini_archive_loaded) << ","
 		<< "\"baseIniArchive\":\"" << jsonEscape(g_base_ini_archive_path.str()) << "\","
 		<< "\"baseIniArchiveLoaded\":" << jsonBool(g_base_ini_archive_loaded) << ","
+		<< "\"webpageURLWithoutBrowserConsumed\":" << jsonBool(webpage_url_without_browser_consumed) << ","
 		<< "\"playerTemplateDefaultIniFileExists\":" << jsonBool(g_player_template_default_ini_file_exists) << ","
 		<< "\"playerTemplateIniFileExists\":" << jsonBool(g_player_template_ini_file_exists) << ","
 		<< "\"gameDataDefaultIniFileExists\":" << jsonBool(g_game_data_default_ini_file_exists) << ","

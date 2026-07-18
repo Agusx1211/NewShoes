@@ -7076,6 +7076,7 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIWebpageURL.cpp"
   "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/FunctionLexicon.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
