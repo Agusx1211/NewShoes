@@ -102,6 +102,7 @@ static HANDLE GeneralsMutex = NULL;
 #define DEFAULT_YRESOLUTION 600
 
 extern void Reset_D3D_Device(bool active);
+extern void resetMetaEventTranslatorForFocusLoss();
 
 static Bool gInitializing = false;
 static Bool gDoPaint = true;
@@ -448,6 +449,7 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message,
 			{
 				if (TheKeyboard )
 					TheKeyboard->resetKeys();
+				resetMetaEventTranslatorForFocusLoss();
 				if (TheWin32Mouse)
 					TheWin32Mouse->lostFocus(TRUE);
 
