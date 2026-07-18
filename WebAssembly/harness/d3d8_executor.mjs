@@ -757,6 +757,7 @@ const d3d8PerfStats = {
   bufferMirrorMs: 0,
   bufferMirrorSkippedBytes: 0,
 };
+const d3d8DrawBatchFlushReasons = new Map();
 
 // Per-GL-op diagnostics are useful to the harness but measurable in draw-flood
 // frames. Lite mode keeps both clocks and counters out of the human-play hot
@@ -1084,6 +1085,9 @@ function d3d8PerfSummary() {
     drawBatchSavedDrawElements: d3d8PerfStats.drawBatchSavedDrawElements,
     drawBatchMergedIndices: d3d8PerfStats.drawBatchMergedIndices,
     drawBatchMaxRunLength: d3d8PerfStats.drawBatchMaxRunLength,
+    drawBatchFlushReasons: Object.fromEntries(
+      [...d3d8DrawBatchFlushReasons.entries()].sort((left, right) =>
+        right[1] - left[1] || left[0].localeCompare(right[0]))),
     drawDepthStencilOnlyProgramDraws: d3d8PerfStats.drawDepthStencilOnlyProgramDraws,
     drawDepthStencilNoDiscardDraws: d3d8PerfStats.drawDepthStencilNoDiscardDraws,
     drawDepthStencilOnlyFastDerivedDraws: d3d8PerfStats.drawDepthStencilOnlyFastDerivedDraws,
@@ -6541,7 +6545,6 @@ function bindD3D8Texture(payload = {}) {
   if (!gl) {
     return 0;
   }
-  flushD3D8PendingDrawBatch("textureBind");
   const stage = Number(payload.stage ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
   const maxTextureUnits = d3d8MaxCombinedTextureImageUnits ??
@@ -6557,8 +6560,12 @@ function bindD3D8Texture(payload = {}) {
     updateD3D8TextureBindSummary();
     return 0;
   }
+  const previousId = Number(d3d8BoundTextures.get(stage) ?? 0) >>> 0;
 
   if (id === 0) {
+    if (previousId !== 0) {
+      flushD3D8PendingDrawBatch("textureBind");
+    }
     d3d8BoundTextures.delete(stage);
     d3d8TextureStats.unbinds += 1;
     d3d8TextureStats.lastBind = {
@@ -6584,6 +6591,9 @@ function bindD3D8Texture(payload = {}) {
     return 0;
   }
 
+  if (previousId !== id) {
+    flushD3D8PendingDrawBatch("textureBind");
+  }
   d3d8BoundTextures.set(stage, id);
   d3d8TextureStats.binds += 1;
   d3d8TextureStats.lastBind = {
@@ -11822,7 +11832,7 @@ function queueD3D8PendingDrawBatch(batchInfo) {
   return true;
 }
 
-function flushD3D8PendingDrawBatch(_reason = "flush") {
+function flushD3D8PendingDrawBatch(reason = "flush") {
   const pending = d3d8PendingDrawBatch;
   if (!pending || !gl) {
     d3d8PendingDrawBatch = null;
@@ -11840,7 +11850,14 @@ function flushD3D8PendingDrawBatch(_reason = "flush") {
   if (d3d8PerfCountersEnabled) d3d8PerfStats.drawElements += 1;
   if (d3d8PerfCountersEnabled) d3d8PerfStats.drawIndices += Number(pending.indexCount ?? 0) >>> 0;
   if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMs += perfNow() - drawStartedAt;
-  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawBatchFlushes += 1;
+  if (d3d8PerfCountersEnabled) {
+    d3d8PerfStats.drawBatchFlushes += 1;
+    const reasonName = String(reason || "flush");
+    d3d8DrawBatchFlushReasons.set(
+      reasonName,
+      (d3d8DrawBatchFlushReasons.get(reasonName) ?? 0) + 1,
+    );
+  }
   return 1;
 }
 
@@ -14443,6 +14460,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     invalidateD3D8VertexArrayCacheForBufferId,
     rememberD3D8VertexArray,
     drainD3D8BufferRetirements,
+    queueD3D8PendingDrawBatch,
     ensureD3D8DynamicRangeUploaded,
     ensureD3D8DynamicSharedBufferCurrent,
     retireD3D8BufferSlots,

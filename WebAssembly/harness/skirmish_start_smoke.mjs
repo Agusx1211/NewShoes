@@ -94,6 +94,10 @@ const disableReplayPerformanceRender =
   process.env.SKIRMISH_REPLAY_PERFORMANCE_DISABLE_RENDER === "1";
 const profileReplayPerformance =
   process.env.SKIRMISH_REPLAY_PERFORMANCE_PROFILE !== "0";
+const requestedD3D8Batch = String(process.env.SKIRMISH_START_D3D8_BATCH ?? "").trim();
+if (requestedD3D8Batch && !/^(?:0|1|false|true|off|on)$/.test(requestedD3D8Batch)) {
+  throw new Error(`Invalid SKIRMISH_START_D3D8_BATCH: ${requestedD3D8Batch}`);
+}
 const replayPerformanceClientFps = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_CLIENT_FPS", 60);
 const replayPerformanceLogicFps = parsePositiveInt(
@@ -102,6 +106,10 @@ const replayPerformanceCatchup = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_CATCHUP", 2);
 const replayPerformanceEndFrame = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_END_FRAME", Number.MAX_SAFE_INTEGER);
+const replayPerformanceGpuProfileStartFrame = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_GPU_PROFILE_START_FRAME", 0);
+const replayPerformanceGpuProfileFrames = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_GPU_PROFILE_FRAMES", 120);
 const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
 const expectParticleVisibilityProbe =
   process.env.SKIRMISH_START_PARTICLE_VISIBILITY_PROBE === "1";
@@ -1429,6 +1437,7 @@ async function driveReplayPerformance(page, performanceReplay) {
       selected: replayMenu.frame.clientState.replayMenu.selectedName,
     });
   if (requireReplayPerformanceVisible) {
+    await runFrames(page, 2, "performance replay menu visual settle");
     await page.locator("#viewport").screenshot({ path: replayMenuScreenshotPath });
   }
   let renderDisabled = false;
@@ -1587,15 +1596,47 @@ async function driveReplayPerformance(page, performanceReplay) {
     ? Math.max(1, expectedLogicFrames - Math.max(120, replayPerformanceLogicFps * 2))
     : targetLogicFrame;
   const waitForReplayEnd = targetLogicFrame === expectedLogicFrames;
+  const waitTimeout = Math.max(600_000, expectedWallMs * 3 + 120_000);
+  const waitForCapture = (target, replayEnd = false) => page.waitForFunction(
+    ({ target: requestedTarget, replayEnd: requestedReplayEnd }) => {
+      const capture = window.__cncReplayPerformanceCapture;
+      return requestedReplayEnd
+        ? capture?.replayEnded === true
+        : capture?.maxLogicFrame >= requestedTarget;
+    },
+    { target, replayEnd },
+    { timeout: waitTimeout, polling: 500 });
   let completionError = null;
+  let gpuProfile = null;
   try {
-    await page.waitForFunction(
-      ({ target, replayEnd }) => {
-        const capture = window.__cncReplayPerformanceCapture;
-        return replayEnd ? capture?.replayEnded === true : capture?.maxLogicFrame >= target;
-      },
-      { target: completionThreshold, replayEnd: waitForReplayEnd },
-      { timeout: Math.max(600_000, expectedWallMs * 3 + 120_000), polling: 500 });
+    if (replayPerformanceGpuProfileStartFrame > 0
+        && replayPerformanceGpuProfileStartFrame < completionThreshold) {
+      const requestedStartFrame = replayPerformanceGpuProfileStartFrame;
+      const requestedEndFrame = Math.min(
+        completionThreshold,
+        requestedStartFrame + replayPerformanceGpuProfileFrames);
+      await waitForCapture(requestedStartFrame);
+      const enabled = await rpc(page, "d3d8PerfConfigure", {
+        timing: true,
+        counters: true,
+        bufferProducers: true,
+        drawProducers: true,
+      });
+      expect(enabled?.ok === true && enabled?.timing === true
+          && enabled?.bufferProducers === true && enabled?.drawProducers === true,
+        "performance replay GPU profiler did not start", enabled);
+      await waitForCapture(requestedEndFrame);
+      const disabled = await rpc(page, "d3d8PerfConfigure", {
+        timing: false,
+        counters: true,
+        bufferProducers: false,
+        drawProducers: false,
+      });
+      expect(disabled?.ok === true && disabled?.timing === false,
+        "performance replay GPU profiler did not stop", disabled);
+      gpuProfile = { requestedStartFrame, requestedEndFrame, enabled, disabled };
+    }
+    await waitForCapture(completionThreshold, waitForReplayEnd);
   } catch (error) {
     completionError = error instanceof Error ? error.message : String(error);
   }
@@ -1611,6 +1652,13 @@ async function driveReplayPerformance(page, performanceReplay) {
   }
   const contextLosses = capture.statuses.filter((status) => status.contextLost === true).length;
   expect(contextLosses === 0, "performance replay lost the WebGL context", { contextLosses });
+  const renderer = capture.statuses.findLast((status) => status.renderer)?.renderer ?? null;
+  const expectedRenderer = String(
+    process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
+  if (expectedRenderer) {
+    expect(String(renderer ?? "").toLowerCase().includes(expectedRenderer),
+      "performance replay used an unexpected GPU renderer", { renderer, expectedRenderer });
+  }
 
   const completed = waitForReplayEnd
     ? capture.replayEnded === true && capture.maxLogicFrame >= completionThreshold
@@ -1657,12 +1705,13 @@ async function driveReplayPerformance(page, performanceReplay) {
     completionThreshold,
     completionError,
     stopResult: stopped,
+    gpuProfile,
     statusSamples: capture.statuses,
     slowFrameProfiles,
     postReplaySlowFrameProfiles,
     contextLosses,
     graphics: {
-      renderer: capture.statuses.findLast((status) => status.renderer)?.renderer ?? null,
+      renderer,
       contextLost: contextLosses > 0,
     },
     startRenderProbe,
@@ -2456,6 +2505,15 @@ async function main() {
     );
     harnessUrl.searchParams.set("dist", distDir);
     if (process.env.SKIRMISH_START_THREADS === "1") harnessUrl.searchParams.set("threads", "1");
+    if (requestedD3D8Batch) harnessUrl.searchParams.set("d3d8Batch", requestedD3D8Batch);
+    if (expectReplayPerformance) {
+      // Match the shipping play page's low-overhead diagnostics in the engine
+      // worker while retaining counters needed to rank replay render pressure.
+      // Full diagnostics time dozens of sub-phases per draw and can dominate
+      // the workload that this performance gate is meant to measure.
+      harnessUrl.searchParams.set("diag", "lite");
+      harnessUrl.searchParams.set("perfCounters", "1");
+    }
     if (expectLightPulseProbe) {
       // Terrain buffers are created while diagnostics are in lite mode. Keep
       // their CPU mirrors from creation so the probe can compare the original

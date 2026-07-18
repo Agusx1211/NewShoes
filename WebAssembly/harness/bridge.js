@@ -971,6 +971,18 @@ function threadedWorkerPerfCounters() {
   return null;
 }
 
+function threadedWorkerAdjacentBatching() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("d3d8Batch");
+    if (value === "1" || value === "true" || value === "on") return true;
+    if (value === "0" || value === "false" || value === "off") return false;
+  } catch (_error) {
+    // The worker keeps the executor default when no override is available.
+  }
+  return null;
+}
+
 function threadedWorkerShaderTier() {
   // The executor samples the shader tier once at device create via
   // d3d8ShaderTierQuery (URL ?shaderTier= param, then localStorage
@@ -1322,6 +1334,7 @@ function createThreadedEngineController() {
         options: {
           diagLevel: threadedWorkerDiagLevel(),
           perfCounters: threadedWorkerPerfCounters(),
+          adjacentBatching: threadedWorkerAdjacentBatching(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
           udpBridge: threadedUdpBridge,
@@ -2081,6 +2094,34 @@ async function threadedRpc(command, payload = {}) {
           enabled: reply?.enabled,
           threaded: true,
           error: reply?.ok === true ? undefined : (reply?.error ?? "worker shader audit failed"),
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "d3d8PerfConfigure": {
+      try {
+        await threadedEngine.ensureReady();
+        const reply = await threadedEngine.sendCommand({
+          cmd: "d3d8PerfConfigure",
+          timing: typeof payload.timing === "boolean" ? payload.timing : undefined,
+          counters: typeof payload.counters === "boolean" ? payload.counters : undefined,
+          bufferProducers: typeof payload.bufferProducers === "boolean"
+            ? payload.bufferProducers : undefined,
+          drawProducers: typeof payload.drawProducers === "boolean"
+            ? payload.drawProducers : undefined,
+        }, { timeoutMs: 120000 });
+        return {
+          ok: reply?.ok === true,
+          command,
+          timing: reply?.timing ?? null,
+          counters: reply?.counters ?? null,
+          bufferProducers: reply?.bufferProducers ?? null,
+          drawProducers: reply?.drawProducers ?? null,
+          previousSummary: reply?.previousSummary ?? null,
+          summary: reply?.summary ?? null,
+          threaded: true,
+          error: reply?.ok === true ? undefined : (reply?.error ?? "worker perf configure failed"),
         };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };

@@ -146,6 +146,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   if (typeof opts.perfCounters === "boolean") {
     globalThis.__cncSetD3D8PerfCounters?.(opts.perfCounters);
   }
+  if (typeof opts.adjacentBatching === "boolean") {
+    globalThis.__cncSetD3D8AdjacentBatching?.(opts.adjacentBatching);
+  }
 
   // ---- GDI text hooks (synchronous returns -> must live in this realm) ------
   const gdiHooks = createGdiHooks();
@@ -1312,6 +1315,42 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         } catch (error) {
           respond({
             cmd: "sm1ShaderAuditResult",
+            id: msg.id,
+            ok: false,
+            error: String((error && error.stack) || error),
+          });
+        }
+        return;
+      }
+      case "d3d8PerfConfigure": {
+        try {
+          const previousSummary = globalThis.__cncD3D8PerfSummary?.() ?? null;
+          const timing = typeof msg.timing === "boolean"
+            ? globalThis.__cncSetD3D8PerfTiming?.(msg.timing)
+            : previousSummary?.timingEnabled;
+          const counters = typeof msg.counters === "boolean"
+            ? globalThis.__cncSetD3D8PerfCounters?.(msg.counters)
+            : previousSummary?.countersEnabled;
+          const bufferProducers = typeof msg.bufferProducers === "boolean"
+            ? globalThis.__cncSetD3D8BufferProducerTracking?.(msg.bufferProducers)
+            : globalThis.__cncGetD3D8BufferProducerTracking?.();
+          const drawProducers = typeof msg.drawProducers === "boolean"
+            ? globalThis.__cncSetD3D8DrawProducerTracking?.(msg.drawProducers)
+            : globalThis.__cncGetD3D8DrawProducerTracking?.();
+          respond({
+            cmd: "d3d8PerfConfigureResult",
+            id: msg.id,
+            ok: true,
+            timing,
+            counters,
+            bufferProducers,
+            drawProducers,
+            previousSummary,
+            summary: globalThis.__cncD3D8PerfSummary?.() ?? null,
+          });
+        } catch (error) {
+          respond({
+            cmd: "d3d8PerfConfigureResult",
             id: msg.id,
             ok: false,
             error: String((error && error.stack) || error),
