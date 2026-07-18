@@ -4213,30 +4213,7 @@ function d3d8TextureLayoutUniformKey({
   texture3Transform,
 }) {
   const values = [implicitAlphaCutoutThreshold];
-  const pushStage = (stage, canSampleTexture, coordinates, semanticMode, flipY,
-      textureTransform, includeCoordSet = false) => {
-    const transformApplied = Boolean(canSampleTexture && coordinates.transformApplied);
-    values.push(
-      canSampleTexture ? 1 : 0,
-      canSampleTexture ? coordinates.mode : D3DTSS_TCI_PASSTHRU,
-      transformApplied ? 1 : 0,
-      transformApplied ? coordinates.textureTransformComponentCount : 0,
-      transformApplied && coordinates.textureTransformProjected ? 1 : 0,
-      canSampleTexture ? Number(stage.mipMapLodBias ?? 0) >>> 0 : 0,
-      canSampleTexture ? semanticMode : 0,
-      canSampleTexture && flipY ? 1 : 0,
-    );
-    // Stages 2/3 select which vertex UV set feeds the shader, so the coordinate
-    // index participates in the layout key. Stages 0/1 always map coordSet->attr
-    // 1:1 in the vertex fetch, so their key is left unchanged.
-    if (includeCoordSet) {
-      values.push(canSampleTexture ? (coordinates.coordSet >>> 0) : 0);
-    }
-    if (transformApplied) {
-      values.push(...textureTransform);
-    }
-  };
-  pushStage(
+  appendD3D8TextureLayoutStageKey(values,
     renderState.textureStages[0],
     canSampleTexture0,
     texture0Coordinates,
@@ -4244,7 +4221,7 @@ function d3d8TextureLayoutUniformKey({
     texture0FlipY,
     texture0Transform,
   );
-  pushStage(
+  appendD3D8TextureLayoutStageKey(values,
     renderState.textureStages[1],
     canSampleTexture1,
     texture1Coordinates,
@@ -4252,7 +4229,7 @@ function d3d8TextureLayoutUniformKey({
     texture1FlipY,
     texture1Transform,
   );
-  pushStage(
+  appendD3D8TextureLayoutStageKey(values,
     renderState.textureStages[2],
     canSampleTexture2,
     texture2Coordinates,
@@ -4261,7 +4238,7 @@ function d3d8TextureLayoutUniformKey({
     texture2Transform,
     true,
   );
-  pushStage(
+  appendD3D8TextureLayoutStageKey(values,
     renderState.textureStages[3],
     canSampleTexture3,
     texture3Coordinates,
@@ -4271,6 +4248,30 @@ function d3d8TextureLayoutUniformKey({
     true,
   );
   return values.join(",");
+}
+
+function appendD3D8TextureLayoutStageKey(values, stage, canSampleTexture,
+    coordinates, semanticMode, flipY, textureTransform, includeCoordSet = false) {
+  const transformApplied = Boolean(canSampleTexture && coordinates.transformApplied);
+  values.push(
+    canSampleTexture ? 1 : 0,
+    canSampleTexture ? coordinates.mode : D3DTSS_TCI_PASSTHRU,
+    transformApplied ? 1 : 0,
+    transformApplied ? coordinates.textureTransformComponentCount : 0,
+    transformApplied && coordinates.textureTransformProjected ? 1 : 0,
+    canSampleTexture ? Number(stage.mipMapLodBias ?? 0) >>> 0 : 0,
+    canSampleTexture ? semanticMode : 0,
+    canSampleTexture && flipY ? 1 : 0,
+  );
+  // Stages 2/3 select which vertex UV set feeds the shader, so the coordinate
+  // index participates in the layout key. Stages 0/1 always map coordSet->attr
+  // 1:1 in the vertex fetch, so their key is left unchanged.
+  if (includeCoordSet) {
+    values.push(canSampleTexture ? (coordinates.coordSet >>> 0) : 0);
+  }
+  if (transformApplied) {
+    values.push(...textureTransform);
+  }
 }
 
 const D3D8_DEFAULT_LIGHT_DIRECTION = Object.freeze([0, 0, 1]);
@@ -7959,7 +7960,7 @@ function d3d8CanUseParticleProgram({
 // SM1 shader-pair programs (absent uniforms resolve to null; every cached
 // uniform setter tolerates that).
 function buildD3D8DrawProgramLocations(program) {
-  return {
+  const locations = {
     program,
     position: gl.getAttribLocation(program, "aPosition"),
     normal: gl.getAttribLocation(program, "aNormal"),
@@ -8104,6 +8105,79 @@ function buildD3D8DrawProgramLocations(program) {
     fogStart: gl.getUniformLocation(program, "uFogStart"),
     fogEnd: gl.getUniformLocation(program, "uFogEnd"),
   };
+  locations.extendedTextureStageUniforms = [2, 3].map((stageIndex) => {
+    const prefix = `texture${stageIndex}`;
+    return {
+      samplerUnit: stageIndex,
+      coordinateMode: locations[`${prefix}CoordinateMode`],
+      coordSet: locations[`${prefix}CoordSet`],
+      useTransform: locations[`useTexture${stageIndex}Transform`],
+      transform: locations[`${prefix}Transform`],
+      transformComponentCount: locations[`${prefix}TransformComponentCount`],
+      transformProjected: locations[`${prefix}TransformProjected`],
+      useTexture: locations[`useTexture${stageIndex}`],
+      sampler: locations[prefix],
+      lodBias: locations[`${prefix}LodBias`],
+      semantic: locations[`${prefix}Semantic`],
+      flipY: locations[`${prefix}FlipY`],
+    };
+  });
+  return locations;
+}
+
+function uploadD3D8ExtendedTextureStageUniforms(locations, textureStage,
+    canSample, coordinates, transform, semantic, flipY) {
+  if (!locations.coordinateMode && !locations.useTexture) {
+    return;
+  }
+  const transformApplied = Boolean(canSample && coordinates.transformApplied);
+  if (locations.coordinateMode) {
+    d3d8CachedUniform1i(
+      locations.coordinateMode,
+      canSample ? coordinates.mode : D3DTSS_TCI_PASSTHRU,
+    );
+  }
+  if (locations.coordSet) {
+    d3d8CachedUniform1i(locations.coordSet, canSample ? (coordinates.coordSet >>> 0) : 0);
+  }
+  if (locations.useTransform) {
+    d3d8CachedUniform1i(locations.useTransform, transformApplied ? 1 : 0);
+  }
+  if (locations.transformComponentCount) {
+    d3d8CachedUniform1i(
+      locations.transformComponentCount,
+      transformApplied ? coordinates.textureTransformComponentCount : 0,
+    );
+  }
+  if (locations.transformProjected) {
+    d3d8CachedUniform1i(
+      locations.transformProjected,
+      transformApplied && coordinates.textureTransformProjected ? 1 : 0,
+    );
+  }
+  if (locations.transform && transformApplied) {
+    d3d8CachedUniformMatrix4fv(locations.transform, transform);
+  }
+  if (locations.useTexture) {
+    d3d8CachedUniform1i(locations.useTexture, canSample ? 1 : 0);
+  }
+  if (locations.sampler) {
+    d3d8CachedUniform1i(locations.sampler, locations.samplerUnit);
+  }
+  if (locations.lodBias) {
+    d3d8CachedUniform1f(
+      locations.lodBias,
+      canSample
+        ? d3dDwordToFloat(textureStage.mipMapLodBias)
+        : 0.0,
+    );
+  }
+  if (locations.semantic) {
+    d3d8CachedUniform1i(locations.semantic, semantic);
+  }
+  if (locations.flipY) {
+    d3d8CachedUniform1i(locations.flipY, flipY ? 1 : 0);
+  }
 }
 
 // --- D3D8 SM1 (vs.1.1 / ps.1.x) token stream -> GLSL ES 3.00 translation ---
@@ -13972,68 +14046,24 @@ function paintD3D8DrawIndexed(payload = {}) {
       // Stages 2 and 3: coordinate mode, coordSet selection, texture transform,
       // sampler unit, LOD bias, semantic mode. The bridge samples texture unit
       // == stage index (uTexture2->unit 2, uTexture3->unit 3).
-      const p = bridgeProgram;
-      const stage23 = [
-        {
-          index: 2,
-          canSample: canSampleTexture2,
-          coords: texture2Coordinates,
-          transform: texture2Transform,
-          semantic: texture2SemanticMode,
-          flipY: texture2FlipY,
-        },
-        {
-          index: 3,
-          canSample: canSampleTexture3,
-          coords: texture3Coordinates,
-          transform: texture3Transform,
-          semantic: texture3SemanticMode,
-          flipY: texture3FlipY,
-        },
-      ];
-      for (const s of stage23) {
-        const coordModeLoc = p[`texture${s.index}CoordinateMode`];
-        if (!coordModeLoc && !p[`useTexture${s.index}`]) {
-          continue;
-        }
-        const transformApplied = Boolean(s.canSample && s.coords.transformApplied);
-        if (coordModeLoc) {
-          d3d8CachedUniform1i(coordModeLoc, s.canSample ? s.coords.mode : D3DTSS_TCI_PASSTHRU);
-        }
-        if (p[`texture${s.index}CoordSet`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}CoordSet`], s.canSample ? (s.coords.coordSet >>> 0) : 0);
-        }
-        if (p[`useTexture${s.index}Transform`]) {
-          d3d8CachedUniform1i(p[`useTexture${s.index}Transform`], transformApplied ? 1 : 0);
-        }
-        if (p[`texture${s.index}TransformComponentCount`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}TransformComponentCount`],
-            transformApplied ? s.coords.textureTransformComponentCount : 0);
-        }
-        if (p[`texture${s.index}TransformProjected`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}TransformProjected`],
-            transformApplied && s.coords.textureTransformProjected ? 1 : 0);
-        }
-        if (p[`texture${s.index}Transform`] && transformApplied) {
-          d3d8CachedUniformMatrix4fv(p[`texture${s.index}Transform`], s.transform);
-        }
-        if (p[`useTexture${s.index}`]) {
-          d3d8CachedUniform1i(p[`useTexture${s.index}`], s.canSample ? 1 : 0);
-        }
-        if (p[`texture${s.index}`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}`], s.index);
-        }
-        if (p[`texture${s.index}LodBias`]) {
-          d3d8CachedUniform1f(p[`texture${s.index}LodBias`],
-            s.canSample ? d3dDwordToFloat(renderState.textureStages[s.index].mipMapLodBias) : 0.0);
-        }
-        if (p[`texture${s.index}Semantic`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}Semantic`], s.semantic);
-        }
-        if (p[`texture${s.index}FlipY`]) {
-          d3d8CachedUniform1i(p[`texture${s.index}FlipY`], s.flipY ? 1 : 0);
-        }
-      }
+      uploadD3D8ExtendedTextureStageUniforms(
+        bridgeProgram.extendedTextureStageUniforms[0],
+        renderState.textureStages[2],
+        canSampleTexture2,
+        texture2Coordinates,
+        texture2Transform,
+        texture2SemanticMode,
+        texture2FlipY,
+      );
+      uploadD3D8ExtendedTextureStageUniforms(
+        bridgeProgram.extendedTextureStageUniforms[1],
+        renderState.textureStages[3],
+        canSampleTexture3,
+        texture3Coordinates,
+        texture3Transform,
+        texture3SemanticMode,
+        texture3FlipY,
+      );
       harnessState.graphics.lastD3D8TextureUniformKey = textureUniformKey;
     }
     // Fog-of-war shroud UV generation for trees.  The tree FVF (XYZNDUV1) has
