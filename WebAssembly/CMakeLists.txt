@@ -6185,6 +6185,8 @@ target_link_libraries(wwmath-core-smoke PRIVATE
 
 target_compile_options(wwmath-core-smoke PRIVATE
   -include "${WWVEGAS_PORT_SHIM}"
+  -fsanitize=undefined
+  -fno-sanitize-recover=undefined
   -fms-extensions
   -Wall
   -Wextra
@@ -6202,6 +6204,8 @@ target_compile_options(wwmath-core-smoke PRIVATE
 target_link_options(wwmath-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
+  -fsanitize=undefined
+  -fno-sanitize-recover=undefined
   ${CNC_ASSERTIONS_LINK_OPTION}
 )
 
