@@ -25,6 +25,15 @@ bool expect(bool condition, const char *message)
 	}
 	return true;
 }
+
+class CardinalSpline1DProbe : public CardinalSpline1DClass
+{
+public:
+	int getTightnessCountForTest() const
+	{
+		return Tightness.Count();
+	}
+};
 }
 
 int main()
@@ -62,6 +71,29 @@ int main()
 	cardinal.Set_Tightness(1, 0.25f);
 	cardinal.Evaluate(1.0f, &value);
 	if (!expect(near(value, 10.0f), "CardinalSpline1DClass key interpolation mismatch")) {
+		return 1;
+	}
+
+	CardinalSpline1DProbe polymorphic_cardinal;
+	Curve1DClass *polymorphic_curve = &polymorphic_cardinal;
+	polymorphic_curve->Add_Key(0.0f, 0.0f, 7);
+	polymorphic_curve->Add_Key(10.0f, 1.0f, 17);
+	polymorphic_curve->Add_Key(20.0f, 2.0f, 27);
+	if (!expect(polymorphic_cardinal.getTightnessCountForTest() ==
+			polymorphic_cardinal.Key_Count(),
+			"CardinalSpline1DClass polymorphic insertion skipped tightness bookkeeping")) {
+		return 1;
+	}
+	float polymorphic_point = 0.0f;
+	float polymorphic_time = 0.0f;
+	unsigned int polymorphic_extra = 0;
+	polymorphic_curve->Get_Key(
+		1, &polymorphic_point, &polymorphic_time, &polymorphic_extra);
+	polymorphic_cardinal.Set_Tightness(1, 0.25f);
+	polymorphic_cardinal.Evaluate(1.0f, &value);
+	if (!expect(near(value, 10.0f) && near(polymorphic_point, 10.0f) &&
+			near(polymorphic_time, 1.0f) && polymorphic_extra == 17,
+			"CardinalSpline1DClass polymorphic insertion lost key data")) {
 		return 1;
 	}
 

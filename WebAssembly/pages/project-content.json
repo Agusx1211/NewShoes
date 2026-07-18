@@ -201,11 +201,11 @@
       "name": "Play peer-to-peer multiplayer",
       "status": "experimental",
       "summary": "The original UDP and lockstep protocol runs over direct WebRTC data channels, with decentralized discovery and continuing determinism and connectivity hardening.",
-      "reviewedAt": "2026-07-15",
+      "reviewedAt": "2026-07-18",
       "details": [
-        "Public Nostr relays are used for decentralized peer discovery and encrypted connection negotiation, not to relay the match itself. Game traffic flows through direct WebRTC data channels when a connection is established.",
+        "The project-operated Nostr relay and four deterministic public fallbacks are used for decentralized peer discovery and encrypted connection negotiation, not to relay the match itself. Discovery continues when any one configured relay is reachable. Game traffic flows through direct WebRTC data channels when a connection is established.",
         "Players choose the same room in Settings > Multiplayer, choose a commander name, launch Zero Hour, and use Multiplayer > Anonymous in the original UI. Ranked is reserved for a future service and currently shows a native coming-soon notice. Peers must use the same exact game and ordered mod composition. An empty room value keeps play offline.",
-        "The native Anonymous lobby reports discovery, project-relay, room, and peer state. Its Reconnect action rebuilds browser discovery and asks the original LAN API to immediately refresh players and games after peer channels recover, without restarting Zero Hour.",
+        "The native Anonymous lobby reports discovery, relay, room, and peer state. Its Reconnect action rebuilds browser discovery and asks the original LAN API to immediately refresh players and games after peer channels recover, without restarting Zero Hour.",
         "Short matches have been verified at up to four players, including native lobby discovery recovery. Long determinism runs, in-game disconnect and rejoin behavior, authenticated invitations, difficult NAT conditions, and signaling hardening remain active work."
       ],
       "evidence": [
@@ -213,6 +213,8 @@
         "GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/LanLobbyMenu.cpp",
         "WebAssembly/harness/lan_webrtc_playable_match_smoke.mjs",
         "WebAssembly/harness/webrtc-udp-endpoint.mjs",
+        "WebAssembly/cloudflare/trystero-relay/worker_hibernation.test.mjs",
+        "WebAssembly/harness/webrtc_relay_selection_unit.mjs",
         "WebAssembly/harness/multiplayer_network_status_unit.mjs"
       ]
     },
@@ -221,13 +223,14 @@
       "name": "Transfer owned data to another device",
       "status": "experimental",
       "summary": "A user-confirmed encrypted flow transfers an installed game, selected mods and order, saves, and replays between two devices controlled by the owner.",
-      "reviewedAt": "2026-07-14",
+      "reviewedAt": "2026-07-18",
       "details": [
         "Both devices must be controlled by the owner, and the UI requires an explicit ownership confirmation. The transfer is a convenience for the user's own legally owned data; it is not a public download or redistribution service.",
-        "The sending and receiving browsers negotiate an encrypted connection and expose progress and errors in the launcher. Browser storage and network conditions still determine whether a large transfer can complete."
+        "The sending and receiving browsers negotiate through the project-operated Nostr relay and deterministic public fallbacks, then send the encrypted transfer directly over WebRTC. The Nostr relays do not carry installed archives or user files. Browser storage and network conditions still determine whether a large transfer can complete."
       ],
       "evidence": [
         "WebAssembly/harness/launcher-device-transfer.mjs",
+        "WebAssembly/harness/webrtc_relay_selection_unit.mjs",
         "WebAssembly/harness/device_transfer_browser_smoke.mjs",
         "WebAssembly/harness/device-transfer-protocol.mjs"
       ]
@@ -290,8 +293,8 @@
     "networkActivity": [
       "Opening the hosted page downloads the open-source browser runtime.",
       "Optional analytics sends only documented broad events when enabled.",
-      "Multiplayer uses public discovery relays and direct peer-to-peer game channels.",
-      "Device transfer connects the two participating devices for the confirmed encrypted transfer.",
+      "Multiplayer uses the project-operated Nostr discovery relay plus public fallbacks, then direct peer-to-peer game channels.",
+      "Device transfer uses the same hybrid Nostr discovery set for encrypted connection negotiation, then connects the two participating devices directly for the confirmed encrypted transfer.",
       "Testing or launching with Remote Agent opens outbound signaling connections from the browser and bridge, then exchanges agent traffic directly over a DTLS-encrypted WebRTC data channel. The signaling relay receives only a token-derived room identifier and encrypted SDP/ICE envelopes. A test performs only the authenticated probe and does not register a playable session. The bridge exposes its authenticated controller REST API on loopback by default.",
       "An enabled LLM commander sends gameplay context and receives model responses from the OpenAI-compatible endpoint selected in its profile.",
       "Diagnostics leave the device only when the user explicitly uploads a report."

@@ -44,36 +44,95 @@ try {
     });
     globalThis.__cncSetDiagLevel("lite");
 
-    const format = 0x31545844;
-    const created = hooks.cncPortD3D8TextureCreate({
-      id: 7,
-      width: 4,
-      height: 4,
-      levels: 1,
-      format,
-      pool: 1,
-    });
-    const updated = hooks.cncPortD3D8TextureUpdate({
-      id: 7,
-      level: 0,
-      x: 0,
-      y: 0,
-      width: 4,
-      height: 4,
-      format,
-      bytes: new Uint8Array([
+    const upload = (id, format, bytes) => {
+      const created = hooks.cncPortD3D8TextureCreate({
+        id,
+        width: 4,
+        height: 4,
+        levels: 1,
+        format,
+        pool: 1,
+      });
+      const updated = hooks.cncPortD3D8TextureUpdate({
+        id,
+        level: 0,
+        x: 0,
+        y: 0,
+        width: 4,
+        height: 4,
+        format,
+        bytes,
+      });
+      const resource = diag.d3d8Textures.get(id);
+      return {
+        created,
+        updated,
+        resource,
+        storage: resource?.storage ?? null,
+        initialized: resource?.initializedLevels.has("0") ?? false,
+      };
+    };
+    const dxt1 = upload(
+      7,
+      0x31545844,
+      new Uint8Array([
         0x00, 0xf8,
         0xe0, 0x07,
         0x00, 0x00, 0x00, 0x00,
       ]),
-    });
-    const resource = diag.d3d8Textures.get(7);
+    );
+    const dxt3 = upload(
+      8,
+      0x33545844,
+      new Uint8Array([
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0x00, 0x00,
+        0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff,
+      ]),
+    );
+    const selectors = [0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7];
+    const alphaBytes = new Uint8Array(8);
+    alphaBytes[0] = 255;
+    for (let texel = 0; texel < selectors.length; ++texel) {
+      for (let selectorBit = 0; selectorBit < 3; ++selectorBit) {
+        if ((selectors[texel] & (1 << selectorBit)) === 0) continue;
+        const streamBit = texel * 3 + selectorBit;
+        alphaBytes[2 + Math.floor(streamBit / 8)] |= 1 << (streamBit % 8);
+      }
+    }
+    const dxt5 = upload(
+      9,
+      0x35545844,
+      new Uint8Array([
+        ...alphaBytes,
+        0x00, 0xf8,
+        0xe0, 0x07,
+        0x00, 0x00, 0x00, 0x00,
+      ]),
+    );
     return {
-      created,
-      updated,
+      created: dxt1.created,
+      updated: dxt1.updated,
       pixel: diag.sampleD3D8TextureCenter(7),
-      storage: resource?.storage ?? null,
-      initialized: resource?.initializedLevels.has("0") ?? false,
+      storage: dxt1.storage,
+      initialized: dxt1.initialized,
+      dxt3: {
+        created: dxt3.created,
+        updated: dxt3.updated,
+        pixel: diag.sampleD3D8TextureCenter(8),
+        storage: dxt3.storage,
+        initialized: dxt3.initialized,
+      },
+      dxt5: {
+        created: dxt5.created,
+        updated: dxt5.updated,
+        firstPixel: diag.sampleD3D8TexturePixel(dxt5.resource, 0, 0),
+        centerPixel: diag.sampleD3D8TexturePixel(dxt5.resource, 2, 2),
+        lastPixel: diag.sampleD3D8TexturePixel(dxt5.resource, 3, 3),
+        storage: dxt5.storage,
+        initialized: dxt5.initialized,
+      },
       s3tcForcedOff: diag.s3tc() === null,
       renderer: gl.getParameter(gl.RENDERER),
       unmaskedRenderer: debugRendererInfo
@@ -88,6 +147,22 @@ try {
   assert.equal(result.storage, "rgba8");
   assert.equal(result.initialized, true);
   assert.deepEqual(result.pixel, [255, 0, 0, 255]);
+  assert.deepEqual(result.dxt3, {
+    created: 1,
+    updated: 1,
+    pixel: [170, 170, 170, 255],
+    storage: "rgba8",
+    initialized: true,
+  });
+  assert.deepEqual(result.dxt5, {
+    created: 1,
+    updated: 1,
+    firstPixel: [255, 0, 0, 255],
+    centerPixel: [255, 0, 0, 219],
+    lastPixel: [255, 0, 0, 36],
+    storage: "rgba8",
+    initialized: true,
+  });
   console.log(JSON.stringify({
     ok: true,
     source: "d3d8-dxt-cpu-fallback-browser-smoke",

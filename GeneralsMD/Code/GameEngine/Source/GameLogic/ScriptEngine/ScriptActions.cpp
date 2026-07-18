@@ -3008,12 +3008,12 @@ void ScriptActions::doCameraMotionBlur(Bool zoomIn, Bool saturate)
 
 static PlayerMaskType getHumanPlayerMask( void )
 {
-	PlayerMaskType mask;
+	PlayerMaskType mask = PLAYERMASK_NONE;
 	for (Int i=0; i<ThePlayerList->getPlayerCount(); ++i)
 	{
 		const Player *player = ThePlayerList->getNthPlayer(i);
 		if (player->getPlayerType() == PLAYER_HUMAN)
-			mask &= player->getPlayerMask();
+			mask |= player->getPlayerMask();
 	}
 
 	//DEBUG_LOG(("getHumanPlayerMask(): mask was %4.4X\n", mask));
