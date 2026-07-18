@@ -38,6 +38,45 @@ function bytesToHex(value) {
   return result;
 }
 
+class BoundedQueue {
+  #values = [];
+  #head = 0;
+
+  get length() {
+    return this.#values.length - this.#head;
+  }
+
+  push(value) {
+    this.#values.push(value);
+    return this.length;
+  }
+
+  shift() {
+    if (this.length === 0) return undefined;
+    const value = this.#values[this.#head];
+    this.#values[this.#head] = undefined;
+    this.#head += 1;
+    if (this.#head * 2 >= this.#values.length) {
+      this.#values = this.#values.slice(this.#head);
+      this.#head = 0;
+    }
+    return value;
+  }
+
+  clear() {
+    this.#values = [];
+    this.#head = 0;
+  }
+
+  map(callback) {
+    const result = new Array(this.length);
+    for (let index = 0; index < result.length; ++index) {
+      result[index] = callback(this.#values[this.#head + index], index, this);
+    }
+    return result;
+  }
+}
+
 function pushBounded(list, value, limit, onEvict = null) {
   list.push(value);
   while (list.length > limit) {
@@ -63,10 +102,10 @@ export class NetworkDiagnosticsRecorder {
     this.stoppedAt = null;
     this.sequence = 0;
     this.packetBytes = 0;
-    this.packets = [];
-    this.events = [];
-    this.rtcSamples = [];
-    this.engineSamples = [];
+    this.packets = new BoundedQueue();
+    this.events = new BoundedQueue();
+    this.rtcSamples = new BoundedQueue();
+    this.engineSamples = new BoundedQueue();
     this.totals = {
       packets: 0,
       packetBytes: 0,
@@ -101,10 +140,10 @@ export class NetworkDiagnosticsRecorder {
   clear() {
     this.sequence = 0;
     this.packetBytes = 0;
-    this.packets.length = 0;
-    this.events.length = 0;
-    this.rtcSamples.length = 0;
-    this.engineSamples.length = 0;
+    this.packets.clear();
+    this.events.clear();
+    this.rtcSamples.clear();
+    this.engineSamples.clear();
     for (const key of Object.keys(this.totals)) this.totals[key] = 0;
     for (const key of Object.keys(this.evicted)) this.evicted[key] = 0;
   }

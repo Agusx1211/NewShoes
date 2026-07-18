@@ -55,6 +55,7 @@
 #include "GameClient/LanguageFilter.h"
 #include "GameNetwork/GameSpy/BuddyDefs.h"
 #include "GameNetwork/GameSpy/LadderDefs.h"
+#include "GameNetwork/GameSpy/LobbyGameSort.h"
 #include "GameNetwork/GameSpy/LobbyUtils.h"
 #include "GameNetwork/GameSpy/PeerDefs.h"
 #include "GameNetwork/GameSpy/PeerThread.h"
@@ -474,14 +475,16 @@ static void clearBuddyGames(void)
 
 struct GameSortStruct
 {
-	bool operator()(GameSpyStagingRoom *g1, GameSpyStagingRoom *g2)
+	bool operator()(GameSpyStagingRoom *g1, GameSpyStagingRoom *g2) const
 	{
 		// sort CRC mismatches to the bottom
-		Bool g1Good = (g1->getExeCRC() != TheGlobalData->m_exeCRC || g1->getIniCRC() != TheGlobalData->m_iniCRC);
-		Bool g2Good = (g1->getExeCRC() != TheGlobalData->m_exeCRC || g1->getIniCRC() != TheGlobalData->m_iniCRC);
-		if ( g1Good ^ g2Good )
+		const GameSpyLobbySort::CRCCompatibilityOrder crcOrder = GameSpyLobbySort::compareCRCCompatibility(
+			g1->getExeCRC(), g1->getIniCRC(),
+			g2->getExeCRC(), g2->getIniCRC(),
+			TheGlobalData->m_exeCRC, TheGlobalData->m_iniCRC);
+		if (crcOrder != GameSpyLobbySort::CRC_COMPATIBILITY_TIED)
 		{
-			return g1Good;
+			return crcOrder == GameSpyLobbySort::CRC_COMPATIBILITY_FIRST;
 		}
 
 		// sort games with private ladders to the bottom
