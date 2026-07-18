@@ -3345,10 +3345,11 @@ void ScriptActions::doTeamGarrisonSpecificBuilding(const AsciiString& teamName, 
 		DEBUG_CRASH( ("doTeamGarrisonSpecificBuilding script -- building doesn't have a container!" ) );
 		return;
 	}
-	PlayerMaskType player = theBuilding->getContain()->getPlayerWhoEntered();
+	const PlayerMaskType occupantMask = theBuilding->getContain()->getPlayerWhoEntered();
+	const PlayerMaskType controllerMask = theTeam->getControllingPlayer()->getPlayerMask();
 
-	if (!(theBuilding->isKindOf(KINDOF_STRUCTURE) && 
-		(player == 0) || (player == theTeam->getControllingPlayer()->getPlayerMask()))) {
+	if (!isValidSpecificBuildingGarrisonTarget(
+			theBuilding->isKindOf(KINDOF_STRUCTURE), occupantMask, controllerMask)) {
 		return;
 	}
 	
@@ -3508,10 +3509,11 @@ void ScriptActions::doUnitGarrisonSpecificBuilding(const AsciiString& unitName, 
 		DEBUG_CRASH(("doUnitGarrisonSpecificBuilding script -- building doesn't have a container" ));
 		return;
 	}
-	PlayerMaskType player = theBuilding->getContain()->getPlayerWhoEntered();
+	const PlayerMaskType occupantMask = theBuilding->getContain()->getPlayerWhoEntered();
+	const PlayerMaskType controllerMask = theUnit->getControllingPlayer()->getPlayerMask();
 
-	if (!(theBuilding->isKindOf(KINDOF_STRUCTURE) && 
-		(player == 0) || (player == theUnit->getControllingPlayer()->getPlayerMask()))) {
+	if (!isValidSpecificBuildingGarrisonTarget(
+			theBuilding->isKindOf(KINDOF_STRUCTURE), occupantMask, controllerMask)) {
 		return;
 	}
 	AIUpdateInterface *ai = theUnit->getAIUpdateInterface();
