@@ -2160,6 +2160,12 @@ set_source_files_properties(${ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES} PROPERT
 # the shadow GameNetwork/WOLBrowser/WebBrowser.h shim.
 set(WOL_BROWSER_COMPILE_BRIDGE "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_webbrowser_boundary.h")
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  set_property(SOURCE "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainBackground.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=mismatched-new-delete"
+  )
+endif()
+
 set_source_files_properties("${GAMEENGINE_COMMON_DIR}/GameEngine.cpp" PROPERTIES
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/atlbase.h;-include${WASM_SHIMS_DIR}/mmsystem.h;${WOL_BROWSER_COMPILE_BRIDGE}"
 )
