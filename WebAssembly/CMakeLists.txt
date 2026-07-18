@@ -2177,6 +2177,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/FlightDeckBehavior.cpp" APPEND PROPERTY
     COMPILE_OPTIONS "-Werror=unused-comparison"
   )
+
+  set_property(SOURCE
+    "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIGuard.cpp"
+    "${GAMEENGINE_GAMELOGIC_DIR}/AI/AIGuardRetaliate.cpp"
+    "${GAMEENGINE_GAMELOGIC_DIR}/AI/AITNGuard.cpp"
+    APPEND PROPERTY COMPILE_OPTIONS "-Werror=vexing-parse"
+  )
 endif()
 
 set(ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES
