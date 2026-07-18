@@ -11,12 +11,12 @@ from its Trystero peer ID. That address is exposed through the original
 to route unicast packets to the right peer. `255.255.255.255` packets fan out
 to every open peer channel, preserving LAN discovery and lobby broadcasts.
 
-Trystero discovers peers and exchanges encrypted SDP through redundant public
-Nostr relays. Once its base peer connection is active, the port opens a
-dedicated reliable, ordered `cnc-udp-v1` data channel for the original game
-traffic. Nostr relays never carry game packets. The browser handshake validates
-the transport version and virtual address and limits a room to eight peers to
-match the engine slot count.
+Trystero discovers peers and exchanges encrypted SDP through the project Nostr
+relay and a deterministic set of public fallback relays. Once its base peer
+connection is active, the port opens a dedicated reliable, ordered `cnc-udp-v1`
+data channel for the original game traffic. Nostr relays never carry game
+packets. The browser handshake validates the transport version and virtual
+address and limits a room to eight peers to match the engine slot count.
 
 ## LAN play
 
@@ -34,13 +34,17 @@ ordinary LAN host candidates do not require an additional ICE server.
 
 ## Internet play
 
-Serve the game over HTTPS. Players only need the same hard-to-guess room code;
-there is no Project New Shoes signaling service to deploy. The production
-bundle connects to several public Nostr relays so discovery can tolerate relay
-failure. Additional STUN/TURN URLs, usernames, and credentials are accepted for
-networks where a direct ICE path is impossible. TURN is a compatibility
-fallback and, when selected by ICE, game bytes traverse that TURN service.
-Credentials are kept only for the current page session.
+Serve the game over HTTPS. Players only need the same hard-to-guess room code.
+The production bundle connects to the Project New Shoes relay and four public
+Nostr relays; discovery continues as long as either the owned relay or a shared
+fallback is reachable. The project relay keeps subscriptions in hibernatable
+WebSocket attachments and retains recent events only while its Durable Object
+is warm. Trystero periodically re-announces peers, so an eviction does not make
+the in-memory cache part of correctness. Additional STUN/TURN URLs, usernames,
+and credentials are accepted for networks where a direct ICE path is
+impossible. TURN is a compatibility fallback and, when selected by ICE, game
+bytes traverse that TURN service. Credentials are kept only for the current
+page session.
 
 Room codes are shared secrets for discovery, not accounts or durable lobby
 authorization. Public matchmaking, moderation, and authenticated invitations
@@ -57,6 +61,13 @@ unique local player IDs, loads the same 270-object world on all clients, and
 advances the original `Network::update` lockstep simulation with four members
 and no CRC mismatch. Every client must retain three open dedicated game
 RTCDataChannels while discovery remains `trystero-nostr`.
+
+`npm run test:trystero-relay` forces the relay Durable Object to hibernate with
+live WebSockets, verifies subscription recovery and delayed joins after the
+warm cache is gone, and asserts that accepted relay traffic creates no storage
+rows. `npm run test:browser-network-webrtc-transport` includes an unreachable
+discovery URL alongside a working local relay and verifies reconnects plus a
+real game datagram through the surviving provider.
 
 The threaded engine worker and window-owned `RTCDataChannel`s exchange UDP
 datagrams through bounded `SharedArrayBuffer` rings. The adapter preserves

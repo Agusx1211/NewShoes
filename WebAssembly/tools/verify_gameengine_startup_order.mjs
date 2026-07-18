@@ -28,139 +28,162 @@ const REQUIRED_INIT_ORDER = [
   {
     key: "createFileSystem",
     label: "TheFileSystem = createFileSystem()",
-    expectedLine: 305,
+    expectedLine: 446,
+    expectedStep: "INIT_STEP_CORE",
     patterns: [/TheFileSystem\s*=\s*createFileSystem\s*\(\s*\)/],
   },
   {
     key: "createLocalFileSystem",
     label: "TheLocalFileSystem",
-    expectedLine: 342,
+    expectedLine: 489,
+    expectedStep: "INIT_STEP_FILESYS",
     patterns: [/initSubsystem\s*\(\s*TheLocalFileSystem/],
   },
   {
     key: "createArchiveFileSystem",
     label: "TheArchiveFileSystem",
-    expectedLine: 353,
+    expectedLine: 500,
+    expectedStep: "INIT_STEP_FILESYS",
     patterns: [/initSubsystem\s*\(\s*TheArchiveFileSystem/],
   },
   {
     key: "defaultGameData",
     label: "TheWritableGlobalData / GameData.ini",
-    expectedLine: 363,
+    expectedLine: 517,
+    expectedStep: "INIT_STEP_GLOBAL_DATA",
     patterns: [/initSubsystem\s*\(\s*TheWritableGlobalData\b/],
   },
   {
     key: "waterIni",
     label: "Water INI load",
-    expectedLine: 394,
+    expectedLine: 577,
+    expectedStep: "INIT_STEP_LOD_WATER",
     patterns: [/ini\.load.*Default.*Water\.ini/],
   },
   {
     key: "weatherIni",
     label: "Weather INI load",
-    expectedLine: 396,
+    expectedLine: 579,
+    expectedStep: "INIT_STEP_LOD_WATER",
     patterns: [/ini\.load.*Default.*Weather\.ini/],
   },
   {
     key: "gameText",
     label: "TheGameText",
-    expectedLine: 412,
+    expectedLine: 602,
+    expectedStep: "INIT_STEP_GAMETEXT",
     patterns: [/initSubsystem\s*\(\s*TheGameText\b/],
   },
   {
     key: "science",
     label: "TheScienceStore / Science.ini",
-    expectedLine: 422,
+    expectedLine: 619,
+    expectedStep: "INIT_STEP_STORES_A",
     patterns: [/initSubsystem\s*\(\s*TheScienceStore/],
   },
   {
     key: "multiplayer",
     label: "TheMultiplayerSettings / Multiplayer.ini",
-    expectedLine: 423,
+    expectedLine: 620,
+    expectedStep: "INIT_STEP_STORES_A",
     patterns: [/initSubsystem\s*\(\s*TheMultiplayerSettings/],
   },
   {
     key: "terrain",
     label: "TheTerrainTypes / Terrain.ini",
-    expectedLine: 424,
+    expectedLine: 621,
+    expectedStep: "INIT_STEP_STORES_A",
     patterns: [/initSubsystem\s*\(\s*TheTerrainTypes/],
   },
   {
     key: "roads",
     label: "TheTerrainRoads / Roads.ini",
-    expectedLine: 425,
+    expectedLine: 622,
+    expectedStep: "INIT_STEP_STORES_A",
     patterns: [/initSubsystem\s*\(\s*TheTerrainRoads/],
   },
   {
     key: "cdManager",
     label: "TheCDManager",
-    expectedLine: 427,
+    expectedLine: 624,
+    expectedStep: "INIT_STEP_STORES_A",
     patterns: [/initSubsystem\s*\(\s*TheCDManager/],
   },
   {
     key: "createAudioManager",
     label: "TheAudio / createAudioManager()",
-    expectedLine: 434,
+    expectedLine: 639,
+    expectedStep: "INIT_STEP_AUDIO",
     patterns: [/initSubsystem\s*\(\s*TheAudio\b/],
   },
   {
     key: "createFunctionLexicon",
     label: "TheFunctionLexicon",
-    expectedLine: 446,
+    expectedLine: 658,
+    expectedStep: "INIT_STEP_STORES_B",
     patterns: [/initSubsystem\s*\(\s*TheFunctionLexicon/],
   },
   {
     key: "createModuleFactory",
     label: "TheModuleFactory",
-    expectedLine: 447,
+    expectedLine: 659,
+    expectedStep: "INIT_STEP_STORES_B",
     patterns: [/initSubsystem\s*\(\s*TheModuleFactory/],
   },
   {
     key: "rankInfo",
     label: "TheRankInfoStore / Rank.ini",
-    expectedLine: 451,
+    expectedLine: 663,
+    expectedStep: "INIT_STEP_STORES_B",
     patterns: [/initSubsystem\s*\(\s*TheRankInfoStore/],
   },
   {
     key: "playerTemplate",
     label: "ThePlayerTemplateStore / PlayerTemplate.ini",
-    expectedLine: 452,
+    expectedLine: 664,
+    expectedStep: "INIT_STEP_STORES_B",
     patterns: [/initSubsystem\s*\(\s*ThePlayerTemplateStore/],
   },
   {
     key: "createParticleSystemManager",
     label: "TheParticleSystemManager",
-    expectedLine: 453,
+    expectedLine: 665,
+    expectedStep: "INIT_STEP_STORES_B",
     patterns: [/initSubsystem\s*\(\s*TheParticleSystemManager/],
   },
   {
     key: "thingFactory",
     label: "TheThingFactory / createThingFactory()",
-    expectedLine: 482,
+    expectedLine: 700,
+    expectedStep: "INIT_STEP_THING_FACTORY",
     patterns: [/initSubsystem\s*\(\s*TheThingFactory/],
   },
   {
     key: "createGameClient",
     label: "TheGameClient",
-    expectedLine: 493,
+    expectedLine: 718,
+    expectedStep: "INIT_STEP_UPGRADE_CLIENT",
     patterns: [/initSubsystem\s*\(\s*TheGameClient/],
   },
   {
     key: "createGameLogic",
     label: "TheGameLogic",
-    expectedLine: 505,
+    expectedLine: 737,
+    expectedStep: "INIT_STEP_AI_LOGIC",
     patterns: [/initSubsystem\s*\(\s*TheGameLogic/],
   },
   {
     key: "createRadar",
     label: "TheRadar",
-    expectedLine: 510,
+    expectedLine: 744,
+    expectedStep: "INIT_STEP_AI_LOGIC",
     patterns: [/initSubsystem\s*\(\s*TheRadar/],
   },
   {
     key: "createWebBrowser",
     label: "createWebBrowser() commented init call",
-    expectedLine: 537,
+    expectedLine: 778,
+    expectedStep: "INIT_STEP_METAMAP_STATE",
     patterns: [/createWebBrowser\s*\(\s*\)/],
   },
 ];
@@ -285,10 +308,10 @@ function escapeRegExp(text) {
 function scanInitMarkers(cppText, errors) {
   const body = findFunctionBody(
     cppText,
-    /\bvoid\s+GameEngine\s*::\s*init\s*\(\s*int\s+argc\s*,\s*char\s*\*\s*argv\s*\[\s*\]\s*\)/g
+    /\bBool\s+GameEngine\s*::\s*runNextInitStep\s*\(\s*void\s*\)/g
   );
   if (!body) {
-    errors.push(`${GAMEENGINE_CPP}: GameEngine::init(int,char**) body not found`);
+    errors.push(`${GAMEENGINE_CPP}: GameEngine::runNextInitStep() body not found`);
     return [];
   }
 
@@ -297,12 +320,19 @@ function scanInitMarkers(cppText, errors) {
   return REQUIRED_INIT_ORDER.map((entry) => {
     let line = null;
     let pattern = null;
+    let step = null;
+    let activeStep = null;
 
     for (let i = 0; i < bodyLines.length; i += 1) {
+      const stepMatch = /\bcase\s+InitSession::(INIT_STEP_[A-Z_]+)\s*:/.exec(bodyLines[i]);
+      if (stepMatch) {
+        activeStep = stepMatch[1];
+      }
       for (const regex of entry.patterns) {
         if (regex.test(bodyLines[i])) {
           line = bodyStartLine + i;
           pattern = regex.source;
+          step = activeStep;
           break;
         }
       }
@@ -315,8 +345,10 @@ function scanInitMarkers(cppText, errors) {
       key: entry.key,
       label: entry.label,
       expectedLine: entry.expectedLine,
+      expectedStep: entry.expectedStep,
       line,
-      ok: line === entry.expectedLine,
+      step,
+      ok: line === entry.expectedLine && step === entry.expectedStep,
       ...(pattern ? { pattern } : {}),
     };
   });
@@ -446,6 +478,13 @@ function addInitErrors(initOrder, errors) {
       errors.push(
         `${GAMEENGINE_CPP}: ${entry.key} expected line ${entry.expectedLine} but found ${entry.line}`
       );
+    }
+
+    if (entry.step !== entry.expectedStep) {
+      errors.push(
+        `${GAMEENGINE_CPP}: ${entry.key} expected step ${entry.expectedStep} but found ${entry.step}`
+      );
+      orderOk = false;
     }
 
     if (entry.line < previousLine) {
