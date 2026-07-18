@@ -15,6 +15,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Fix DXT1 CPU-fallback startup when S3TC texture support is unavailable ([PR #133](https://github.com/Agusx1211/NewShoes/pull/133)).
 - Keep smoke particles visible when water reflections render before the main scene ([PR #136](https://github.com/Agusx1211/NewShoes/pull/136)).
 - Correct DXT3 and DXT5 CPU-fallback alpha and color decoding ([PR #138](https://github.com/Agusx1211/NewShoes/pull/138)).
+- Fall back to exclusive OPFS access when Safari rejects read-only sync handles ([PR #123](https://github.com/Agusx1211/NewShoes/pull/123)).
 - Wait for the relaunched Exit window before the threaded play gate clicks it ([PR #139](https://github.com/Agusx1211/NewShoes/pull/139)).
 - Retarget the GameEngine startup-order verifier to stepped initialization ([PR #141](https://github.com/Agusx1211/NewShoes/pull/141)).
 - Bound BIG directory validation allocation growth while preserving archive checks ([PR #143](https://github.com/Agusx1211/NewShoes/pull/143)).
