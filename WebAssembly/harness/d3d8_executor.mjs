@@ -8122,6 +8122,20 @@ function buildD3D8DrawProgramLocations(program) {
       flipY: locations[`${prefix}FlipY`],
     };
   });
+  locations.extendedCombinerStageUniforms = [2, 3].map((stageIndex) => {
+    const prefix = `stage${stageIndex}`;
+    return {
+      colorOp: locations[`${prefix}ColorOp`],
+      colorArg0: locations[`${prefix}ColorArg0`],
+      colorArg1: locations[`${prefix}ColorArg1`],
+      colorArg2: locations[`${prefix}ColorArg2`],
+      alphaOp: locations[`${prefix}AlphaOp`],
+      alphaArg0: locations[`${prefix}AlphaArg0`],
+      alphaArg1: locations[`${prefix}AlphaArg1`],
+      alphaArg2: locations[`${prefix}AlphaArg2`],
+      resultArg: locations[`${prefix}ResultArg`],
+    };
+  });
   return locations;
 }
 
@@ -8178,6 +8192,21 @@ function uploadD3D8ExtendedTextureStageUniforms(locations, textureStage,
   if (locations.flipY) {
     d3d8CachedUniform1i(locations.flipY, flipY ? 1 : 0);
   }
+}
+
+function uploadD3D8ExtendedCombinerStageUniforms(locations, textureStage) {
+  if (!locations.colorOp) {
+    return;
+  }
+  d3d8CachedUniform1i(locations.colorOp, textureStage.colorOp);
+  d3d8CachedUniform1i(locations.colorArg0, textureStage.colorArg0);
+  d3d8CachedUniform1i(locations.colorArg1, textureStage.colorArg1);
+  d3d8CachedUniform1i(locations.colorArg2, textureStage.colorArg2);
+  d3d8CachedUniform1i(locations.alphaOp, textureStage.alphaOp);
+  d3d8CachedUniform1i(locations.alphaArg0, textureStage.alphaArg0);
+  d3d8CachedUniform1i(locations.alphaArg1, textureStage.alphaArg1);
+  d3d8CachedUniform1i(locations.alphaArg2, textureStage.alphaArg2);
+  d3d8CachedUniform1i(locations.resultArg, textureStage.resultArg);
 }
 
 // --- D3D8 SM1 (vs.1.1 / ps.1.x) token stream -> GLSL ES 3.00 translation ---
@@ -13768,22 +13797,14 @@ function paintD3D8DrawIndexed(payload = {}) {
         // CURRENT/TEMP by D3DTSS_RESULTARG. A disabled stage (colorOp==DISABLE)
         // passes CURRENT through in the shader, so uploading these is harmless
         // for 0/1-only draws.
-        for (const stageIndex of [2, 3]) {
-          const stage = renderState.textureStages[stageIndex];
-          const p = bridgeProgram;
-          const colorOp = p[`stage${stageIndex}ColorOp`];
-          if (colorOp) {
-            d3d8CachedUniform1i(colorOp, stage.colorOp);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ColorArg0`], stage.colorArg0);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ColorArg1`], stage.colorArg1);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ColorArg2`], stage.colorArg2);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaOp`], stage.alphaOp);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaArg0`], stage.alphaArg0);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaArg1`], stage.alphaArg1);
-            d3d8CachedUniform1i(p[`stage${stageIndex}AlphaArg2`], stage.alphaArg2);
-            d3d8CachedUniform1i(p[`stage${stageIndex}ResultArg`], stage.resultArg);
-          }
-        }
+        uploadD3D8ExtendedCombinerStageUniforms(
+          bridgeProgram.extendedCombinerStageUniforms[0],
+          renderState.textureStages[2],
+        );
+        uploadD3D8ExtendedCombinerStageUniforms(
+          bridgeProgram.extendedCombinerStageUniforms[1],
+          renderState.textureStages[3],
+        );
         d3d8LastStageUniformKey = stageUniformKey;
       }
       recordRenderUniformDetail?.("sortedDrawRenderStageUniformMs");
