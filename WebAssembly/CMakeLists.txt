@@ -2173,6 +2173,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/EMPUpdate.cpp" APPEND PROPERTY
     COMPILE_OPTIONS "-Werror=sometimes-uninitialized"
   )
+
+  set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Behavior/FlightDeckBehavior.cpp" APPEND PROPERTY
+    COMPILE_OPTIONS "-Werror=unused-comparison"
+  )
 endif()
 
 set(ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES
@@ -6469,6 +6473,65 @@ target_compile_options(gameengine-header-case-smoke PRIVATE
 )
 
 target_link_options(gameengine-header-case-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
+add_executable(flightdeck-layout-smoke
+  tests/flightdeck_layout_smoke.cpp
+)
+
+set_target_properties(flightdeck-layout-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_include_directories(flightdeck-layout-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(flightdeck-layout-smoke PRIVATE
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+)
+
+target_compile_options(flightdeck-layout-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-invalid-offsetof
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(flightdeck-layout-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   ${CNC_ASSERTIONS_LINK_OPTION}
