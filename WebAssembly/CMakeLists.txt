@@ -2147,6 +2147,12 @@ set_source_files_properties(${ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES} PROPERTIES
   COMPILE_OPTIONS "-U__PRERTS_H__;-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
 )
 
+set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/AIUpdate/ChinookAIUpdate.cpp" APPEND PROPERTY
+  COMPILE_OPTIONS
+    "-Werror=enum-compare"
+    "-Werror=tautological-constant-out-of-range-compare"
+)
+
 set(ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyChat.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyGP.cpp"
