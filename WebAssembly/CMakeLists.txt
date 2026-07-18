@@ -8455,6 +8455,7 @@ target_compile_definitions(gameengine-common-core-smoke PRIVATE
 )
 
 target_compile_options(gameengine-common-core-smoke PRIVATE
+  ${CNC_EXCEPTION_COMPILE_OPTION}
   "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
@@ -8483,6 +8484,7 @@ target_link_options(gameengine-common-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   ${CNC_ASSERTIONS_LINK_OPTION}
+  ${CNC_EXCEPTION_LINK_OPTION}
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
