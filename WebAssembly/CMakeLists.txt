@@ -8801,6 +8801,7 @@ target_link_options(miles-audio-play-sample-smoke PRIVATE
 
 add_executable(gamenetwork-core-smoke
   tests/gamenetwork_core_smoke.cpp
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Thread/ThreadUtils.cpp"
 )
 
 set_target_properties(gamenetwork-core-smoke PROPERTIES
@@ -8839,6 +8840,7 @@ target_compile_options(gamenetwork-core-smoke PRIVATE
   -Wall
   -Wextra
   -Wpedantic
+  -Werror=mismatched-new-delete
   -Wno-register
   -Wno-writable-strings
 )
