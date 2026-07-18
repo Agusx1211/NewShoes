@@ -87,6 +87,7 @@
 #include "wasm_browser_mouse.h"
 #include "GameLogic/AI.h"
 #include "GameLogic/Module/AIUpdate.h"
+#include "GameLogic/Module/WorkerAIUpdate.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptEngine.h"
@@ -8879,6 +8880,114 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_skirmish_ma
 	json += ",\"applied\":\"" + json_escape(it->first.str()) + "\"";
 	append_map_metadata_json(json, "metadata", &it->second);
 	append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_skirmish_seed(Int seed)
+{
+	static std::string json;
+	json = "{";
+	json += "\"ok\":false";
+	json += ",\"requested\":" + std::to_string(static_cast<long long>(seed));
+
+	if (TheSkirmishGameInfo == NULL) {
+		json += ",\"error\":\"skirmishGameInfoNotReady\"";
+		json += "}";
+		return json.c_str();
+	}
+	if (TheSkirmishGameInfo->isGameInProgress()) {
+		json += ",\"error\":\"skirmishAlreadyStarted\"";
+		json += "}";
+		return json.c_str();
+	}
+
+	TheSkirmishGameInfo->setSeed(seed);
+	json = "{";
+	json += "\"ok\":true";
+	json += ",\"applied\":" + std::to_string(static_cast<long long>(TheSkirmishGameInfo->getSeed()));
+	append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_supply_exit()
+{
+	static std::string json;
+	Object *worker_object = NULL;
+	WorkerAIUpdate *worker_update = NULL;
+	if (TheGameLogic != NULL) {
+		for (Object *obj = TheGameLogic->getFirstObject(); obj != NULL; obj = obj->getNextObject()) {
+			AIUpdateInterface *ai = obj->getAIUpdateInterface();
+			if (ai != NULL && ai->getWorkerAIInterface() != NULL) {
+				WorkerAIUpdate *candidate = static_cast<WorkerAIUpdate *>(ai);
+				if (candidate->isSupplyTruckBrainActive()) {
+					continue;
+				}
+				worker_object = obj;
+				worker_update = candidate;
+				break;
+			}
+		}
+	}
+
+	json = "{";
+	json += "\"ok\":false";
+	if (worker_object == NULL || worker_update == NULL) {
+		json += ",\"error\":\"workerNotFound\"}";
+		return json.c_str();
+	}
+
+	const ObjectID worker_id = worker_object->getID();
+	const Bool active_before_prepare = worker_update->isSupplyTruckBrainActive();
+	const UnsignedInt reentries_before =
+		worker_update->getSupplyTruckExitReentryCountForDiagnostics();
+	const Bool prepared_for_exit = worker_update->prepareSupplyTruckExitForDiagnostics();
+	const Bool active_before_exit = worker_update->isSupplyTruckBrainActive();
+	const Bool ferrying_before_exit = worker_update->isCurrentlyFerryingSupplies();
+	const StateID supply_state_before_exit =
+		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const DWORD started_at = GetTickCount();
+	worker_update->exitingSupplyTruckState();
+	const DWORD elapsed_ms = GetTickCount() - started_at;
+	const UnsignedInt reentries_after =
+		worker_update->getSupplyTruckExitReentryCountForDiagnostics();
+	const UnsignedInt reentry_delta = reentries_after - reentries_before;
+	const Bool active_after_exit = worker_update->isSupplyTruckBrainActive();
+	const StateID supply_state_after_exit =
+		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const Bool worker_survived = TheGameLogic->findObjectByID(worker_id) == worker_object;
+	const Bool ok = !active_before_prepare && prepared_for_exit
+		&& active_before_exit && ferrying_before_exit && supply_state_before_exit == ST_WANTING
+		&& !active_after_exit && supply_state_after_exit == ST_IDLE
+		&& reentry_delta == 1 && worker_survived;
+
+	json = "{";
+	json += "\"ok\":";
+	json += ok ? "true" : "false";
+	json += ",\"workerId\":" + std::to_string(static_cast<unsigned long long>(worker_id));
+	const ThingTemplate *worker_template = worker_object->getTemplate();
+	json += ",\"template\":\"" + json_escape(
+		worker_template != NULL ? worker_template->getName().str() : "") + "\"";
+	json += ",\"activeBeforePrepare\":";
+	json += active_before_prepare ? "true" : "false";
+	json += ",\"preparedForExit\":";
+	json += prepared_for_exit ? "true" : "false";
+	json += ",\"activeBeforeExit\":";
+	json += active_before_exit ? "true" : "false";
+	json += ",\"ferryingBeforeExit\":";
+	json += ferrying_before_exit ? "true" : "false";
+	json += ",\"wantingBeforeExit\":";
+	json += supply_state_before_exit == ST_WANTING ? "true" : "false";
+	json += ",\"activeAfterExit\":";
+	json += active_after_exit ? "true" : "false";
+	json += ",\"idleAfterExit\":";
+	json += supply_state_after_exit == ST_IDLE ? "true" : "false";
+	json += ",\"suppressedReentries\":"
+		+ std::to_string(static_cast<unsigned long long>(reentry_delta));
+	json += ",\"elapsedMs\":" + std::to_string(static_cast<unsigned long long>(elapsed_ms));
+	json += ",\"workerSurvived\":";
+	json += worker_survived ? "true" : "false";
 	json += "}";
 	return json.c_str();
 }

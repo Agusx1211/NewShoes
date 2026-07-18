@@ -1244,8 +1244,24 @@ enum
 	PATHFIND_CACHE_LINE_VALID = 0x20,
 	PATHFIND_CACHE_LINE_PASSABLE = 0x40,
 	PATHFIND_CACHE_MOVEMENT_VALID = 0x80,
+	PATHFIND_CACHE_LINE_DIRECTION_MASK = 0x70,
+	PATHFIND_CACHE_LINE_DIRECTION_SHIFT = 4,
 	PATHFIND_CACHE_CLEAR_VALID = 0x80
 };
+
+static UnsignedByte getPathfindLineDirection(Int fromX, Int fromY, Int toX, Int toY)
+{
+	const Int deltaX = toX - fromX;
+	const Int deltaY = toY - fromY;
+	DEBUG_ASSERTCRASH(deltaX >= -1 && deltaX <= 1
+		&& deltaY >= -1 && deltaY <= 1
+		&& (deltaX != 0 || deltaY != 0), ("Invalid pathfind line step."));
+	Int direction = (deltaY + 1) * 3 + deltaX + 1;
+	if (direction > 4) {
+		--direction;
+	}
+	return static_cast<UnsignedByte>(direction);
+}
 
 Bool PathfindCell::getCachedMovementCheck(UnsignedInt generation, PathfindLayerEnum layer, Bool &passable,
 	Int &allyFixedCount, Bool &allyMoving, Bool &allyGoal, Bool &enemyFixed) const
@@ -1272,9 +1288,11 @@ void PathfindCell::cacheMovementCheck(UnsignedInt generation, PathfindLayerEnum 
 	const Bool sameGeneration = m_pathfindCacheGeneration == generation;
 	UnsignedByte lineFlags = sameGeneration
 		? m_pathfindCacheFlags & (PATHFIND_CACHE_LINE_VALID | PATHFIND_CACHE_LINE_PASSABLE) : 0;
-	UnsignedByte clearValid = sameGeneration ? m_pathfindCacheLayer & PATHFIND_CACHE_CLEAR_VALID : 0;
+	UnsignedByte sharedLayerFlags = sameGeneration
+		? m_pathfindCacheLayer
+			& (PATHFIND_CACHE_CLEAR_VALID | PATHFIND_CACHE_LINE_DIRECTION_MASK) : 0;
 	m_pathfindCacheGeneration = generation;
-	m_pathfindCacheLayer = clearValid | (layer & PATHFIND_CACHE_LAYER_MASK);
+	m_pathfindCacheLayer = sharedLayerFlags | (layer & PATHFIND_CACHE_LAYER_MASK);
 	m_pathfindCacheFlags = lineFlags | PATHFIND_CACHE_MOVEMENT_VALID
 		| (passable ? PATHFIND_CACHE_MOVEMENT_PASSABLE : 0)
 		| (allyMoving ? PATHFIND_CACHE_ALLY_MOVING : 0)
@@ -1283,17 +1301,22 @@ void PathfindCell::cacheMovementCheck(UnsignedInt generation, PathfindLayerEnum 
 		| (allyFixedCount > 0 ? PATHFIND_CACHE_ALLY_FIXED : 0);
 }
 
-Bool PathfindCell::getCachedLinePassability(UnsignedInt generation, Bool &passable) const
+Bool PathfindCell::getCachedLinePassability(UnsignedInt generation, Int fromX, Int fromY,
+	Int toX, Int toY, Bool &passable) const
 {
+	const UnsignedByte direction = getPathfindLineDirection(fromX, fromY, toX, toY);
 	if (generation == 0 || m_pathfindCacheGeneration != generation
-		|| (m_pathfindCacheFlags & PATHFIND_CACHE_LINE_VALID) == 0) {
+		|| (m_pathfindCacheFlags & PATHFIND_CACHE_LINE_VALID) == 0
+		|| (m_pathfindCacheLayer & PATHFIND_CACHE_LINE_DIRECTION_MASK)
+			!= direction << PATHFIND_CACHE_LINE_DIRECTION_SHIFT) {
 		return false;
 	}
 	passable = (m_pathfindCacheFlags & PATHFIND_CACHE_LINE_PASSABLE) != 0;
 	return true;
 }
 
-void PathfindCell::cacheLinePassability(UnsignedInt generation, Bool passable)
+void PathfindCell::cacheLinePassability(UnsignedInt generation, Int fromX, Int fromY,
+	Int toX, Int toY, Bool passable)
 {
 	if (generation == 0) {
 		return;
@@ -1302,7 +1325,10 @@ void PathfindCell::cacheLinePassability(UnsignedInt generation, Bool passable)
 		m_pathfindCacheFlags = 0;
 		m_pathfindCacheLayer = LAYER_INVALID;
 	}
+	const UnsignedByte direction = getPathfindLineDirection(fromX, fromY, toX, toY);
 	m_pathfindCacheGeneration = generation;
+	m_pathfindCacheLayer = (m_pathfindCacheLayer & ~PATHFIND_CACHE_LINE_DIRECTION_MASK)
+		| direction << PATHFIND_CACHE_LINE_DIRECTION_SHIFT;
 	m_pathfindCacheFlags = (m_pathfindCacheFlags
 		& ~(PATHFIND_CACHE_LINE_VALID | PATHFIND_CACHE_LINE_PASSABLE))
 		| PATHFIND_CACHE_LINE_VALID | (passable ? PATHFIND_CACHE_LINE_PASSABLE : 0);
@@ -6286,7 +6312,8 @@ struct ExamineCellsStruct
 	if (d->thePathfinder->m_isTunneling) return 1; // abort.
 	if (from && to) {
 			Bool linePassable = false;
-			if (!to->getCachedLinePassability(d->movementCacheGeneration, linePassable)) {
+			if (!to->getCachedLinePassability(d->movementCacheGeneration,
+				from->getXIndex(), from->getYIndex(), to_x, to_y, linePassable)) {
 				linePassable = d->thePathfinder->validMovementPosition(
 					isCrusher, d->theLoco->getValidSurfaces(), to, from);
 				if (linePassable && to->getLayer() == LAYER_GROUND
@@ -6325,7 +6352,8 @@ struct ExamineCellsStruct
 				if (linePassable && to->getType() == PathfindCell::CELL_CLIFF) {
 					linePassable = false;
 				}
-				to->cacheLinePassability(d->movementCacheGeneration, linePassable);
+				to->cacheLinePassability(d->movementCacheGeneration,
+					from->getXIndex(), from->getYIndex(), to_x, to_y, linePassable);
 			}
 			if (!linePassable) {
 				return 1;
@@ -6396,7 +6424,8 @@ Int Pathfinder::examineLineCell(PathfindCell *from, PathfindCell *to, Int toX, I
 	ExamineCellsStruct *info = static_cast<ExamineCellsStruct *>(userData);
 	if (from && to) {
 		Bool linePassable = false;
-		if (to->getCachedLinePassability(info->movementCacheGeneration, linePassable)) {
+		if (to->getCachedLinePassability(info->movementCacheGeneration,
+			from->getXIndex(), from->getYIndex(), toX, toY, linePassable)) {
 			if (!linePassable) {
 				return 1;
 			}

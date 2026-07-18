@@ -198,8 +198,15 @@ public:
 
 // worker specific
 	Bool isSupplyTruckBrainActiveAndBusy();
+	Bool isSupplyTruckBrainActive() const;
 	void resetSupplyTruckBrain();
 	void resetDozerBrain();
+	Bool prepareSupplyTruckExitForDiagnostics();
+	StateID getSupplyTruckBrainStateForDiagnostics() const;
+	UnsignedInt getSupplyTruckExitReentryCountForDiagnostics() const
+	{
+		return m_supplyTruckExitReentryCount;
+	}
 
 	virtual void exitingSupplyTruckState(); ///< This worker is leaving a supply truck task and should go back to Dozer mode.
 
@@ -245,8 +252,9 @@ protected:
 	Bool m_forcePending; // To prevent a function from doing a setState, forceWanting will latch into here until serviced.
 	Bool m_isRebuild;	// is our current construction task a rebuild?
 	Bool m_forcedBusyPending;	// A supply truck can't tell the difference between Idle since
-														// I'm between docking states, or a Stop command without help.
-
+											// I'm between docking states, or a Stop command without help.
+	Bool m_supplyTruckExitInProgress; // Prevent a supply-brain reset from re-entering the master transition.
+	UnsignedInt m_supplyTruckExitReentryCount; // Diagnostic count of suppressed nested exit callbacks.
 
 	WorkerStateMachine *m_workerMachine;
 	// The two state machines are not in Worker's machine because I need to be able to accept
@@ -271,4 +279,3 @@ private:
 
 
 #endif // __WORKER_AI_UPDATE_H_
-

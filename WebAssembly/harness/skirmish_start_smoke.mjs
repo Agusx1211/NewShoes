@@ -74,7 +74,13 @@ const expectMenuMusicStop = process.env.SKIRMISH_START_EXPECT_MUSIC_STOP === "1"
 const expectEscMenuResume = process.env.SKIRMISH_START_EXPECT_ESC_MENU_RESUME === "1";
 const expectEnemyStartAssets = process.env.SKIRMISH_START_EXPECT_ENEMY_START_ASSETS === "1";
 const expectEnemyAiActivity = process.env.SKIRMISH_START_EXPECT_ENEMY_AI_ACTIVITY === "1";
-const collectPlayerDiagnostics = expectEnemyStartAssets || expectEnemyAiActivity;
+const expectHard4v4 = process.env.SKIRMISH_START_HARD_4V4 === "1";
+const expectWorkerSupplyExitProbe =
+  process.env.SKIRMISH_START_WORKER_SUPPLY_EXIT_PROBE === "1";
+const collectPlayerDiagnostics = expectEnemyStartAssets || expectEnemyAiActivity || expectHard4v4;
+const disablePostActiveRender =
+  process.env.SKIRMISH_START_POST_ACTIVE_DISABLE_RENDER === "1";
+const logPostActiveTiming = process.env.SKIRMISH_START_LOG_POST_ACTIVE === "1";
 const requestedPostActiveFrames = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_FRAMES", 0);
 const enemyAiActivityFrames = parsePositiveInt("SKIRMISH_START_ENEMY_AI_ACTIVITY_FRAMES", 1200);
 const postActiveFrames = expectEnemyAiActivity
@@ -83,6 +89,15 @@ const postActiveFrames = expectEnemyAiActivity
 const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK", frameChunk);
 const musicStopMaxFrames = parsePositiveInt("SKIRMISH_START_MUSIC_STOP_MAX_FRAMES", 360);
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
+const requestedSkirmishSeedText = String(process.env.SKIRMISH_START_SEED ?? "").trim();
+const requestedSkirmishSeed = requestedSkirmishSeedText
+  ? Number.parseInt(requestedSkirmishSeedText, 10)
+  : null;
+if (requestedSkirmishSeedText && (!/^\d+$/.test(requestedSkirmishSeedText)
+    || !Number.isInteger(requestedSkirmishSeed)
+    || requestedSkirmishSeed > 0x7fffffff)) {
+  throw new Error(`Invalid SKIRMISH_START_SEED: ${requestedSkirmishSeedText}`);
+}
 const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "1";
 const expectLightPulseProbe = process.env.SKIRMISH_START_LIGHT_PULSE_PROBE === "1";
 const expectReplayRoundTrip = process.env.SKIRMISH_START_REPLAY_ROUNDTRIP === "1";
@@ -602,6 +617,65 @@ async function runSummary(page, frames, label = "real engine summary") {
   return assertFrameResult(
     await rpc(page, "realEngineFrameSummary", { frames, playerDiagnostics: collectPlayerDiagnostics }),
     label);
+}
+
+async function selectSemanticUiRow(page, name, index) {
+  const snapshot = await rpc(page, "agentUiSnapshot");
+  expect(snapshot?.ok === true && snapshot?.result?.ok === true,
+    `semantic UI snapshot failed before selecting ${name}`, snapshot);
+  const window = snapshot.result.windows.find((candidate) =>
+    candidate.name === name && candidate.visible && candidate.interactive);
+  expect(Boolean(window), `semantic UI window is unavailable: ${name}`, snapshot.result);
+  const items = await rpc(page, "agentUiListItems", {
+    windowId: window.id,
+    name: window.name,
+    offset: 0,
+    limit: 32,
+  });
+  expect(items?.ok === true && items?.result?.ok === true,
+    `semantic UI rows are unavailable: ${name}`, items);
+  const row = items.result.rows.find((candidate) => candidate.index === index);
+  expect(Boolean(row), `semantic UI row ${index} is unavailable: ${name}`, items.result);
+  const selected = await rpc(page, "agentUiSelectIndex", {
+    windowId: window.id,
+    name: window.name,
+    index,
+  });
+  expect(selected?.ok === true && selected?.result?.ok === true
+      && selected.result.notificationHandled > 0,
+    `semantic UI selection did not reach the real callback: ${name}`, selected);
+  return {
+    name,
+    index,
+    cells: row.cells,
+    notificationHandled: selected.result.notificationHandled,
+  };
+}
+
+async function configureHard4v4(page) {
+  // Skirmish player rows are Open, Closed, Easy, Medium, Hard. Team rows are
+  // No Team, Team 1..4. Selecting by stable row index keeps this independent
+  // of localization while agentUiSelectIndex still drives the original combo
+  // box notification path.
+  const selections = [];
+  selections.push(await selectSemanticUiRow(
+    page, "SkirmishGameOptionsMenu.wnd:ComboBoxTeam0", 1));
+  for (let slot = 1; slot < 8; slot++) {
+    selections.push(await selectSemanticUiRow(
+      page, `SkirmishGameOptionsMenu.wnd:ComboBoxPlayer${slot}`, 4));
+    selections.push(await selectSemanticUiRow(
+      page, `SkirmishGameOptionsMenu.wnd:ComboBoxTeam${slot}`, slot < 4 ? 1 : 2));
+  }
+  await runSummary(page, 2, "hard 4v4 setup settle");
+  const probe = await rpc(page, "mapCacheProbe");
+  const gameInfo = probe?.probe?.skirmishGameInfo ?? null;
+  const slots = gameInfo?.slots ?? [];
+  expect(slots.length === 8
+      && slots.slice(1).every((slot) => slot.ai === true)
+      && slots.slice(0, 4).every((slot) => slot.teamNumber === 0)
+      && slots.slice(4).every((slot) => slot.teamNumber === 1),
+    "hard 4v4 setup did not persist in the original skirmish GameInfo", gameInfo);
+  return { selections, gameInfo };
 }
 
 async function postMouse(page, message, point) {
@@ -1830,12 +1904,22 @@ async function runPostActiveFrames(page, totalFrames, chunkSize) {
     last = await runSummary(page, frames, "skirmish post-active wait");
     const wallMs = performance.now() - startedAt;
     framesAdvanced += frames;
-    samples.push({
+    const sample = {
       ...compactGameplay(last.frame),
       requestedFrames: frames,
       wallMs,
       wallMsPerFrame: wallMs / frames,
-    });
+    };
+    samples.push(sample);
+    if (logPostActiveTiming) {
+      console.error("[skirmish-start] post-active timing:", JSON.stringify({
+        framesAdvanced,
+        logicFrame: sample.logicFrame,
+        objectCount: sample.objectCount,
+        wallMs: sample.wallMs,
+        wallMsPerFrame: sample.wallMsPerFrame,
+      }));
+    }
   }
   return { result: last, framesAdvanced, samples };
 }
@@ -2822,6 +2906,24 @@ async function main() {
       await runSummary(page, 1, "skirmish local template apply settle");
     }
 
+    let hard4v4Setup = null;
+    if (expectHard4v4) {
+      console.error("[skirmish-start] configure hard 4v4 through real menu callbacks");
+      hard4v4Setup = await configureHard4v4(page);
+      console.error("[skirmish-start] hard4v4Setup:", JSON.stringify(hard4v4Setup));
+    }
+
+    let skirmishSeedSet = null;
+    if (requestedSkirmishSeed != null) {
+      console.error(`[skirmish-start] set deterministic seed ${requestedSkirmishSeed}`);
+      skirmishSeedSet = await rpc(page, "realEngineSetSkirmishSeed", {
+        seed: requestedSkirmishSeed,
+      });
+      expect(skirmishSeedSet?.ok === true
+          && skirmishSeedSet?.result?.applied === requestedSkirmishSeed,
+        "skirmish seed setter did not update the original GameInfo", skirmishSeedSet);
+    }
+
     console.error("[skirmish-start] click start");
     const musicBeforeStart = expectMenuMusicStop ? await streamRuntime(page) : null;
     const preSkirmishMusicHandles = expectMenuMusicStop
@@ -2881,6 +2983,32 @@ async function main() {
     let enemyStartAssets = null;
     let enemyAiActivity = null;
     let musicTransition = null;
+    let postActiveRenderDisabled = false;
+    const activeGraphics = await inspectGraphics(page);
+    const expectedRenderer = String(
+      process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
+    expect(activeGraphics.contextLost === false && activeGraphics.contextLossBanner === false,
+      "fresh skirmish lost its WebGL context", activeGraphics);
+    if (expectedRenderer) {
+      expect(String(activeGraphics.renderer ?? "").toLowerCase().includes(expectedRenderer),
+        "fresh skirmish used an unexpected GPU renderer", { activeGraphics, expectedRenderer });
+    }
+    let workerSupplyExitProbe = null;
+    if (expectWorkerSupplyExitProbe) {
+      workerSupplyExitProbe = await rpc(page, "realEngineProbeWorkerSupplyExit");
+      expect(workerSupplyExitProbe?.ok === true
+          && workerSupplyExitProbe?.result?.activeBeforePrepare === false
+          && workerSupplyExitProbe?.result?.preparedForExit === true
+          && workerSupplyExitProbe?.result?.activeBeforeExit === true
+          && workerSupplyExitProbe?.result?.ferryingBeforeExit === true
+          && workerSupplyExitProbe?.result?.wantingBeforeExit === true
+          && workerSupplyExitProbe?.result?.activeAfterExit === false
+          && workerSupplyExitProbe?.result?.idleAfterExit === true
+          && workerSupplyExitProbe?.result?.suppressedReentries === 1
+          && workerSupplyExitProbe?.result?.workerSurvived === true,
+        "worker supply-brain exit did not complete one bounded master-state transition",
+        workerSupplyExitProbe);
+    }
     if (expectMenuMusicStop) {
       console.error("[skirmish-start] wait for pre-skirmish music handles to close");
       const stopped = await waitForHandlesClosed(
@@ -2904,6 +3032,12 @@ async function main() {
           samples: stopped.samples.slice(-16),
         },
       };
+    }
+    if (disablePostActiveRender && postActiveFrames > 0) {
+      const disabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
+      expect(disabled?.ok === true && disabled?.disabled === true,
+        "fresh-skirmish CPU isolation could not disable rendering", disabled);
+      postActiveRenderDisabled = true;
     }
     if (postActiveFrames > 0) {
       console.error(`[skirmish-start] run ${postActiveFrames} post-active frames`);
@@ -3155,6 +3289,8 @@ async function main() {
         ?? mapCache?.probe?.firstOfficialMultiplayerMap
         ?? null,
       skirmishMapSet: skirmishMapSet?.result ?? null,
+      skirmishSeedSet: skirmishSeedSet?.result ?? null,
+      hard4v4Setup,
       loadingScreen: {
         gameplay: loadingGameplay,
         windows: loadingWindows,
@@ -3167,9 +3303,12 @@ async function main() {
       mapPreviewDiagnostic: mapCache?.probe?.mapPreviewDiagnostic ?? null,
       framesAdvancedAfterStart: active.framesAdvanced,
       finalGameplay: compactGameplay(active.result.frame),
+      graphics: activeGraphics,
+      workerSupplyExitProbe: workerSupplyExitProbe?.result ?? null,
       musicTransition,
       shroudDiagnostics,
       postActive: postActive == null ? null : {
+        renderDisabled: postActiveRenderDisabled,
         framesAdvanced: postActive.framesAdvanced,
         finalGameplay: compactGameplay(postActive.result?.frame),
         shroudDiagnostics: postActiveShroudDiagnostics,

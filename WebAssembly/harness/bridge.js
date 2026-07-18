@@ -2717,6 +2717,25 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "realEngineSetSkirmishSeed": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_skirmish_seed", "string", ["number"],
+          [Number(payload.seed)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineProbeWorkerSupplyExit": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_probe_worker_supply_exit", "string", [], []);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "realEngineSetSkirmishLocalTemplate": {
       try {
         const result = await threadedEngine.engineCall(
@@ -6380,6 +6399,16 @@ async function loadWasmModule() {
         "cnc_port_real_engine_set_skirmish_map",
         "string",
         ["string"],
+      ),
+      realEngineSetSkirmishSeed: module.cwrap(
+        "cnc_port_real_engine_set_skirmish_seed",
+        "string",
+        ["number"],
+      ),
+      realEngineProbeWorkerSupplyExit: module.cwrap(
+        "cnc_port_real_engine_probe_worker_supply_exit",
+        "string",
+        [],
       ),
       realEngineSetSkirmishLocalTemplate: module.cwrap(
         "cnc_port_real_engine_set_skirmish_local_template",
@@ -12831,6 +12860,47 @@ async function rpc(command, payload = {}) {
           result,
           state: snapshotState(),
         };
+      }
+    case "realEngineSetSkirmishSeed":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSetSkirmishSeed");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSetSkirmishSeed", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineSetSkirmishSeed(
+            Number(payload.seed),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine set skirmish seed", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineSetSkirmishSeed",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "realEngineProbeWorkerSupplyExit":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineProbeWorkerSupplyExit");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const result = JSON.parse(moduleResult.wasmModule.realEngineProbeWorkerSupplyExit());
+          recordLog("real engine probe worker supply exit", result);
+          return { ok: result?.ok === true, command, result, state: snapshotState() };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
       }
     case "d3d8SM1ShaderAudit":
       return {

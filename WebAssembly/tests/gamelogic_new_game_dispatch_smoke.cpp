@@ -1798,6 +1798,19 @@ int main()
 			: nullptr;
 	const Bool pathfinder_center_ground_cell_ready =
 		pathfinder_center_ground_cell != nullptr;
+	PathfindCell line_cache_cell;
+	Bool north_result = TRUE;
+	Bool west_result = FALSE;
+	line_cache_cell.cacheLinePassability(17, 10, 9, 10, 10, FALSE);
+	const Bool north_cache_hit = line_cache_cell.getCachedLinePassability(
+		17, 10, 9, 10, 10, north_result);
+	const Bool west_cache_miss = !line_cache_cell.getCachedLinePassability(
+		17, 9, 10, 10, 10, west_result);
+	line_cache_cell.cacheLinePassability(17, 9, 10, 10, 10, TRUE);
+	const Bool west_cache_hit = line_cache_cell.getCachedLinePassability(
+		17, 9, 10, 10, 10, west_result);
+	const Bool north_cache_replaced = !line_cache_cell.getCachedLinePassability(
+		17, 10, 9, 10, 10, north_result);
 	if (TheTerrainRenderObject == terrain_render_object) {
 		TheTerrainRenderObject = nullptr;
 	}
@@ -1806,6 +1819,10 @@ int main()
 
 	ok = expect(startup_player_template_count > 0,
 		"original PlayerTemplateStore should parse shipped player templates before player population") && ok;
+	ok = expect(north_cache_hit && !north_result
+			&& west_cache_miss && west_cache_hit && west_result
+			&& north_cache_replaced,
+		"line passability cache must not reuse a result across different incoming directions") && ok;
 	ok = expect(startup_multiplayer_color_count > 0,
 		"original MultiplayerSettings should parse shipped multiplayer colors before player population") && ok;
 	ok = expect(nearlyEqual(startup_partition_cell_size, 40.0f, 0.001f),
@@ -2125,6 +2142,13 @@ int main()
 		<< "\"pathfinderCenterCellX\":" << pathfinder_center_cell_x << ","
 		<< "\"pathfinderCenterCellY\":" << pathfinder_center_cell_y << ","
 		<< "\"pathfinderCenterGroundCellReady\":" << jsonBool(pathfinder_center_ground_cell_ready) << ","
+		<< "\"pathfinderLineDirectionCache\":{"
+		<< "\"northHit\":" << jsonBool(north_cache_hit) << ","
+		<< "\"northPassable\":" << jsonBool(north_result) << ","
+		<< "\"westMiss\":" << jsonBool(west_cache_miss) << ","
+		<< "\"westHit\":" << jsonBool(west_cache_hit) << ","
+		<< "\"westPassable\":" << jsonBool(west_result) << ","
+		<< "\"northReplaced\":" << jsonBool(north_cache_replaced) << "},"
 		<< "\"runtimeBoundaries\":["
 		<< "\"InGameUI client-quiet remains focused UI boundary\","
 		<< "\"OptionPreferences user preference getters remain focused non-network browser preference boundary\","

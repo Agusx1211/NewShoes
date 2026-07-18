@@ -354,8 +354,10 @@ public:
 		Int &allyFixedCount, Bool &allyMoving, Bool &allyGoal, Bool &enemyFixed) const;
 	void cacheMovementCheck(UnsignedInt generation, PathfindLayerEnum layer, Bool passable,
 		Int allyFixedCount, Bool allyMoving, Bool allyGoal, Bool enemyFixed);
-	Bool getCachedLinePassability(UnsignedInt generation, Bool &passable) const;
-	void cacheLinePassability(UnsignedInt generation, Bool passable);
+	Bool getCachedLinePassability(UnsignedInt generation, Int fromX, Int fromY,
+		Int toX, Int toY, Bool &passable) const;
+	void cacheLinePassability(UnsignedInt generation, Int fromX, Int fromY,
+		Int toX, Int toY, Bool passable);
 	Bool getCachedClearDiameter(UnsignedInt generation, Int &clearDiameter) const;
 	void cacheClearDiameter(UnsignedInt generation, Int clearDiameter);
 	zoneStorageType getZone(void) const {return m_zone;}
