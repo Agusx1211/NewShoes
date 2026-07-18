@@ -59,6 +59,7 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "launcher-desktop-apps.js",
   "launcher-device-transfer.mjs",
   "launcher-entry.mjs",
+  "launcher-file-collector.mjs",
   "launcher-games.css",
   "launcher-games.mjs",
   "launcher-hardware-info.js",
