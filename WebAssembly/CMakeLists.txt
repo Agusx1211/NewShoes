@@ -3494,6 +3494,11 @@ target_link_libraries(zh_gameengine_real_ini_runtime PUBLIC
   zh_gameengine_globaldata_runtime
 )
 
+set_property(
+  SOURCE "${GAMEENGINE_COMMON_DIR}/Thing/ThingTemplate.cpp"
+  APPEND PROPERTY COMPILE_OPTIONS -Werror=tautological-constant-out-of-range-compare
+)
+
 add_library(zh_gameengine_real_object_ini_runtime STATIC
   src/wasm_object_ini_runtime.cpp
   "${GAMEENGINE_COMMON_DIR}/INI/INIObject.cpp"
