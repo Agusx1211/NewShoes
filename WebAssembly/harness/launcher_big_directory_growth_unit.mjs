@@ -88,8 +88,11 @@ const validation = await workerGlobal.__validateBigReader(
 const elapsedMs = performance.now() - startedAt;
 const benchmarkAllocatedBytes = allocatedBytes;
 const allocationAmplification = benchmarkAllocatedBytes / fixture.directoryBytes;
-const fixedGrowthChunks = Math.ceil(fixture.directoryBytes / (64 * 1024));
-const fixedGrowthAllocatedBytes = 64 * 1024 * fixedGrowthChunks * (fixedGrowthChunks + 1) / 2;
+const chunkSize = 64 * 1024;
+const fixedGrowthChunks = Math.floor(fixture.directoryBytes / chunkSize);
+const fixedGrowthRemainder = fixture.directoryBytes % chunkSize;
+const fixedGrowthAllocatedBytes = chunkSize * fixedGrowthChunks * (fixedGrowthChunks + 1) / 2
+  + (fixedGrowthRemainder ? fixture.directoryBytes : 0);
 const allocationReduction = fixedGrowthAllocatedBytes / benchmarkAllocatedBytes;
 
 assert.equal(validation.entryCount, 8192);
