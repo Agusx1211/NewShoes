@@ -387,6 +387,19 @@ bool expect(bool condition, const char *message)
 	return true;
 }
 
+class ScriptEngineConditionTeamProbe : public ScriptEngine
+{
+public:
+	bool preservesConditionTeamAcrossRunScript(Team *condition_team, Team *calling_team)
+	{
+		m_conditionTeam = condition_team;
+		runScript("__condition_team_restore_probe__", calling_team);
+		const bool restored = m_conditionTeam == condition_team;
+		m_conditionTeam = nullptr;
+		return restored;
+	}
+};
+
 std::string jsonEscape(const char *value)
 {
 	std::string escaped;
@@ -1245,6 +1258,10 @@ extern "C" bool cnc_port_w3d_bridge_buffer_defer_gpu_buffers(void)
 
 int main()
 {
+	const bool condition_team_restore_only = EM_ASM_INT({
+		const argv = typeof process !== "undefined" ? process.argv : [];
+		return argv.includes("--condition-team-restore-only") ? 1 : 0;
+	}) != 0;
 	const char *window_archive_path = "artifacts/real-assets/Window.big";
 	const char *maps_archive_path = "artifacts/real-assets/MapsZH.big";
 	const char *zh_ini_archive_path = "artifacts/real-assets/INIZH.big";
@@ -1413,7 +1430,7 @@ int main()
 	GameLogic *logic = new GameLogic;
 	TheGameLogic = logic;
 
-	ScriptEngine *script_engine = new ScriptEngine;
+	ScriptEngineConditionTeamProbe *script_engine = new ScriptEngineConditionTeamProbe;
 	TheScriptEngine = script_engine;
 	if (!expect(script_engine->getGlobalDifficulty() == DIFFICULTY_NORMAL,
 			"original ScriptEngine constructor should initialize normal difficulty")) {
@@ -1585,6 +1602,20 @@ int main()
 	Team *local_default_team = local_player ? local_player->getDefaultTeam() : nullptr;
 	Team *neutral_default_team = neutral_player ? neutral_player->getDefaultTeam() : nullptr;
 	const Int side_scripts_before_script_new_map = countSideScripts(sides_list);
+	ok = expect(script_engine->preservesConditionTeamAcrossRunScript(
+			local_default_team, neutral_default_team),
+		"original ScriptEngine::runScript should restore the caller's THIS_TEAM condition context") && ok;
+	if (condition_team_restore_only) {
+		if (!ok) {
+			return 1;
+		}
+		std::cout
+			<< "{\"ok\":true,"
+			<< "\"path\":\"script-condition-team-restore\","
+			<< "\"source\":\"GeneralsMD original ScriptEngine.cpp\"}"
+			<< std::endl;
+		return 0;
+	}
 	script_engine->newMap();
 	const Int side_scripts_after_script_new_map = countSideScripts(sides_list);
 	SmokeRadar *radar = new SmokeRadar;
