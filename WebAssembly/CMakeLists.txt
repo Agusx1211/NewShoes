@@ -2147,6 +2147,10 @@ set_source_files_properties(${ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES} PROPERTIES
   COMPILE_OPTIONS "-U__PRERTS_H__;-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
 )
 
+set_property(SOURCE "${GAMEENGINE_COMMON_DIR}/System/Debug.cpp" APPEND PROPERTY
+  COMPILE_OPTIONS "-Werror=format"
+)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # Chinook combat-drop states are custom raw state IDs, not AIStateType values.
   set_property(SOURCE "${GAMEENGINE_GAMELOGIC_DIR}/Object/Update/AIUpdate/ChinookAIUpdate.cpp" APPEND PROPERTY
