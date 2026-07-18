@@ -13,6 +13,7 @@
 #include "GameNetwork/FrameData.h"
 #include "GameNetwork/FrameDataManager.h"
 #include "GameNetwork/FrameMetrics.h"
+#include "GameNetwork/GameSpy/ThreadUtils.h"
 #include "GameNetwork/NetCommandList.h"
 #include "GameNetwork/NetCommandMsg.h"
 #include "GameNetwork/NetCommandRef.h"
@@ -41,6 +42,16 @@ bool expect(bool condition, const char *message)
 bool expectAscii(const AsciiString &actual, const char *expected, const char *message)
 {
 	return expect(std::strcmp(actual.str(), expected) == 0, message);
+}
+
+bool exerciseGameSpyThreadUtils()
+{
+	const std::wstring single_line = MultiByteToWideCharSingleLine("lobby\nstatus\rready");
+	const std::string narrow = WideCharStringToMultiByte(L"GameSpy ready");
+
+	return expect(single_line == L"lobby status ready",
+		"GameSpy thread conversion did not normalize line endings") &&
+		expect(narrow == "GameSpy ready", "GameSpy thread conversion did not preserve ASCII text");
 }
 
 bool expectLittleEndian16(const UnsignedByte *bytes, UnsignedShort value, const char *message)
@@ -1375,6 +1386,7 @@ int main()
 {
 	initMemoryManager();
 	const bool ok = exerciseNetworkUtil() && exerciseBrowserConnectionGrouping() &&
+		exerciseGameSpyThreadUtils() &&
 		exerciseFrameData() && exerciseNetCommandList() &&
 		exerciseNetCommandListMerge() &&
 		exerciseNetPacketRoundTrip() && exerciseNetPacketWireFormat() && exerciseNetPacketAckRoundTrip() &&
@@ -1387,6 +1399,6 @@ int main()
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues and retry gating, transport packet buffering and encrypted wire bytes, command lists (insert, merge via appendList, removeMessage, and message-based find), packet round-trips and wire byte order, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GameSpy/ThreadUtils,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues and retry gating, transport packet buffering and encrypted wire bytes, GameSpy single-line and narrow string conversion, command lists (insert, merge via appendList, removeMessage, and message-based find), packet round-trips and wire byte order, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

@@ -50,7 +50,11 @@ const first = await store.importFile("battle.rep", retailShape);
 assert.deepEqual(first, { ok: true, name: "battle.rep", size: 10, persisted: true });
 const second = await store.importFile("battle.rep", retailShape.buffer);
 assert.equal(second.name, "battle (2).rep");
-assert.deepEqual((await store.list()).files.map((file) => file.name), ["battle (2).rep", "battle.rep"]);
+const volatile = await store.importFile("profile-only.rep", retailShape, { durable: false });
+assert.deepEqual(volatile,
+  { ok: true, name: "profile-only.rep", size: 10, persisted: false });
+assert.deepEqual((await store.list()).files.map((file) => file.name),
+  ["battle (2).rep", "battle.rep", "profile-only.rep"]);
 assert.deepEqual(await store.read("battle.rep"), retailShape);
 assert.deepEqual(persistReasons, ["replay-import", "replay-import"]);
 
@@ -62,7 +66,8 @@ await assert.rejects(() => store.importFile("huge.rep", new Uint8Array(MAX_REPLA
 fake.FS.writeFile(`${replayDirectory}/00000000.rep`, retailShape);
 await assert.rejects(() => store.remove("00000000.rep"), /protected/);
 await store.remove("battle.rep");
-assert.deepEqual((await store.list()).files.map((file) => file.name), ["00000000.rep", "battle (2).rep"]);
+assert.deepEqual((await store.list()).files.map((file) => file.name),
+  ["00000000.rep", "battle (2).rep", "profile-only.rep"]);
 assert.equal(persistReasons.at(-1), "replay-delete");
 
 console.log("replay file store unit: PASS");
