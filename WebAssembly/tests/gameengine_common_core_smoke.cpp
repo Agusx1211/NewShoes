@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -50,6 +51,7 @@
 #include "Common/encrypt.h"
 #include "GameClient/ClientRandomValue.h"
 #include "GameClient/GameText.h"
+#include "GameClient/ParticleSys.h"
 #include "GameLogic/ArmorSet.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/LogicRandomValue.h"
@@ -1678,6 +1680,39 @@ bool exercise_game_common()
 			"normalizeAngle negative wrap failed");
 }
 
+std::uintptr_t dynamic_type_word(const ParticleInfo &info)
+{
+	std::uintptr_t word = 0;
+	std::memcpy(&word, static_cast<const void *>(&info), sizeof(void *));
+	return word;
+}
+
+bool exercise_particle_info_merge_fallback()
+{
+	const ParticleInfo default_info;
+	const ParticleInfo fallback =
+		ParticleSystem::mergeRelatedParticleSystems(nullptr, nullptr, FALSE);
+
+	bool keyframes_zero = true;
+	for (Int index = 0; index < MAX_KEYFRAMES; ++index) {
+		keyframes_zero = keyframes_zero &&
+			fallback.m_alphaKey[index].value == 0.0f &&
+			fallback.m_alphaKey[index].frame == 0 &&
+			fallback.m_colorKey[index].color.red == 0.0f &&
+			fallback.m_colorKey[index].color.green == 0.0f &&
+			fallback.m_colorKey[index].color.blue == 0.0f &&
+			fallback.m_colorKey[index].frame == 0;
+	}
+
+	const std::uintptr_t expected_dynamic_type = dynamic_type_word(default_info);
+	return expect(expected_dynamic_type != 0,
+			"ParticleInfo default dynamic type is invalid") &&
+		expect(dynamic_type_word(fallback) == expected_dynamic_type,
+			"ParticleInfo merge fallback corrupted its dynamic type") &&
+		expect(keyframes_zero,
+			"ParticleInfo merge fallback keyframes are not zero initialized");
+}
+
 bool exercise_list_and_circle()
 {
 	Int first = 1;
@@ -1990,6 +2025,7 @@ int main()
 		exercise_dict() &&
 		exercise_trig() &&
 		exercise_game_common() &&
+		exercise_particle_info_merge_fallback() &&
 		exercise_list_and_circle() &&
 		exercise_bezier() &&
 		exercise_partition_solver() &&

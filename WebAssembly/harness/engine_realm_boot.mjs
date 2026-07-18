@@ -572,6 +572,17 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         Math.max(0, Math.floor(entry.timestamp || 0)),
       );
     }
+    const touchNavigation = entry.touchNavigation ?? null;
+    if (touchNavigation) {
+      Module._cnc_port_post_touch_navigation_lite(
+        touchNavigation.previousX ?? 0,
+        touchNavigation.previousY ?? 0,
+        touchNavigation.currentX ?? 0,
+        touchNavigation.currentY ?? 0,
+        touchNavigation.scale ?? 1,
+        touchNavigation.radians ?? 0,
+      );
+    }
     const win32 = entry.win32 ?? null;
     if (win32) {
       Module._cnc_port_post_browser_message_lite(

@@ -1,6 +1,6 @@
 {
   "schema": "project-new-shoes/public-project/v1",
-  "reviewedAt": "2026-07-16",
+  "reviewedAt": "2026-07-17",
   "maxReviewAgeDays": 90,
   "site": {
     "name": "Project New Shoes",
@@ -26,16 +26,20 @@
       "name": "Install and launch a local copy",
       "status": "supported",
       "summary": "The launcher imports a complete English Generals and Zero Hour installation or the complete original media set without uploading retail files.",
-      "reviewedAt": "2026-07-14",
+      "reviewedAt": "2026-07-17",
       "details": [
         "The browser launcher can inspect either a complete English Generals and Zero Hour installation or the complete original Generals and Zero Hour disc-image or media set. Folder and media selection always require an explicit action by the person using the browser.",
         "The launcher reads and validates required files locally. It can parse supported ISO and disc-image layouts, extract required Cabinet members, and install the needed BIG archives into the browser's Origin Private File System (OPFS). The installed game remains associated with that browser profile and site origin.",
-        "After installation, the browser desktop exposes the Zero Hour launcher, game library, settings, files, mods, save and replay management, device transfer, diagnostics, project information, and a small collection of auxiliary browser games."
+        "After installation, the browser desktop exposes the Zero Hour launcher, game library, settings, files, mods, save and replay management, device transfer, diagnostics, project information, and a small collection of auxiliary browser games.",
+        "On phones, the launcher uses portrait- and short-landscape layouts with touch-sized window controls, a readable Start app drawer, reachable desktop shortcuts, scrollable task switching, dynamic viewport sizing, and safe-area-aware edges. Larger screens retain the desktop window-management layout."
       ],
       "evidence": [
         "WebAssembly/harness/launcher-asset-manager.mjs",
+        "WebAssembly/harness/opfs_realm_files.mjs",
+        "WebAssembly/harness/opfs_realm_files_unit.mjs",
         "WebAssembly/harness/game-data-store.mjs",
-        "WebAssembly/harness/startup_vertical_smoke.mjs"
+        "WebAssembly/harness/startup_vertical_smoke.mjs",
+        "WebAssembly/harness/launcher_mobile_browser_smoke.mjs"
       ]
     },
     {
@@ -59,18 +63,22 @@
       "id": "touch-controls",
       "name": "Play on a touch screen",
       "status": "in_testing",
-      "summary": "Phone and tablet layouts map selection, contextual orders, camera movement, zoom, rotation, hotkeys, and text entry onto touch controls that feed the engine's original input paths.",
-      "reviewedAt": "2026-07-15",
+      "summary": "Phone and tablet layouts map selection, contextual orders, direct map-like camera navigation, hotkeys, and text entry onto touch controls that feed the engine's original input paths.",
+      "reviewedAt": "2026-07-17",
       "details": [
-        "One-finger taps and drags provide left-click selection and UI operation. A hold, two-finger tap, or armed Order button provides a right click. Two-finger translation pans the map, pinch zooms, and twist rotates the camera. Explicit Cancel, text, help, camera, modifier, control-group, function, navigation, punctuation, and numeric-keypad controls make keyboard-only actions reachable.",
+        "One-finger taps and drags provide left-click selection and UI operation. A hold, two-finger tap, or armed Order button provides a right click. A moving two-finger gesture directly grabs the terrain under its centroid while translation, pinch zoom, and twist rotation work together; stopping the fingers stops the camera instead of leaving mouse-drag velocity active. Explicit Cancel, text, help, camera, modifier, control-group, function, navigation, punctuation, and numeric-keypad controls make keyboard-only actions reachable.",
         "Visible original-engine text-entry rectangles are relayed to the browser so tapping one can open the device keyboard during the touch event. Browsers with the Virtual Keyboard API use overlay mode; other mobile browsers keep the game canvas at its pre-keyboard geometry and move only the text proxy above the visible keyboard.",
-        "The controls are designed for phone and tablet play, including iPhone- and iPad-class portrait and landscape layouts. Touch recognition and mobile Chromium layouts have focused automated coverage; physical-device and Safari breadth remain in active validation. Landscape is recommended because the original Zero Hour interface was designed for a wide screen."
+        "The controls are designed for phone and tablet play, including iPhone- and iPad-class portrait and landscape layouts. Automatic rendering preserves the live device aspect ratio and reduces both dimensions uniformly when DPR, GPU pixel budgets, or engine limits require a lower resolution. Touch recognition and mobile Chromium layouts have focused automated coverage; physical-device and Safari breadth remain in active validation. Landscape is recommended because the original Zero Hour interface was designed for a wide screen."
       ],
       "evidence": [
         "WebAssembly/harness/touch-controls.mjs",
         "WebAssembly/harness/touch_controls_unit.mjs",
         "WebAssembly/harness/touch_controls_browser_smoke.mjs",
+        "WebAssembly/harness/display-resolution.mjs",
+        "WebAssembly/harness/display_resolution_unit.mjs",
         "WebAssembly/harness/bridge.js",
+        "GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/LookAtXlat.cpp",
+        "WebAssembly/src/wasm_port_entry.cpp",
         "WebAssembly/src/wasm_agent_api.cpp"
       ]
     },
@@ -79,9 +87,9 @@
       "name": "Connect a remote playing agent",
       "status": "experimental",
       "summary": "An optional authenticated bridge exposes human-accessible shell and match information plus semantic direct controls to a separately operated agent.",
-      "reviewedAt": "2026-07-16",
+      "reviewedAt": "2026-07-17",
       "details": [
-        "Before launch, a person can open the Windows-style Remote Agent app, enable it, and stage the WebSocket URL, browser credential, session ID, and fixed Global or Camera play mode printed by a separately running Go bridge. The app remembers non-secret settings, offers explicit device-local browser-token storage, and can authenticate a connection test without registering a playable session. When disabled, the browser does not import the runtime adapter or create an agent socket, polling loop, or reconnect timer.",
+        "Before launch, a person can open the Windows-style Remote Agent app, enable it, and stage the WebRTC URL, browser credential, session ID, and fixed Global or Camera play mode printed by a separately running Go bridge. The hosted HTTPS page and bridge connect outward through an encrypted peer-to-peer data channel; the project relay forwards only end-to-end-encrypted SDP/ICE signaling and never carries agent requests, responses, or gameplay data. The app remembers non-secret settings, offers explicit device-local browser-token storage, and can authenticate a connection test without registering a playable session. When disabled, the browser does not import the runtime adapter or create an agent socket, peer connection, polling loop, or reconnect timer.",
         "The bridge uses distinct random browser and REST credentials by default. Its authenticated REST API covers shell UI, HUD messages, fog-safe world, terrain and minimap observations, compact reusable capability dictionaries, bounded tactical event streams, and semantic selection, production, upgrade, special-power, construction, movement, combat, camera, and chat actions. Engine observation and actions retain the original simulation and input paths rather than replacing gameplay with a harness implementation.",
         "Global mode exposes information a human player could access across the map subject to radar, shroud, stealth, disguise, and other game rules. Camera mode additionally bounds observation and action targets to the tactical view while preserving select-then-pan interaction. The mode is fixed for the session. Independent completed Easy-mode wins under both policies verify full-match operation, but the interface does not prescribe strategy or guarantee that an agent will win.",
         "The browser credential is accepted only through explicit pre-launch configuration and stays in page memory by default. Remembering it in origin-local browser storage requires a separate device-local opt-in that can be turned off to erase the saved token. It is always omitted from URLs, public status, and issue dumps. An agent still cannot provide retail assets, select local files, or grant browser permissions."
@@ -89,7 +97,10 @@
       "evidence": [
         "AgentBridge/README.md",
         "AgentBridge/server_test.go",
+        "AgentBridge/webrtc.go",
         "WebAssembly/harness/agent-bridge-config.mjs",
+        "WebAssembly/harness/agent-webrtc-transport.mjs",
+        "WebAssembly/harness/agent_webrtc_e2e_smoke.mjs",
         "WebAssembly/harness/agent_bridge_browser_smoke.mjs",
         "WebAssembly/harness/agent_bridge_config_ui_smoke.mjs",
         "WebAssembly/src/wasm_agent_api.cpp"
@@ -137,7 +148,7 @@
       "name": "Graphics, audio, and movies",
       "status": "in_testing",
       "summary": "WebGL2, Web Audio, and browser-side Bink integration carry the original engine's rendering, sound, and movie requests, with continuing fidelity and coverage work.",
-      "reviewedAt": "2026-07-15",
+      "reviewedAt": "2026-07-17",
       "details": [
         "The Direct3D 8-shaped renderer maps the original rendering path to WebGL2. The default enhanced tier translates shipped shader model 1.1 programs to GLSL ES, while a classic tier generates fixed-function-style shaders for comparison and fallback. Terrain, objects, UI, particles, effects, render targets, and common scenes work; fidelity and performance fixes continue.",
         "Engine-driven music, speech, streams, and two-dimensional and three-dimensional samples play through Web Audio. The mixer retains the engine's category and positional intent at the browser boundary.",
@@ -145,6 +156,8 @@
       ],
       "evidence": [
         "WebAssembly/harness/shader_fidelity_probe.mjs",
+        "WebAssembly/harness/d3d8_dxt_cpu_fallback_unit.mjs",
+        "WebAssembly/harness/d3d8_dxt_cpu_fallback_browser_smoke.mjs",
         "WebAssembly/harness/terrain_culling_orientation_probe.mjs",
         "WebAssembly/harness/real_audio_event_smoke.mjs",
         "WebAssembly/harness/bink_direct_decoder_browser_smoke.mjs"
@@ -188,11 +201,11 @@
       "name": "Play peer-to-peer multiplayer",
       "status": "experimental",
       "summary": "The original UDP and lockstep protocol runs over direct WebRTC data channels, with decentralized discovery and continuing determinism and connectivity hardening.",
-      "reviewedAt": "2026-07-15",
+      "reviewedAt": "2026-07-18",
       "details": [
-        "Public Nostr relays are used for decentralized peer discovery and encrypted connection negotiation, not to relay the match itself. Game traffic flows through direct WebRTC data channels when a connection is established.",
+        "The project-operated Nostr relay and four deterministic public fallbacks are used for decentralized peer discovery and encrypted connection negotiation, not to relay the match itself. Discovery continues when any one configured relay is reachable. Game traffic flows through direct WebRTC data channels when a connection is established.",
         "Players choose the same room in Settings > Multiplayer, choose a commander name, launch Zero Hour, and use Multiplayer > Anonymous in the original UI. Ranked is reserved for a future service and currently shows a native coming-soon notice. Peers must use the same exact game and ordered mod composition. An empty room value keeps play offline.",
-        "The native Anonymous lobby reports discovery, project-relay, room, and peer state. Its Reconnect action rebuilds browser discovery and asks the original LAN API to immediately refresh players and games after peer channels recover, without restarting Zero Hour.",
+        "The native Anonymous lobby reports discovery, relay, room, and peer state. Its Reconnect action rebuilds browser discovery and asks the original LAN API to immediately refresh players and games after peer channels recover, without restarting Zero Hour.",
         "Short matches have been verified at up to four players, including native lobby discovery recovery. Long determinism runs, in-game disconnect and rejoin behavior, authenticated invitations, difficult NAT conditions, and signaling hardening remain active work."
       ],
       "evidence": [
@@ -200,6 +213,8 @@
         "GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/LanLobbyMenu.cpp",
         "WebAssembly/harness/lan_webrtc_playable_match_smoke.mjs",
         "WebAssembly/harness/webrtc-udp-endpoint.mjs",
+        "WebAssembly/cloudflare/trystero-relay/worker_hibernation.test.mjs",
+        "WebAssembly/harness/webrtc_relay_selection_unit.mjs",
         "WebAssembly/harness/multiplayer_network_status_unit.mjs"
       ]
     },
@@ -208,13 +223,14 @@
       "name": "Transfer owned data to another device",
       "status": "experimental",
       "summary": "A user-confirmed encrypted flow transfers an installed game, selected mods and order, saves, and replays between two devices controlled by the owner.",
-      "reviewedAt": "2026-07-14",
+      "reviewedAt": "2026-07-18",
       "details": [
         "Both devices must be controlled by the owner, and the UI requires an explicit ownership confirmation. The transfer is a convenience for the user's own legally owned data; it is not a public download or redistribution service.",
-        "The sending and receiving browsers negotiate an encrypted connection and expose progress and errors in the launcher. Browser storage and network conditions still determine whether a large transfer can complete."
+        "The sending and receiving browsers negotiate through the project-operated Nostr relay and deterministic public fallbacks, then send the encrypted transfer directly over WebRTC. The Nostr relays do not carry installed archives or user files. Browser storage and network conditions still determine whether a large transfer can complete."
       ],
       "evidence": [
         "WebAssembly/harness/launcher-device-transfer.mjs",
+        "WebAssembly/harness/webrtc_relay_selection_unit.mjs",
         "WebAssembly/harness/device_transfer_browser_smoke.mjs",
         "WebAssembly/harness/device-transfer-protocol.mjs"
       ]
@@ -263,7 +279,7 @@
     "Keep the tab open while local extraction, hashing, validation, and OPFS installation finish. The first import can take several minutes.",
     "When Zero Hour appears in the game library, review Game & Display settings if desired and launch it.",
     "Use the original game menus after the canvas opens. On a touch screen, open Touch help for the gesture map and Keys for hotkeys and control groups; landscape is recommended. All picker operations require a person at the browser; a remote text agent cannot grant file permissions or provide the user's retail media.",
-    "For optional remote play, start the external AgentBridge in Global or Camera mode. Before launch, open Remote Agent, enable it, enter the bridge's printed WebSocket URL and browser credential, choose a session ID and the same fixed mode, test the authenticated connection, and select Apply for next launch. Non-secret settings are remembered; browser-token storage is an explicit device-local choice.",
+    "For optional remote play, start the external AgentBridge in Global or Camera mode. Before launch, open Remote Agent, enable it, enter the bridge's printed WebRTC URL and browser credential, choose a session ID and the same fixed mode, test the authenticated peer connection, and select Apply for next launch. Non-secret settings are remembered; browser-token storage is an explicit device-local choice.",
     "Give the bridge's separate REST address and API credential only to the trusted controller. Treat both credentials as secrets, and disable Remote Agent or close the bridge when the session is over."
   ],
   "privacy": {
@@ -271,15 +287,15 @@
       "Retail assets selected in the launcher are read locally and stored locally in the browser profile. They are not uploaded to Project New Shoes. Installed archives, mods, saves, replays, preferences, and generated movie cache files live under browser-managed origin storage.",
       "The settings UI provides an anonymous analytics preference. Documented analytics are limited to broad feature, reliability, setting-category, and performance-bucket events. They exclude filenames, paths, disc labels, game data, save content, free text, issue dumps, and precise hardware or storage values. Global Privacy Control or Do Not Track disables analytics automatically, and advertising features are disabled.",
       "Imported mod installers are parsed, not executed. Native code found in a mod is not compatible with the WebAssembly engine. Browser origin data can be removed through the launcher or browser site-data controls, but deleting it can remove the installed game, mods, saves, and settings.",
-      "Remote Agent is explicitly opt-in and uses separate browser and REST credentials. The browser credential stays in page memory by default and is stored in origin-local browser storage only when the operator explicitly enables device-local remembering. Turning that option off erases the saved token. The credential is never put in a URL and is excluded from public status and issue dumps. Operators are responsible for securing the browser profile, external bridge, controller, reverse proxy, or tunnel they choose to use.",
+      "Remote Agent is explicitly opt-in and uses separate browser and REST credentials. The browser credential stays in page memory by default and is stored in origin-local browser storage only when the operator explicitly enables device-local remembering. Turning that option off erases the saved token. The credential is never put in a URL and is excluded from public status and issue dumps. WebRTC signaling uses a one-way token-derived room and separately derived end-to-end encryption key; the project signaling relay cannot read SDP/ICE or agent traffic. Operators are responsible for securing the browser profile, external bridge, and trusted controller.",
       "LLM commander profiles and session transcripts are stored in the browser's IndexedDB. The configured endpoint receives the commander's mandate, compacted conversation, player-scoped game observations, and tool results directly from the browser. Project New Shoes does not proxy those requests. API keys are omitted from session exports, but users should still treat exported strategy transcripts as potentially sensitive."
     ],
     "networkActivity": [
       "Opening the hosted page downloads the open-source browser runtime.",
       "Optional analytics sends only documented broad events when enabled.",
-      "Multiplayer uses public discovery relays and direct peer-to-peer game channels.",
-      "Device transfer connects the two participating devices for the confirmed encrypted transfer.",
-      "Testing or launching with Remote Agent opens an outbound WebSocket to the configured external bridge. A test performs only the authenticated probe and does not register a playable session. The bridge exposes an authenticated REST API on loopback by default; remote exposure requires operator-controlled networking and transport security.",
+      "Multiplayer uses the project-operated Nostr discovery relay plus public fallbacks, then direct peer-to-peer game channels.",
+      "Device transfer uses the same hybrid Nostr discovery set for encrypted connection negotiation, then connects the two participating devices directly for the confirmed encrypted transfer.",
+      "Testing or launching with Remote Agent opens outbound signaling connections from the browser and bridge, then exchanges agent traffic directly over a DTLS-encrypted WebRTC data channel. The signaling relay receives only a token-derived room identifier and encrypted SDP/ICE envelopes. A test performs only the authenticated probe and does not register a playable session. The bridge exposes its authenticated controller REST API on loopback by default.",
       "An enabled LLM commander sends gameplay context and receives model responses from the OpenAI-compatible endpoint selected in its profile.",
       "Diagnostics leave the device only when the user explicitly uploads a report."
     ]
@@ -293,7 +309,7 @@
     "Native Windows mod DLLs and executables cannot run in WebAssembly.",
     "LLM commanders are experimental. Model quality, latency, context limits, endpoint availability, CORS policy, and usage cost can affect play. The host owns model requests. Controller-neutral production, force assembly, and strategy-lease transitions are currently skirmish-only; LAN slot presentation exists, but the synchronized multiplayer form of those semantic requests is not yet implemented.",
     "A web agent that only reads this site cannot play the canvas or operate local browser permissions. The public llms.txt, project-info.json, and guide are read-only knowledge resources; control requires a person to configure the separate authenticated Remote Agent interface.",
-    "Remote Agent is an experimental advanced interface. It does not bypass fog, shroud, stealth, radar, or fixed Camera-mode boundaries, and it does not guarantee that a controller understands the game or wins a match.",
+    "Remote Agent is an experimental advanced interface. It does not bypass fog, shroud, stealth, radar, or fixed Camera-mode boundaries, and it does not guarantee that a controller understands the game or wins a match. Difficult NAT or firewall environments that require TURN can prevent the default peer-to-peer connection.",
     "The live issue tracker is the authority for current bugs and planned work. Archived TODO.md and DONE.md snapshots are historical records, not the current backlog."
   ],
   "troubleshooting": [
@@ -327,7 +343,7 @@
     },
     {
       "problem": "Remote Agent does not connect",
-      "answer": "Start the external AgentBridge first. Before launching Zero Hour, enable Remote Agent and make its WebSocket URL, browser credential, session ID, and Global or Camera mode exactly match the bridge output. Select Test connection to check reachability, authentication, protocol, and fixed-mode agreement without creating a game session, then apply the configuration for the next launch. Keep the browser and REST credentials distinct; if the test fails, check mixed-content or certificate policy and whether the bridge address is reachable from that device."
+      "answer": "Start the external AgentBridge first. Before launching Zero Hour, enable Remote Agent and make its WebRTC URL, browser credential, session ID, and Global or Camera mode exactly match the bridge output. Select Test connection to check peer-to-peer reachability, authentication, protocol, and fixed-mode agreement without creating a game session, then apply the configuration for the next launch. Keep the browser and REST credentials distinct. If signaling connects but WebRTC does not, the network may require a TURN relay that the default service does not provide."
     },
     {
       "problem": "Reporting a bug",

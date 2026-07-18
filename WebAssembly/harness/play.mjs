@@ -1186,12 +1186,15 @@ async function start() {
     renderPerformanceOverlay();
     issueRecorder.setSessionContext({ phase: "running" });
     viewportCanvas.focus();
-    initDisplayRuntime();
     // The engine booted at the requested resolution (the boot resolutionchange
     // event recorded it); this apply is a no-op then, and covers the fallbacks:
     // a stale wasm without the boot export, or the window changing size during
-    // the archive download.
+    // the archive download. Keep engine-originated resolution persistence
+    // disabled until this initial reconciliation finishes: a delayed threaded
+    // status for the boot size must not turn a still-dynamic device layout into
+    // a fixed 800x600 setting before the page can apply its live viewport.
     await applyDisplaySettings("boot");
+    initDisplayRuntime();
     analyticsStage = "display";
     track("boot_milestone", { milestone: "first_frame" });
     track("game_launch", {
@@ -2046,7 +2049,7 @@ function syncAgentBridgeTokenHelp() {
 
 function populateAgentBridgeForm(config, { rememberToken } = {}) {
   if (!agentBridgeApp) return;
-  agentBridgeApp.url.value = String(config?.url ?? "ws://127.0.0.1:18888/engine");
+  agentBridgeApp.url.value = String(config?.url ?? "webrtc://relay.newshoes.gg/agent");
   agentBridgeApp.token.value = String(config?.token ?? "");
   agentBridgeApp.session.value = String(config?.sessionId ?? "game-1") || "game-1";
   const mode = String(config?.playMode ?? "global");
@@ -2075,7 +2078,7 @@ function agentBridgeStatusPresentation() {
     return {
       state: "connecting",
       title: "Testing the bridge connection",
-      detail: "Opening the WebSocket and authenticating with the browser token…",
+      detail: "Establishing the peer connection and authenticating with the browser token…",
     };
   }
   if (agentBridgeApp?.testState === "success") {

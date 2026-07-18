@@ -1,9 +1,6 @@
 import { schnorr } from "@noble/secp256k1";
 
 const SERVICE = "newshoes-trystero-nostr-relay";
-const EVENT_PREFIX = "event:";
-const EVENT_INDEX_KEY = "event-index";
-const SUBSCRIPTION_PREFIX = "subscriptions:";
 const MAX_MESSAGE_BYTES = 256 * 1024;
 const MAX_RETAINED_EVENTS = 512;
 const MAX_EVENT_AGE_SECONDS = 120;
@@ -11,11 +8,16 @@ const MAX_FUTURE_SKEW_SECONDS = 60;
 const MAX_SUBSCRIPTIONS = 64;
 const MAX_FILTERS = 4;
 const MAX_TOPICS_PER_FILTER = 250;
+// Durable Object WebSocket attachments are capped at 16 KiB. Keeping the JSON
+// representation below 14 KiB leaves headroom for structured-clone metadata.
+const MAX_ATTACHMENT_JSON_BYTES = 14 * 1024;
 const TRYSTERO_KIND_MIN = 20000;
 const TRYSTERO_KIND_MAX = 29999;
 const HEX_32 = /^[0-9a-f]{64}$/;
 const HEX_64 = /^[0-9a-f]{128}$/;
 const TRYSTERO_TOPIC = /^[0-9a-z]{20,40}$/;
+const AGENT_ROOM = /^[0-9a-f]{64}$/;
+const AGENT_ROLES = new Set(["bridge", "engine"]);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -167,6 +169,21 @@ export default {
         gameplayTraffic: false,
       });
     }
+    if (url.pathname === "/agent") {
+      if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+        return new Response("Expected a WebSocket upgrade", { status: 426 });
+      }
+      const room = url.searchParams.get("room") ?? "";
+      const role = url.searchParams.get("role") ?? "";
+      if (!AGENT_ROOM.test(room) || !AGENT_ROLES.has(role)) {
+        return new Response("Invalid agent signaling room or role", { status: 400 });
+      }
+      const origin = request.headers.get("origin");
+      if ((role === "engine" && !allowedOrigin(request, env)) || (role === "bridge" && origin)) {
+        return new Response("Origin is not allowed", { status: 403 });
+      }
+      return env.AGENT_SIGNALING.getByName(room).fetch(request);
+    }
     if (url.pathname !== "/nostr") return new Response("Not found", { status: 404 });
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket upgrade", { status: 426 });
@@ -176,74 +193,150 @@ export default {
   },
 };
 
+export class AgentSignalingRelay {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.sessions = new Map();
+    for (const socket of ctx.getWebSockets()) {
+      const attachment = socket.deserializeAttachment();
+      if (AGENT_ROLES.has(attachment?.role)) this.sessions.set(socket, attachment.role);
+    }
+  }
+
+  fetch(request) {
+    const role = new URL(request.url).searchParams.get("role");
+    for (const [socket, existingRole] of this.sessions) {
+      if (existingRole === role) {
+        this.sessions.delete(socket);
+        socket.close(4000, "Replaced by a newer peer");
+      }
+    }
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    server.serializeAttachment({ role });
+    this.ctx.acceptWebSocket(server);
+    this.sessions.set(server, role);
+    this.broadcastPresence();
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  broadcastPresence() {
+    const roles = new Set(this.sessions.values());
+    for (const [socket, role] of this.sessions) {
+      send(socket, { type: "peer", present: roles.has(role === "bridge" ? "engine" : "bridge") });
+    }
+  }
+
+  webSocketMessage(socket, rawMessage) {
+    const bytes = typeof rawMessage === "string"
+      ? encoder.encode(rawMessage)
+      : new Uint8Array(rawMessage);
+    if (bytes.byteLength > MAX_MESSAGE_BYTES) {
+      socket.close(1009, "Signal is too large");
+      return;
+    }
+    let message;
+    try {
+      message = JSON.parse(typeof rawMessage === "string" ? rawMessage : decoder.decode(bytes));
+    } catch {
+      socket.close(1007, "Invalid signal JSON");
+      return;
+    }
+    if (message?.type !== "signal" || typeof message.payload !== "string"
+        || message.payload.length < 1 || message.payload.length > MAX_MESSAGE_BYTES) {
+      socket.close(1008, "Invalid encrypted signal envelope");
+      return;
+    }
+    const sourceRole = this.sessions.get(socket);
+    if (!sourceRole) return;
+    for (const [target, role] of this.sessions) {
+      if (role !== sourceRole) send(target, { type: "signal", payload: message.payload });
+    }
+  }
+
+  remove(socket) {
+    this.sessions.delete(socket);
+    this.broadcastPresence();
+  }
+
+  webSocketClose(socket) {
+    this.remove(socket);
+  }
+
+  webSocketError(socket) {
+    this.remove(socket);
+  }
+}
+
 export class TrysteroNostrRelay {
   constructor(ctx) {
     this.ctx = ctx;
     this.sessions = new Map();
-    const sockets = ctx.getWebSockets();
-    for (const socket of sockets) {
+    this.events = new Map();
+    for (const socket of ctx.getWebSockets()) {
       const attachment = socket.deserializeAttachment();
-      if (attachment?.id) this.sessions.set(socket, { id: attachment.id, subscriptions: new Map() });
+      if (attachment?.id) {
+        this.sessions.set(socket, {
+          id: attachment.id,
+          subscriptions: new Map(Array.isArray(attachment.subscriptions)
+            ? attachment.subscriptions : []),
+        });
+      }
     }
-    ctx.blockConcurrencyWhile(async () => {
-      await Promise.all([...this.sessions.entries()].map(async ([socket, session]) => {
-        const saved = await ctx.storage.get(`${SUBSCRIPTION_PREFIX}${session.id}`);
-        session.subscriptions = new Map(Array.isArray(saved) ? saved : []);
-        this.sessions.set(socket, session);
-      }));
-    });
   }
 
-  async fetch(request) {
+  fetch(request) {
     if (this.ctx.getWebSockets().length >= 4096) {
       return new Response("Relay connection capacity reached", { status: 503 });
     }
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     const id = crypto.randomUUID();
-    server.serializeAttachment({ id });
+    server.serializeAttachment({ id, subscriptions: [] });
     this.ctx.acceptWebSocket(server);
     this.sessions.set(server, { id, subscriptions: new Map() });
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async retainedEvents(filters) {
-    const index = await this.ctx.storage.get(EVENT_INDEX_KEY) ?? [];
-    if (!Array.isArray(index) || index.length === 0) return [];
-    const stored = await this.ctx.storage.get(index.map(({ id }) => `${EVENT_PREFIX}${id}`));
-    return index
-      .map(({ id }) => stored.get(`${EVENT_PREFIX}${id}`))
-      .filter((event) => event && filters.some((filter) => matchesFilter(event, filter)));
+  pruneEvents(nowSeconds) {
+    for (const [id, event] of this.events) {
+      if (event.created_at < nowSeconds - MAX_EVENT_AGE_SECONDS) this.events.delete(id);
+    }
+    while (this.events.size > MAX_RETAINED_EVENTS) {
+      this.events.delete(this.events.keys().next().value);
+    }
   }
 
-  async storeEvent(event, nowSeconds) {
-    let duplicate = false;
-    await this.ctx.storage.transaction(async (txn) => {
-      const current = await txn.get(EVENT_INDEX_KEY) ?? [];
-      if (current.some(({ id }) => id === event.id)) {
-        duplicate = true;
-        return;
-      }
-      const retained = current
-        .filter((entry) => entry.created_at >= nowSeconds - MAX_EVENT_AGE_SECONDS)
-        .concat({ id: event.id, created_at: event.created_at });
-      const pruned = retained.splice(0, Math.max(0, retained.length - MAX_RETAINED_EVENTS));
-      if (pruned.length > 0) {
-        await txn.delete(pruned.map(({ id }) => `${EVENT_PREFIX}${id}`));
-      }
-      await txn.put({
-        [`${EVENT_PREFIX}${event.id}`]: event,
-        [EVENT_INDEX_KEY]: retained,
-      });
-    });
-    return duplicate;
+  retainedEvents(filters, nowSeconds) {
+    this.pruneEvents(nowSeconds);
+    return [...this.events.values()]
+      .filter((event) => filters.some((filter) => matchesFilter(event, filter)));
   }
 
-  async persistSubscriptions(session) {
-    await this.ctx.storage.put(
-      `${SUBSCRIPTION_PREFIX}${session.id}`,
-      [...session.subscriptions.entries()],
-    );
+  storeEvent(event, nowSeconds) {
+    this.pruneEvents(nowSeconds);
+    if (this.events.has(event.id)) return true;
+    this.events.set(event.id, event);
+    if (this.events.size > MAX_RETAINED_EVENTS) {
+      this.events.delete(this.events.keys().next().value);
+    }
+    return false;
+  }
+
+  attachSession(socket, session) {
+    const attachment = {
+      id: session.id,
+      subscriptions: [...session.subscriptions.entries()],
+    };
+    if (encoder.encode(JSON.stringify(attachment)).byteLength > MAX_ATTACHMENT_JSON_BYTES) {
+      return false;
+    }
+    try {
+      socket.serializeAttachment(attachment);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async webSocketMessage(socket, rawMessage) {
@@ -274,16 +367,29 @@ export class TrysteroNostrRelay {
         send(socket, ["CLOSED", first, "restricted: subscription limit reached"]);
         return;
       }
-      session.subscriptions.set(first, rest);
-      await this.persistSubscriptions(session);
-      for (const event of await this.retainedEvents(rest)) send(socket, ["EVENT", first, event]);
+      const nextSession = {
+        ...session,
+        subscriptions: new Map(session.subscriptions),
+      };
+      nextSession.subscriptions.set(first, rest);
+      if (!this.attachSession(socket, nextSession)) {
+        send(socket, ["CLOSED", first, "restricted: subscription state is too large"]);
+        return;
+      }
+      this.sessions.set(socket, nextSession);
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      for (const event of this.retainedEvents(rest, nowSeconds)) send(socket, ["EVENT", first, event]);
       send(socket, ["EOSE", first]);
       return;
     }
     if (type === "CLOSE") {
       if (typeof first === "string") {
-        session.subscriptions.delete(first);
-        await this.persistSubscriptions(session);
+        const nextSession = {
+          ...session,
+          subscriptions: new Map(session.subscriptions),
+        };
+        nextSession.subscriptions.delete(first);
+        if (this.attachSession(socket, nextSession)) this.sessions.set(socket, nextSession);
       }
       return;
     }
@@ -303,7 +409,7 @@ export class TrysteroNostrRelay {
         send(socket, ["OK", event?.id ?? "", false, `invalid: ${error}`]);
         return;
       }
-      const duplicate = await this.storeEvent(event, Math.floor(Date.now() / 1000));
+      const duplicate = this.storeEvent(event, Math.floor(Date.now() / 1000));
       if (!duplicate) {
         for (const [target, targetSession] of this.sessions) {
           for (const [subscriptionId, filters] of targetSession.subscriptions) {
@@ -319,18 +425,16 @@ export class TrysteroNostrRelay {
     send(socket, ["NOTICE", "unsupported Nostr message"]);
   }
 
-  async removeSession(socket) {
-    const session = this.sessions.get(socket);
+  removeSession(socket) {
     this.sessions.delete(socket);
-    if (session) await this.ctx.storage.delete(`${SUBSCRIPTION_PREFIX}${session.id}`);
   }
 
-  async webSocketClose(socket, code, reason) {
-    await this.removeSession(socket);
+  webSocketClose(socket, code, reason) {
+    this.removeSession(socket);
     socket.close(code, reason);
   }
 
-  async webSocketError(socket) {
-    await this.removeSession(socket);
+  webSocketError(socket) {
+    this.removeSession(socket);
   }
 }

@@ -6180,6 +6180,14 @@ async function loadWasmModule() {
           ["number", "number", "number", "number", "number"],
         )
         : null,
+      postTouchNavigationLite:
+        typeof module._cnc_port_post_touch_navigation_lite === "function"
+          ? module.cwrap(
+            "cnc_port_post_touch_navigation_lite",
+            "number",
+            ["number", "number", "number", "number", "number", "number"],
+          )
+          : null,
       resetBrowserInput: module.cwrap("cnc_port_reset_browser_input", "string", []),
       postBrowserMessage: module.cwrap(
         "cnc_port_post_browser_message",
@@ -10635,6 +10643,58 @@ async function pushBrowserInputToWasmLite({
     );
   }
   return null;
+}
+
+async function pushTouchNavigationToWasmLite({
+  previousPoint,
+  point,
+  scale,
+  radians,
+  sequence = 0,
+} = {}) {
+  const touchNavigation = {
+    previousX: previousPoint?.x ?? point?.x ?? 0,
+    previousY: previousPoint?.y ?? point?.y ?? 0,
+    currentX: point?.x ?? 0,
+    currentY: point?.y ?? 0,
+    scale: Number(scale ?? 1),
+    radians: Number(radians ?? 0),
+  };
+  if (cncPortThreadedMode) {
+    try {
+      await threadedEngine.ensureReady();
+      threadedEngine.forwardInput({ touchNavigation });
+      // forwardInput batches through a microtask. Publish queue completion
+      // only after that microtask has posted the ordered input command, so
+      // probes and diagnostics can distinguish recognition from transport.
+      await new Promise((resolve) => queueMicrotask(resolve));
+      if (harnessState.touchNavigation) {
+        harnessState.touchNavigation.queuedCount = Math.max(
+          Number(harnessState.touchNavigation.queuedCount ?? 0),
+          Number(sequence),
+        );
+      }
+    } catch (_error) {
+      // Realm not ready during asset/init phases; touch input is droppable.
+    }
+    return null;
+  }
+  const wasmModule = await wasmModulePromise;
+  const result = wasmModule?.postTouchNavigationLite?.(
+    touchNavigation.previousX,
+    touchNavigation.previousY,
+    touchNavigation.currentX,
+    touchNavigation.currentY,
+    touchNavigation.scale,
+    touchNavigation.radians,
+  ) ?? 0;
+  if (result === 1 && harnessState.touchNavigation) {
+    harnessState.touchNavigation.queuedCount = Math.max(
+      Number(harnessState.touchNavigation.queuedCount ?? 0),
+      Number(sequence),
+    );
+  }
+  return result;
 }
 
 async function postBrowserMessageToWasm({
@@ -24397,6 +24457,27 @@ function forwardTouchWheel(steps, clientPoint) {
   });
 }
 
+function forwardTouchNavigation(action) {
+  const previousPoint = touchPointToEngine(action.previousPoint);
+  const point = touchPointToEngine(action.point);
+  const sequence = Number(harnessState.touchNavigation?.count ?? 0) + 1;
+  harnessState.touchNavigation = {
+    count: sequence,
+    queuedCount: Number(harnessState.touchNavigation?.queuedCount ?? 0),
+    previousPoint,
+    point,
+    scale: Number(action.scale),
+    radians: Number(action.radians),
+  };
+  void pushTouchNavigationToWasmLite({
+    previousPoint,
+    point,
+    scale: action.scale,
+    radians: action.radians,
+    sequence,
+  });
+}
+
 let touchRotation = null;
 function startTouchRotation(clientPoint, timestamp) {
   const point = touchPointToEngine(clientPoint);
@@ -24533,6 +24614,7 @@ const touchControls = createTouchControls({
   onMove: forwardTouchMove,
   onButton: forwardTouchButton,
   onWheel: forwardTouchWheel,
+  onNavigate: forwardTouchNavigation,
   onRotateStart: startTouchRotation,
   onRotateMove: moveTouchRotation,
   onRotateEnd: endTouchRotation,

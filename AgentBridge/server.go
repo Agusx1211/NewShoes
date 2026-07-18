@@ -16,7 +16,6 @@ import (
 	"unicode/utf16"
 
 	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 )
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
@@ -146,27 +145,31 @@ func (s *Server) engine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn.SetReadLimit(maxMessageBytes)
-	defer conn.CloseNow()
 	if conn.Subprotocol() != WebSocketProtocol {
 		_ = conn.Close(websocket.StatusPolicyViolation, "required WebSocket subprotocol missing")
 		return
 	}
+	s.serveEngine(&websocketMessageConn{conn: conn})
+}
+
+func (s *Server) serveEngine(conn messageConn) {
+	defer conn.CloseNow()
 
 	helloCtx, cancelHello := context.WithTimeout(context.Background(), 5*time.Second)
 	var hello protocolMessage
-	err = wsjson.Read(helloCtx, conn, &hello)
+	err := conn.Read(helloCtx, &hello)
 	cancelHello()
 	if err != nil || (hello.Type != "hello" && hello.Type != "probe") ||
 		hello.Protocol != ProtocolVersion ||
 		!sessionIDPattern.MatchString(hello.SessionID) ||
 		hello.PlayMode != s.config.PlayMode ||
 		!tokensEqual(hello.Token, s.config.EngineToken) {
-		_ = conn.Close(websocket.StatusPolicyViolation, "invalid engine hello")
+		_ = conn.Close(int(websocket.StatusPolicyViolation), "invalid engine hello")
 		return
 	}
 	if hello.Type == "probe" {
 		probeCtx, cancelProbe := context.WithTimeout(context.Background(), 5*time.Second)
-		err := wsjson.Write(probeCtx, conn, protocolMessage{
+		err := conn.Write(probeCtx, protocolMessage{
 			Type:      "probe",
 			Protocol:  ProtocolVersion,
 			SessionID: hello.SessionID,
@@ -175,7 +178,14 @@ func (s *Server) engine(w http.ResponseWriter, r *http.Request) {
 		})
 		cancelProbe()
 		if err == nil {
-			_ = conn.Close(websocket.StatusNormalClosure, "connection test complete")
+			// Let the probing peer receive the reply and initiate closure. Closing a
+			// WebRTC data channel immediately after Send can discard the final SCTP
+			// message even when the channel itself is closed gracefully.
+			closeCtx, cancelClose := context.WithTimeout(context.Background(), 5*time.Second)
+			var ignored protocolMessage
+			_ = conn.Read(closeCtx, &ignored)
+			cancelClose()
+			_ = conn.Close(int(websocket.StatusNormalClosure), "connection test complete")
 		}
 		return
 	}

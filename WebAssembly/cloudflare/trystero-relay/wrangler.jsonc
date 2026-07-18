@@ -15,6 +15,10 @@
       {
         "name": "TRYSTERO_RELAY",
         "class_name": "TrysteroNostrRelay"
+      },
+      {
+        "name": "AGENT_SIGNALING",
+        "class_name": "AgentSignalingRelay"
       }
     ]
   },
@@ -22,6 +26,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["TrysteroNostrRelay"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["AgentSignalingRelay"]
     }
   ],
   "vars": {
