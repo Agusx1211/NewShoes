@@ -6438,6 +6438,31 @@ target_link_options(gameengine-header-case-smoke PRIVATE
   "SHELL:-sEXIT_RUNTIME=1"
 )
 
+add_executable(academy-stats-dozer-search-smoke
+  tests/academy_stats_dozer_search_smoke.cpp
+)
+
+set_target_properties(academy-stats-dozer-search-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_include_directories(academy-stats-dozer-search-smoke PRIVATE
+  "${GAMEENGINE_DIR}/Source"
+)
+
+target_compile_options(academy-stats-dozer-search-smoke PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+)
+
+target_link_options(academy-stats-dozer-search-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
 add_library(zh_gameclient_utility_smoke_ini_support STATIC
   src/wasm_gameclient_utility_smoke_ini_support.cpp
 )
