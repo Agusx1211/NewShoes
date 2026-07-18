@@ -30,11 +30,16 @@ try {
     });
     if (!gl) throw new Error("WebGL2 context unavailable");
 
+    const heapBuffer = new ArrayBuffer(8192);
+    const heapU32 = new Uint32Array(heapBuffer);
+    const heapF32 = new Float32Array(heapBuffer);
     const { hooks, diag } = createD3D8Executor({
       canvas,
       gl,
       state: { graphics: {} },
       log() {},
+      getHeapU32: () => heapU32,
+      getHeapF32: () => heapF32,
     });
     const expect = (condition, message, detail) => {
       if (!condition) throw new Error(`${message}: ${JSON.stringify(detail)}`);
@@ -87,21 +92,55 @@ try {
       targetWidth: 64, targetHeight: 64,
     });
     hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+    const textureId = 700;
+    const textureBytes = new Uint8Array(4 * 4 * 4).fill(255);
+    expect(hooks.cncPortD3D8TextureCreate({
+      id: textureId,
+      width: 4,
+      height: 4,
+      levels: 1,
+      format: 21, // D3DFMT_A8R8G8B8
+    }) === 1, "texture creation failed");
+    const updateTexture = () => hooks.cncPortD3D8TextureUpdate({
+      id: textureId,
+      level: 0,
+      x: 0,
+      y: 0,
+      width: 4,
+      height: 4,
+      format: 21,
+      bytes: textureBytes,
+    });
+    expect(updateTexture() === 1, "initial texture upload failed");
+    expect(hooks.cncPortD3D8TextureBind({ stage: 0, id: textureId }) === 1,
+      "texture bind failed");
 
-    const renderState = {
-      zEnable: 0,
-      zWriteEnable: 0,
-      cullMode: 1,
-      lighting: 0,
-      alphaBlendEnable: 0,
-      colorWriteEnable: 0xf,
-      textureStages: [{
-        colorOp: 2,
-        colorArg1: 0,
-        alphaOp: 2,
-        alphaArg1: 0,
-      }],
-    };
+    // Exercise the shipping pointer-backed Wasm payload, including native
+    // transform revisions. The render-state block is 50 DWORDs followed by
+    // eight 29-DWORD texture-stage blocks (see copyD3D8RenderStateFromWasm).
+    const renderStatePtr = 256;
+    const renderStateOffset = renderStatePtr >>> 2;
+    heapU32[renderStateOffset + 0] = 1; // D3DCULL_NONE
+    heapU32[renderStateOffset + 11] = 0xf; // RGBA writes
+    heapU32[renderStateOffset + 27] = 3; // D3DFILL_SOLID
+    heapU32[renderStateOffset + 29] = 2; // D3DSHADE_GOURAUD
+    heapU32[renderStateOffset + 37] = 1; // clipping enabled
+    for (let stage = 0; stage < 8; stage += 1) {
+      const stageOffset = renderStateOffset + 50 + stage * 29;
+      heapU32[stageOffset + 1] = stage === 0 ? 2 : 1; // SELECTARG1 / DISABLE
+      heapU32[stageOffset + 2] = 0; // D3DTA_DIFFUSE
+      heapU32[stageOffset + 4] = stage === 0 ? 2 : 1;
+      heapU32[stageOffset + 5] = 0;
+    }
+    const worldPtr = 1536;
+    const viewPtr = 1600;
+    const projectionPtr = 1664;
+    const clipPlanesPtr = 1728;
+    const lightsPtr = 2048;
+    const materialPtr = 3072;
+    heapF32.set(identity, worldPtr >>> 2);
+    heapF32.set(identity, viewPtr >>> 2);
+    heapF32.set(identity, projectionPtr >>> 2);
     const draw = (vertexBufferId, shaderHandle, hash) =>
       hooks.cncPortD3D8DrawIndexed({
         vertexBufferId,
@@ -121,13 +160,46 @@ try {
         worldTransformRevision: 9,
         viewTransformRevision: 9,
         projectionTransformRevision: 9,
-        transforms: { world: identity, view: identity, projection: identity },
-        renderState,
+        transforms: {
+          world: worldPtr,
+          view: viewPtr,
+          projection: projectionPtr,
+          texture0: 0,
+          texture1: 0,
+          texture2: 0,
+          texture3: 0,
+        },
+        statePayloadPointers: true,
+        renderStatePtr,
+        clipPlanesPtr,
+        lightsPtr,
+        materialPtr,
         stateHash: hash,
         derivedStateHash: hash,
       });
 
     expect(draw(1, 0, 101) === 1, "fixed-function priming draw failed");
+    const beforeContentUpdate = diag.d3d8PerfSummary();
+    expect(updateTexture() === 1, "same-storage texture update failed");
+    const afterContentUpdate = diag.d3d8PerfSummary();
+    expect(afterContentUpdate.drawTextureContentInvalidations ===
+        beforeContentUpdate.drawTextureContentInvalidations + 1,
+      "same-storage texture update did not use scoped invalidation", {
+        beforeContentUpdate,
+        afterContentUpdate,
+      });
+    expect(afterContentUpdate.drawFullStateInvalidations ===
+        beforeContentUpdate.drawFullStateInvalidations,
+      "same-storage texture update reset unrelated draw state", {
+        beforeContentUpdate,
+        afterContentUpdate,
+      });
+    expect(afterContentUpdate.drawTextureContentInvalidatedEntries >=
+        beforeContentUpdate.drawTextureContentInvalidatedEntries + 1,
+      "bound texture update did not invalidate its derived entry", {
+        beforeContentUpdate,
+        afterContentUpdate,
+      });
     expect(draw(2, pixelShaderHandle, 202) === 1, "translated shader draw failed");
     diag.flushD3D8PendingDrawBatch("sm1-transform-switch-smoke");
 

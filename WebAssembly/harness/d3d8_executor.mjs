@@ -632,6 +632,10 @@ const d3d8PerfStats = {
   drawLightPayloadSkips: 0,
   drawDerivedCacheHits: 0,
   drawDerivedCacheMisses: 0,
+  drawFullStateInvalidations: 0,
+  drawTextureContentInvalidations: 0,
+  drawTextureContentInvalidatedEntries: 0,
+  drawTextureContentInvalidationMs: 0,
   drawUniformCacheHits: 0,
   drawUniformCacheMisses: 0,
   drawTransformUniformCacheHits: 0,
@@ -1117,6 +1121,12 @@ function d3d8PerfSummary() {
     drawLightPayloadSkips: d3d8PerfStats.drawLightPayloadSkips,
     drawDerivedCacheHits: d3d8PerfStats.drawDerivedCacheHits,
     drawDerivedCacheMisses: d3d8PerfStats.drawDerivedCacheMisses,
+    drawFullStateInvalidations: d3d8PerfStats.drawFullStateInvalidations,
+    drawTextureContentInvalidations: d3d8PerfStats.drawTextureContentInvalidations,
+    drawTextureContentInvalidatedEntries:
+      d3d8PerfStats.drawTextureContentInvalidatedEntries,
+    drawTextureContentInvalidationMs:
+      roundedPerfMs(d3d8PerfStats.drawTextureContentInvalidationMs),
     drawUniformCacheHits: d3d8PerfStats.drawUniformCacheHits,
     drawUniformCacheMisses: d3d8PerfStats.drawUniformCacheMisses,
     drawTransformUniformCacheHits: d3d8PerfStats.drawTransformUniformCacheHits,
@@ -1254,6 +1264,7 @@ let d3d8GammaFilterNodes = null;
 
 function invalidateD3D8DrawStateCache() {
   flushD3D8PendingDrawBatch("stateInvalidated");
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawFullStateInvalidations += 1;
   harnessState.graphics.lastD3D8StateHash = 0;
   harnessState.graphics.lastD3D8UniformKey = null;
   harnessState.graphics.lastD3D8TextureUniformKey = null;
@@ -1312,6 +1323,66 @@ function unlinkD3D8DerivedDrawCacheEntry(entry) {
   }
   entry.lruPrevious = null;
   entry.lruNext = null;
+}
+
+function deleteD3D8DerivedDrawCacheEntry(entry) {
+  if (!entry) {
+    return false;
+  }
+  const bucket = d3d8DerivedDrawCache.get(entry.derivedStateHash);
+  const bucketIndex = bucket?.indexOf(entry) ?? -1;
+  unlinkD3D8DerivedDrawCacheEntry(entry);
+  if (bucketIndex < 0) {
+    d3d8DerivedDrawCacheEntries = Math.max(0, d3d8DerivedDrawCacheEntries - 1);
+    return true;
+  }
+  bucket.splice(bucketIndex, 1);
+  d3d8DerivedDrawCacheEntries -= 1;
+  if (bucket.length === 0) {
+    d3d8DerivedDrawCache.delete(entry.derivedStateHash);
+  }
+  return true;
+}
+
+function d3d8DerivedDrawCacheEntryUsesTexture(entry, textureId) {
+  return entry?.texture0Id === textureId ||
+    entry?.texture1Id === textureId ||
+    entry?.texture2Id === textureId ||
+    entry?.texture3Id === textureId;
+}
+
+function invalidateD3D8TextureContentState(textureId) {
+  const id = Number(textureId ?? 0) >>> 0;
+  if (id === 0) {
+    return;
+  }
+  const startedAt = d3d8PerfTimingEnabled ? perfNow() : 0;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTextureContentInvalidations += 1;
+  const currentEntryUsesTexture = d3d8DerivedDrawCacheEntryUsesTexture(d3d8LastDrawKey, id);
+  let invalidatedEntries = 0;
+  for (let entry = d3d8DerivedDrawCacheOldest; entry;) {
+    const next = entry.lruNext;
+    if (d3d8DerivedDrawCacheEntryUsesTexture(entry, id) &&
+        deleteD3D8DerivedDrawCacheEntry(entry)) {
+      invalidatedEntries += 1;
+    }
+    entry = next;
+  }
+  if (d3d8PerfCountersEnabled) {
+    d3d8PerfStats.drawTextureContentInvalidatedEntries += invalidatedEntries;
+  }
+  if (currentEntryUsesTexture) {
+    d3d8LastDrawKey = null;
+    d3d8CachedDerived = null;
+    // Content uploads can change readiness, legacy semantic swizzles, and the
+    // implicit alpha-cutout decision. Only the texture-layout group depends
+    // on those values; render state, transforms, and the active GL program do
+    // not.
+    harnessState.graphics.lastD3D8TextureUniformKey = null;
+  }
+  if (d3d8PerfTimingEnabled) {
+    d3d8PerfStats.drawTextureContentInvalidationMs += perfNow() - startedAt;
+  }
 }
 
 function d3d8DerivedDrawCacheEntryMatches(
@@ -1373,18 +1444,7 @@ function evictOldestD3D8DerivedDrawCacheEntry() {
   if (!entry) {
     return;
   }
-  const bucket = d3d8DerivedDrawCache.get(entry.derivedStateHash);
-  const bucketIndex = bucket?.indexOf(entry) ?? -1;
-  unlinkD3D8DerivedDrawCacheEntry(entry);
-  if (bucketIndex < 0) {
-    d3d8DerivedDrawCacheEntries = Math.max(0, d3d8DerivedDrawCacheEntries - 1);
-    return;
-  }
-  bucket.splice(bucketIndex, 1);
-  d3d8DerivedDrawCacheEntries -= 1;
-  if (bucket.length === 0) {
-    d3d8DerivedDrawCache.delete(entry.derivedStateHash);
-  }
+  deleteD3D8DerivedDrawCacheEntry(entry);
 }
 
 function rememberD3D8DerivedDrawCacheEntry(
@@ -6235,11 +6295,12 @@ function updateD3D8Texture(payload = {}) {
   const levelKey = String(level);
   const levelInitialized = resource.initializedLevels.has(levelKey);
   const levelFormat = resource.levelFormats.get(levelKey);
+  const storageChanged = !levelInitialized || levelFormat !== info.storage;
   // An FBO stays complete across ordinary texSubImage2D writes. If an upload
   // actually changes level-0 storage, discard any cached attachment now so the
   // next SetRenderTarget recreates and validates it once. This makes a
   // synchronous checkFramebufferStatus on every render-target bind unnecessary.
-  if (level === 0 && (!levelInitialized || levelFormat !== info.storage)) {
+  if (level === 0 && storageChanged) {
     releaseD3D8FramebufferEntriesForTexture(id);
   }
   let swizzleApplied = resource.swizzleApplied || null;
@@ -6247,7 +6308,7 @@ function updateD3D8Texture(payload = {}) {
   withPreservedD3D8TextureUnit(() => {
     gl.bindTexture(gl.TEXTURE_2D, resource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    if (!levelInitialized || levelFormat !== info.storage) {
+    if (storageChanged) {
       if (info.compressed && !info.dxtDecode) {
         gl.compressedTexImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0, uploadBytes);
       } else if (x === 0 && y === 0 && width === levelSize.width && height === levelSize.height) {
@@ -6277,7 +6338,17 @@ function updateD3D8Texture(payload = {}) {
   if (level0AlphaCoverage !== undefined) {
     resource.alphaCoverage = level0AlphaCoverage;
   }
-  invalidateD3D8DrawStateCache();
+  if (storageChanged) {
+    // Allocating different storage can invalidate an attached framebuffer and
+    // changes texture readiness, so retain the conservative full reset.
+    invalidateD3D8DrawStateCache();
+  } else {
+    // texSubImage2D changes this texture's contents but preserves the current
+    // program, render state, transforms, viewport, and vertex-array bindings.
+    // Retain those exact caches and discard only derived entries whose texture
+    // readiness/semantic/alpha decisions depend on this resource.
+    invalidateD3D8TextureContentState(id);
+  }
 
   resource.uploads += 1;
   d3d8TextureStats.updates += 1;
