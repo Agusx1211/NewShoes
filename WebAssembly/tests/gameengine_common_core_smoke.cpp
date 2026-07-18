@@ -1101,13 +1101,27 @@ bool exercise_cached_file_input_stream()
 	}
 
 	char readback[sizeof(payload)] = {};
+	const Int negative_bytes_read = input.read(readback, -1);
+	const bool negative_read_ok =
+		expect(negative_bytes_read == 0, "CachedFileInputStream accepted a negative read size") &&
+		expect(input.tell() == 0, "CachedFileInputStream advanced after a negative read size") &&
+		expect(readback[0] == '\0', "CachedFileInputStream copied data for a negative read size");
 	const Int bytes_read = input.read(readback, payload_size);
+	const Bool exact_read_eof = input.eof();
+	const Bool clamp_seek_ok = input.absoluteSeek(1);
+	char clamped_readback[sizeof(payload)] = {};
+	const Int clamped_bytes_read = input.read(clamped_readback, payload_size);
 	const bool read_ok =
+		negative_read_ok &&
 		expect(bytes_read == payload_size, "CachedFileInputStream read size failed") &&
 		expect(std::memcmp(readback, payload, payload_size) == 0,
 			"CachedFileInputStream decompressed payload mismatch") &&
-		expect(input.eof(), "CachedFileInputStream eof failed") &&
-		expect(input.absoluteSeek(0) && input.tell() == 0, "CachedFileInputStream seek/tell failed");
+		expect(exact_read_eof, "CachedFileInputStream eof failed") &&
+		expect(clamp_seek_ok && clamped_bytes_read == payload_size - 1,
+			"CachedFileInputStream did not clamp a read to the remaining bytes") &&
+		expect(std::memcmp(clamped_readback, payload + 1, payload_size - 1) == 0,
+			"CachedFileInputStream clamped read payload mismatch") &&
+		expect(input.eof(), "CachedFileInputStream clamped read did not reach eof");
 
 	input.close();
 	TheFileSystem = nullptr;
