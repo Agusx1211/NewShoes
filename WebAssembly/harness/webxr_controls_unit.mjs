@@ -163,6 +163,7 @@ assert.ok(actions.some((action) => action.type === "key"
 assert.ok(actions.some((action) => action.type === "key"
   && action.code === "Numpad8" && action.down === true));
 
+right.gamepad.axes = [0, 0];
 rightButtons[4] = button(true);
 rightButtons[5] = button(true);
 rightButtons[3] = button(true);
@@ -171,6 +172,8 @@ assert.ok(actions.some((action) => action.type === "key"
   && action.code === "KeyA" && action.down === true));
 assert.ok(actions.some((action) => action.type === "key"
   && action.code === "Escape" && action.down === true));
+rightButtons[3] = button();
+controls.update({ ...panel, time: 56, inputSources: [left, right] });
 assert.ok(actions.some((action) => action.type === "recenter"));
 
 left.gamepad.axes = [0, 0];
@@ -289,13 +292,52 @@ fallbackUpdate(130);
 assert.notEqual(findAction(fallbackActions,
   { type: "key", code: "Numpad6", down: true }, fallbackStart), -1);
 assert.notEqual(findAction(fallbackActions,
-  { type: "key", code: "Numpad8", down: true }, fallbackStart), -1);
+  { type: "wheel", steps: 1 }, fallbackStart), -1);
+assert.equal(findAction(fallbackActions,
+  { type: "key", code: "Numpad8", down: true }, fallbackStart), -1,
+"one-controller vertical camera input must not double-apply key and wheel zoom");
 rightButtons[5] = button();
 right.gamepad.axes = [0, 0];
 fallbackUpdate(140);
 assert.equal(findAction(fallbackActions,
   { type: "key", code: "Escape", down: true }, fallbackStart), -1,
 "using the one-controller camera layer must suppress its cancel tap");
+
+const scrollActions = [];
+const scrollControls = createWebXrControls({ onAction: (action) => scrollActions.push(action) });
+const scrollLeft = {
+  handedness: "left",
+  targetRayPose: { matrix: transform({ x: 2.1, y: 1, z: 3 }) },
+  gamepad: { axes: [0, 0], buttons: buttons() },
+};
+const scrollRightButtons = buttons();
+const scrollRight = {
+  handedness: "right",
+  targetRayPose: { matrix: transform({ x: 2, y: 1, z: 3 }) },
+  gamepad: { axes: [0, -0.8], buttons: scrollRightButtons },
+};
+scrollRightButtons[3] = button(true);
+scrollControls.update({ ...panel, time: 0, inputSources: [scrollLeft, scrollRight] });
+assert.notEqual(findAction(scrollActions, { type: "wheel", steps: 1 }), -1,
+  "dominant stick-click plus vertical stick must scroll through the original wheel path");
+const firstScrollCount = scrollActions.filter((action) => action.type === "wheel").length;
+scrollControls.update({ ...panel, time: 200, inputSources: [scrollLeft, scrollRight] });
+assert.equal(scrollActions.filter((action) => action.type === "wheel").length, firstScrollCount,
+  "held UI scroll must respect its initial repeat delay");
+scrollControls.update({ ...panel, time: 350, inputSources: [scrollLeft, scrollRight] });
+assert.equal(scrollActions.filter((action) => action.type === "wheel").length,
+  firstScrollCount + 1, "held UI scroll must repeat after its initial delay");
+scrollRight.gamepad.axes = [0, 0];
+scrollRightButtons[3] = button();
+scrollControls.update({ ...panel, time: 360, inputSources: [scrollLeft, scrollRight] });
+assert.equal(scrollActions.some((action) => action.type === "recenter"), false,
+  "using stick-click to scroll must suppress the recenter tap");
+scrollRightButtons[3] = button(true);
+scrollControls.update({ ...panel, time: 400, inputSources: [scrollLeft, scrollRight] });
+scrollRightButtons[3] = button();
+scrollControls.update({ ...panel, time: 410, inputSources: [scrollLeft, scrollRight] });
+assert.equal(scrollActions.some((action) => action.type === "recenter"), true,
+  "a neutral dominant stick-click must still recenter on release");
 
 const customActions = [];
 const custom = createWebXrControls({

@@ -72,9 +72,10 @@ ordered Win32/DirectInput bridge as desktop input:
 
 - dominant trigger/squeeze: engine left/right click for selection, drag, menu
   activation, and contextual orders;
-- dominant thumbstick: held original numpad camera rotate/zoom bindings;
-- dominant A/X and B/Y: original attack-move and cancel hotkeys; dominant
-  stick-click recenters the spatial anchor;
+- dominant thumbstick: held original numpad camera rotate/zoom bindings; holding
+  stick-click changes the vertical axis to the original mouse-wheel path for
+  engine-owned scrolling/zoom, while a neutral stick-click recenters;
+- dominant A/X and B/Y: original attack-move and cancel hotkeys;
 - offhand thumbstick: held original arrow-key camera pan, or a ten-sector
   original digit/control-group radial while stick-click is held;
 - offhand trigger, squeeze, and A/X: held original Alt waypoint, Ctrl
@@ -91,18 +92,20 @@ remaining real-headset readability, text-entry, scrolling, and full-flow
 usability evidence.
 
 When only one tracked controller is available, its stick pans normally. Holding
-B/Y changes the stick to original camera rotate/zoom, stick-click selects one of
-all ten control groups, auxiliary holds Ctrl, stick-click without a radial
-direction holds Alt, and A/X holds Shift. Tapping A/X or B/Y still reaches
-attack-move or cancel; pressing both recenters without firing either tap action.
-Holding B/Y while choosing a radial group supplies the original Alt/view-group
-modifier. These are controller layers only: no engine command is synthesized in
-JavaScript. Configurable dominant hand, button indices, key bindings, and
-press/release dead zones are accepted by the controls module for controller
-profile and accessibility remapping. XR-standard missing buttons simply leave
-their action inactive rather than inventing a success path. Short optional
-haptic pulses acknowledge target clicks, orders, and control-group choices when
-the active controller exposes a supported actuator.
+B/Y changes horizontal stick movement to original camera rotation and vertical
+movement to the original mouse-wheel path, which lets engine windows scroll and
+the battlefield camera zoom according to the original window under the pointer.
+Stick-click selects one of all ten control groups, auxiliary holds Ctrl,
+stick-click without a radial direction holds Alt, and A/X holds Shift. Tapping
+A/X or B/Y still reaches attack-move or cancel; pressing both recenters without
+firing either tap action. Holding B/Y while choosing a radial group supplies the
+original Alt/view-group modifier. These are controller layers only: no engine
+command is synthesized in JavaScript. Configurable dominant hand, button
+indices, key bindings, and press/release dead zones are accepted by the controls
+module for controller profile and accessibility remapping. XR-standard missing
+buttons simply leave their action inactive rather than inventing a success
+path. Short optional haptic pulses acknowledge target clicks, orders, and
+control-group choices when the active controller exposes a supported actuator.
 
 The compositor renders one active tracked laser independently in each XR view
 after world and panel composition. Magenta plus an endpoint identifies an exact

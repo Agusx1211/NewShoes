@@ -1,5 +1,7 @@
 const PRESS_THRESHOLD = 0.55;
 const RELEASE_THRESHOLD = 0.35;
+const SCROLL_INITIAL_REPEAT_MS = 320;
+const SCROLL_REPEAT_MS = 110;
 
 export const DEFAULT_WEBXR_CONTROL_BINDINGS = Object.freeze({
   dominantHand: "right",
@@ -253,6 +255,9 @@ export function createWebXrControls({
     setKey(sourceState, "verticalKey", null);
     sourceState.primaryDown = false;
     sourceState.secondaryDown = false;
+    sourceState.thumbstickUsed = false;
+    sourceState.scrollDirection = null;
+    sourceState.scrollNextTime = 0;
   }
 
   function setModifier(name, code, down) {
@@ -288,6 +293,9 @@ export function createWebXrControls({
       secondaryActionUsed: false,
       groupChosen: false,
       recenterChordDown: false,
+      thumbstickUsed: false,
+      scrollDirection: null,
+      scrollNextTime: 0,
       lastTarget: null,
     };
   }
@@ -313,7 +321,27 @@ export function createWebXrControls({
     return `anonymous-${id}:${source?.handedness ?? "none"}`;
   }
 
+  function updateScroll(sourceState, target, axisY, time, enabled) {
+    const direction = enabled && target ? desiredAxisState(axisY, 1, -1,
+      sourceState.scrollDirection, config.pressThreshold, config.releaseThreshold) : null;
+    if (direction === null) {
+      sourceState.scrollDirection = null;
+      sourceState.scrollNextTime = 0;
+      return false;
+    }
+    const now = Number.isFinite(Number(time)) ? Number(time) : 0;
+    const changed = direction !== sourceState.scrollDirection;
+    if (changed || now >= sourceState.scrollNextTime) {
+      emit({ type: "wheel", steps: direction, ...actionTarget(target) });
+      sourceState.scrollNextTime = now
+        + (changed ? SCROLL_INITIAL_REPEAT_MS : SCROLL_REPEAT_MS);
+    }
+    sourceState.scrollDirection = direction;
+    return true;
+  }
+
   function update({
+    time = 0,
     inputSources = [],
     anchorTransform,
     panelWidthMeters,
@@ -452,13 +480,20 @@ export function createWebXrControls({
       if (paired && sourceState.role === "dominant") {
         if (primaryActionDown && !sourceState.primaryActionDown) stroke(config.keys.attackMove);
         if (secondaryActionDown && !sourceState.secondaryActionDown) stroke(config.keys.cancel);
-        if (thumbstickDown && !sourceState.thumbstickDown) emit({ type: "recenter" });
+        const scrolling = updateScroll(sourceState, target, axisY, time, thumbstickDown);
+        if (scrolling) sourceState.thumbstickUsed = true;
+        if (!thumbstickDown && sourceState.thumbstickDown && !sourceState.thumbstickUsed) {
+          emit({ type: "recenter" });
+        }
+        if (!thumbstickDown) sourceState.thumbstickUsed = false;
         setKey(sourceState, "horizontalKey",
-          desiredAxisState(axisX, config.keys.rotateLeft, config.keys.rotateRight,
-            sourceState.horizontalKey, config.pressThreshold, config.releaseThreshold));
+          thumbstickDown ? null
+            : desiredAxisState(axisX, config.keys.rotateLeft, config.keys.rotateRight,
+              sourceState.horizontalKey, config.pressThreshold, config.releaseThreshold));
         setKey(sourceState, "verticalKey",
-          desiredAxisState(axisY, config.keys.zoomIn, config.keys.zoomOut,
-            sourceState.verticalKey, config.pressThreshold, config.releaseThreshold));
+          thumbstickDown ? null
+            : desiredAxisState(axisY, config.keys.zoomIn, config.keys.zoomOut,
+              sourceState.verticalKey, config.pressThreshold, config.releaseThreshold));
       } else if (paired) {
         if (groupCode && !sourceState.groupChosen) {
           stroke(groupCode);
@@ -499,13 +534,14 @@ export function createWebXrControls({
             || Math.abs(axisY) >= config.pressThreshold)) {
           sourceState.secondaryActionUsed = true;
         }
+        const scrolling = updateScroll(sourceState, target, axisY, time, cameraMode);
         setKey(sourceState, "horizontalKey",
           groupCode ? null : desiredAxisState(axisX,
             cameraMode ? config.keys.rotateLeft : config.keys.panLeft,
             cameraMode ? config.keys.rotateRight : config.keys.panRight,
             sourceState.horizontalKey, config.pressThreshold, config.releaseThreshold));
         setKey(sourceState, "verticalKey",
-          groupCode ? null : desiredAxisState(axisY,
+          groupCode || scrolling ? null : desiredAxisState(axisY,
             cameraMode ? config.keys.zoomIn : config.keys.panUp,
             cameraMode ? config.keys.zoomOut : config.keys.panDown,
             sourceState.verticalKey, config.pressThreshold, config.releaseThreshold));

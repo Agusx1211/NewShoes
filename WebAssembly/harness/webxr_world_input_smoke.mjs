@@ -590,19 +590,31 @@ try {
   await waitForSelectionMode(page, "single-controller selection release",
     (modes) => modes.preferSelection === false);
 
+  const cameraBeforeWheel = await fullFrame(page);
+  const cameraHeightBeforeWheel = Number(
+    cameraBeforeWheel?.clientState?.view?.currentHeightAboveGround,
+  );
+  assert.ok(Number.isFinite(cameraHeightBeforeWheel),
+    `real camera height is unavailable: ${JSON.stringify(cameraBeforeWheel?.clientState?.view)}`);
   await page.evaluate(() => {
     window.__emulatedXrButton(5, true);
     window.__emulatedXrAxes(0.8, -0.8);
   });
   await waitForSelectionMode(page, "single-controller camera layer", (modes) =>
-    modes.cameraRotateRight === true && modes.cameraZoomIn === true);
+    modes.cameraRotateRight === true && modes.cameraZoomIn === false);
+  const cameraAfterWheel = await waitForFrame(page, "single-controller wheel zoom",
+    (candidate) => Number(candidate?.clientState?.view?.currentHeightAboveGround)
+      < cameraHeightBeforeWheel - 1);
+  const cameraHeightAfterWheel = Number(
+    cameraAfterWheel.clientState.view.currentHeightAboveGround,
+  );
   await page.evaluate(() => {
     window.__emulatedXrAxes(0, 0);
     window.__emulatedXrButton(5, false);
   });
   await waitForSelectionMode(page, "single-controller camera release", (modes) =>
     modes.cameraRotateRight === false && modes.cameraZoomIn === false);
-  stage("original modifier and camera translators accepted controller layers");
+  stage("original modifier, camera-key, and mouse-wheel translators accepted controller layers");
 
   await page.evaluate(() => {
     window.__emulatedXrButton(2, true);
@@ -664,6 +676,10 @@ try {
     audioHeadOffset: movedListener.lastListener.xrOffset,
     audioListenerRestored: restoredListener.webXrListenerActive === false,
     modalFlow,
+    wheelCameraZoom: {
+      before: cameraHeightBeforeWheel,
+      after: cameraHeightAfterWheel,
+    },
   }));
 } finally {
   await browser.close();
