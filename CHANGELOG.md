@@ -20,6 +20,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Inline hot PlayerList indexed lookups ([PR #283](https://github.com/Agusx1211/NewShoes/pull/283)).
 - Fix Contra X rider-template startup crashes caused by empty slots ([PR #290](https://github.com/Agusx1211/NewShoes/pull/290)).
 - Restore authentic right-drag sensitivity and browser edge scrolling ([PR #291](https://github.com/Agusx1211/NewShoes/pull/291)).
+- Set version 0.5.0 and complete its audited release inventory ([PR #293](https://github.com/Agusx1211/NewShoes/pull/293)).
 
 ## [0.4.0] - 2026-07-19
 
