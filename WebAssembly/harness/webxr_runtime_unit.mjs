@@ -18,10 +18,15 @@ class FakeSession {
     this.referenceSpaceRequests = [];
     this.renderState = null;
     this.ended = false;
+    this.visibilityState = "visible";
   }
 
   addEventListener(type, listener) {
     this.listeners.set(type, listener);
+  }
+
+  removeEventListener(type, listener) {
+    if (this.listeners.get(type) === listener) this.listeners.delete(type);
   }
 
   updateRenderState(state) {
@@ -48,6 +53,11 @@ class FakeSession {
     const callback = this.frameCallbacks.shift();
     assert.ok(callback, "an XR animation frame must be scheduled");
     callback(time, frame);
+  }
+
+  fireVisibility(visibilityState) {
+    this.visibilityState = visibilityState;
+    this.listeners.get("visibilitychange")?.();
   }
 }
 
@@ -133,6 +143,9 @@ const renderer = {
   },
   renderFrame(context) {
     rendererEvents.push(["frame", context]);
+  },
+  onSessionVisibilityChange(context) {
+    rendererEvents.push(["visibility", context.visibilityState]);
   },
   onSessionEnd(context) {
     rendererEvents.push(["end", context.reason]);
@@ -220,6 +233,8 @@ assert.deepEqual(runtime.snapshot(), {
   lastFrameTime: 123.5,
   viewCount: 2,
   inputSourceCount: 1,
+  visibilityState: "visible",
+  inputSuspended: false,
   framebuffer: { width: 2048, height: 1024 },
   error: null,
 });
@@ -229,11 +244,43 @@ assert.equal(serializeWebXrViews({ views: [leftView] }, session.renderState.base
 assert.equal(serializeWebXrInputSources(frame, { type: "local-floor" }, session.inputSources)[0]
   .profiles[0], "oculus-touch-v3");
 
+session.fireVisibility("visible-blurred");
+assert.equal(runtime.snapshot().visibilityState, "visible-blurred");
+assert.equal(runtime.snapshot().inputSuspended, true);
+assert.deepEqual(rendererEvents.at(-1), ["visibility", "visible-blurred"]);
+session.fireVisibility("visible");
+assert.equal(runtime.snapshot().inputSuspended, false);
+assert.deepEqual(rendererEvents.at(-1), ["visibility", "visible"]);
+
 await runtime.stop("unit-test");
 assert.equal(runtime.snapshot().phase, "ready");
 assert.equal(rendererEvents.at(-1)[0], "end");
 assert.equal(rendererEvents.at(-1)[1], "session-ended");
 assert.ok(stateChanges.some((state) => state.phase === "starting"));
 assert.ok(stateChanges.some((state) => state.phase === "running"));
+
+const failedSession = new FakeSession();
+const startFailureRuntime = createWebXrRuntime({
+  navigatorLike: { xr: {
+    isSessionSupported: async () => true,
+    requestSession: async () => failedSession,
+  } },
+  secureContext: true,
+  XRWebGLLayerCtor: FakeLayer,
+});
+await startFailureRuntime.probe();
+await assert.rejects(startFailureRuntime.start({
+  gl: {
+    bindFramebuffer() {},
+    async makeXRCompatible() {
+      throw new Error("XR compatibility failed");
+    },
+  },
+  renderFrame() {},
+}), /XR compatibility failed/);
+assert.equal(failedSession.ended, true,
+  "a failed session start must end the acquired XR session");
+assert.equal(failedSession.listeners.has("visibilitychange"), false,
+  "a failed session start must remove its visibility listener");
 
 console.log("WebXR runtime unit: PASS");

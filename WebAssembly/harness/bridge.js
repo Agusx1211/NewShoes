@@ -25336,11 +25336,13 @@ let webXrRuntimeController = null;
 let webXrRuntimeLoadPromise = null;
 
 function publishWebXrState(runtimeState) {
+  const renderer = threadedEngine?.webXrD3D8Renderer?.snapshot?.()
+    ?? harnessState.webxr.renderer;
   harnessState.webxr = {
     source: "window_webxr_runtime",
     moduleLoaded: webXrRuntimeController !== null,
     rendererTransport: harnessState.webxr.rendererTransport,
-    renderer: harnessState.webxr.renderer,
+    renderer,
     ...runtimeState,
   };
   try {

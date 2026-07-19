@@ -551,6 +551,10 @@ export function createWebXrD3D8Renderer({
     controllerPointer: null,
     enginePickRayReady: false,
     recenterCount: 0,
+    visibilityState: null,
+    inputSuspended: false,
+    inputWaitingForNeutral: false,
+    inputNeutralBlockers: [],
     comfort: {
       worldScale: configuredWorldScale,
       panelWidthMeters: configuredPanelWidth,
@@ -622,6 +626,8 @@ export function createWebXrD3D8Renderer({
         inputSourceCount: Number(frameContext.inputSources?.length ?? 0),
         controllerPointer: controlsState.pointer,
         enginePickRayReady: latestEngineView !== null,
+        inputWaitingForNeutral: controlsState.waitingForNeutral,
+        inputNeutralBlockers: controlsState.neutralBlockers,
       };
     }
     if (!pending) return;
@@ -771,13 +777,37 @@ export function createWebXrD3D8Renderer({
     }
   }
 
-  function onSessionStart() {
+  function onSessionVisibilityChange({ visibilityState = "visible" } = {}) {
+    const normalized = String(visibilityState || "visible");
+    const inputSuspended = normalized !== "visible";
+    if (inputSuspended) {
+      controls.suspend();
+      onInputAction?.({ type: "pickRay", ray: null });
+    }
+    const controlsState = controls.snapshot();
+    return publish({
+      visibilityState: normalized,
+      inputSuspended,
+      inputWaitingForNeutral: controlsState.waitingForNeutral,
+      inputNeutralBlockers: controlsState.neutralBlockers,
+      controllerPointer: inputSuspended ? null : controlsState.pointer,
+    });
+  }
+
+  function onSessionStart({ session = null } = {}) {
     active = true;
     anchorTransform = null;
     recenterRequested = false;
     latestEngineView = null;
     onInputAction?.({ type: "pickRay", ray: null });
-    return publish({ active: true, enginePickRayReady: false, error: null });
+    const visibilityState = String(session?.visibilityState ?? "visible");
+    const inputSuspended = visibilityState !== "visible";
+    if (inputSuspended) controls.suspend();
+    const controlsState = controls.snapshot();
+    return publish({ active: true, enginePickRayReady: false, visibilityState,
+      inputSuspended, inputWaitingForNeutral: controlsState.waitingForNeutral,
+      inputNeutralBlockers: controlsState.neutralBlockers,
+      error: null });
   }
 
   function onSessionEnd() {
@@ -790,7 +820,8 @@ export function createWebXrD3D8Renderer({
     finishPending(false);
     executorDiag.setD3D8XrViewOverride(null);
     return publish({ active: false, inputSourceCount: 0, controllerPointer: null,
-      enginePickRayReady: false, pointerDraws: 0 });
+      enginePickRayReady: false, pointerDraws: 0, visibilityState: null,
+      inputSuspended: false, inputWaitingForNeutral: false, inputNeutralBlockers: [] });
   }
 
   return {
@@ -798,6 +829,7 @@ export function createWebXrD3D8Renderer({
     acceptFrame,
     renderFrame,
     onSessionStart,
+    onSessionVisibilityChange,
     onSessionEnd,
     getControlsState: () => controls.snapshot(),
     snapshot: () => ({ ...state }),

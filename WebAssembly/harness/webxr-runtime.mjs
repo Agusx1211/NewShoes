@@ -127,6 +127,8 @@ export function createWebXrRuntime({
     lastFrameTime: null,
     viewCount: 0,
     inputSourceCount: 0,
+    visibilityState: null,
+    inputSuspended: false,
     framebuffer: null,
     error: null,
   };
@@ -194,6 +196,7 @@ export function createWebXrRuntime({
       const current = active;
       if (!current || current.session !== session) return snapshot();
       active = null;
+      current.session.removeEventListener?.("visibilitychange", current.visibilityListener);
       try {
         await current.renderer.onSessionEnd?.({ reason, error });
       } catch (cleanupError) {
@@ -202,6 +205,8 @@ export function createWebXrRuntime({
       return publish({
         phase: error ? "failed" : "ready",
         referenceSpaceType: null,
+        visibilityState: null,
+        inputSuspended: false,
         framebuffer: null,
         error: error ? errorText(error) : null,
       });
@@ -210,6 +215,26 @@ export function createWebXrRuntime({
       return await finalizePromise;
     } finally {
       finalizePromise = null;
+    }
+  }
+
+  function handleSessionVisibility(session) {
+    const current = active;
+    if (!current || current.session !== session) return;
+    const visibilityState = String(session.visibilityState ?? "visible");
+    const inputSuspended = visibilityState !== "visible";
+    try {
+      current.renderer.onSessionVisibilityChange?.({
+        session,
+        visibilityState,
+        inputSuspended,
+      });
+      publish({ visibilityState, inputSuspended });
+    } catch (error) {
+      publish({ phase: "failed", error: errorText(error) });
+      void session.end()
+        .catch(() => {})
+        .finally(() => finalizeSession(session, "visibility-error", error));
     }
   }
 
@@ -284,12 +309,15 @@ export function createWebXrRuntime({
     publish({ phase: "starting", error: null });
     startPromise = (async () => {
       let session = null;
+      let visibilityListener = null;
       try {
         session = await sessionRequest;
         const endListener = () => {
           void finalizeSession(session, "session-ended");
         };
+        visibilityListener = () => handleSessionVisibility(session);
         session.addEventListener("end", endListener, { once: true });
+        session.addEventListener("visibilitychange", visibilityListener);
 
         await gl.makeXRCompatible();
         const layer = new XRWebGLLayerCtor(session, gl, {
@@ -309,7 +337,8 @@ export function createWebXrRuntime({
           referenceSpace = await session.requestReferenceSpace(referenceSpaceType);
         }
 
-        active = { session, renderer, gl, layer, referenceSpace, referenceSpaceType };
+        active = { session, renderer, gl, layer, referenceSpace, referenceSpaceType,
+          visibilityListener };
         await renderer.onSessionStart?.({
           session,
           gl,
@@ -324,6 +353,8 @@ export function createWebXrRuntime({
           lastFrameTime: null,
           viewCount: 0,
           inputSourceCount: Number(session.inputSources?.length ?? 0),
+          visibilityState: String(session.visibilityState ?? "visible"),
+          inputSuspended: String(session.visibilityState ?? "visible") !== "visible",
           framebuffer: {
             width: finiteNumber(layer.framebufferWidth),
             height: finiteNumber(layer.framebufferHeight),
@@ -334,6 +365,7 @@ export function createWebXrRuntime({
         return snapshot();
       } catch (error) {
         if (session) {
+          session.removeEventListener?.("visibilitychange", visibilityListener);
           try {
             await session.end();
           } catch (_endError) {
@@ -344,6 +376,8 @@ export function createWebXrRuntime({
         publish({
           phase: "failed",
           referenceSpaceType: null,
+          visibilityState: null,
+          inputSuspended: false,
           framebuffer: null,
           error: errorText(error),
         });

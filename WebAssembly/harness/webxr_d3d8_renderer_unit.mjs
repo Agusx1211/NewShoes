@@ -158,6 +158,10 @@ assert.deepEqual(renderer.snapshot(), {
   controllerPointer: null,
   enginePickRayReady: true,
   recenterCount: 0,
+  visibilityState: "visible",
+  inputSuspended: false,
+  inputWaitingForNeutral: false,
+  inputNeutralBlockers: [],
   comfort: {
     worldScale: 1,
     panelWidthMeters: 1.6,
@@ -170,21 +174,22 @@ assert.deepEqual(renderer.snapshot(), {
   error: null,
 });
 
-renderer.renderFrame({
+const trackedButtons = Array.from({ length: 6 }, (_, index) =>
+  ({ pressed: index === 0, value: index === 0 ? 1 : 0 }));
+const trackedSource = {
+  handedness: "right",
+  profiles: ["generic-trigger-squeeze-thumbstick"],
+  targetRayPose: { matrix: identity },
+  gamepad: { axes: [0, 0], buttons: trackedButtons },
+};
+const trackedFrame = {
   time: 20,
   pose: { transform: { matrix: identity } },
   views: [view],
-  inputSources: [{
-    handedness: "right",
-    profiles: ["generic-trigger-squeeze-thumbstick"],
-    targetRayPose: { matrix: identity },
-    gamepad: {
-      axes: [0, 0],
-      buttons: Array.from({ length: 6 }, (_, index) => ({ pressed: index === 0, value: index === 0 ? 1 : 0 })),
-    },
-  }],
+  inputSources: [trackedSource],
   layer: { framebuffer: {}, framebufferWidth: 1600, framebufferHeight: 900 },
-});
+};
+renderer.renderFrame(trackedFrame);
 assert.ok(inputActions.some((action) => action.type === "pointer"
   && action.target === "ui"
   && action.point.x === 640 && action.point.y === 360
@@ -193,6 +198,22 @@ assert.ok(inputActions.some((action) => action.type === "pointer"
 assert.ok(inputActions.some((action) => action.type === "button"
   && action.button === "primary" && action.down === true),
 "controller trigger must enter the original engine input bridge");
+renderer.onSessionVisibilityChange({ visibilityState: "visible-blurred" });
+assert.equal(renderer.snapshot().inputSuspended, true);
+assert.equal(renderer.snapshot().controllerPointer, null);
+assert.ok(inputActions.some((action) => action.type === "button"
+  && action.button === "primary" && action.down === false),
+"losing exclusive XR visibility must release held engine input");
+renderer.onSessionVisibilityChange({ visibilityState: "visible" });
+assert.equal(renderer.getControlsState().waitingForNeutral, true,
+  "resuming XR input must wait for controllers to return to neutral");
+renderer.renderFrame({ ...trackedFrame, time: 30 });
+assert.equal(renderer.snapshot().controllerPointer, null);
+trackedButtons[0] = { pressed: false, value: 0 };
+renderer.renderFrame({ ...trackedFrame, time: 40 });
+assert.equal(renderer.getControlsState().waitingForNeutral, false);
+assert.equal(renderer.snapshot().controllerPointer?.target, "ui",
+  "neutral controls must re-arm tracked pointing after visibility resumes");
 renderer.onSessionEnd();
 assert.ok(inputActions.some((action) => action.type === "button"
   && action.button === "primary" && action.down === false),

@@ -207,6 +207,7 @@ try {
         this.inputSources = [inputSource];
         this.renderState = null;
         this.ended = false;
+        this.visibilityState = "visible";
         this.timers = new Set();
       }
 
@@ -323,6 +324,16 @@ try {
     window.__emulatedXrAxes = (x, y) => {
       inputSource.gamepad.axes = [Number(x), Number(y)];
     };
+    window.__emulatedXrNeutral = () => {
+      inputSource.gamepad.axes = [0, 0];
+      for (let index = 0; index < inputSource.gamepad.buttons.length; index += 1) {
+        inputSource.gamepad.buttons[index] = { pressed: false, touched: false, value: 0 };
+      }
+    };
+    window.__emulatedXrVisibility = (visibilityState) => {
+      session.visibilityState = String(visibilityState);
+      session.dispatchEvent(new Event("visibilitychange"));
+    };
   });
 
   const page = await browser.newPage();
@@ -389,10 +400,7 @@ try {
   });
   await waitForSelectionMode(page, "single-controller force-fire layer",
     (modes) => modes.forceAttack === true);
-  await page.evaluate(() => {
-    window.__emulatedXrTrigger(false);
-    window.__emulatedXrButton(2, false);
-  });
+  await page.evaluate(() => window.__emulatedXrNeutral());
   await waitForSelectionMode(page, "single-controller force-fire release",
     (modes) => modes.forceAttack === false);
 
@@ -423,6 +431,38 @@ try {
   await waitForSelectionMode(page, "single-controller camera release", (modes) =>
     modes.cameraRotateRight === false && modes.cameraZoomIn === false);
   stage("original modifier and camera translators accepted controller layers");
+
+  await page.evaluate(() => {
+    window.__emulatedXrButton(2, true);
+    window.__emulatedXrTrigger(true);
+  });
+  await waitForSelectionMode(page, "pre-suspension held input",
+    (modes) => modes.forceAttack === true);
+  await page.evaluate(() => window.__emulatedXrVisibility("visible-blurred"));
+  await page.waitForFunction(() =>
+    window.CnCPort.getWebXrState().renderer?.inputSuspended === true);
+  await waitForSelectionMode(page, "visibility suspension release",
+    (modes) => modes.forceAttack === false);
+  const suspendedRay = await rpc(page, "webxrPickRayState");
+  assert.equal(suspendedRay.result.active, false,
+    "losing exclusive XR visibility must clear the native pick ray");
+
+  await page.evaluate(() => window.__emulatedXrVisibility("visible"));
+  await page.waitForFunction(() =>
+    window.CnCPort.getWebXrState().renderer?.inputSuspended === false);
+  await page.waitForTimeout(250);
+  const heldAfterResume = await rpc(page, "querySelection");
+  assert.equal(heldAfterResume.result.modes.forceAttack, false,
+    "held controls must not reactivate before returning to neutral");
+  assert.equal((await rpc(page, "webxrPickRayState")).result.active, false,
+    "a held trigger must not restore the pick ray on visibility resume");
+  await page.evaluate(() => window.__emulatedXrNeutral());
+  stage(`neutral controller state: ${JSON.stringify(await page.evaluate(() => ({
+    axes: window.__emulatedXrSession.inputSources[0].gamepad.axes,
+    buttons: window.__emulatedXrSession.inputSources[0].gamepad.buttons,
+  })))}`);
+  await waitForEngineRay(page);
+  stage("visibility suspension released input and resumed only after neutral");
 
   await page.evaluate(() => window.CnCPort.stopWebXrSession("world-input-smoke"));
   await page.waitForFunction(async () => {

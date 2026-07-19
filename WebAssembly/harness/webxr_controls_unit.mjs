@@ -326,4 +326,30 @@ anonymous.update({ ...panel, inputSources: [
 assert.equal(anonymous.snapshot().sourceCount, 2,
   "controllers without handedness or browser IDs must retain separate state");
 
+const resumeActions = [];
+const resumeControls = createWebXrControls({ onAction: (action) => resumeActions.push(action) });
+const resumeButtons = buttons();
+const resumeSource = {
+  handedness: "right",
+  targetRayPose: { matrix: transform({ x: 2, y: 1, z: 3 }) },
+  gamepad: { axes: [0, 0], buttons: resumeButtons },
+};
+resumeButtons[0] = button(true);
+resumeControls.update({ ...panel, inputSources: [resumeSource] });
+resumeControls.suspend();
+const resumeStart = resumeActions.length;
+resumeControls.update({ ...panel, inputSources: [resumeSource] });
+assert.equal(resumeControls.snapshot().waitingForNeutral, true);
+assert.equal(findAction(resumeActions,
+  { type: "button", button: "primary", down: true }, resumeStart), -1,
+  "a held trigger must not click again when XR visibility resumes");
+resumeButtons[0] = { pressed: false, touched: true, value: 0.45 };
+resumeControls.update({ ...panel, inputSources: [resumeSource] });
+assert.equal(resumeControls.snapshot().waitingForNeutral, true,
+  "a partially released analog trigger must remain blocked");
+resumeButtons[0] = button();
+resumeControls.update({ ...panel, inputSources: [resumeSource] });
+assert.equal(resumeControls.snapshot().waitingForNeutral, false);
+assert.equal(resumeControls.snapshot().sourceCount, 1);
+
 console.log("WebXR controls unit: PASS");

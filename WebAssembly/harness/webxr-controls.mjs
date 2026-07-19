@@ -227,6 +227,8 @@ export function createWebXrControls({
   let nextAnonymousSourceId = 1;
   let pointer = null;
   let paired = false;
+  let waitingForNeutral = false;
+  let neutralBlockers = [];
 
   const emit = (action) => onAction?.(action);
 
@@ -321,6 +323,25 @@ export function createWebXrControls({
     backbufferHeight,
     resolveWorldRay = null,
   } = {}) {
+    if (waitingForNeutral) {
+      neutralBlockers = [];
+      Array.from(inputSources ?? []).forEach((source, sourceIndex) => {
+        const gamepad = source?.gamepad;
+        Array.from(gamepad?.buttons ?? []).forEach((button, buttonIndex) => {
+          if (pressed(button, config.releaseThreshold)) {
+            neutralBlockers.push(`source-${sourceIndex}:button-${buttonIndex}`);
+          }
+        });
+        primaryAxes(gamepad).forEach((axis, axisIndex) => {
+          if (Math.abs(axis) >= config.releaseThreshold) {
+            neutralBlockers.push(`source-${sourceIndex}:axis-${axisIndex}`);
+          }
+        });
+      });
+      if (neutralBlockers.length > 0) return snapshot();
+      waitingForNeutral = false;
+      neutralBlockers = [];
+    }
     const seen = new Set();
     const hits = [];
     const trackedSources = Array.from(inputSources ?? []);
@@ -537,7 +558,15 @@ export function createWebXrControls({
     sources.clear();
     setModifiers();
     paired = false;
+    waitingForNeutral = false;
+    neutralBlockers = [];
     pointer = null;
+  }
+
+  function suspend() {
+    reset();
+    waitingForNeutral = true;
+    return snapshot();
   }
 
   function snapshot() {
@@ -547,6 +576,8 @@ export function createWebXrControls({
       dominantHand: config.dominantHand,
       pressThreshold: config.pressThreshold,
       releaseThreshold: config.releaseThreshold,
+      waitingForNeutral,
+      neutralBlockers: [...neutralBlockers],
       sources: Array.from(sources.values(), (sourceState) => ({
         handedness: sourceState.handedness,
         profile: sourceState.profile,
@@ -560,5 +591,5 @@ export function createWebXrControls({
     };
   }
 
-  return { update, reset, snapshot };
+  return { update, reset, suspend, snapshot };
 }

@@ -112,6 +112,14 @@ while the height offset is reapplied whenever the viewer recenters. Normal
 desktop renderer, camera, input, and display settings do not consume these
 values.
 
+XR visibility is an input-ownership boundary. `visible-blurred` and `hidden`
+immediately release every held controller button, modifier, camera key, pointer,
+and native W3D ray. Returning to `visible` does not re-arm input until all
+tracked buttons and sticks have first returned to neutral, so a trigger held
+through a system overlay cannot become a surprise selection or order. Rendering
+may continue at the cadence supplied by the XR runtime, and the session anchor
+is preserved across this suspension.
+
 Every tracked pointer also carries a ray transformed from the WebXR reference
 space through the initial spatial anchor and the latest real engine view into
 W3D world coordinates. `W3DView` uses that ray only for input-owned object and
