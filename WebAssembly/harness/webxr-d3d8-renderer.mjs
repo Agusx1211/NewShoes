@@ -1,4 +1,5 @@
 import { createWebXrControls } from "./webxr-controls.mjs";
+import { replayWebXrD3D8CommandFrame } from "./webxr-d3d8-command-stream.mjs";
 
 const D3DFVF_XYZRHW = 0x004;
 const DEFAULT_ENGINE_UNITS_PER_METER = 1 / 0.3048; // Generals world coordinates are feet.
@@ -897,8 +898,19 @@ export function createWebXrD3D8Renderer({
     onInputAction?.({ type: "pickRay", ray: null });
     onAudioListenerPose?.(null);
     latestEngineView = null;
-    finishPending(false);
     executorDiag.setD3D8XrViewOverride(null);
+    executorDiag.invalidateD3D8ExternalGlState();
+    executorHooks.cncPortD3D8BindFramebuffer({ colorTextureId: 0 });
+    if (pending) {
+      try {
+        replayWebXrD3D8CommandFrame(pending.packet, executorHooks);
+        finishPending(true);
+      } catch (error) {
+        finishPending(false);
+        publish({ error: error?.message ?? String(error) });
+        throw error;
+      }
+    }
     return publish({ active: false, inputSourceCount: 0, controllerPointer: null,
       enginePickRayReady: false, audioListenerPoseReady: false,
       pointerDraws: 0, visibilityState: null,

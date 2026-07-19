@@ -294,6 +294,35 @@ async function waitForEngineRay(page) {
   throw new Error(`real engine did not produce a tracked world ray: ${JSON.stringify(last)}`);
 }
 
+async function waitForWebXrSessionReentry(page, previousRendererFrames) {
+  const deadline = Date.now() + 30000;
+  let last = null;
+  while (Date.now() < deadline) {
+    await fullFrame(page);
+    last = await page.evaluate(() => {
+      const state = window.CnCPort.getWebXrState();
+      return {
+        sessionCount: window.__emulatedXrSessionCount,
+        phase: state.phase,
+        runtimeFrames: state.frames,
+        rendererActive: state.renderer?.active,
+        rendererFrames: state.renderer?.frames,
+        rendererTransport: state.rendererTransport,
+        engineLoop: window.CnCPort.state.threadedEngine?.loop ?? null,
+        engineFrame: window.CnCPort.state.threadedEngine?.frame ?? null,
+        recorder: window.CnCPort.state.threadedEngine?.graphics?.webXrD3D8Recorder ?? null,
+      };
+    });
+    if (last.sessionCount === 2 && last.phase === "running"
+        && last.runtimeFrames > 0 && last.rendererActive === true
+        && last.rendererFrames > previousRendererFrames) {
+      return last;
+    }
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`fresh WebXR session did not resume engine frames: ${JSON.stringify(last)}`);
+}
+
 async function waitForWebXrAudioListener(page, label, predicate, waitMs = 30000) {
   const deadline = Date.now() + waitMs;
   let last = null;
@@ -452,12 +481,19 @@ try {
       }
     }
 
-    const session = new EmulatedXrSession();
+    let session = null;
+    let sessionCount = 0;
     Object.defineProperty(navigator, "xr", {
       configurable: true,
       value: {
         isSessionSupported: async (mode) => mode === "immersive-vr",
-        requestSession: () => Promise.resolve(session),
+        requestSession: () => {
+          session = new EmulatedXrSession();
+          sessionCount += 1;
+          window.__emulatedXrSession = session;
+          window.__emulatedXrSessionCount = sessionCount;
+          return Promise.resolve(session);
+        },
       },
     });
     Object.defineProperty(window, "XRWebGLLayer", {
@@ -468,7 +504,8 @@ try {
       configurable: true,
       value: async function makeXRCompatible() {},
     });
-    window.__emulatedXrSession = session;
+    window.__emulatedXrSession = null;
+    window.__emulatedXrSessionCount = 0;
     window.__emulatedXrTrigger = (down) => {
       inputSource.gamepad.buttons[0] = {
         pressed: down === true,
@@ -509,6 +546,7 @@ try {
       }
     };
     window.__emulatedXrVisibility = (visibilityState) => {
+      if (!session) throw new Error("no emulated immersive session is active");
       session.visibilityState = String(visibilityState);
       session.dispatchEvent(new Event("visibilitychange"));
     };
@@ -703,18 +741,71 @@ try {
   assert.deepEqual(restoredListener.lastListener.position,
     restoredListener.lastListener.enginePosition,
     "session shutdown must restore the unmodified engine listener");
-  stage("session shutdown cleared native input state");
+  await page.waitForFunction(() =>
+    document.querySelector("#webXrButton")?.textContent === "Enter VR");
+  stage("first session shutdown cleared native input state");
+
+  const rendererFramesBeforeReentry = Number(
+    (await page.evaluate(() => window.CnCPort.getWebXrState())).renderer?.frames ?? 0,
+  );
+  await page.evaluate(() => window.CnCPort.startWebXrSession());
+  await waitForWebXrSessionReentry(page, rendererFramesBeforeReentry);
+  await page.waitForFunction(() =>
+    document.querySelector("#webXrButton")?.textContent === "Exit VR");
+  const reentered = await waitForEngineRay(page);
+  const reenteredRay = await rpc(page, "webxrPickRayState");
+  assert.equal(reenteredRay.result.active, true,
+    "a fresh immersive session must restore the native W3DView ray");
+  assert.ok(reenteredRay.result.updates > cleared.result.updates,
+    "the live engine must publish new tracked rays after session re-entry");
+  const reenteredListener = await waitForWebXrAudioListener(page,
+    "re-entered WebXR audio listener",
+    (runtime) => runtime?.webXrListenerActive === true
+      && runtime?.lastListener?.mode === "webxr-head-tracked");
+  const reenteredGameplay = await fullFrame(page);
+  assert.equal(reenteredGameplay?.clientState?.gameplay?.inGame, true,
+    "session re-entry must preserve the live match instead of rebooting the engine");
+  stage("fresh immersive session resumed stereo frames, native picking, and spatial audio");
+
+  await page.evaluate(() => window.CnCPort.stopWebXrSession("world-input-reentry-smoke"));
+  await page.waitForFunction(async () => {
+    const xr = window.CnCPort.getWebXrState();
+    const ray = await window.CnCPort.rpc("webxrPickRayState");
+    return xr.phase === "ready" && ray?.ok === true && ray.result?.active === false;
+  }, null, { timeout: 30000, polling: 100 });
+  await page.waitForFunction(() =>
+    document.querySelector("#webXrButton")?.textContent === "Enter VR");
+  const finalCleared = await rpc(page, "webxrPickRayState");
+  assert.ok(finalCleared.result.clears > cleared.result.clears,
+    "ending the replacement session must clear its native W3DView ray");
+  const finalRestoredListener = await waitForWebXrAudioListener(page,
+    "restored engine audio listener after re-entry",
+    (runtime) => runtime?.webXrListenerActive === false
+      && runtime?.lastListener?.mode === "engine");
+  assert.deepEqual(finalRestoredListener.lastListener.position,
+    finalRestoredListener.lastListener.enginePosition,
+    "replacement-session shutdown must restore the unmodified engine listener");
+  stage("replacement session shutdown restored native input and audio ownership");
 
   console.log(JSON.stringify({
     ok: true,
     smoke: "webxr-world-input",
     rayLength,
     active: active.result,
-    cleared: cleared.result,
+    cleared: finalCleared.result,
     runtimeFrames: running.frames,
     rendererFrames: running.renderer?.frames ?? 0,
     audioHeadOffset: movedListener.lastListener.xrOffset,
-    audioListenerRestored: restoredListener.webXrListenerActive === false,
+    audioListenerRestored: finalRestoredListener.webXrListenerActive === false,
+    sessionReentry: {
+      sessionCount: await page.evaluate(() => window.__emulatedXrSessionCount),
+      runtimeFrames: reentered.frames,
+      rendererFrames: reentered.renderer?.frames ?? 0,
+      rayRestored: reenteredRay.result.active,
+      audioListenerRestored: finalRestoredListener.webXrListenerActive === false,
+      matchPreserved: reenteredGameplay.clientState.gameplay.inGame,
+      listenerMode: reenteredListener.lastListener.mode,
+    },
     modalFlow,
     textEntry,
     wheelCameraZoom: {

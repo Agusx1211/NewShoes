@@ -1089,6 +1089,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         d3d8Perf: typeof d3d8Diag?.d3d8PerfSummary === "function"
           ? d3d8Diag.d3d8PerfSummary()
           : null,
+        webXrD3D8Recorder: webXrD3D8Recorder?.snapshot() ?? null,
       },
       mssForward: { ...mssForwardStats },
       bink: {

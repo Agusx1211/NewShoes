@@ -53,8 +53,9 @@ an explicit boundary:
    replayed onto spatial surfaces. Controller rays resolve both UI hits and
    battlefield hits, then route actions through original GameWindowManager,
    input, selection, and deterministic command paths.
-6. Ending the session drains or rejects outstanding graphics work, releases the
-   main-realm executor, and shuts down or relaunches the one-shot runtime safely.
+6. Ending the session drains outstanding graphics ownership back through the
+   ordinary main-realm executor and leaves the live engine ready for a fresh,
+   user-initiated immersive session.
 
 The current vertical slice implements that boundary behind an explicit `?vr=1`
 launch. `harness/webxr-runtime.mjs` owns the real Window XR lifecycle;
@@ -158,6 +159,21 @@ through a system overlay cannot become a surprise selection or order. Rendering
 may continue at the cadence supplied by the XR runtime, and the session anchor
 is preserved across this suspension.
 
+An XR session ending is also a graphics-ownership boundary. If the engine has a
+complete D3D8 packet waiting for the compositor, the renderer restores the
+ordinary Window framebuffer, replays that owned packet through the normal
+executor, and acknowledges it as part of becoming inactive. The acknowledgement
+remains bounded at 30 seconds so a slow browser GPU/framebuffer transition does
+not turn an otherwise successful drain into the recorder's sticky failure state.
+Frames submitted while no immersive session is active continue through the same
+Window executor. A later user gesture can therefore acquire a fresh `XRSession`
+against the existing engine and resources; session start resets the spatial
+anchor, controller state, native ray, and XR listener overlay before new stereo
+frames resume. The retail threaded smoke proves two distinct emulated sessions,
+continued native picking and spatial audio, preservation of the running match,
+and clean ownership restoration after both exits. Unexpected real-device session
+loss and re-entry still require headset evidence.
+
 Every tracked pointer also carries a ray transformed from the WebXR reference
 space through the initial spatial anchor and the latest real engine view into
 W3D world coordinates. `W3DView` uses that ray only for input-owned object and
@@ -190,6 +206,8 @@ run during ordinary desktop play.
 - [x] Map the initial tracked controller scheme to the original input paths.
 - [x] Focus an original engine text field from a tracked ray and route native
   browser text events through the existing Win32/IME bridge.
+- [x] Exit and enter a fresh immersive session without rebooting the live match,
+  while restoring native input/audio ownership after each exit.
 - [x] Apply head-tracked position/orientation to the engine-owned browser 3D
   audio listener with the same world scale and explicit session cleanup.
 - Add remaining comfort, accessibility, spatial-audio device validation,

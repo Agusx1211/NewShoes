@@ -1448,7 +1448,11 @@ function createThreadedEngineController() {
       webXrD3D8Ack = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2));
       webxrD3D8Bridge = {
         acknowledgement: webXrD3D8Ack.buffer,
-        timeoutMs: 5000,
+        // Session teardown may drain a complete pending frame back through the
+        // ordinary Window executor while the browser changes XR framebuffers.
+        // Keep that ownership handoff bounded, but allow slow GPU transitions
+        // to acknowledge before the worker makes its recorder failure sticky.
+        timeoutMs: 30000,
       };
     }
     const offscreen = cncPortWebXrVrRequested

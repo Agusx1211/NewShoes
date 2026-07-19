@@ -273,7 +273,23 @@ renderer.renderFrame({ ...trackedFrame, time: 40 });
 assert.equal(renderer.getControlsState().waitingForNeutral, false);
 assert.equal(renderer.snapshot().controllerPointer?.target, "ui",
   "neutral controls must re-arm tracked pointing after visibility resumes");
+let shutdownFrameAccepted = null;
+assert.equal(renderer.acceptFrame({
+  version: 1,
+  sequence: 8,
+  present: { backBufferWidth: 1280, backBufferHeight: 720 },
+  commandBytes: 32,
+  commands: [
+    { hook: "cncPortD3D8BindFramebuffer", args: [{ colorTextureId: 0 }] },
+    { hook: "cncPortD3D8Present", args: [{}] },
+  ],
+}, (accepted) => { shutdownFrameAccepted = accepted; }), true);
 renderer.onSessionEnd();
+assert.equal(shutdownFrameAccepted, true,
+  "session exit must drain its pending frame through the default executor");
+assert.ok(log.some((entry) => entry[0] === "hook"
+  && entry[1] === "cncPortD3D8Present"),
+  "the drained shutdown frame must reach the ordinary Window executor");
 assert.equal(audioListenerPoses.at(-1), null,
   "session exit must restore the ordinary engine-owned audio listener");
 assert.ok(inputActions.some((action) => action.type === "button"

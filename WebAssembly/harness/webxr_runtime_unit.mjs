@@ -100,7 +100,8 @@ assert.equal((await insecure.probe()).support.reason,
   "WebXR immersive sessions require a secure context");
 
 let requestSessionCalls = 0;
-const session = new FakeSession();
+const sessions = [new FakeSession(), new FakeSession()];
+const session = sessions[0];
 const xr = {
   async isSessionSupported(mode) {
     assert.equal(mode, "immersive-vr");
@@ -110,7 +111,9 @@ const xr = {
     requestSessionCalls += 1;
     assert.equal(mode, "immersive-vr");
     assert.deepEqual(options, { optionalFeatures: ["local-floor"] });
-    return Promise.resolve(session);
+    const requested = sessions[requestSessionCalls - 1];
+    assert.ok(requested, "runtime requested an unexpected third immersive session");
+    return Promise.resolve(requested);
   },
 };
 const stateChanges = [];
@@ -261,6 +264,24 @@ assert.equal(rendererEvents.at(-1)[0], "end");
 assert.equal(rendererEvents.at(-1)[1], "session-ended");
 assert.ok(stateChanges.some((state) => state.phase === "starting"));
 assert.ok(stateChanges.some((state) => state.phase === "running"));
+
+const reentrySession = sessions[1];
+reentrySession.inputSources = session.inputSources;
+const reentered = await runtime.start(renderer);
+assert.equal(requestSessionCalls, 2,
+  "re-entering VR must acquire a fresh immersive session");
+assert.equal(reentered.phase, "running");
+assert.equal(reentrySession.renderState.baseLayer instanceof FakeLayer, true);
+assert.deepEqual(reentrySession.referenceSpaceRequests, ["local-floor"]);
+reentrySession.fireFrame(456.25, frame);
+assert.equal(runtime.snapshot().frames, 1,
+  "a new session must restart its own XR frame count");
+assert.equal(runtime.snapshot().lastFrameTime, 456.25);
+assert.equal(rendererEvents.filter(([kind]) => kind === "start").length, 2,
+  "the shipping renderer must be reactivated for the new session");
+await runtime.stop("reentry-unit-test");
+assert.equal(runtime.snapshot().phase, "ready");
+assert.equal(reentrySession.ended, true);
 
 const failedSession = new FakeSession();
 const startFailureRuntime = createWebXrRuntime({
