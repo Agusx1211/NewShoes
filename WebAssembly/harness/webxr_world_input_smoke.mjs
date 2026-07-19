@@ -221,17 +221,104 @@ async function waitForAgentUiWindow(page, name, predicate = () => true, waitMs =
   throw new Error(`${name} did not reach the expected UI state: ${JSON.stringify(last)}`);
 }
 
+function targetFromAgentUiWindow(window, label) {
+  assert.equal(window?.visible, true, `${label} is not visible`);
+  assert.equal(window?.interactive, true, `${label} is not interactive`);
+  assert.ok(Number(window?.rect?.width) > 0 && Number(window?.rect?.height) > 0,
+    `${label} has no target geometry: ${JSON.stringify(window)}`);
+  return {
+    clickable: true,
+    centerX: window.rect.x + Math.floor(window.rect.width / 2),
+    centerY: window.rect.y + Math.floor(window.rect.height / 2),
+  };
+}
+
+async function exerciseWebXrSaveDescription(page, geometry) {
+  const saveButton = await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:ButtonSave",
+    (window) => window.visible === true && window.interactive === true);
+  const saveTarget = targetFromAgentUiWindow(saveButton, "save/load Save button");
+  await aimWebXrAtEnginePoint(page, geometry,
+    { x: saveTarget.centerX, y: saveTarget.centerY }, "save/load Save button hover");
+  const hilitedSaveButton = await waitForAgentUiWindow(page,
+    "PopupSaveLoad.wnd:ButtonSave", (window) => window.hilited === true);
+  await clickEngineButton(page, geometry, saveTarget, "save/load Save button");
+
+  const entry = await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:EntryDesc",
+    (window) => window.visible === true && window.interactive === true);
+  const cancelButton = await waitForAgentUiWindow(page,
+    "PopupSaveLoad.wnd:ButtonSaveDescCancel",
+    (window) => window.visible === true && window.interactive === true);
+  const before = String(entry.value ?? "");
+  const entryTarget = targetFromAgentUiWindow(entry, "save-description entry");
+  await page.waitForFunction(({ x, y }) =>
+    window.CnCPort.state.touchUi?.entries?.some((candidate) =>
+      x >= candidate.rect.x && x < candidate.rect.x + candidate.rect.width
+        && y >= candidate.rect.y && y < candidate.rect.y + candidate.rect.height),
+  { x: entryTarget.centerX, y: entryTarget.centerY }, { timeout: 30000, polling: 100 });
+  await clickEngineButton(page, geometry, entryTarget, "save-description entry");
+  await page.waitForFunction(() => document.activeElement?.id === "touchTextInput"
+    && window.CnCPort.getTouchControlsState?.().keyboardOpen === true
+    && window.CnCPort.getWebXrState()?.systemKeyboardSupported === true,
+  null, { timeout: 30000, polling: 50 });
+  await page.locator("#touchTextInput").evaluate((input) => {
+    input.dispatchEvent(new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      data: " vr",
+      inputType: "insertText",
+    }));
+  });
+  const typed = await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:EntryDesc",
+    (window) => window.value === `${before} vr`);
+  await page.locator("[data-touch-text-done]").click();
+  await page.waitForFunction(() =>
+    window.CnCPort.getTouchControlsState?.().keyboardOpen === false);
+
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(cancelButton, "save-description Cancel button"),
+    "save-description Cancel button");
+  await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:ButtonSave",
+    (window) => window.visible === true && window.interactive === true);
+  return {
+    saveHover: hilitedSaveButton.hilited === true,
+    keyboardSupported: true,
+    before,
+    after: typed.value,
+    cancelled: true,
+  };
+}
+
 async function driveWebXrModalFlow(page, geometry) {
   await tapWebXrButton(page, 5);
-  const opened = await waitForFrame(page, "tracked-controller quit menu", (candidate) =>
+  await waitForFrame(page, "tracked-controller quit menu", (candidate) =>
     candidate?.clientState?.quitMenu?.visible === true
       && candidate?.clientState?.gameplay?.gamePaused === true
       && visibleQuitMenuButton(candidate.clientState.quitMenu,
         ["buttonOptionsFull", "buttonOptionsNoSave"]) !== null);
-  const optionsButton = visibleQuitMenuButton(opened.clientState.quitMenu,
+  const saveLoadButton = await waitForAgentUiWindow(page, "QuitMenu.wnd:ButtonSaveLoad",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(saveLoadButton, "quit-menu Save/Load button"),
+    "quit-menu Save/Load button");
+  await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:SaveLoadMenu",
+    (window) => window.visible === true);
+  const saveDescription = await exerciseWebXrSaveDescription(page, geometry);
+  const saveLoadBackButton = await waitForAgentUiWindow(page,
+    "PopupSaveLoad.wnd:ButtonBack",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(saveLoadBackButton, "save/load Back button"),
+    "save/load Back button");
+  const returnedFromSaveLoad = await waitForFrame(page, "quit menu after save/load", (candidate) =>
+    candidate?.clientState?.quitMenu?.visible === true
+      && candidate?.clientState?.gameplay?.gamePaused === true
+      && visibleQuitMenuButton(candidate.clientState.quitMenu,
+        ["buttonOptionsFull", "buttonOptionsNoSave"]) !== null);
+
+  const optionsButton = visibleQuitMenuButton(returnedFromSaveLoad.clientState.quitMenu,
     ["buttonOptionsFull", "buttonOptionsNoSave"]);
   assert.ok(optionsButton, `quit menu has no tracked options target: ${JSON.stringify(
-    opened.clientState.quitMenu)}`);
+    returnedFromSaveLoad.clientState.quitMenu)}`);
   await clickEngineButton(page, geometry, optionsButton, "quit-menu Options button");
 
   let backButton = await waitForAgentUiWindow(page, "OptionsMenu.wnd:ButtonBack",
@@ -264,6 +351,8 @@ async function driveWebXrModalFlow(page, geometry) {
       && candidate?.clientState?.gameplay?.gamePaused === false);
   return {
     quitOpened: true,
+    saveLoadOpened: true,
+    saveDescription,
     optionsOpened: true,
     optionsHover: backButton.hilited === true,
     resumed: true,
@@ -652,7 +741,7 @@ try {
   stage("head pose updated the engine-owned HRTF listener at world scale");
 
   const modalFlow = await driveWebXrModalFlow(page, inputGeometry);
-  stage("tracked controller operated the quit modal and nested options surface");
+  stage("tracked controller operated save/load, save-description, and options modals");
 
   await page.evaluate(() => {
     window.__emulatedXrButton(2, true);

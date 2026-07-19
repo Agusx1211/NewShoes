@@ -86,12 +86,14 @@ ordered Win32/DirectInput bridge as desktop input:
 - offhand B/Y: recenter the spatial anchor.
 
 The retail threaded VR smoke drives that path through the original main shell,
-single-player and skirmish setup, loading transition, in-game quit modal, and
-nested Options menu. It verifies original button activation and hover state,
-then returns through the modal stack and resumes the match with the tracked
-controller. This is automated compatibility evidence for the shared floating
-surface and real `GameWindowManager` input path; it does not replace real-headset
-readability and full-flow usability evidence.
+single-player and skirmish setup, loading transition, in-game quit modal,
+save/load and save-description popups, and nested Options menu. It verifies
+original button activation and hover state, focuses and types into the stock
+save-description field through the XR system keyboard, cancels without writing
+a save, then returns through the modal stack and resumes the match with the
+tracked controller. This is automated compatibility evidence for the shared
+floating surface and real `GameWindowManager` input path; it does not replace
+real-headset readability and full-flow usability evidence.
 
 When only one tracked controller is available, its stick pans normally. Holding
 B/Y changes horizontal stick movement to original camera rotation and vertical
@@ -229,8 +231,9 @@ run during ordinary desktop play.
 - [ ] Prove distinct left/right world rendering on real WebXR hardware.
 - [x] Split pretransformed engine UI presentation into a floating spatial
   surface without replacing original UI ownership.
-- [x] Drive the retail main shell, skirmish setup, quit modal, nested Options
-  surface, hover state, and match resume through a tracked controller ray.
+- [x] Drive the retail main shell, skirmish setup, quit, save/load,
+  save-description, and Options surfaces, hover/text state, and match resume
+  through a tracked controller ray.
 - [x] Map the initial tracked controller scheme to the original input paths.
 - [x] Focus an original engine text field from a tracked ray and route native
   browser text events through the existing Win32/IME bridge.
