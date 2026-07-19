@@ -2736,6 +2736,16 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "realEngineBenchmarkPartitionDistance": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_benchmark_partition_distance", "string", ["number"],
+          [Number(payload.iterations ?? 1)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "realEngineSetSkirmishLocalTemplate": {
       try {
         const result = await threadedEngine.engineCall(
@@ -6409,6 +6419,11 @@ async function loadWasmModule() {
         "cnc_port_real_engine_probe_worker_supply_exit",
         "string",
         [],
+      ),
+      realEngineBenchmarkPartitionDistance: module.cwrap(
+        "cnc_port_real_engine_benchmark_partition_distance",
+        "string",
+        ["number"],
       ),
       realEngineSetSkirmishLocalTemplate: module.cwrap(
         "cnc_port_real_engine_set_skirmish_local_template",
@@ -12897,6 +12912,23 @@ async function rpc(command, payload = {}) {
         try {
           const result = JSON.parse(moduleResult.wasmModule.realEngineProbeWorkerSupplyExit());
           recordLog("real engine probe worker supply exit", result);
+          return { ok: result?.ok === true, command, result, state: snapshotState() };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "realEngineBenchmarkPartitionDistance":
+      {
+        const moduleResult = await getWasmModuleForArchives(command);
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const result = JSON.parse(
+            moduleResult.wasmModule.realEngineBenchmarkPartitionDistance(
+              Number(payload.iterations ?? 1),
+            ),
+          );
           return { ok: result?.ok === true, command, result, state: snapshotState() };
         } catch (error) {
           return { ok: false, command, error: error?.message ?? String(error) };

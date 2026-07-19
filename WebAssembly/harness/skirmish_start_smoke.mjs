@@ -77,6 +77,8 @@ const expectEnemyAiActivity = process.env.SKIRMISH_START_EXPECT_ENEMY_AI_ACTIVIT
 const expectHard4v4 = process.env.SKIRMISH_START_HARD_4V4 === "1";
 const expectWorkerSupplyExitProbe =
   process.env.SKIRMISH_START_WORKER_SUPPLY_EXIT_PROBE === "1";
+const partitionDistanceBenchmarkIterations = parsePositiveInt(
+  "SKIRMISH_START_PARTITION_DISTANCE_BENCHMARK_ITERATIONS", 0);
 const collectPlayerDiagnostics = expectEnemyStartAssets || expectEnemyAiActivity || expectHard4v4;
 const disablePostActiveRender =
   process.env.SKIRMISH_START_POST_ACTIVE_DISABLE_RENDER === "1";
@@ -3125,6 +3127,46 @@ async function main() {
         "worker supply-brain exit did not complete one bounded master-state transition",
         workerSupplyExitProbe);
     }
+    let partitionDistanceBenchmark = null;
+    if (partitionDistanceBenchmarkIterations > 0) {
+      const runBenchmark = async () => {
+        const response = await rpc(page, "realEngineBenchmarkPartitionDistance", {
+          iterations: partitionDistanceBenchmarkIterations,
+        });
+        expect(response?.ok === true && response?.result?.ok === true,
+          "partition distance benchmark failed", response);
+        return response.result;
+      };
+      await runBenchmark();
+      const samples = [];
+      for (let sample = 0; sample < 9; ++sample) {
+        samples.push(await runBenchmark());
+      }
+      const checksums = new Set(samples.map((sample) => sample.checksum));
+      expect(checksums.size === 1,
+        "partition distance benchmark produced inconsistent results", samples);
+      expect(samples.every((sample) => sample.exactMismatchCount === 0),
+        "partition distance-only and vector paths produced different distance bits", samples);
+      const caseFingerprints = new Set(samples.map((sample) => sample.caseFingerprint));
+      expect(caseFingerprints.size === 1,
+        "partition distance benchmark changed its case corpus", samples);
+      const sortedNanoseconds = samples
+        .map((sample) => sample.nanosecondsPerCall)
+        .sort((left, right) => left - right);
+      partitionDistanceBenchmark = {
+        iterations: partitionDistanceBenchmarkIterations,
+        objectCount: samples[0].objectCount,
+        caseCount: samples[0].caseCount,
+        modeCounts: samples[0].modeCounts,
+        exactMismatchCount: samples[0].exactMismatchCount,
+        caseFingerprint: samples[0].caseFingerprint,
+        checksum: samples[0].checksum,
+        samplesNanosecondsPerCall: samples.map((sample) => sample.nanosecondsPerCall),
+        medianNanosecondsPerCall: sortedNanoseconds[Math.floor(sortedNanoseconds.length / 2)],
+      };
+      console.error("[skirmish-start] partitionDistanceBenchmark:",
+        JSON.stringify(partitionDistanceBenchmark));
+    }
     if (expectMenuMusicStop) {
       console.error("[skirmish-start] wait for pre-skirmish music handles to close");
       const stopped = await waitForHandlesClosed(
@@ -3424,6 +3466,7 @@ async function main() {
       finalGameplay: compactGameplay(active.result.frame),
       graphics: activeGraphics,
       workerSupplyExitProbe: workerSupplyExitProbe?.result ?? null,
+      partitionDistanceBenchmark,
       musicTransition,
       shroudDiagnostics,
       postActive: postActive == null ? null : {
