@@ -95,6 +95,13 @@ tracked controller. This is automated compatibility evidence for the shared
 floating surface and real `GameWindowManager` input path; it does not replace
 real-headset readability and full-flow usability evidence.
 
+The same gate then confirms an ephemeral save through that description dialog,
+resumes and advances the simulation, selects the saved row through the tracked
+ray, and accepts the original in-game load confirmation. The simulation frame
+rewinds to the saved range while the existing `XRSession` remains active, both
+views and native picking resume over the restored match, and the temporary save
+is removed through the stock Delete confirmation before the test exits.
+
 When only one tracked controller is available, its stick pans normally. Holding
 B/Y changes horizontal stick movement to original camera rotation and vertical
 movement to the original mouse-wheel path, which lets engine windows scroll and
@@ -232,8 +239,9 @@ run during ordinary desktop play.
 - [x] Split pretransformed engine UI presentation into a floating spatial
   surface without replacing original UI ownership.
 - [x] Drive the retail main shell, skirmish setup, quit, save/load,
-  save-description, and Options surfaces, hover/text state, and match resume
-  through a tracked controller ray.
+  save-description, and Options surfaces through a tracked controller ray,
+  including hover/text state and an ephemeral create/load/delete round trip
+  that preserves the active XRSession.
 - [x] Map the initial tracked controller scheme to the original input paths.
 - [x] Focus an original engine text field from a tracked ray and route native
   browser text events through the existing Win32/IME bridge.

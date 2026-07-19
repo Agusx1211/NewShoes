@@ -221,6 +221,31 @@ async function waitForAgentUiWindow(page, name, predicate = () => true, waitMs =
   throw new Error(`${name} did not reach the expected UI state: ${JSON.stringify(last)}`);
 }
 
+async function waitForEngineWindow(page, name, predicate = () => true, waitMs = 30000) {
+  const deadline = Date.now() + waitMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    await fullFrame(page);
+    const response = await rpc(page, "queryWindowByName", { name });
+    last = response?.result ?? null;
+    if (last && predicate(last)) return last;
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`${name} did not reach the expected engine state: ${JSON.stringify(last)}`);
+}
+
+async function waitForSaveFiles(page, expectedCount, waitMs = 30000) {
+  const deadline = Date.now() + waitMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await rpc(page, "listSaves");
+    if (last?.ok === true && last.files?.length === expectedCount) return last.files;
+    await fullFrame(page);
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`save-file count did not become ${expectedCount}: ${JSON.stringify(last)}`);
+}
+
 function targetFromAgentUiWindow(window, label) {
   assert.equal(window?.visible, true, `${label} is not visible`);
   assert.equal(window?.interactive, true, `${label} is not interactive`);
@@ -230,6 +255,57 @@ function targetFromAgentUiWindow(window, label) {
     clickable: true,
     centerX: window.rect.x + Math.floor(window.rect.width / 2),
     centerY: window.rect.y + Math.floor(window.rect.height / 2),
+  };
+}
+
+async function selectWebXrListRow(page, geometry, name, rowIndex, label) {
+  const list = await waitForEngineWindow(page, name,
+    (window) => Number(window?.listBox?.entryCount) > rowIndex);
+  const row = list.listBox.rows?.[rowIndex];
+  assert.ok(row && row.bottom > row.top,
+    `${label} has no row geometry: ${JSON.stringify(list.listBox)}`);
+  const target = {
+    clickable: true,
+    centerX: Math.round(list.x + Math.min(list.width - 4, Math.max(4, list.width * 0.35))),
+    centerY: Math.round((row.top + row.bottom) / 2),
+  };
+  await clickEngineButton(page, geometry, target, label);
+  return waitForEngineWindow(page, name,
+    (window) => window?.listBox?.selected === rowIndex);
+}
+
+async function typeIntoWebXrEngineEntry(page, geometry, name, suffix, label) {
+  const entry = await waitForAgentUiWindow(page, name,
+    (window) => window.visible === true && window.interactive === true);
+  const before = String(entry.value ?? "");
+  const target = targetFromAgentUiWindow(entry, label);
+  await page.waitForFunction(({ x, y }) =>
+    window.CnCPort.state.touchUi?.entries?.some((candidate) =>
+      x >= candidate.rect.x && x < candidate.rect.x + candidate.rect.width
+        && y >= candidate.rect.y && y < candidate.rect.y + candidate.rect.height),
+  { x: target.centerX, y: target.centerY }, { timeout: 30000, polling: 100 });
+  await clickEngineButton(page, geometry, target, label);
+  await page.waitForFunction(() => document.activeElement?.id === "touchTextInput"
+    && window.CnCPort.getTouchControlsState?.().keyboardOpen === true
+    && window.CnCPort.getWebXrState()?.systemKeyboardSupported === true,
+  null, { timeout: 30000, polling: 50 });
+  await page.locator("#touchTextInput").evaluate((input, text) => {
+    input.dispatchEvent(new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      data: text,
+      inputType: "insertText",
+    }));
+  }, suffix);
+  const typed = await waitForAgentUiWindow(page, name,
+    (window) => window.value === `${before}${suffix}`);
+  await page.locator("[data-touch-text-done]").click();
+  await page.waitForFunction(() =>
+    window.CnCPort.getTouchControlsState?.().keyboardOpen === false);
+  return {
+    keyboardSupported: true,
+    before,
+    after: typed.value,
   };
 }
 
@@ -246,36 +322,11 @@ async function exerciseWebXrSaveDescription(page, geometry) {
     "PopupSaveLoad.wnd:ButtonSave", (window) => window.hilited === true);
   await clickEngineButton(page, geometry, saveTarget, "save/load Save button");
 
-  const entry = await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:EntryDesc",
-    (window) => window.visible === true && window.interactive === true);
   const cancelButton = await waitForAgentUiWindow(page,
     "PopupSaveLoad.wnd:ButtonSaveDescCancel",
     (window) => window.visible === true && window.interactive === true);
-  const before = String(entry.value ?? "");
-  const entryTarget = targetFromAgentUiWindow(entry, "save-description entry");
-  await page.waitForFunction(({ x, y }) =>
-    window.CnCPort.state.touchUi?.entries?.some((candidate) =>
-      x >= candidate.rect.x && x < candidate.rect.x + candidate.rect.width
-        && y >= candidate.rect.y && y < candidate.rect.y + candidate.rect.height),
-  { x: entryTarget.centerX, y: entryTarget.centerY }, { timeout: 30000, polling: 100 });
-  await clickEngineButton(page, geometry, entryTarget, "save-description entry");
-  await page.waitForFunction(() => document.activeElement?.id === "touchTextInput"
-    && window.CnCPort.getTouchControlsState?.().keyboardOpen === true
-    && window.CnCPort.getWebXrState()?.systemKeyboardSupported === true,
-  null, { timeout: 30000, polling: 50 });
-  await page.locator("#touchTextInput").evaluate((input) => {
-    input.dispatchEvent(new InputEvent("beforeinput", {
-      bubbles: true,
-      cancelable: true,
-      data: " vr",
-      inputType: "insertText",
-    }));
-  });
-  const typed = await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:EntryDesc",
-    (window) => window.value === `${before} vr`);
-  await page.locator("[data-touch-text-done]").click();
-  await page.waitForFunction(() =>
-    window.CnCPort.getTouchControlsState?.().keyboardOpen === false);
+  const typed = await typeIntoWebXrEngineEntry(page, geometry,
+    "PopupSaveLoad.wnd:EntryDesc", " vr", "save-description entry");
 
   await clickEngineButton(page, geometry,
     targetFromAgentUiWindow(cancelButton, "save-description Cancel button"),
@@ -289,9 +340,7 @@ async function exerciseWebXrSaveDescription(page, geometry) {
     "cancelling the save-description modal must not create or replace a save file");
   return {
     saveHover: hilitedSaveButton.hilited === true,
-    keyboardSupported: true,
-    before,
-    after: typed.value,
+    ...typed,
     cancelled: true,
     saveFilesUnchanged: true,
   };
@@ -365,6 +414,186 @@ async function driveWebXrModalFlow(page, geometry) {
     optionsOpened: true,
     optionsHover: backButton.hilited === true,
     resumed: true,
+  };
+}
+
+async function openWebXrSaveLoadFromMatch(page, geometry, label) {
+  await tapWebXrButton(page, 5);
+  await waitForFrame(page, `${label} quit menu`, (candidate) =>
+    candidate?.clientState?.quitMenu?.visible === true
+      && candidate?.clientState?.gameplay?.gamePaused === true);
+  const saveLoadButton = await waitForAgentUiWindow(page, "QuitMenu.wnd:ButtonSaveLoad",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(saveLoadButton, `${label} Save/Load button`),
+    `${label} Save/Load button`);
+  return waitForEngineWindow(page, "PopupSaveLoad.wnd:ListboxGames",
+    (window) => window.found === true && window.hidden === false && window.listBox != null);
+}
+
+async function resumeWebXrMatchFromQuit(page, geometry, label) {
+  const frame = await waitForFrame(page, `${label} quit menu`, (candidate) =>
+    candidate?.clientState?.quitMenu?.visible === true
+      && visibleQuitMenuButton(candidate.clientState.quitMenu,
+        ["buttonReturnFull", "buttonReturnNoSave"]) !== null);
+  const returnButton = visibleQuitMenuButton(frame.clientState.quitMenu,
+    ["buttonReturnFull", "buttonReturnNoSave"]);
+  await clickEngineButton(page, geometry, returnButton, `${label} Return button`);
+  await waitForFrame(page, `${label} resumed match`, (candidate) =>
+    candidate?.clientState?.quitMenu?.visible === false
+      && candidate?.clientState?.gameplay?.gamePaused === false);
+}
+
+async function currentLogicFrame(page) {
+  return page.evaluate(() => Number(
+    window.CnCPort?.state?.threadedEngine?.frame?.logicFrame ?? -1,
+  ));
+}
+
+async function armWebXrSaveLoadFrameObserver(page) {
+  return page.evaluate(() => {
+    const initialFrame = Number(
+      window.CnCPort?.state?.threadedEngine?.frame?.logicFrame ?? -1,
+    );
+    const observation = { running: true, initialFrame, firstDrop: null };
+    window.__webXrSaveLoadFrameObserver = observation;
+    const sample = () => {
+      if (!observation.running || window.__webXrSaveLoadFrameObserver !== observation) return;
+      const frame = Number(window.CnCPort?.state?.threadedEngine?.frame?.logicFrame ?? -1);
+      if (observation.firstDrop === null && frame <= initialFrame - 5) {
+        observation.firstDrop = frame;
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+    return initialFrame;
+  });
+}
+
+async function waitForWebXrSaveLoadFrameDrop(page) {
+  await page.waitForFunction(() =>
+    window.__webXrSaveLoadFrameObserver?.firstDrop !== null,
+  null, { timeout: 120000, polling: 50 });
+  return page.evaluate(() => {
+    const observation = window.__webXrSaveLoadFrameObserver;
+    observation.running = false;
+    return { initialFrame: observation.initialFrame, firstDrop: observation.firstDrop };
+  });
+}
+
+async function driveWebXrSaveLoadRoundTrip(page, geometry) {
+  const baseline = await rpc(page, "listSaves");
+  assert.equal(baseline?.ok, true, `save-file baseline failed: ${JSON.stringify(baseline)}`);
+  assert.equal(baseline.files.length, 0,
+    `disposable WebXR profile must begin without saves: ${JSON.stringify(baseline.files)}`);
+
+  const emptyList = await openWebXrSaveLoadFromMatch(page, geometry, "save round-trip");
+  assert.equal(emptyList.listBox.entryCount, 1,
+    `save menu must begin with only the new-save row: ${JSON.stringify(emptyList.listBox)}`);
+  const saveButton = await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:ButtonSave",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(saveButton, "round-trip Save button"),
+    "round-trip Save button");
+  const typed = await typeIntoWebXrEngineEntry(page, geometry,
+    "PopupSaveLoad.wnd:EntryDesc", " xr cycle", "round-trip save-description entry");
+  const saveConfirm = await waitForAgentUiWindow(page,
+    "PopupSaveLoad.wnd:ButtonSaveDescConfirm",
+    (window) => window.visible === true && window.interactive === true);
+  const savedLogicFrame = await currentLogicFrame(page);
+  assert.ok(savedLogicFrame > 0, `saved logic frame is invalid: ${savedLogicFrame}`);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(saveConfirm, "save-description Confirm button"),
+    "save-description Confirm button");
+  const savedFiles = await waitForSaveFiles(page, 1);
+  assert.ok(savedFiles[0].size > 1024,
+    `original save file is unexpectedly small: ${JSON.stringify(savedFiles[0])}`);
+  await resumeWebXrMatchFromQuit(page, geometry, "post-save");
+  await page.waitForFunction((frame) =>
+    Number(window.CnCPort?.state?.threadedEngine?.frame?.logicFrame ?? -1) >= frame + 30,
+  savedLogicFrame, { timeout: 30000, polling: 50 });
+  const advancedLogicFrame = await currentLogicFrame(page);
+
+  const populatedList = await openWebXrSaveLoadFromMatch(page, geometry, "load round-trip");
+  assert.equal(populatedList.listBox.entryCount, 2,
+    `save menu must contain new-save and saved rows: ${JSON.stringify(populatedList.listBox)}`);
+  assert.match(populatedList.listBox.rows?.[1]?.cells?.[0] ?? "", /xr cycle/i,
+    "saved description is missing from the original listbox");
+  await selectWebXrListRow(page, geometry,
+    "PopupSaveLoad.wnd:ListboxGames", 1, "saved-game list row");
+  const loadButton = await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:ButtonLoad",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(loadButton, "round-trip Load button"),
+    "round-trip Load button");
+  const loadConfirm = await waitForAgentUiWindow(page,
+    "PopupSaveLoad.wnd:ButtonLoadConfirm",
+    (window) => window.visible === true && window.interactive === true);
+  const xrBeforeLoad = await page.evaluate(() => window.CnCPort.getWebXrState());
+  const loadStartFrame = await armWebXrSaveLoadFrameObserver(page);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(loadConfirm, "load Confirm button"),
+    "load Confirm button");
+  const rewind = await waitForWebXrSaveLoadFrameDrop(page);
+  assert.equal(rewind.initialFrame, loadStartFrame);
+  assert.ok(rewind.firstDrop < rewind.initialFrame - 10
+      && Math.abs(rewind.firstDrop - savedLogicFrame) <= 20,
+  `load did not rewind to the saved simulation frame: ${JSON.stringify({
+    savedLogicFrame, advancedLogicFrame, rewind,
+  })}`);
+  const restoredFrame = await waitForFrame(page, "loaded WebXR match", (candidate) => {
+    const gameplay = candidate?.gameplay ?? candidate?.clientState?.gameplay;
+    return gameplay?.inGame === true && gameplay?.loadingMap === false
+      && gameplay?.inputEnabled === true && Number(gameplay?.renderedObjectCount ?? 0) > 0;
+  }, 120000);
+  await waitForEngineRay(page);
+  const xrAfterLoad = await page.evaluate(() => window.CnCPort.getWebXrState());
+  assert.equal(xrAfterLoad.phase, "running",
+    `load reset ended the immersive session: ${JSON.stringify(xrAfterLoad)}`);
+  assert.equal(xrAfterLoad.viewCount, 2,
+    "restored match must continue rendering both XR views");
+  assert.equal(await page.evaluate(() => window.__emulatedXrSessionCount), 1,
+    "in-game load must preserve the original XRSession");
+  assert.ok(Number(xrAfterLoad.renderer?.frames) > Number(xrBeforeLoad.renderer?.frames),
+    "stereo renderer did not advance across the engine load reset");
+
+  const deleteList = await openWebXrSaveLoadFromMatch(page, geometry, "delete round-trip");
+  assert.equal(deleteList.listBox.entryCount, 2,
+    `loaded save is unavailable for cleanup: ${JSON.stringify(deleteList.listBox)}`);
+  await selectWebXrListRow(page, geometry,
+    "PopupSaveLoad.wnd:ListboxGames", 1, "cleanup saved-game list row");
+  const deleteButton = await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:ButtonDelete",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(deleteButton, "round-trip Delete button"),
+    "round-trip Delete button");
+  const deleteConfirm = await waitForAgentUiWindow(page,
+    "PopupSaveLoad.wnd:ButtonDeleteConfirm",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(deleteConfirm, "delete Confirm button"),
+    "delete Confirm button");
+  await waitForSaveFiles(page, 0);
+  const saveLoadBack = await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:ButtonBack",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(saveLoadBack, "cleanup Save/Load Back button"),
+    "cleanup Save/Load Back button");
+  await resumeWebXrMatchFromQuit(page, geometry, "post-delete");
+
+  return {
+    description: typed.after,
+    savedFileBytes: savedFiles[0].size,
+    savedLogicFrame,
+    advancedLogicFrame,
+    loadedLogicFrame: rewind.firstDrop,
+    sessionCount: await page.evaluate(() => window.__emulatedXrSessionCount),
+    rendererFramesBeforeLoad: xrBeforeLoad.renderer?.frames ?? 0,
+    rendererFramesAfterLoad: xrAfterLoad.renderer?.frames ?? 0,
+    restoredObjects: Number(
+      restoredFrame?.clientState?.gameplay?.renderedObjectCount ?? 0,
+    ),
+    saveDeleted: true,
   };
 }
 
@@ -751,6 +980,8 @@ try {
 
   const modalFlow = await driveWebXrModalFlow(page, inputGeometry);
   stage("tracked controller operated save/load, save-description, and options modals");
+  const saveLoadRoundTrip = await driveWebXrSaveLoadRoundTrip(page, inputGeometry);
+  stage("tracked controller saved, loaded, and deleted without ending the XR session");
 
   await page.evaluate(() => {
     window.__emulatedXrButton(2, true);
@@ -990,6 +1221,7 @@ try {
       reentryRejected: rejectedReentry.rejected,
     },
     modalFlow,
+    saveLoadRoundTrip,
     textEntry,
     wheelCameraZoom: {
       before: cameraHeightBeforeWheel,
