@@ -349,10 +349,19 @@ protected:
 	AudioManager *createAudioManager() override { return nullptr; }
 };
 
+Money parse_money_line(char *line)
+{
+	INI ini;
+	Money money;
+	std::strtok(line, " \t\r\n=");
+	Money::parseMoneyAmount(&ini, nullptr, &money, nullptr);
+	return money;
+}
+
 void seed_multiplayer_settings(MultiplayerSettings &settings)
 {
-	Money cash;
-	cash.deposit(10000, FALSE);
+	char cash_line[] = "DefaultStartingMoney = 10000";
+	Money cash = parse_money_line(cash_line);
 	settings.addStartingMoneyChoice(cash, TRUE);
 
 	for (const char *name : {"GUI:ColorBlue", "GUI:ColorRed"}) {
@@ -1227,9 +1236,9 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheSkirmishGameInfo = nullptr;
 	TheGameState = reinterpret_cast<GameState *>(1);
 	TheMultiplayerSettings = &multiplayer_settings;
-	// PlayerList::getNthPlayer is a focused no-player boundary below; it does
-	// not read object state, but Money::deposit expects a non-null singleton.
-	ThePlayerList = reinterpret_cast<PlayerList *>(1);
+	// This shell/UI smoke has no gameplay players. Seed money through the real
+	// INI parser instead of inventing a PlayerList object for Money::deposit.
+	ThePlayerList = nullptr;
 	ThePlayerTemplateStore = &player_template_store;
 	TheMapCache = &map_cache;
 	TheAudio = &audio;
@@ -1254,13 +1263,17 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	global_data.m_shellMapOn = FALSE;
 	global_data.m_animateWindows = FALSE;
 	global_data.m_framesPerSecondLimit = 30;
-	global_data.m_defaultStartingCash.deposit(10000, FALSE);
+	char default_cash_line[] = "DefaultStartingCash = 10000";
+	global_data.m_defaultStartingCash = parse_money_line(default_cash_line);
 	display.setWidth(800);
 	display.setHeight(600);
 	display.setBitDepth(32);
 	display.setWindowed(TRUE);
 	name_key_generator.init();
 	seed_multiplayer_settings(multiplayer_settings);
+	ok = expect(global_data.m_defaultStartingCash.countMoney() == 10000
+			&& multiplayer_settings.getDefaultStartingMoney().countMoney() == 10000,
+		"real Money INI parser did not seed shell starting cash") && ok;
 	player_template_store.init();
 	seed_skirmish_map_cache(map_cache);
 	function_lexicon.init();
@@ -3123,11 +3136,6 @@ void playerTemplateListBoxTooltip(GameWindow *, WinInstanceData *, UnsignedInt)
 
 void AcademyStats::recordIncome()
 {
-}
-
-Player *PlayerList::getNthPlayer(Int)
-{
-	return nullptr;
 }
 
 OptionPreferences::OptionPreferences()
