@@ -1,5 +1,23 @@
 // Playwright init-script test double for the browser APIs owned by a headset.
 // Product WebXR code still runs unchanged against navigator.xr and XRWebGLLayer.
+export function emulatedXrEyeSeparationMeters(stereo) {
+  const views = Array.isArray(stereo?.views) ? stereo.views : [];
+  const left = views.find((view) => view?.eye === "left")?.viewMatrix;
+  const right = views.find((view) => view?.eye === "right")?.viewMatrix;
+  if (left?.length !== 16 || right?.length !== 16) {
+    throw new TypeError("emulated WebXR stereo diagnostics require left and right view matrices");
+  }
+  const separation = Math.hypot(
+    Number(right[12]) - Number(left[12]),
+    Number(right[13]) - Number(left[13]),
+    Number(right[14]) - Number(left[14]),
+  );
+  if (!Number.isFinite(separation)) {
+    throw new TypeError("emulated WebXR eye separation is not finite");
+  }
+  return separation;
+}
+
 export function installEmulatedWebXr({ settings = null } = {}) {
   if (settings) {
     localStorage.setItem("cncPortWebXrSettings.v1", JSON.stringify(settings));
@@ -21,6 +39,7 @@ export function installEmulatedWebXr({ settings = null } = {}) {
   const targetRayMatrix = identity();
   const viewerMatrix = identity();
   const sessionAnchorMatrix = identity();
+  const ipdMeters = 0.064;
   const inputSource = {
     handedness: "right",
     targetRayMode: "tracked-pointer",
@@ -65,24 +84,39 @@ export function installEmulatedWebXr({ settings = null } = {}) {
         if (this.ended) return;
         const layer = this.renderState.baseLayer;
         const halfWidth = Math.floor(layer.framebufferWidth / 2);
-        const makeView = (eye, x) => ({
-          eye,
-          projectionMatrix: projection,
-          transform: {
-            matrix: [...viewerMatrix],
-            inverse: { matrix: [
-              1, 0, 0, 0,
-              0, 1, 0, 0,
-              0, 0, 1, 0,
-              -viewerMatrix[12], -viewerMatrix[13], -viewerMatrix[14], 1,
-            ] },
-          },
-          viewport: { x, y: 0, width: halfWidth, height: layer.framebufferHeight },
-        });
+        const makeView = (eye, x, eyeOffset) => {
+          const eyeMatrix = [...viewerMatrix];
+          eyeMatrix[12] += eyeOffset;
+          return {
+            eye,
+            projectionMatrix: projection,
+            transform: {
+              matrix: eyeMatrix,
+              inverse: { matrix: [
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                -eyeMatrix[12], -eyeMatrix[13], -eyeMatrix[14], 1,
+              ] },
+            },
+            viewport: { x, y: 0, width: halfWidth, height: layer.framebufferHeight },
+          };
+        };
+        const views = [
+          makeView("left", 0, -ipdMeters * 0.5),
+          makeView("right", halfWidth, ipdMeters * 0.5),
+        ];
+        window.__emulatedXrStereo = {
+          ipdMeters,
+          views: views.map((view) => ({
+            eye: view.eye,
+            viewMatrix: [...view.transform.inverse.matrix],
+          })),
+        };
         const frame = {
           getViewerPose: () => ({
             transform: { matrix: [...viewerMatrix] },
-            views: [makeView("left", 0), makeView("right", halfWidth)],
+            views,
           }),
           getPose: (space) => space === targetRaySpace
             ? { emulatedPosition: false, transform: { matrix: targetRayMatrix } }
@@ -165,6 +199,7 @@ export function installEmulatedWebXr({ settings = null } = {}) {
   });
   window.__emulatedXrSession = null;
   window.__emulatedXrSessionCount = 0;
+  window.__emulatedXrStereo = null;
 
   const dispatchInputEdge = (index, down) => {
     const type = index === 0

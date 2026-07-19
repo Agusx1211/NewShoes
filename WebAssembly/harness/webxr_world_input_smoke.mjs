@@ -5,7 +5,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
-import { installEmulatedWebXr } from "./webxr-emulator-init.mjs";
+import {
+  emulatedXrEyeSeparationMeters,
+  installEmulatedWebXr,
+} from "./webxr-emulator-init.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -1042,7 +1045,11 @@ try {
   assert.equal(active.ok, true, `native WebXR ray diagnostic failed: ${JSON.stringify(active)}`);
   const rayLength = expectFiniteRay(active.result);
   const running = await page.evaluate(() => window.CnCPort.getWebXrState());
-  assert.equal(running.viewCount, 2, "emulated compositor must supply distinct eye views");
+  assert.equal(running.viewCount, 2, "emulated compositor must supply two eye views");
+  const stereo = await page.evaluate(() => window.__emulatedXrStereo);
+  const eyeSeparationMeters = emulatedXrEyeSeparationMeters(stereo);
+  assert.ok(Math.abs(eyeSeparationMeters - 0.064) < 0.000001,
+    `emulated compositor eye transforms are not distinct: ${JSON.stringify(stereo)}`);
   assert.equal(running.renderer?.comfort?.rotationMode, "stepped");
   assert.equal(running.renderer?.comfort?.motionVignette, true);
   assert.equal(running.renderer?.controllerPointer?.target, "ui",
@@ -1322,6 +1329,7 @@ try {
     cleared: finalCleared.result,
     runtimeFrames: running.frames,
     rendererFrames: running.renderer?.frames ?? 0,
+    eyeSeparationMeters,
     audioHeadOffset: movedListener.lastListener.xrOffset,
     audioListenerRestored: finalRestoredListener.webXrListenerActive === false,
     sessionReentry: {

@@ -141,13 +141,14 @@ A separate two-client Retail gate opts only the host into the native WebXR
 render lane while leaving the guest on the ordinary desktop path. Both clients
 use the original LAN lobby, `Network`, and playable lockstep simulation over the
 shipping WebRTC bridge. Once the shared match is active, the host must continue
-rendering two XR views with native picking, select its actual worker/dozer from
-the stock HUD, and dispatch `MSG_DO_MOVETO` through a between-frame controller
-squeeze. The gate then requires both engines to retain equal object counts, no
-CRC mismatch, the established threaded frame-skew bound, and the complete peer
-mesh. One run retained 223 objects per peer, moved `GLAInfantryWorker`, and
-converged to seven frames of skew. This is real two-peer engine/network evidence
-with an emulated compositor; real-headset multiplayer usability remains open.
+rendering two XR views with a test-side 64 mm eye separation and native picking,
+select its actual worker/dozer from the stock HUD, and dispatch `MSG_DO_MOVETO`
+through a between-frame controller squeeze. The gate then requires both engines
+to retain equal object counts, no CRC mismatch, the established threaded
+frame-skew bound, and the complete peer mesh. One run retained 223 objects per
+peer, moved `GLAInfantryWorker`, and converged to seven frames of skew. This is
+real two-peer engine/network evidence with an emulated compositor; real-headset
+multiplayer usability remains open.
 
 When only one tracked controller is available, its stick pans normally. Holding
 B/Y changes horizontal stick movement to original camera rotation and vertical

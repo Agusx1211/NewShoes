@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startNostrTestRelayServer } from "./nostr-test-relay-server.mjs";
 import { startStaticServer } from "./static-server.mjs";
-import { installEmulatedWebXr } from "./webxr-emulator-init.mjs";
+import {
+  emulatedXrEyeSeparationMeters,
+  installEmulatedWebXr,
+} from "./webxr-emulator-init.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -796,9 +799,15 @@ try {
     30000,
     50,
   ) : null;
+  const hostEyeSeparationMeters = hostWebXrPlayable
+    ? emulatedXrEyeSeparationMeters(await host.page.evaluate(() => window.__emulatedXrStereo))
+    : null;
+  expect(hostEyeSeparationMeters == null
+      || Math.abs(hostEyeSeparationMeters - 0.064) < 0.000001,
+  "host WebXR compositor did not supply distinct eye transforms", hostEyeSeparationMeters);
   if (hostWebXrPlayable) {
-    console.error(`[lan-webrtc] host WebXR rendered the playable match in two views at frame ${
-      hostWebXrPlayable.renderer.frames}`);
+    console.error(`[lan-webrtc] host WebXR rendered the playable match with ${
+      hostEyeSeparationMeters}m eye separation at frame ${hostWebXrPlayable.renderer.frames}`);
   }
   const hostWebXrOrder = webXrHost ? await driveWebXrMultiplayerOrder(host) : null;
   if (hostWebXrOrder) {
@@ -963,6 +972,7 @@ try {
       inputSourceCount: hostWebXrPlayable.inputSourceCount,
       rendererFramesBeforeMatch: hostWebXrBeforeMatch?.renderer?.frames ?? 0,
       rendererFramesPlayable: hostWebXrPlayable.renderer.frames,
+      eyeSeparationMeters: hostEyeSeparationMeters,
       enginePickRayReady: hostWebXrPlayable.renderer.enginePickRayReady,
       order: hostWebXrOrder,
     } : null,
