@@ -2009,6 +2009,20 @@ async function threadedRpc(command, payload = {}) {
         threadedEngine: threadedEngine.lastStatus,
       };
     }
+    case "webxrPickRayState": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_webxr_pick_ray_state", "string", [], [], { timeoutMs: 120000 });
+        return {
+          ok: result?.source === "W3DView WebXR input ray",
+          command,
+          result,
+          threaded: true,
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "mountArchive":
     case "mountArchives":
     case "mountPreparedArchives": {
@@ -10689,14 +10703,31 @@ function wheelWParamFromSteps(steps) {
   return (delta & 0xffff) << 16;
 }
 
+function normalizeWebXrInputPickRay(ray) {
+  if (ray == null) return null;
+  const origin = Array.from(ray.origin ?? [], Number);
+  const end = Array.from(ray.end ?? [], Number);
+  if (origin.length !== 3 || end.length !== 3
+      || !origin.every(Number.isFinite) || !end.every(Number.isFinite)) {
+    throw new TypeError("WebXR input pick ray requires finite origin and end vectors");
+  }
+  return { origin, end };
+}
+
 function forwardWebXrInputAction(action) {
   if (!action || !cncPortThreadedMode) return;
   const point = action.point && Number.isFinite(action.point.x) && Number.isFinite(action.point.y)
     ? { x: Math.round(action.point.x), y: Math.round(action.point.y) }
     : null;
+  const webxrPickRay = normalizeWebXrInputPickRay(action.ray);
+  if (action.type === "pickRay") {
+    void pushBrowserInputToWasmLite({ webxrPickRay });
+    return;
+  }
   if (action.type === "pointer" && point) {
     void pushBrowserInputToWasmLite({
       cursor: point,
+      webxrPickRay,
       win32Message: {
         message: win32Messages.mouseMove,
         lParam: win32PointLParam(point),
@@ -10712,6 +10743,7 @@ function forwardWebXrInputAction(action) {
     if (action.down !== true) rememberPointerUpForDoubleClick(event, point);
     void pushBrowserInputToWasmLite({
       cursor: point,
+      webxrPickRay,
       win32Message: {
         message,
         lParam: win32PointLParam(point),
@@ -10723,6 +10755,7 @@ function forwardWebXrInputAction(action) {
   if (action.type === "wheel" && point) {
     void pushBrowserInputToWasmLite({
       cursor: point,
+      webxrPickRay,
       win32Message: {
         message: win32Messages.mouseWheel,
         wParam: wheelWParamFromSteps(action.steps),
@@ -10834,6 +10867,7 @@ async function pushBrowserInputToWasm({
 // rpc("state") rebuilds fresh state on demand for anything that polls it.
 async function pushBrowserInputToWasmLite({
   cursor = null,
+  webxrPickRay = undefined,
   virtualKey = -1,
   keyDown = false,
   directInputCode = -1,
@@ -10856,6 +10890,9 @@ async function pushBrowserInputToWasmLite({
           py: win32Message.point?.y ?? cursor?.y ?? 0,
         } : null,
       };
+      if (webxrPickRay !== undefined) {
+        entry.webxrPickRay = webxrPickRay;
+      }
       if (virtualKey >= 0 || keyDown) {
         entry.virtualKey = virtualKey;
         entry.keyDown = keyDown;

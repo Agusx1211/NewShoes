@@ -77,6 +77,16 @@ ordered Win32/DirectInput bridge as desktop input:
 - A/X: engine Escape press;
 - B/Y: recenter the spatial anchor.
 
+Every tracked pointer also carries a ray transformed from the WebXR reference
+space through the initial spatial anchor and the latest real engine view into
+W3D world coordinates. `W3DView` uses that ray only for input-owned object and
+terrain casts. Opaque engine windows still consume their original client-space
+input first; transparent panel locations fall through to the original scene
+picker, selection translator, and deterministic command translator. Losing the
+tracked target or ending the session clears the native override, while camera
+constraints and ordinary desktop picking continue to use the camera-generated
+screen ray.
+
 The Settings entry is a two-step gesture-safe flow: prepare the opt-in render
 lane, check the headset, then request the immersive session synchronously from
 “Enter & launch VR” before game startup awaits can consume user activation.

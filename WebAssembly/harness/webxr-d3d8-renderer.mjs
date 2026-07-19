@@ -49,6 +49,93 @@ export function multiplyWebXrColumnMatrices(leftValue, rightValue) {
   return result;
 }
 
+export function invertWebXrColumnMatrix(value) {
+  const matrix = matrix16(value, "matrix to invert");
+  const rows = Array.from({ length: 4 }, (_, row) => [
+    matrix[row], matrix[4 + row], matrix[8 + row], matrix[12 + row],
+    Number(row === 0), Number(row === 1), Number(row === 2), Number(row === 3),
+  ]);
+  for (let column = 0; column < 4; column += 1) {
+    let pivot = column;
+    for (let row = column + 1; row < 4; row += 1) {
+      if (Math.abs(rows[row][column]) > Math.abs(rows[pivot][column])) pivot = row;
+    }
+    if (Math.abs(rows[pivot][column]) < 1e-10) {
+      throw new Error("WebXR matrix is singular");
+    }
+    [rows[column], rows[pivot]] = [rows[pivot], rows[column]];
+    const divisor = rows[column][column];
+    for (let entry = 0; entry < 8; entry += 1) rows[column][entry] /= divisor;
+    for (let row = 0; row < 4; row += 1) {
+      if (row === column) continue;
+      const factor = rows[row][column];
+      for (let entry = 0; entry < 8; entry += 1) {
+        rows[row][entry] -= factor * rows[column][entry];
+      }
+    }
+  }
+  const inverse = new Float32Array(16);
+  for (let column = 0; column < 4; column += 1) {
+    for (let row = 0; row < 4; row += 1) inverse[column * 4 + row] = rows[row][4 + column];
+  }
+  return inverse;
+}
+
+function transformWebXrColumnVector(matrixValue, vector) {
+  const matrix = matrix16(matrixValue, "vector transform matrix");
+  return [0, 1, 2, 3].map((row) => matrix[row] * vector[0]
+    + matrix[4 + row] * vector[1]
+    + matrix[8 + row] * vector[2]
+    + matrix[12 + row] * vector[3]);
+}
+
+export function createWebXrEnginePickRay({
+  targetRayMatrix,
+  anchorTransform,
+  engineViewMatrix,
+  engineUnitsPerMeter = DEFAULT_ENGINE_UNITS_PER_METER,
+  rayLengthEngineUnits = 12000,
+} = {}) {
+  const targetRay = matrix16(targetRayMatrix, "WebXR target ray matrix");
+  const referenceToAnchor = invertWebXrColumnMatrix(anchorTransform);
+  const cameraToWorld = invertWebXrColumnMatrix(engineViewMatrix);
+  const unitsPerMeter = Number(engineUnitsPerMeter);
+  const rayLength = Number(rayLengthEngineUnits);
+  if (!Number.isFinite(unitsPerMeter) || unitsPerMeter <= 0
+      || !Number.isFinite(rayLength) || rayLength <= 0) {
+    throw new TypeError("WebXR engine pick ray requires positive scale and length");
+  }
+  const anchorOrigin = transformWebXrColumnVector(referenceToAnchor,
+    [targetRay[12], targetRay[13], targetRay[14], 1]);
+  const anchorDirection = transformWebXrColumnVector(referenceToAnchor,
+    [-targetRay[8], -targetRay[9], -targetRay[10], 0]);
+  const viewOrigin = [
+    anchorOrigin[0] * unitsPerMeter,
+    anchorOrigin[1] * unitsPerMeter,
+    -anchorOrigin[2] * unitsPerMeter,
+    1,
+  ];
+  const viewDirection = [
+    anchorDirection[0] * unitsPerMeter,
+    anchorDirection[1] * unitsPerMeter,
+    -anchorDirection[2] * unitsPerMeter,
+    0,
+  ];
+  const worldOrigin4 = transformWebXrColumnVector(cameraToWorld, viewOrigin);
+  const worldDirection4 = transformWebXrColumnVector(cameraToWorld, viewDirection);
+  const worldDirectionLength = Math.hypot(
+    worldDirection4[0], worldDirection4[1], worldDirection4[2],
+  );
+  if (!(worldDirectionLength > 1e-8)) throw new Error("WebXR engine pick ray has no direction");
+  const origin = worldOrigin4.slice(0, 3);
+  const direction = worldDirection4.slice(0, 3)
+    .map((component) => component / worldDirectionLength);
+  return {
+    origin,
+    end: origin.map((component, index) => component + direction[index] * rayLength),
+  };
+}
+
 export function convertWebXrProjectionToD3DDepth(projectionValue) {
   const projection = matrix16(projectionValue, "WebXR projection matrix");
   // The shared D3D shader converts [0,w] depth to WebGL [-w,w] with
@@ -106,6 +193,23 @@ export function createWebXrD3D8ViewOverride({
 
 function pretransformedDraw(payload) {
   return ((Number(payload?.vertexShaderFvf ?? 0) >>> 0) & D3DFVF_XYZRHW) === D3DFVF_XYZRHW;
+}
+
+function engineViewFromPacket(packet) {
+  let defaultFramebuffer = true;
+  for (const command of packet?.commands ?? []) {
+    if (command.hook === "cncPortD3D8BindFramebuffer") {
+      defaultFramebuffer = (Number(command.args?.[0]?.colorTextureId ?? 0) >>> 0) === 0;
+      continue;
+    }
+    const payload = command.hook === "cncPortD3D8DrawIndexed" ? command.args?.[0] : null;
+    if (defaultFramebuffer && payload && !pretransformedDraw(payload)
+        && ((Number(payload.transformMask ?? 0) >>> 0) & 2) !== 0
+        && payload.transforms?.view) {
+      return matrix16(payload.transforms.view, "engine view transform");
+    }
+  }
+  return null;
 }
 
 function callHook(executorHooks, command) {
@@ -327,6 +431,7 @@ export function createWebXrD3D8Renderer({
   let lastBackbufferWidth = 0;
   let lastBackbufferHeight = 0;
   let recenterRequested = false;
+  let latestEngineView = null;
   const controls = createWebXrControls({
     onAction: (action) => {
       if (action.type === "recenter") {
@@ -345,6 +450,7 @@ export function createWebXrD3D8Renderer({
     uiDraws: 0,
     inputSourceCount: 0,
     controllerPointer: null,
+    enginePickRayReady: false,
     recenterCount: 0,
     error: null,
   };
@@ -357,6 +463,7 @@ export function createWebXrD3D8Renderer({
 
   function acceptFrame(packet, completion) {
     if (!active || pending || !packet || typeof completion !== "function") return false;
+    latestEngineView = engineViewFromPacket(packet) ?? latestEngineView;
     pending = { packet, completion };
     return true;
   }
@@ -393,11 +500,20 @@ export function createWebXrD3D8Renderer({
         panelDistanceMeters: Number(panelDistanceMeters),
         backbufferWidth: lastBackbufferWidth,
         backbufferHeight: lastBackbufferHeight,
+        resolveWorldRay: latestEngineView
+          ? (targetRayMatrix) => createWebXrEnginePickRay({
+              targetRayMatrix,
+              anchorTransform,
+              engineViewMatrix: latestEngineView,
+              engineUnitsPerMeter,
+            })
+          : null,
       });
       state = {
         ...state,
         inputSourceCount: Number(frameContext.inputSources?.length ?? 0),
         controllerPointer: controlsState.pointer,
+        enginePickRayReady: latestEngineView !== null,
       };
     }
     if (!pending) return;
@@ -507,6 +623,7 @@ export function createWebXrD3D8Renderer({
       executorDiag.setD3D8XrViewOverride(null);
       executorDiag.flushD3D8PendingDrawBatch("webxrPresent");
       if (uiDraws > 0) {
+        const pointer = controls.snapshot().pointer;
         executorDiag.bindD3D8ExternalFramebuffer(xrFramebuffer, framebufferWidth, framebufferHeight);
         uiProgram ??= compileUiProgram(gl);
         renderSpatialUi({
@@ -517,7 +634,7 @@ export function createWebXrD3D8Renderer({
           anchorTransform,
           panelWidth: Number(panelWidthMeters),
           panelDistance: Number(panelDistanceMeters),
-          pointer: controls.snapshot().pointer,
+          pointer: pointer?.target === "ui" ? pointer : null,
         });
         executorDiag.invalidateD3D8ExternalGlState();
       }
@@ -543,7 +660,9 @@ export function createWebXrD3D8Renderer({
     active = true;
     anchorTransform = null;
     recenterRequested = false;
-    return publish({ active: true, error: null });
+    latestEngineView = null;
+    onInputAction?.({ type: "pickRay", ray: null });
+    return publish({ active: true, enginePickRayReady: false, error: null });
   }
 
   function onSessionEnd() {
@@ -551,9 +670,12 @@ export function createWebXrD3D8Renderer({
     anchorTransform = null;
     recenterRequested = false;
     controls.reset();
+    onInputAction?.({ type: "pickRay", ray: null });
+    latestEngineView = null;
     finishPending(false);
     executorDiag.setD3D8XrViewOverride(null);
-    return publish({ active: false, inputSourceCount: 0, controllerPointer: null });
+    return publish({ active: false, inputSourceCount: 0, controllerPointer: null,
+      enginePickRayReady: false });
   }
 
   return {

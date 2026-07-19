@@ -14,6 +14,11 @@ function transform({ x = 0, y = 0, z = 0 } = {}) {
   ];
 }
 
+const worldRay = {
+  origin: [10, 20, 30],
+  end: [10, 20, 130],
+};
+
 const panel = {
   anchorTransform: transform({ x: 2, y: 1, z: 3 }),
   panelWidthMeters: 1.6,
@@ -21,6 +26,7 @@ const panel = {
   panelDistanceMeters: 1.5,
   backbufferWidth: 1600,
   backbufferHeight: 900,
+  resolveWorldRay: () => worldRay,
 };
 const center = intersectWebXrRayWithPanel({
   ...panel,
@@ -52,7 +58,9 @@ const right = {
 controls.update({ ...panel, time: 0, inputSources: [right] });
 assert.deepEqual(actions.at(-1), {
   type: "pointer",
+  target: "ui",
   point: { x: 800, y: 450 },
+  ray: worldRay,
   handedness: "right",
 });
 
@@ -93,6 +101,23 @@ controls.update({ ...panel, time: 50, inputSources: [] });
 assert.ok(actions.some((action) => action.type === "button"
   && action.button === "primary" && action.down === false),
 "disconnecting a controller must release held engine buttons");
+assert.ok(actions.some((action) => action.type === "pickRay" && action.ray === null),
+  "losing all tracked targets must clear the native engine-world ray");
 assert.equal(controls.snapshot().sourceCount, 0);
+
+buttons[0] = { pressed: false, value: 0 };
+buttons[1] = { pressed: false, value: 0 };
+buttons[4] = { pressed: false, value: 0 };
+buttons[5] = { pressed: false, value: 0 };
+right.gamepad.axes = [0, 0];
+right.targetRayPose.matrix = transform({ x: 2.81, y: 1, z: 3 });
+controls.update({ ...panel, time: 60, inputSources: [right] });
+assert.deepEqual(actions.at(-1), {
+  type: "pointer",
+  target: "world",
+  point: { x: 800, y: 450 },
+  ray: worldRay,
+  handedness: "right",
+}, "a ray outside the UI panel must retain an engine-world target");
 
 console.log("WebXR controls unit: PASS");

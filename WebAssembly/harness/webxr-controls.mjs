@@ -96,6 +96,17 @@ function desiredAxisState(value, negativeCode, positiveCode, previous) {
   return null;
 }
 
+function actionTarget(target) {
+  return target ? {
+    target: target.target,
+    point: { ...target.point },
+    ray: target.ray ? {
+      origin: [...target.ray.origin],
+      end: [...target.ray.end],
+    } : null,
+  } : { target: null, point: null, ray: null };
+}
+
 export function createWebXrControls({ onAction = null } = {}) {
   const sources = new Map();
   let pointer = null;
@@ -112,10 +123,12 @@ export function createWebXrControls({ onAction = null } = {}) {
 
   function releaseSource(sourceState) {
     if (sourceState.primaryDown) {
-      emit({ type: "button", button: "primary", down: false, point: sourceState.lastPoint });
+      emit({ type: "button", button: "primary", down: false,
+        ...actionTarget(sourceState.lastTarget) });
     }
     if (sourceState.secondaryDown) {
-      emit({ type: "button", button: "secondary", down: false, point: sourceState.lastPoint });
+      emit({ type: "button", button: "secondary", down: false,
+        ...actionTarget(sourceState.lastTarget) });
     }
     setKey(sourceState, "horizontalKey", null);
     setKey(sourceState, "verticalKey", null);
@@ -130,6 +143,7 @@ export function createWebXrControls({ onAction = null } = {}) {
     panelDistanceMeters,
     backbufferWidth,
     backbufferHeight,
+    resolveWorldRay = null,
   } = {}) {
     const seen = new Set();
     const hits = [];
@@ -145,7 +159,7 @@ export function createWebXrControls({ onAction = null } = {}) {
           secondaryDown: false,
           escapeDown: false,
           recenterDown: false,
-          lastPoint: null,
+          lastTarget: null,
           stickDirection: 0,
           nextStickRepeat: 0,
         };
@@ -163,24 +177,37 @@ export function createWebXrControls({ onAction = null } = {}) {
           backbufferHeight,
         })
         : null;
-      if (hit) {
-        sourceState.lastPoint = hit.point;
-        hits.push({ source, hit, trigger: pressed(source?.gamepad?.buttons?.[0]) });
+      const worldRay = source?.targetRayPose?.matrix && typeof resolveWorldRay === "function"
+        ? resolveWorldRay(source.targetRayPose.matrix, source)
+        : null;
+      const target = hit || worldRay ? {
+        target: hit ? "ui" : "world",
+        point: hit?.point ?? {
+          x: Math.max(0, Math.round((Number(backbufferWidth) - 1) * 0.5)),
+          y: Math.max(0, Math.round((Number(backbufferHeight) - 1) * 0.5)),
+        },
+        ray: worldRay,
+        u: hit?.u ?? null,
+        v: hit?.v ?? null,
+      } : null;
+      if (target) {
+        sourceState.lastTarget = target;
+        hits.push({ source, target, trigger: pressed(source?.gamepad?.buttons?.[0]) });
       }
 
       const buttons = source?.gamepad?.buttons ?? [];
       const trigger = pressed(buttons[0]);
       const squeeze = pressed(buttons[1]);
-      const primaryDown = trigger && Boolean(hit);
-      const secondaryDown = squeeze && Boolean(sourceState.lastPoint);
+      const primaryDown = trigger && Boolean(target);
+      const secondaryDown = squeeze && Boolean(target ?? sourceState.lastTarget);
       if (primaryDown !== sourceState.primaryDown) {
         emit({ type: "button", button: "primary", down: primaryDown,
-          point: hit?.point ?? sourceState.lastPoint });
+          ...actionTarget(target ?? sourceState.lastTarget) });
         sourceState.primaryDown = primaryDown;
       }
       if (secondaryDown !== sourceState.secondaryDown) {
         emit({ type: "button", button: "secondary", down: secondaryDown,
-          point: hit?.point ?? sourceState.lastPoint });
+          ...actionTarget(target ?? sourceState.lastTarget) });
         sourceState.secondaryDown = secondaryDown;
       }
 
@@ -205,7 +232,8 @@ export function createWebXrControls({ onAction = null } = {}) {
         if (direction === 0) {
           sourceState.stickDirection = 0;
         } else if (direction !== sourceState.stickDirection || Number(time) >= sourceState.nextStickRepeat) {
-          emit({ type: "wheel", steps: direction, point: hit?.point ?? sourceState.lastPoint });
+          emit({ type: "wheel", steps: direction,
+            ...actionTarget(target ?? sourceState.lastTarget) });
           sourceState.stickDirection = direction;
           sourceState.nextStickRepeat = Number(time) + STICK_REPEAT_MS;
         }
@@ -219,15 +247,19 @@ export function createWebXrControls({ onAction = null } = {}) {
     }
 
     hits.sort((left, right) => Number(right.trigger) - Number(left.trigger)
+      || Number(right.target.target === "ui") - Number(left.target.target === "ui")
       || Number(right.source?.handedness === "right") - Number(left.source?.handedness === "right"));
     const activeHit = hits[0] ?? null;
+    const hadPointer = pointer !== null;
     pointer = activeHit ? {
       handedness: activeHit.source?.handedness ?? "none",
-      point: { ...activeHit.hit.point },
-      u: activeHit.hit.u,
-      v: activeHit.hit.v,
+      ...actionTarget(activeHit.target),
+      u: activeHit.target.u,
+      v: activeHit.target.v,
     } : null;
-    if (pointer) emit({ type: "pointer", point: pointer.point, handedness: pointer.handedness });
+    if (pointer) emit({ type: "pointer", ...actionTarget(pointer),
+      handedness: pointer.handedness });
+    else if (hadPointer) emit({ type: "pickRay", ray: null });
     return snapshot();
   }
 
@@ -240,7 +272,10 @@ export function createWebXrControls({ onAction = null } = {}) {
   function snapshot() {
     return {
       sourceCount: sources.size,
-      pointer: pointer ? { ...pointer, point: { ...pointer.point } } : null,
+      pointer: pointer ? {
+        ...pointer,
+        ...actionTarget(pointer),
+      } : null,
     };
   }
 

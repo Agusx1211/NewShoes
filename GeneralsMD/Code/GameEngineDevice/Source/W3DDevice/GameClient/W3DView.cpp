@@ -36,6 +36,12 @@
 #include <stdlib.h>
 #include <windows.h>
 
+#ifdef __EMSCRIPTEN__
+#include <cmath>
+#include <cstdio>
+#include <emscripten/emscripten.h>
+#endif
+
 // USER INCLUDES //////////////////////////////////////////////////////////////////////////////////
 #include "Common/BuildAssistant.h"
 #include "Common/GlobalData.h"
@@ -125,6 +131,73 @@ extern "C" int cnc_port_client_frame_elapsed_ms(void) __attribute__((weak));
 Int TheW3DFrameLengthInMsec = 1000/LOGICFRAMES_PER_SECOND; // default is 33msec/frame == 30fps. but we may change it depending on sys config.
 static const Int MAX_REQUEST_CACHE_SIZE = 40;	// Any size larger than 10, or examine code below for changes. jkmcd.
 static const Real DRAWABLE_OVERSCAN = 75.0f;  ///< 3D world coords of how much to overscan in the 3D screen region
+
+#ifdef __EMSCRIPTEN__
+namespace {
+Bool g_webXrInputPickRayValid = FALSE;
+Vector3 g_webXrInputPickRayStart;
+Vector3 g_webXrInputPickRayEnd;
+UnsignedInt g_webXrInputPickRayUpdates = 0;
+UnsignedInt g_webXrInputPickRayClears = 0;
+UnsignedInt g_webXrInputPickRayRejected = 0;
+UnsignedInt g_webXrInputPickRayConsumed = 0;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_webxr_set_pick_ray(
+	int enabled,
+	float startX,
+	float startY,
+	float startZ,
+	float endX,
+	float endY,
+	float endZ)
+{
+	g_webXrInputPickRayValid = FALSE;
+	if (enabled == 0) {
+		++g_webXrInputPickRayClears;
+		return 1;
+	}
+	if (!std::isfinite(startX) || !std::isfinite(startY) || !std::isfinite(startZ)
+			|| !std::isfinite(endX) || !std::isfinite(endY) || !std::isfinite(endZ)) {
+		++g_webXrInputPickRayRejected;
+		return 0;
+	}
+	const Real deltaX = endX - startX;
+	const Real deltaY = endY - startY;
+	const Real deltaZ = endZ - startZ;
+	const Real lengthSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
+	if (lengthSquared < 1.0f || lengthSquared > 40000000000.0f) {
+		++g_webXrInputPickRayRejected;
+		return 0;
+	}
+	g_webXrInputPickRayStart.Set(startX, startY, startZ);
+	g_webXrInputPickRayEnd.Set(endX, endY, endZ);
+	g_webXrInputPickRayValid = TRUE;
+	++g_webXrInputPickRayUpdates;
+	return 1;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_webxr_pick_ray_state()
+{
+	static char state[640];
+	std::snprintf(state, sizeof(state),
+		"{\"source\":\"W3DView WebXR input ray\",\"active\":%s,"
+		"\"updates\":%u,\"clears\":%u,\"rejected\":%u,\"consumed\":%u,"
+		"\"start\":[%.9g,%.9g,%.9g],\"end\":[%.9g,%.9g,%.9g]}",
+		g_webXrInputPickRayValid ? "true" : "false",
+		g_webXrInputPickRayUpdates,
+		g_webXrInputPickRayClears,
+		g_webXrInputPickRayRejected,
+		g_webXrInputPickRayConsumed,
+		g_webXrInputPickRayStart.X,
+		g_webXrInputPickRayStart.Y,
+		g_webXrInputPickRayStart.Z,
+		g_webXrInputPickRayEnd.X,
+		g_webXrInputPickRayEnd.Y,
+		g_webXrInputPickRayEnd.Z);
+	return state;
+}
+#endif
 
 
 
@@ -595,6 +668,24 @@ void W3DView::getPickRay(const ICoord2D *screen, Vector3 *rayStart, Vector3 *ray
 	rayEnd->Normalize();	//make unit vector
 	*rayEnd *= m_3DCamera->Get_Depth();	//adjust length to reach far clip plane
 	*rayEnd += *rayStart;	//get point on far clip plane along ray from camera.
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Return the real WebXR controller ray while immersive input is active. This
+	path is deliberately separate from getPickRay(): camera constraints and view
+	math must continue to use the engine camera even while the controller moves. */
+//-------------------------------------------------------------------------------------------------
+void W3DView::getInputPickRay(const ICoord2D *screen, Vector3 *rayStart, Vector3 *rayEnd)
+{
+#ifdef __EMSCRIPTEN__
+	if (g_webXrInputPickRayValid) {
+		++g_webXrInputPickRayConsumed;
+		*rayStart = g_webXrInputPickRayStart;
+		*rayEnd = g_webXrInputPickRayEnd;
+		return;
+	}
+#endif
+	getPickRay(screen, rayStart, rayEnd);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -2348,7 +2439,7 @@ Drawable *W3DView::pickDrawable( const ICoord2D *screen, Bool forceAttack, PickT
 	}
 
 	Vector3 rayStart,rayEnd;
-	getPickRay(screen,&rayStart,&rayEnd);
+	getInputPickRay(screen,&rayStart,&rayEnd);
 
 	LineSegClass lineseg;
 	lineseg.Set(rayStart,rayEnd);
@@ -2387,22 +2478,29 @@ void W3DView::screenToTerrain( const ICoord2D *screen, Coord3D *world )
 	if( screen == NULL || world == NULL || TheTerrainRenderObject == NULL )
 		return;
 
-	if (m_cameraHasMovedSinceRequest) {
+	Bool cacheInputLocation = TRUE;
+#ifdef __EMSCRIPTEN__
+	cacheInputLocation = !g_webXrInputPickRayValid;
+#endif
+
+	if (cacheInputLocation && m_cameraHasMovedSinceRequest) {
 		m_locationRequests.clear();
 		m_cameraHasMovedSinceRequest = false;
 	}
 
-	if (m_locationRequests.size() > MAX_REQUEST_CACHE_SIZE) {
+	if (cacheInputLocation && m_locationRequests.size() > MAX_REQUEST_CACHE_SIZE) {
 		m_locationRequests.erase(m_locationRequests.begin(), m_locationRequests.begin() + 10);
 	}
 
 
 	// We insert them at the end for speed (no copies needed), but using the princ of locality, we should 
 	// start searching where we most recently inserted
-	for (int i = m_locationRequests.size() - 1; i >= 0; --i) {
-		if (m_locationRequests[i].first.x == screen->x && m_locationRequests[i].first.y == screen->y) {
-			(*world) = m_locationRequests[i].second;
-			return;
+	if (cacheInputLocation) {
+		for (int i = m_locationRequests.size() - 1; i >= 0; --i) {
+			if (m_locationRequests[i].first.x == screen->x && m_locationRequests[i].first.y == screen->y) {
+				(*world) = m_locationRequests[i].second;
+				return;
+			}
 		}
 	}
 
@@ -2411,7 +2509,7 @@ void W3DView::screenToTerrain( const ICoord2D *screen, Coord3D *world )
 	CastResultStruct result;
 	Vector3 intersection(0,0,0);
 
-	getPickRay(screen,&rayStart,&rayEnd);
+	getInputPickRay(screen,&rayStart,&rayEnd);
 
 	lineseg.Set(rayStart,rayEnd);
 
@@ -2438,7 +2536,9 @@ void W3DView::screenToTerrain( const ICoord2D *screen, Coord3D *world )
 	PosRequest req;
 	req.first = (*screen);
 	req.second = (*world);
-	m_locationRequests.push_back(req);	// Insert this request at the end, requires no extra copies
+	if (cacheInputLocation) {
+		m_locationRequests.push_back(req);	// Insert this request at the end, requires no extra copies
+	}
 
 }  // end screenToTerrain
 

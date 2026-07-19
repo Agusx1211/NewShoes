@@ -593,7 +593,23 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     }
     if (entry.reset === true) {
       Module._cnc_port_reset_browser_input();
+      Module._cnc_port_webxr_set_pick_ray?.(0, 0, 0, 0, 0, 0, 0);
       return;
+    }
+    if (Object.prototype.hasOwnProperty.call(entry, "webxrPickRay")) {
+      const setPickRay = Module._cnc_port_webxr_set_pick_ray;
+      if (typeof setPickRay !== "function") {
+        throw new Error("native WebXR pick-ray export is unavailable");
+      }
+      const ray = entry.webxrPickRay;
+      const origin = Array.isArray(ray?.origin) ? ray.origin : null;
+      const end = Array.isArray(ray?.end) ? ray.end : null;
+      const accepted = ray == null
+        ? setPickRay(0, 0, 0, 0, 0, 0, 0)
+        : origin?.length === 3 && end?.length === 3
+          ? setPickRay(1, origin[0], origin[1], origin[2], end[0], end[1], end[2])
+          : 0;
+      if (accepted !== 1) throw new Error("native WebXR pick ray was rejected");
     }
     const cursor = entry.cursor ?? null;
     Module._cnc_port_set_browser_input_lite(

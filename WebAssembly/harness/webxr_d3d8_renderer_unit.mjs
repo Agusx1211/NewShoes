@@ -4,6 +4,7 @@ import {
   convertWebXrProjectionToD3DDepth,
   createWebXrD3D8Renderer,
   createWebXrD3D8ViewOverride,
+  createWebXrEnginePickRay,
 } from "./webxr-d3d8-renderer.mjs";
 
 const identity = new Float32Array([
@@ -43,6 +44,16 @@ for (let column = 0; column < 4; column += 1) {
   assert.ok(Math.abs((2 * d3dZ - w) - projection[column * 4 + 2]) < 0.000001,
     "the shared D3D shader must reconstruct exact WebXR clip depth");
 }
+const enginePickRay = createWebXrEnginePickRay({
+  targetRayMatrix: identity,
+  anchorTransform: identity,
+  engineViewMatrix: identity,
+  engineUnitsPerMeter: 2,
+  rayLengthEngineUnits: 10,
+});
+assert.deepEqual(enginePickRay.origin, [0, 0, 0]);
+assert.deepEqual(enginePickRay.end, [0, 0, 10],
+  "WebXR -Z must map to the engine camera's +Z-forward world ray");
 
 const log = [];
 const hooks = new Proxy({}, {
@@ -91,6 +102,8 @@ let completion = null;
 const worldDraw = {
   statePayloadCanonical: true,
   vertexShaderFvf: 0x002,
+  transformMask: 7,
+  transforms: { world: identity, view: identity, projection: identity },
 };
 assert.equal(renderer.acceptFrame({
   version: 1,
@@ -130,6 +143,7 @@ assert.deepEqual(renderer.snapshot(), {
   uiDraws: 0,
   inputSourceCount: 1,
   controllerPointer: null,
+  enginePickRayReady: true,
   recenterCount: 0,
   error: null,
 });
@@ -150,7 +164,9 @@ renderer.renderFrame({
   layer: { framebuffer: {}, framebufferWidth: 1600, framebufferHeight: 900 },
 });
 assert.ok(inputActions.some((action) => action.type === "pointer"
-  && action.point.x === 640 && action.point.y === 360),
+  && action.target === "ui"
+  && action.point.x === 640 && action.point.y === 360
+  && action.ray?.end?.[2] > action.ray?.origin?.[2]),
 "the compositor controller ray must resolve to engine client coordinates");
 assert.ok(inputActions.some((action) => action.type === "button"
   && action.button === "primary" && action.down === true),
@@ -159,6 +175,8 @@ renderer.onSessionEnd();
 assert.ok(inputActions.some((action) => action.type === "button"
   && action.button === "primary" && action.down === false),
 "ending immersive mode must release held engine input");
+assert.ok(inputActions.some((action) => action.type === "pickRay" && action.ray === null),
+  "ending immersive mode must clear the native controller ray");
 assert.equal(renderer.snapshot().controllerPointer, null);
 
 console.log("WebXR D3D8 renderer unit: PASS");
