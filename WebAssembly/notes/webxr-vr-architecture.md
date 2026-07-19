@@ -189,6 +189,19 @@ continued native picking and spatial audio, preservation of the running match,
 and clean ownership restoration after both exits. Unexpected real-device session
 loss and re-entry still require headset evidence.
 
+WebGL context loss is intentionally fatal because the shared D3D8 executor
+cannot reconstruct all original resources in place. The executor's existing
+`webglcontextlost` handler records the failure and presents a reload-required
+banner. While immersive mode is active, the WebXR runtime also listens on that
+exact Window-owned canvas: loss marks the session failed, ends it, releases
+controller/native-ray/audio ownership, and removes the session's canvas
+listener. A compositor packet pending at loss is rejected rather than falsely
+acknowledged or replayed against a no-op context. The lost context is rejected
+before any later `requestSession` call, so recovery requires the same explicit
+page reload as desktop mode. The retail smoke triggers `WEBGL_lose_context`
+after a successful fresh-session re-entry and verifies the failed phase, reload
+banner, input/audio cleanup, and rejection before a third XRSession request.
+
 Every tracked pointer also carries a ray transformed from the WebXR reference
 space through the initial spatial anchor and the latest real engine view into
 W3D world coordinates. `W3DView` uses that ray only for input-owned object and
@@ -223,6 +236,8 @@ run during ordinary desktop play.
   browser text events through the existing Win32/IME bridge.
 - [x] Exit and enter a fresh immersive session without rebooting the live match,
   while restoring native input/audio ownership after each exit.
+- [x] Fail an active session explicitly on non-restorable WebGL context loss,
+  reject any pending compositor packet, and require reload before re-entry.
 - [x] Apply head-tracked position/orientation to the engine-owned browser 3D
   audio listener with the same world scale and explicit session cleanup.
 - [x] Persist continuous/stepped original-key turning and an optional per-eye

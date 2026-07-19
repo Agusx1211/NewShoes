@@ -91,6 +91,9 @@ function validateRenderer(renderer) {
   if (typeof gl.makeXRCompatible !== "function") {
     throw new TypeError("WebXR renderer WebGL2 context cannot be made XR-compatible");
   }
+  if (gl.isContextLost?.() === true) {
+    throw new Error("WebXR renderer WebGL2 context is lost; reload the game before entering VR");
+  }
   if (typeof renderer.renderFrame !== "function") {
     throw new TypeError("WebXR renderer adapter requires renderFrame(frameContext)");
   }
@@ -198,6 +201,7 @@ export function createWebXrRuntime({
       if (!current || current.session !== session) return snapshot();
       active = null;
       current.session.removeEventListener?.("visibilitychange", current.visibilityListener);
+      current.gl.canvas?.removeEventListener?.("webglcontextlost", current.contextLossListener);
       try {
         await current.renderer.onSessionEnd?.({ reason, error });
       } catch (cleanupError) {
@@ -220,6 +224,16 @@ export function createWebXrRuntime({
     }
   }
 
+  function failSession(session, reason, error) {
+    const current = active;
+    if (!current || current.session !== session || current.failure) return;
+    current.failure = { reason, error };
+    publish({ phase: "failed", error: errorText(error) });
+    void session.end()
+      .catch(() => {})
+      .finally(() => finalizeSession(session, reason, error));
+  }
+
   function handleSessionVisibility(session) {
     const current = active;
     if (!current || current.session !== session) return;
@@ -233,10 +247,7 @@ export function createWebXrRuntime({
       });
       publish({ visibilityState, inputSuspended });
     } catch (error) {
-      publish({ phase: "failed", error: errorText(error) });
-      void session.end()
-        .catch(() => {})
-        .finally(() => finalizeSession(session, "visibility-error", error));
+      failSession(session, "visibility-error", error);
     }
   }
 
@@ -246,6 +257,9 @@ export function createWebXrRuntime({
       if (!current || current.session !== session) return;
       scheduleFrame(session);
       try {
+        if (current.gl.isContextLost?.() === true) {
+          throw new Error("WebXR graphics context was lost; reload the game to continue");
+        }
         const pose = frame.getViewerPose(current.referenceSpace);
         if (!pose) return;
         current.gl.bindFramebuffer(current.gl.FRAMEBUFFER, current.layer.framebuffer);
@@ -281,10 +295,7 @@ export function createWebXrRuntime({
           error: null,
         });
       } catch (error) {
-        publish({ phase: "failed", error: errorText(error) });
-        void session.end()
-          .catch(() => {})
-          .finally(() => finalizeSession(session, "render-error", error));
+        failSession(session, "render-error", error);
       }
     });
   }
@@ -312,10 +323,13 @@ export function createWebXrRuntime({
     startPromise = (async () => {
       let session = null;
       let visibilityListener = null;
+      let contextLossListener = null;
       try {
         session = await sessionRequest;
         const endListener = () => {
-          void finalizeSession(session, "session-ended");
+          const failure = active?.session === session ? active.failure : null;
+          void finalizeSession(session,
+            failure?.reason ?? "session-ended", failure?.error ?? null);
         };
         visibilityListener = () => handleSessionVisibility(session);
         session.addEventListener("end", endListener, { once: true });
@@ -339,8 +353,11 @@ export function createWebXrRuntime({
           referenceSpace = await session.requestReferenceSpace(referenceSpaceType);
         }
 
+        contextLossListener = () => failSession(session, "graphics-context-lost",
+          new Error("WebXR graphics context was lost; reload the game to continue"));
         active = { session, renderer, gl, layer, referenceSpace, referenceSpaceType,
-          visibilityListener };
+          visibilityListener, contextLossListener, failure: null };
+        gl.canvas?.addEventListener?.("webglcontextlost", contextLossListener);
         await renderer.onSessionStart?.({
           session,
           gl,
@@ -369,6 +386,7 @@ export function createWebXrRuntime({
       } catch (error) {
         if (session) {
           session.removeEventListener?.("visibilitychange", visibilityListener);
+          gl.canvas?.removeEventListener?.("webglcontextlost", contextLossListener);
           try {
             await session.end();
           } catch (_endError) {

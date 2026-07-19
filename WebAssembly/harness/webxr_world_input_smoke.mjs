@@ -822,25 +822,46 @@ try {
     "session re-entry must preserve the live match instead of rebooting the engine");
   stage("fresh immersive session resumed stereo frames, native picking, and spatial audio");
 
-  await page.evaluate(() => window.CnCPort.stopWebXrSession("world-input-reentry-smoke"));
+  const contextLossTrigger = await page.evaluate(() => {
+    const canvas = document.querySelector("#viewport");
+    const context = canvas?.getContext("webgl2");
+    const extension = context?.getExtension("WEBGL_lose_context");
+    if (!extension) throw new Error("WEBGL_lose_context is unavailable");
+    extension.loseContext();
+    return { extensionAvailable: true };
+  });
   await page.waitForFunction(async () => {
     const xr = window.CnCPort.getWebXrState();
     const ray = await window.CnCPort.rpc("webxrPickRayState");
-    return xr.phase === "ready" && ray?.ok === true && ray.result?.active === false;
+    return xr.phase === "failed" && xr.renderer?.active === false
+      && ray?.ok === true && ray.result?.active === false
+      && document.querySelector("#webglContextLostBanner") !== null;
   }, null, { timeout: 30000, polling: 100 });
-  await page.waitForFunction(() =>
-    document.querySelector("#webXrButton")?.textContent === "Enter VR");
   const finalCleared = await rpc(page, "webxrPickRayState");
   assert.ok(finalCleared.result.clears > cleared.result.clears,
-    "ending the replacement session must clear its native W3DView ray");
+    "graphics loss in the replacement session must clear its native W3DView ray");
   const finalRestoredListener = await waitForWebXrAudioListener(page,
-    "restored engine audio listener after re-entry",
+    "restored engine audio listener after graphics loss",
     (runtime) => runtime?.webXrListenerActive === false
       && runtime?.lastListener?.mode === "engine");
   assert.deepEqual(finalRestoredListener.lastListener.position,
     finalRestoredListener.lastListener.enginePosition,
-    "replacement-session shutdown must restore the unmodified engine listener");
-  stage("replacement session shutdown restored native input and audio ownership");
+    "graphics-loss shutdown must restore the unmodified engine listener");
+  const failedXr = await page.evaluate(() => window.CnCPort.getWebXrState());
+  assert.match(failedXr.error, /graphics context was lost/i);
+  const rejectedReentry = await page.evaluate(async () => {
+    try {
+      await window.CnCPort.startWebXrSession();
+      return { rejected: false, error: null };
+    } catch (error) {
+      return { rejected: true, error: error?.message ?? String(error) };
+    }
+  });
+  assert.equal(rejectedReentry.rejected, true);
+  assert.match(rejectedReentry.error, /context is lost/);
+  assert.equal(await page.evaluate(() => window.__emulatedXrSessionCount), 2,
+    "lost-context re-entry must be rejected before requesting another XRSession");
+  stage("graphics loss failed the session and restored native input/audio ownership");
 
   console.log(JSON.stringify({
     ok: true,
@@ -860,6 +881,15 @@ try {
       audioListenerRestored: finalRestoredListener.webXrListenerActive === false,
       matchPreserved: reenteredGameplay.clientState.gameplay.inGame,
       listenerMode: reenteredListener.lastListener.mode,
+    },
+    contextLoss: {
+      ...contextLossTrigger,
+      phase: failedXr.phase,
+      rendererActive: failedXr.renderer?.active,
+      error: failedXr.error,
+      reloadBanner: await page.evaluate(() =>
+        document.querySelector("#webglContextLostBanner")?.textContent ?? null),
+      reentryRejected: rejectedReentry.rejected,
     },
     modalFlow,
     textEntry,

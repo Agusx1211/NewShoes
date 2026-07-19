@@ -304,4 +304,30 @@ assert.ok(inputActions.some((action) => action.type === "pickRay" && action.ray 
   "ending immersive mode must clear the native controller ray");
 assert.equal(renderer.snapshot().controllerPointer, null);
 
+const lostRenderer = createWebXrD3D8Renderer({ gl, executorHooks: hooks, executorDiag: diag });
+lostRenderer.onSessionStart();
+let lostFrameAccepted = null;
+const presentCountBeforeLoss = log.filter((entry) => entry[0] === "hook"
+  && entry[1] === "cncPortD3D8Present").length;
+assert.equal(lostRenderer.acceptFrame({
+  version: 1,
+  sequence: 9,
+  present: { backBufferWidth: 1280, backBufferHeight: 720 },
+  commands: [
+    { hook: "cncPortD3D8BindFramebuffer", args: [{ colorTextureId: 0 }] },
+    { hook: "cncPortD3D8Present", args: [{}] },
+  ],
+}, (accepted) => { lostFrameAccepted = accepted; }), true);
+lostRenderer.onSessionEnd({
+  reason: "graphics-context-lost",
+  error: new Error("test WebXR graphics context loss"),
+});
+assert.equal(lostFrameAccepted, false,
+  "a lost graphics context must reject rather than falsely drain its pending frame");
+assert.equal(log.filter((entry) => entry[0] === "hook"
+  && entry[1] === "cncPortD3D8Present").length, presentCountBeforeLoss,
+  "context-loss cleanup must not claim a Present on the lost executor");
+assert.equal(lostRenderer.snapshot().active, false);
+assert.equal(lostRenderer.snapshot().error, "test WebXR graphics context loss");
+
 console.log("WebXR D3D8 renderer unit: PASS");

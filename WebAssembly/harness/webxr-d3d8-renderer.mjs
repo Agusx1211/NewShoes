@@ -960,7 +960,7 @@ export function createWebXrD3D8Renderer({
       error: null });
   }
 
-  function onSessionEnd() {
+  function onSessionEnd({ reason = null, error = null } = {}) {
     active = false;
     anchorTransform = null;
     recenterRequested = false;
@@ -968,10 +968,16 @@ export function createWebXrD3D8Renderer({
     onInputAction?.({ type: "pickRay", ray: null });
     onAudioListenerPose?.(null);
     latestEngineView = null;
-    executorDiag.setD3D8XrViewOverride(null);
-    executorDiag.invalidateD3D8ExternalGlState();
-    executorHooks.cncPortD3D8BindFramebuffer({ colorTextureId: 0 });
-    if (pending) {
+    const graphicsContextLost = reason === "graphics-context-lost"
+      || gl.isContextLost?.() === true;
+    if (!graphicsContextLost) {
+      executorDiag.setD3D8XrViewOverride(null);
+      executorDiag.invalidateD3D8ExternalGlState();
+      executorHooks.cncPortD3D8BindFramebuffer({ colorTextureId: 0 });
+    }
+    if (pending && graphicsContextLost) {
+      finishPending(false);
+    } else if (pending) {
       try {
         replayWebXrD3D8CommandFrame(pending.packet, executorHooks);
         finishPending(true);
@@ -985,7 +991,10 @@ export function createWebXrD3D8Renderer({
       enginePickRayReady: false, audioListenerPoseReady: false,
       pointerDraws: 0, vignetteDraws: 0, visibilityState: null,
       inputSuspended: false, inputWaitingForNeutral: false, inputNeutralBlockers: [],
-      cameraMotion: controls.snapshot().cameraMotion });
+      cameraMotion: controls.snapshot().cameraMotion,
+      error: graphicsContextLost
+        ? (error?.message ?? "WebXR graphics context was lost; reload required")
+        : state.error });
   }
 
   return {

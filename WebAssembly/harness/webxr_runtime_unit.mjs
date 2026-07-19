@@ -77,6 +77,24 @@ class FakeLayer {
   }
 }
 
+class FakeCanvas {
+  constructor() {
+    this.listeners = new Map();
+  }
+
+  addEventListener(type, listener) {
+    this.listeners.set(type, listener);
+  }
+
+  removeEventListener(type, listener) {
+    if (this.listeners.get(type) === listener) this.listeners.delete(type);
+  }
+
+  fire(type) {
+    this.listeners.get(type)?.({ type });
+  }
+}
+
 const unavailable = createWebXrRuntime({
   navigatorLike: {},
   secureContext: true,
@@ -130,8 +148,11 @@ assert.equal(requestSessionCalls, 0,
   "invalid renderers must be rejected before requesting an immersive session");
 
 const glCalls = [];
+const glCanvas = new FakeCanvas();
 const gl = {
   FRAMEBUFFER: 0x8d40,
+  canvas: glCanvas,
+  isContextLost: () => false,
   async makeXRCompatible() {
     glCalls.push("makeXRCompatible");
   },
@@ -165,6 +186,7 @@ assert.deepEqual(session.referenceSpaceRequests, ["local-floor"]);
 assert.equal(session.renderState.baseLayer instanceof FakeLayer, true);
 assert.deepEqual(glCalls, ["makeXRCompatible"]);
 assert.deepEqual(rendererEvents, [["start", "local-floor"]]);
+assert.equal(glCanvas.listeners.has("webglcontextlost"), true);
 
 const leftView = {
   eye: "left",
@@ -262,6 +284,8 @@ assert.equal(runtime.snapshot().phase, "ready");
 assert.equal(runtime.snapshot().systemKeyboardSupported, null);
 assert.equal(rendererEvents.at(-1)[0], "end");
 assert.equal(rendererEvents.at(-1)[1], "session-ended");
+assert.equal(glCanvas.listeners.has("webglcontextlost"), false,
+  "session exit must remove its graphics-loss listener");
 assert.ok(stateChanges.some((state) => state.phase === "starting"));
 assert.ok(stateChanges.some((state) => state.phase === "running"));
 
@@ -282,6 +306,52 @@ assert.equal(rendererEvents.filter(([kind]) => kind === "start").length, 2,
 await runtime.stop("reentry-unit-test");
 assert.equal(runtime.snapshot().phase, "ready");
 assert.equal(reentrySession.ended, true);
+assert.equal(glCanvas.listeners.has("webglcontextlost"), false);
+
+const lostSession = new FakeSession();
+const lostCanvas = new FakeCanvas();
+let contextLost = false;
+let lostRequestSessionCalls = 0;
+const lostRendererEvents = [];
+const lostRuntime = createWebXrRuntime({
+  navigatorLike: { xr: {
+    isSessionSupported: async () => true,
+    requestSession: async () => {
+      lostRequestSessionCalls += 1;
+      return lostSession;
+    },
+  } },
+  secureContext: true,
+  XRWebGLLayerCtor: FakeLayer,
+});
+const lostRenderer = {
+  gl: {
+    canvas: lostCanvas,
+    bindFramebuffer() {},
+    makeXRCompatible: async () => {},
+    isContextLost: () => contextLost,
+  },
+  renderFrame() {},
+  onSessionEnd(context) {
+    lostRendererEvents.push(context);
+  },
+};
+await lostRuntime.probe();
+await lostRuntime.start(lostRenderer);
+contextLost = true;
+lostCanvas.fire("webglcontextlost");
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(lostSession.ended, true,
+  "graphics loss must end the active immersive session");
+assert.equal(lostRuntime.snapshot().phase, "failed");
+assert.match(lostRuntime.snapshot().error, /graphics context was lost/);
+assert.equal(lostRendererEvents.at(-1).reason, "graphics-context-lost");
+assert.match(lostRendererEvents.at(-1).error.message, /reload the game/);
+assert.equal(lostCanvas.listeners.has("webglcontextlost"), false,
+  "graphics-loss finalization must remove its canvas listener");
+await assert.rejects(lostRuntime.start(lostRenderer), /context is lost/);
+assert.equal(lostRequestSessionCalls, 1,
+  "a lost renderer must be rejected before consuming a new immersive request");
 
 const failedSession = new FakeSession();
 const startFailureRuntime = createWebXrRuntime({
