@@ -70,7 +70,19 @@ async function waitForSelectionMode(page, label, predicate, waitMs = 30000) {
     if (last?.ok === true && predicate(last.result?.modes ?? {})) return last.result.modes;
     await page.waitForTimeout(50);
   }
-  throw new Error(`${label} timed out: ${JSON.stringify(last)}`);
+  throw new Error(`${label} timed out: ${JSON.stringify(last?.result ?? last)}`);
+}
+
+async function waitForSelectionState(page, label, predicate, waitMs = 30000) {
+  const deadline = Date.now() + waitMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    await fullFrame(page);
+    last = await rpc(page, "querySelection");
+    if (last?.ok === true && predicate(last.result ?? {})) return last.result;
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`${label} timed out: ${JSON.stringify(last?.result ?? last)}`);
 }
 
 async function aimWebXrAtEnginePoint(page, geometry, point, label) {
@@ -193,10 +205,10 @@ async function enterSkirmish(page, geometry) {
   return textEntry;
 }
 
-async function tapWebXrButton(page, index) {
+async function tapWebXrButton(page, index, { frameWhilePressed = true } = {}) {
   await page.evaluate((buttonIndex) => window.__emulatedXrButton(buttonIndex, true), index);
   await page.waitForTimeout(80);
-  await fullFrame(page);
+  if (frameWhilePressed) await fullFrame(page);
   await page.evaluate((buttonIndex) => window.__emulatedXrButton(buttonIndex, false), index);
   await page.waitForTimeout(80);
   await fullFrame(page);
@@ -636,6 +648,89 @@ async function driveWebXrHudSurfaceFlow(page, geometry) {
   };
 }
 
+function availableCommandButtons(controlBar) {
+  return Array.from({ length: 12 }, (_, index) => {
+    const field = `buttonCommand${String(index + 1).padStart(2, "0")}`;
+    return { field, button: controlBar?.[field] ?? null };
+  }).filter(({ button }) => button?.clickable === true && button?.command != null);
+}
+
+async function waitForWebXrCommandButton(page, label, predicate, waitMs = 30000) {
+  const frame = await waitForFrame(page, label, (candidate) =>
+    availableCommandButtons(candidate?.clientState?.controlBarWindows).some(
+      ({ button }) => predicate(button.command),
+    ), waitMs);
+  return availableCommandButtons(frame.clientState.controlBarWindows)
+    .find(({ button }) => predicate(button.command));
+}
+
+async function hoverWebXrCommandButton(page, geometry, commandButton, priorTooltip) {
+  await aimWebXrAtEnginePoint(page, geometry,
+    { x: commandButton.centerX, y: commandButton.centerY },
+    `${commandButton.command.name} command hover`);
+  return waitForAgentUiWindow(page, "ControlBarPopupDescription.wnd:StaticTextName",
+    (window) => window.visible === true
+      && window.text.trim().length > 0
+      && window.text !== priorTooltip);
+}
+
+async function driveWebXrCommandBarFlow(page, geometry, priorTooltip) {
+  const hud = await waitForFrame(page, "idle-worker HUD target", (candidate) =>
+    candidate?.clientState?.controlBarWindows?.buttonIdleWorker?.clickable === true);
+  await clickEngineButton(page, geometry,
+    hud.clientState.controlBarWindows.buttonIdleWorker, "HUD Idle Worker button");
+  const selection = await waitForSelectionState(page, "idle-worker selection",
+    (state) => state.selectedControllable === true && state.selected?.length > 0);
+
+  let selectedCommand = await waitForWebXrCommandButton(page, "observable command button",
+    (command) => command.typeName === "GUI_COMMAND_ATTACK_MOVE"
+      || command.typeName === "GUI_COMMAND_DOZER_CONSTRUCT");
+  if (selectedCommand.button.command.typeName === "GUI_COMMAND_DOZER_CONSTRUCT"
+      && selectedCommand.button.command.buildTemplate == null) {
+    await clickEngineButton(page, geometry, selectedCommand.button,
+      `${selectedCommand.button.command.name} construction category`);
+    selectedCommand = await waitForWebXrCommandButton(page, "construction placement command",
+      (command) => command.typeName === "GUI_COMMAND_DOZER_CONSTRUCT"
+        && command.buildTemplate != null);
+  }
+
+  const tooltip = await hoverWebXrCommandButton(
+    page, geometry, selectedCommand.button, priorTooltip,
+  );
+  await clickEngineButton(page, geometry, selectedCommand.button,
+    `${selectedCommand.button.command.name} command`);
+  const command = selectedCommand.button.command;
+  if (command.typeName === "GUI_COMMAND_ATTACK_MOVE") {
+    await waitForSelectionMode(page, "tracked Attack Move command",
+      (modes) => modes.attackMoveTo === true);
+    await tapWebXrButton(page, 5);
+    await waitForSelectionMode(page, "tracked Attack Move cancel",
+      (modes) => modes.attackMoveTo === false);
+  } else {
+    await waitForSelectionMode(page, "tracked construction placement",
+      (modes) => modes.pendingPlaceType === command.buildTemplate);
+    await aimWebXrAtEnginePoint(page, geometry, {
+      x: Math.round(geometry.engineWidth / 2),
+      y: Math.round(geometry.engineHeight / 3),
+    }, "construction placement cancel target");
+    await tapWebXrButton(page, 1, { frameWhilePressed: false });
+    await waitForSelectionState(page, "tracked construction cancel", (state) =>
+      state.modes?.pendingPlaceType === null
+        && state.commandPath?.rightClickIsClick === 1);
+  }
+  const restored = await fullFrame(page);
+  assert.equal(restored?.clientState?.quitMenu?.visible, false,
+    "command cancellation must not open the pause menu");
+  return {
+    selectedTemplate: selection.selected[0].templateName,
+    commandName: command.name,
+    commandType: command.typeName,
+    buildTemplate: command.buildTemplate,
+    tooltipName: tooltip.text,
+    cancelled: true,
+  };
+}
+
 async function waitForEngineRay(page) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
@@ -1023,6 +1118,10 @@ try {
   stage("tracked controller saved, loaded, and deleted without ending the XR session");
   const hudSurfaceFlow = await driveWebXrHudSurfaceFlow(page, inputGeometry);
   stage("tracked controller operated the live HUD tooltip and Generals surface");
+  const commandBarFlow = await driveWebXrCommandBarFlow(
+    page, inputGeometry, hudSurfaceFlow.tooltipName,
+  );
+  stage("tracked controller selected an idle worker and activated a command-bar mode");
 
   await page.evaluate(() => {
     window.__emulatedXrButton(2, true);
@@ -1264,6 +1363,7 @@ try {
     modalFlow,
     saveLoadRoundTrip,
     hudSurfaceFlow,
+    commandBarFlow,
     textEntry,
     wheelCameraZoom: {
       before: cameraHeightBeforeWheel,

@@ -105,6 +105,19 @@ After that reset, tracked hover over the live ControlBar produces the original
 popup-description text, and the controller opens and exits the stock Generals
 experience surface while retaining the restored HUD and match.
 
+The gate then activates the stock Idle Worker control, confirms that the
+original selection contains a locally controlled unit, and follows the live
+ControlBar command set rather than assuming a faction. It hovers an available
+Attack Move or dozer-construction command until the original popup description
+changes, then activates and observes the corresponding engine command mode. A
+construction path descends through the real category button, enters a concrete
+faction-specific power-plant placement mode, and uses controller squeeze as a
+short original right click to clear `pendingPlaceType`; an Attack Move path uses
+the mapped cancel key. The assertion also proves cancellation does not open the
+pause menu. One Retail run selected `Nuke_ChinaVehicleDozer`, exposed
+`Nuke_ChinaPowerPlant` with the localized “Advanced Nuclear Reactor” tooltip,
+and recorded `rightClickIsClick == 1` in the original command translator.
+
 When only one tracked controller is available, its stick pans normally. Holding
 B/Y changes horizontal stick movement to original camera rotation and vertical
 movement to the original mouse-wheel path, which lets engine windows scroll and
@@ -247,6 +260,8 @@ run during ordinary desktop play.
   that preserves the active XRSession.
 - [x] Produce a stock ControlBar tooltip from tracked hover and operate the
   Generals experience HUD surface after an in-session engine load reset.
+- [x] Select an idle worker from the stock HUD, activate a live ControlBar
+  command mode, and cancel it through the mapped controller path.
 - [x] Map the initial tracked controller scheme to the original input paths.
 - [x] Focus an original engine text field from a tracked ray and route native
   browser text events through the existing Win32/IME bridge.
