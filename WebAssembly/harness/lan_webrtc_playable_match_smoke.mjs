@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startNostrTestRelayServer } from "./nostr-test-relay-server.mjs";
 import { startStaticServer } from "./static-server.mjs";
+import { installEmulatedWebXr } from "./webxr-emulator-init.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -12,6 +13,7 @@ const artifactRoot = resolve(wasmRoot, "artifacts/networking");
 const GAME_LAN = 1;
 const playerCount = Number.parseInt(process.env.CNC_MATCH_PLAYERS ?? "2", 10);
 const threadedTest = process.env.CNC_THREADED === "1";
+const webXrHost = process.env.CNC_WEBXR_HOST === "1";
 const allowWebGlContextLoss = process.env.CNC_ALLOW_WEBGL_CONTEXT_LOSS === "1";
 const captureNetworkDiagnostics = process.env.CNC_NETWORK_DIAGNOSTICS === "1";
 const soakMs = Number.parseInt(process.env.CNC_MATCH_SOAK_MS ?? "0", 10);
@@ -29,6 +31,9 @@ let parallelClientFrames = false;
 
 if (!Number.isInteger(playerCount) || playerCount < 2 || playerCount > 8) {
   throw new Error(`CNC_MATCH_PLAYERS must be between 2 and 8, received ${process.env.CNC_MATCH_PLAYERS}`);
+}
+if (webXrHost && !threadedTest) {
+  throw new Error("CNC_WEBXR_HOST requires CNC_THREADED=1 for Window-owned WebXR rendering");
 }
 if (!Number.isInteger(soakMs) || soakMs < 0
     || !Number.isFinite(minimumLogicFps) || minimumLogicFps < 0
@@ -112,6 +117,20 @@ async function browserRenderer(client) {
       unmaskedRenderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : null,
     };
   });
+}
+
+async function webXrState(client) {
+  return client.page.evaluate(() => window.CnCPort?.getWebXrState?.() ?? null);
+}
+
+async function startWebXr(client) {
+  const probe = await client.page.evaluate(() => window.CnCPort.probeWebXrSession());
+  expect(probe?.support?.immersiveVrSupported === true,
+    `${client.label} could not prepare an immersive session`, probe);
+  await client.page.evaluate(() => window.CnCPort.startWebXrSession());
+  return waitFor(`${client.label} immersive session`, () => webXrState(client),
+    (state) => state?.phase === "running" && state.renderer?.active === true,
+  30000, 50);
 }
 
 async function frame(client, frames = 1) {
@@ -201,6 +220,142 @@ async function clickWindow(client, windowName) {
     `${client.label} could not click ${windowName}`, clicked.result);
 }
 
+async function aimWebXrAtEnginePoint(client, point, label) {
+  expect(Number.isFinite(point?.x) && Number.isFinite(point?.y),
+    `${label} has no engine coordinates`, point);
+  let diagnostic = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const spatial = await client.page.evaluate(() => ({
+      comfort: window.CnCPort.getWebXrState()?.renderer?.comfort,
+      displaySize: window.CnCPort?.state?.engineDisplaySize,
+    }));
+    const width = Number(spatial.displaySize?.width);
+    const height = Number(spatial.displaySize?.height);
+    expect(Number(spatial.comfort?.panelWidthMeters) > 0 && width > 1 && height > 1,
+      `${label} has no floating-panel geometry`, spatial);
+    await client.page.evaluate(([x, y, targetWidth, targetHeight, panelWidth]) =>
+      window.__emulatedXrPointAtEnginePixel(x, y, targetWidth, targetHeight, panelWidth), [
+      point.x, point.y, width, height, spatial.comfort.panelWidthMeters,
+    ]);
+    const pointer = await waitFor(`${label} tracked pointer`, () => client.page.evaluate(() =>
+      window.CnCPort.getWebXrState()?.renderer?.controllerPointer ?? null),
+    (candidate) => candidate?.target === "ui"
+      && Math.abs(candidate.point?.x - point.x) <= 2
+      && Math.abs(candidate.point?.y - point.y) <= 2,
+    2500, 50).catch((error) => {
+      diagnostic = { point, width, height, error: error.message };
+      return null;
+    });
+    if (pointer) return pointer;
+    await fullFrame(client, 1);
+  }
+  throw new Error(`${label} controller ray missed the floating panel: ${JSON.stringify(
+    diagnostic)}`);
+}
+
+async function tapWebXrButton(client, index, { betweenFrames = false } = {}) {
+  if (betweenFrames) {
+    await client.page.evaluate((buttonIndex) =>
+      window.__emulatedXrButtonTap(buttonIndex), index);
+    return;
+  }
+  await client.page.evaluate((buttonIndex) =>
+    window.__emulatedXrButton(buttonIndex, true), index);
+  await client.page.waitForTimeout(80);
+  await fullFrame(client, 1);
+  await client.page.evaluate((buttonIndex) =>
+    window.__emulatedXrButton(buttonIndex, false), index);
+  await client.page.waitForTimeout(80);
+  await fullFrame(client, 1);
+}
+
+async function selectionState(client) {
+  const response = await rpc(client, "querySelection");
+  expect(response?.ok === true, `${client.label} selection query failed`, response);
+  return response.result;
+}
+
+async function clearBattlefieldPoint(client, displaySize) {
+  const response = await rpc(client, "queryDrawables");
+  expect(response?.ok === true, `${client.label} drawable query failed`, response);
+  const drawables = response.result?.allDrawables ?? response.result?.drawables ?? [];
+  const occupied = drawables.filter((drawable) => drawable?.onScreen === true
+      && Number.isFinite(drawable.screenPos?.x) && Number.isFinite(drawable.screenPos?.y))
+    .map((drawable) => drawable.screenPos);
+  const candidates = Array.from({ length: 24 }, (_, index) => ({
+    x: Math.round(displaySize.width * (0.15 + (index % 6) * 0.14)),
+    y: Math.round(displaySize.height * (0.12 + Math.floor(index / 6) * 0.12)),
+  }));
+  return candidates.map((point) => ({
+    ...point,
+    clearance: occupied.reduce((nearest, drawable) => Math.min(nearest,
+      Math.hypot(point.x - drawable.x, point.y - drawable.y)), Number.POSITIVE_INFINITY),
+  })).sort((left, right) => right.clearance - left.clearance)[0];
+}
+
+async function driveWebXrMultiplayerOrder(client) {
+  const hud = await waitFor(`${client.label} idle-worker control`, () => fullFrame(client, 1),
+    (candidate) => candidate?.clientState?.gameplay?.fade === 0
+      && candidate?.clientState?.controlBarWindows?.buttonIdleWorker?.clickable === true,
+  30000, 50);
+  const idleWorker = hud.clientState.controlBarWindows.buttonIdleWorker;
+  await aimWebXrAtEnginePoint(client,
+    { x: idleWorker.centerX, y: idleWorker.centerY }, "multiplayer Idle Worker button");
+  await waitFor(`${client.label} idle-worker hover`, async () => {
+    const response = await rpc(client, "agentUiSnapshot");
+    return response?.result?.windows?.find((window) =>
+      window.name === "ControlBar.wnd:ButtonIdleWorker") ?? null;
+  }, (window) => window?.visible === true && window?.interactive === true
+      && window?.hilited === true,
+  10000, 50);
+  await tapWebXrButton(client, 0);
+  const selected = await waitFor(`${client.label} tracked worker selection`, async () => {
+    await fullFrame(client, 1);
+    return selectionState(client);
+  }, (state) => state?.selectedControllable === true
+      && state.selected?.some((entry) => entry.locallyControlled === true
+        && (entry.kindOf?.dozer === true || entry.ai?.ready === true)),
+  30000, 50);
+  const unit = selected.selected.find((entry) => entry.locallyControlled === true
+    && (entry.kindOf?.dozer === true || entry.ai?.ready === true));
+  const displaySize = await client.page.evaluate(() => window.CnCPort.state.engineDisplaySize);
+  const target = await clearBattlefieldPoint(client, displaySize);
+  await aimWebXrAtEnginePoint(client, target, "multiplayer contextual-order target");
+  await tapWebXrButton(client, 1, { betweenFrames: true });
+  const dispatched = await waitFor(`${client.label} multiplayer move dispatch`, async () => {
+    await fullFrame(client, 1);
+    return selectionState(client);
+  }, (state) => state.commandPath?.dispatchMoveCommandCount
+        > selected.commandPath.dispatchMoveCommandCount
+      && state.commandPath?.dispatchLastMoveCommandTypeName === "MSG_DO_MOVETO"
+      && state.commandPath?.dispatchLastMoveHadGroup === 1
+      && state.commandPath?.rightClickIsClick === 1,
+  30000, 50);
+  const changed = await waitFor(`${client.label} multiplayer move reaction`, async () => {
+    await fullFrame(client, 1);
+    return selectionState(client);
+  }, (state) => {
+    const current = state.selected?.find((entry) => entry.id === unit.id);
+    if (!current) return false;
+    return Math.hypot(current.worldPos.x - unit.worldPos.x,
+      current.worldPos.y - unit.worldPos.y) > 0.05
+      || current.ai?.moving === true || current.ai?.waitingForPath === true;
+  }, 30000, 50);
+  const changedUnit = changed.selected.find((entry) => entry.id === unit.id);
+  return {
+    selectedTemplate: unit.templateName,
+    selectedObjectId: unit.id,
+    targetPoint: { x: target.x, y: target.y },
+    commandType: dispatched.commandPath.dispatchLastMoveCommandTypeName,
+    dispatchedWithGroup: dispatched.commandPath.dispatchLastMoveHadGroup === 1,
+    rightClickAccepted: dispatched.commandPath.rightClickIsClick === 1,
+    aiMoving: changedUnit.ai.moving,
+    aiWaitingForPath: changedUnit.ai.waitingForPath,
+    worldDistance: Math.hypot(changedUnit.worldPos.x - unit.worldPos.x,
+      changedUnit.worldPos.y - unit.worldPos.y),
+  };
+}
+
 async function enterLanLobby(client, { verifyRanked = false } = {}) {
   await waitFor(`${client.label} main menu`, async () => fullFrame(client, 1),
     (result) => result.clientState?.shell?.topIsMainMenu === true
@@ -247,13 +402,14 @@ async function enterLanLobby(client, { verifyRanked = false } = {}) {
 }
 
 async function createClient(browserOrContext, serverUrl, relayUrls, room, label, peerId,
-  existingContext = false) {
+  existingContext = false, webXr = false) {
   const context = existingContext
     ? browserOrContext
     : await browserOrContext.newContext({
       viewport: { width: 1280, height: 720 },
       ignoreHTTPSErrors: process.env.CNC_IGNORE_HTTPS_ERRORS === "1",
     });
+  if (webXr) await context.addInitScript(installEmulatedWebXr);
   const page = await context.newPage();
   const commanderName = peerId === "host" ? "SmokeHost" : `SmokeGuest${peerId.split("-").at(-1)}`;
   const client = { context, page, label, peerId, commanderName, errors: [] };
@@ -271,6 +427,7 @@ async function createClient(browserOrContext, serverUrl, relayUrls, room, label,
     pageUrl.searchParams.set("dist", process.env.CNC_THREADED_DIST ?? "dist-threaded-release");
     pageUrl.searchParams.set("diag", "lite");
   }
+  if (webXr) pageUrl.searchParams.set("vr", "1");
   await page.goto(pageUrl.href, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
   await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
@@ -356,7 +513,7 @@ try {
       const label = host ? "WebRTC Host" : `WebRTC Guest ${index}`;
       const peerId = host ? "host" : `guest-${index}`;
       clients.push(await createClient(context,
-        server.url, relayUrls, room, label, peerId, true));
+        server.url, relayUrls, room, label, peerId, true, webXrHost && host));
       continue;
     }
     if (separateBrowsers || browsers.length === 0) {
@@ -378,6 +535,11 @@ try {
   expect(peerConnections.every((result) => result.ok === true
       && result.runtime?.endpoint?.openPeers === playerCount - 1),
   "WebRTC clients did not form a complete peer mesh", peerConnections);
+
+  if (webXrHost) {
+    await startWebXr(host);
+    console.error("[lan-webrtc] host entered the native WebXR render lane");
+  }
 
   const lobbies = [];
   for (let index = 0; index < clients.length; ++index) {
@@ -507,6 +669,7 @@ try {
   }), 45000);
   console.error("[lan-webrtc] all human slots accepted with the map");
 
+  const hostWebXrBeforeMatch = webXrHost ? await webXrState(host) : null;
   const start = await lanCommand(host, "start");
   expect(start.ok === true && start.result?.state?.network?.ready === true,
     "host did not initialize the original Network on game start", start);
@@ -620,6 +783,29 @@ try {
   }
   expect(active != null, `${playerCount}-client LAN match did not become playable`, samples.slice(-12));
 
+  const hostWebXrPlayable = webXrHost ? await waitFor(
+    "host WebXR compositor over playable LAN match",
+    () => webXrState(host),
+    (state) => state?.phase === "running"
+      && state.viewCount === 2
+      && state.inputSourceCount === 1
+      && state.renderer?.active === true
+      && state.renderer?.enginePickRayReady === true
+      && Number(state.renderer?.frames ?? 0)
+        > Number(hostWebXrBeforeMatch?.renderer?.frames ?? 0),
+    30000,
+    50,
+  ) : null;
+  if (hostWebXrPlayable) {
+    console.error(`[lan-webrtc] host WebXR rendered the playable match in two views at frame ${
+      hostWebXrPlayable.renderer.frames}`);
+  }
+  const hostWebXrOrder = webXrHost ? await driveWebXrMultiplayerOrder(host) : null;
+  if (hostWebXrOrder) {
+    console.error(`[lan-webrtc] host WebXR dispatched ${hostWebXrOrder.commandType} for ${
+      hostWebXrOrder.selectedTemplate}`);
+  }
+
   const requiredPostActiveLogicFrames = threadedTest || playerCount >= 4 ? 3 : 10;
   let postActiveFrames = null;
   let postActiveStates = null;
@@ -634,7 +820,9 @@ try {
     const advanced = postActiveFrames.every((clientFrame, index) =>
       clientFrame.gameplay?.logicFrame >= active.frames[index].gameplay.logicFrame
         + requiredPostActiveLogicFrames);
-    if (advanced) {
+    const logicFrames = postActiveFrames.map((clientFrame) => clientFrame.gameplay?.logicFrame);
+    const logicFrameSkew = Math.max(...logicFrames) - Math.min(...logicFrames);
+    if (advanced && logicFrameSkew <= maxAllowedFinalLogicFrameSkew) {
       break;
     }
   }
@@ -760,6 +948,7 @@ try {
     ok: true,
     path: "real-lan-lobby-to-playable-webrtc-match",
     threaded: threadedTest,
+    webXrHost,
     playerCount,
     map,
     mapPlayers: selectedMap.players,
@@ -767,6 +956,16 @@ try {
     lobby: { joined, ready },
     start: [start.result.state.network, ...guestNetworks.map((state) => state.network)],
     threadedLoops,
+    hostWebXr: hostWebXrPlayable ? {
+      sessionCount: await host.page.evaluate(() => window.__emulatedXrSessionCount),
+      runtimeFrames: hostWebXrPlayable.frames,
+      viewCount: hostWebXrPlayable.viewCount,
+      inputSourceCount: hostWebXrPlayable.inputSourceCount,
+      rendererFramesBeforeMatch: hostWebXrBeforeMatch?.renderer?.frames ?? 0,
+      rendererFramesPlayable: hostWebXrPlayable.renderer.frames,
+      enginePickRayReady: hostWebXrPlayable.renderer.enginePickRayReady,
+      order: hostWebXrOrder,
+    } : null,
     active,
     postActiveFrames,
     postActiveDriverTicks,

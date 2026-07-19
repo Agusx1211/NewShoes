@@ -137,6 +137,18 @@ second `XRSession` continues producing compositor frames. This covers the
 single-player end-game surfaces and match-to-shell lifecycle; it does not prove
 a network result screen or real-headset readability.
 
+A separate two-client Retail gate opts only the host into the native WebXR
+render lane while leaving the guest on the ordinary desktop path. Both clients
+use the original LAN lobby, `Network`, and playable lockstep simulation over the
+shipping WebRTC bridge. Once the shared match is active, the host must continue
+rendering two XR views with native picking, select its actual worker/dozer from
+the stock HUD, and dispatch `MSG_DO_MOVETO` through a between-frame controller
+squeeze. The gate then requires both engines to retain equal object counts, no
+CRC mismatch, the established threaded frame-skew bound, and the complete peer
+mesh. One run retained 223 objects per peer, moved `GLAInfantryWorker`, and
+converged to seven frames of skew. This is real two-peer engine/network evidence
+with an emulated compositor; real-headset multiplayer usability remains open.
+
 When only one tracked controller is available, its stick pans normally. Holding
 B/Y changes horizontal stick movement to original camera rotation and vertical
 movement to the original mouse-wheel path, which lets engine windows scroll and
@@ -291,6 +303,8 @@ run during ordinary desktop play.
 - [x] Select an idle worker from the stock HUD, activate and cancel a live
   ControlBar mode, then dispatch a contextual move through the original command
   translator and observe the selected unit react.
+- [x] Keep a native WebXR host and desktop guest in a real two-peer LAN match,
+  dispatch a tracked contextual order, and retain CRC-clean lockstep afterward.
 - [x] Map the initial tracked controller scheme to the original input paths.
 - [x] Focus an original engine text field from a tracked ray and route native
   browser text events through the existing Win32/IME bridge.
