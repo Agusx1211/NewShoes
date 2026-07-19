@@ -220,8 +220,12 @@ void dumpBattlePlanBonuses(const BattlePlanBonuses *b, AsciiString name, const P
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 PlayerRelationMap::PlayerRelationMap( void )
+	: m_cachedPlayerIndices(0)
 {
-
+	for (Int playerIndex = 0; playerIndex < MAX_PLAYER_COUNT; ++playerIndex)
+	{
+		m_cachedRelationships[playerIndex] = NEUTRAL;
+	}
 }  // end PlayerRelationMap
 
 // ------------------------------------------------------------------------------------------------
@@ -229,10 +233,47 @@ PlayerRelationMap::PlayerRelationMap( void )
 PlayerRelationMap::~PlayerRelationMap( void )
 {
 
-	// make sure the data is cleared
-	m_map.clear();
+	clearRelationships();
 
 }  // end ~PlayerRelationmap
+
+// ------------------------------------------------------------------------------------------------
+void PlayerRelationMap::setRelationship(
+	PlayerIndex playerIndex,
+	Relationship relationship)
+{
+	m_map[playerIndex] = relationship;
+	if (playerIndex >= 0 && playerIndex < MAX_PLAYER_COUNT)
+	{
+		m_cachedRelationships[playerIndex] = relationship;
+		m_cachedPlayerIndices |= static_cast<UnsignedShort>(1u << playerIndex);
+	}
+}
+
+// ------------------------------------------------------------------------------------------------
+Bool PlayerRelationMap::removeRelationship(PlayerIndex playerIndex)
+{
+	PlayerRelationMapType::iterator it = m_map.find(playerIndex);
+	if (it == m_map.end())
+	{
+		return false;
+	}
+	m_map.erase(it);
+	if (playerIndex >= 0 && playerIndex < MAX_PLAYER_COUNT)
+	{
+		m_cachedPlayerIndices &= static_cast<UnsignedShort>(~(1u << playerIndex));
+	}
+	return true;
+}
+
+// ------------------------------------------------------------------------------------------------
+Bool PlayerRelationMap::clearRelationships()
+{
+	const Bool hadRelationships = !m_map.empty();
+	m_map.clear();
+	m_cachedPlayerIndices = 0;
+	return hadRelationships;
+}
 
 // ------------------------------------------------------------------------------------------------
 /** CRC */
@@ -295,7 +336,7 @@ void PlayerRelationMap::xfer( Xfer *xfer )
 			xfer->xferUser( &r, sizeof( Relationship ) );
 
 			// assign relationship
-			m_map[ playerIndex ] = r;
+			setRelationship(playerIndex, r);
 				
 		}  // end for, i
 
@@ -599,15 +640,16 @@ Relationship Player::getRelationship(const Team *that) const
 		}
 		
 		// hummm... well, do we have something for that team's player?
-		if (!m_playerRelations->m_map.empty())
+		if (!m_playerRelations->isEmpty())
 		{
 			const Player* thatPlayer = that->getControllingPlayer();
 			if (thatPlayer != NULL)
 			{
-				PlayerRelationMapType::const_iterator it = m_playerRelations->m_map.find(thatPlayer->getPlayerIndex());
-				if (it != m_playerRelations->m_map.end())
+				Relationship relationship;
+				if (m_playerRelations->findRelationship(
+					thatPlayer->getPlayerIndex(), &relationship))
 				{
-					return (*it).second;
+					return relationship;
 				}
 			}
 		}
@@ -621,31 +663,22 @@ void Player::setPlayerRelationship(const Player *that, Relationship r)
 	if (that != NULL)
 	{
 		// note that this creates the entry if it doesn't exist.
-		m_playerRelations->m_map[that->getPlayerIndex()] = r;
+		m_playerRelations->setRelationship(that->getPlayerIndex(), r);
 	}
 }
 
 // ------------------------------------------------------------------------
 Bool Player::removePlayerRelationship(const Player *that)
 {
-	if (!m_playerRelations->m_map.empty())
+	if (m_playerRelations->isEmpty())
 	{
-		if (that == NULL)
-		{
-			m_playerRelations->m_map.clear();
-			return true;
-		}
-		else
-		{
-			PlayerRelationMapType::iterator it = m_playerRelations->m_map.find(that->getPlayerIndex());
-			if (it != m_playerRelations->m_map.end())
-			{
-				m_playerRelations->m_map.erase(it);
-				return true;
-			}
-		}
+		return false;
 	}
-	return false;
+	if (that == NULL)
+	{
+		return m_playerRelations->clearRelationships();
+	}
+	return m_playerRelations->removeRelationship(that->getPlayerIndex());
 }
 
 //=============================================================================
@@ -1046,7 +1079,7 @@ void Player::initFromDict(const Dict* d)
 	m_handicap.readFromDict(d);
 
 	/// @todo Ack!  the todo in PlayerList::reset() mentioning the need for a Player::reset() really needs to get done.
-	m_playerRelations->m_map.clear(); // For now, it has been decided to just fix this one.  Dear god me must reset.
+	m_playerRelations->clearRelationships(); // For now, it has been decided to just fix this one.  Dear god me must reset.
 	m_teamRelations->m_map.clear(); // For now, it has been decided to just fix this one.  Dear god me must reset.
 	
 	Int i;
