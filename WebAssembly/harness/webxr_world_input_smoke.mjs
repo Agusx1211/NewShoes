@@ -69,35 +69,58 @@ async function waitForSelectionMode(page, label, predicate, waitMs = 30000) {
   throw new Error(`${label} timed out: ${JSON.stringify(last)}`);
 }
 
-function enginePointToCss(geometry, point) {
-  if (!geometry?.engineWidth || !geometry?.engineHeight) return null;
-  return {
-    x: geometry.left + point.x * geometry.width / geometry.engineWidth,
-    y: geometry.top + point.y * geometry.height / geometry.engineHeight,
-  };
-}
-
-async function moveToEnginePoint(page, geometry, point, label) {
-  const cssPoint = enginePointToCss(geometry, point);
-  assert.ok(Number.isFinite(cssPoint?.x) && Number.isFinite(cssPoint?.y),
-    `${label} has no browser coordinates: ${JSON.stringify({ point, cssPoint })}`);
-  await page.mouse.move(cssPoint.x, cssPoint.y, { steps: 4 });
-  return cssPoint;
+async function aimWebXrAtEnginePoint(page, geometry, point, label) {
+  assert.ok(Number.isFinite(point?.x) && Number.isFinite(point?.y),
+    `${label} has no engine coordinates: ${JSON.stringify(point)}`);
+  let diagnostic = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const spatial = await page.evaluate(() => ({
+      comfort: window.CnCPort.getWebXrState()?.renderer?.comfort,
+      displaySize: window.CnCPort?.state?.engineDisplaySize,
+    }));
+    const width = Number(spatial.displaySize?.width ?? geometry.engineWidth);
+    const height = Number(spatial.displaySize?.height ?? geometry.engineHeight);
+    assert.ok(Number(spatial.comfort?.panelWidthMeters) > 0 && width > 1 && height > 1,
+      `${label} has no floating-panel geometry: ${JSON.stringify(spatial)}`);
+    await page.evaluate(([x, y, targetWidth, targetHeight, panelWidth]) =>
+      window.__emulatedXrPointAtEnginePixel(
+        x, y, targetWidth, targetHeight, panelWidth,
+      ), [point.x, point.y, width, height, spatial.comfort.panelWidthMeters]);
+    const deadline = Date.now() + 2500;
+    let pointer = null;
+    while (Date.now() < deadline) {
+      pointer = await page.evaluate(() =>
+        window.CnCPort.getWebXrState()?.renderer?.controllerPointer ?? null);
+      if (pointer?.target === "ui"
+          && Math.abs(pointer.point?.x - point.x) <= 2
+          && Math.abs(pointer.point?.y - point.y) <= 2) return pointer;
+      await page.waitForTimeout(50);
+    }
+    diagnostic = { point, width, height, pointer };
+    if (attempt < 2) await fullFrame(page);
+  }
+  throw new Error(`${label} controller ray missed the floating panel target: ${JSON.stringify(
+    diagnostic)}`);
 }
 
 async function clickEngineButton(page, geometry, button, label) {
   assert.equal(button?.clickable, true, `${label} is not clickable`);
-  await moveToEnginePoint(page, geometry,
-    { x: button.centerX, y: button.centerY }, label);
-  await page.mouse.down();
+  const point = { x: button.centerX, y: button.centerY };
+  await aimWebXrAtEnginePoint(page, geometry, point, label);
+  await page.evaluate(() => window.__emulatedXrTrigger(true));
   await page.waitForTimeout(80);
-  await page.mouse.up();
+  await fullFrame(page);
+  await page.evaluate(() => window.__emulatedXrTrigger(false));
+  await page.waitForTimeout(80);
+  await fullFrame(page);
+  return point;
 }
 
 async function enterSkirmish(page, geometry) {
-  await moveToEnginePoint(page, geometry, { x: 32, y: 32 }, "main menu wake-up");
+  await aimWebXrAtEnginePoint(page, geometry, { x: 32, y: 32 }, "main menu wake-up");
   await page.waitForTimeout(250);
-  await moveToEnginePoint(page, geometry, { x: 96, y: 96 }, "main menu wake-up");
+  await fullFrame(page);
+  await aimWebXrAtEnginePoint(page, geometry, { x: 96, y: 96 }, "main menu wake-up");
   let frame = await waitForFrame(page, "main menu",
     (candidate) => candidate?.clientState?.mainMenu?.buttonSinglePlayer?.clickable === true);
   await clickEngineButton(page, geometry, frame.clientState.mainMenu.buttonSinglePlayer,
@@ -125,6 +148,83 @@ async function enterSkirmish(page, geometry) {
     return gameplay?.inGame === true && gameplay?.loadingMap === false
       && gameplay?.inputEnabled === true && Number(gameplay?.renderedObjectCount ?? 0) > 0;
   }, 6 * 60 * 1000);
+}
+
+async function tapWebXrButton(page, index) {
+  await page.evaluate((buttonIndex) => window.__emulatedXrButton(buttonIndex, true), index);
+  await page.waitForTimeout(80);
+  await fullFrame(page);
+  await page.evaluate((buttonIndex) => window.__emulatedXrButton(buttonIndex, false), index);
+  await page.waitForTimeout(80);
+  await fullFrame(page);
+}
+
+function visibleQuitMenuButton(quitMenu, fieldNames) {
+  if (!quitMenu?.visible) return null;
+  return fieldNames.map((name) => quitMenu[name]).find((button) =>
+    button?.clickable === true && button.hidden === false && button.managerHidden === false) ?? null;
+}
+
+async function waitForAgentUiWindow(page, name, predicate = () => true, waitMs = 30000) {
+  const deadline = Date.now() + waitMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    await fullFrame(page);
+    const response = await rpc(page, "agentUiSnapshot");
+    last = response?.result?.windows?.find((window) => window.name === name) ?? null;
+    if (last && predicate(last)) return last;
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`${name} did not reach the expected UI state: ${JSON.stringify(last)}`);
+}
+
+async function driveWebXrModalFlow(page, geometry) {
+  await tapWebXrButton(page, 5);
+  const opened = await waitForFrame(page, "tracked-controller quit menu", (candidate) =>
+    candidate?.clientState?.quitMenu?.visible === true
+      && candidate?.clientState?.gameplay?.gamePaused === true
+      && visibleQuitMenuButton(candidate.clientState.quitMenu,
+        ["buttonOptionsFull", "buttonOptionsNoSave"]) !== null);
+  const optionsButton = visibleQuitMenuButton(opened.clientState.quitMenu,
+    ["buttonOptionsFull", "buttonOptionsNoSave"]);
+  assert.ok(optionsButton, `quit menu has no tracked options target: ${JSON.stringify(
+    opened.clientState.quitMenu)}`);
+  await clickEngineButton(page, geometry, optionsButton, "quit-menu Options button");
+
+  let backButton = await waitForAgentUiWindow(page, "OptionsMenu.wnd:ButtonBack",
+    (window) => window.visible === true && window.interactive === true);
+  const backTarget = {
+    clickable: true,
+    centerX: backButton.rect.x + Math.floor(backButton.rect.width / 2),
+    centerY: backButton.rect.y + Math.floor(backButton.rect.height / 2),
+  };
+  await aimWebXrAtEnginePoint(page, geometry,
+    { x: backTarget.centerX, y: backTarget.centerY }, "options Back button hover");
+  backButton = await waitForAgentUiWindow(page, "OptionsMenu.wnd:ButtonBack",
+    (window) => window.hilited === true);
+  assert.equal(backButton.hilited, true,
+    "tracked pointer movement must drive the original options hover state");
+  await clickEngineButton(page, geometry, backTarget, "options Back button");
+
+  const returned = await waitForFrame(page, "quit menu after options", (candidate) =>
+    candidate?.clientState?.quitMenu?.visible === true
+      && candidate?.clientState?.gameplay?.gamePaused === true
+      && visibleQuitMenuButton(candidate.clientState.quitMenu,
+        ["buttonReturnFull", "buttonReturnNoSave"]) !== null);
+  const returnButton = visibleQuitMenuButton(returned.clientState.quitMenu,
+    ["buttonReturnFull", "buttonReturnNoSave"]);
+  assert.ok(returnButton, `quit menu has no tracked return target: ${JSON.stringify(
+    returned.clientState.quitMenu)}`);
+  await clickEngineButton(page, geometry, returnButton, "quit-menu Return button");
+  await waitForFrame(page, "tracked-controller match resume", (candidate) =>
+    candidate?.clientState?.quitMenu?.visible === false
+      && candidate?.clientState?.gameplay?.gamePaused === false);
+  return {
+    quitOpened: true,
+    optionsOpened: true,
+    optionsHover: backButton.hilited === true,
+    resumed: true,
+  };
 }
 
 async function waitForEngineRay(page) {
@@ -346,6 +446,17 @@ try {
     window.__emulatedXrAxes = (x, y) => {
       inputSource.gamepad.axes = [Number(x), Number(y)];
     };
+    window.__emulatedXrPointAtEnginePixel = (x, y, width, height, panelWidth) => {
+      const pixelWidth = Math.max(2, Number(width));
+      const pixelHeight = Math.max(2, Number(height));
+      const widthMeters = Number(panelWidth);
+      const heightMeters = widthMeters * pixelHeight / pixelWidth;
+      const u = Math.max(0, Math.min(1, Number(x) / (pixelWidth - 1)));
+      const v = Math.max(0, Math.min(1, Number(y) / (pixelHeight - 1)));
+      targetRayMatrix[12] = (u - 0.5) * widthMeters;
+      targetRayMatrix[13] = (0.5 - v) * heightMeters;
+      targetRayMatrix[14] = 0;
+    };
     window.__emulatedXrViewerPosition = (x, y, z) => {
       viewerMatrix[12] = Number(x);
       viewerMatrix[13] = Number(y);
@@ -401,7 +512,7 @@ try {
   stage("immersive support probe passed");
   await page.evaluate(() => window.CnCPort.startWebXrSession());
   await enterSkirmish(page, inputGeometry);
-  stage("real skirmish input path is active");
+  stage("tracked controller operated the floating main shell and skirmish setup");
   await waitForEngineRay(page);
   stage("real engine view produced a tracked world ray");
 
@@ -451,6 +562,9 @@ try {
       > centeredListener.webXrListenerAppliedUpdates,
   "XR frames must apply new head poses to the Web Audio listener");
   stage("head pose updated the engine-owned HRTF listener at world scale");
+
+  const modalFlow = await driveWebXrModalFlow(page, inputGeometry);
+  stage("tracked controller operated the quit modal and nested options surface");
 
   await page.evaluate(() => {
     window.__emulatedXrButton(2, true);
@@ -549,6 +663,7 @@ try {
     rendererFrames: running.renderer?.frames ?? 0,
     audioHeadOffset: movedListener.lastListener.xrOffset,
     audioListenerRestored: restoredListener.webXrListenerActive === false,
+    modalFlow,
   }));
 } finally {
   await browser.close();

@@ -81,6 +81,15 @@ ordered Win32/DirectInput bridge as desktop input:
   force-fire/group-assign, and Shift preferred-selection/group-add modifiers;
 - offhand B/Y: recenter the spatial anchor.
 
+The retail threaded VR smoke drives that path through the original main shell,
+single-player and skirmish setup, loading transition, in-game quit modal, and
+nested Options menu. It verifies original button activation and hover state,
+then returns through the modal stack and resumes the match with the tracked
+controller. This is automated compatibility evidence for the shared floating
+surface and real `GameWindowManager` input path; it does not replace the
+remaining real-headset readability, text-entry, scrolling, and full-flow
+usability evidence.
+
 When only one tracked controller is available, its stick pans normally. Holding
 B/Y changes the stick to original camera rotate/zoom, stick-click selects one of
 all ten control groups, auxiliary holds Ctrl, stick-click without a radial
@@ -159,6 +168,8 @@ run during ordinary desktop play.
 - [ ] Prove distinct left/right world rendering on real WebXR hardware.
 - [x] Split pretransformed engine UI presentation into a floating spatial
   surface without replacing original UI ownership.
+- [x] Drive the retail main shell, skirmish setup, quit modal, nested Options
+  surface, hover state, and match resume through a tracked controller ray.
 - [x] Map the initial tracked controller scheme to the original input paths.
 - [x] Apply head-tracked position/orientation to the engine-owned browser 3D
   audio listener with the same world scale and explicit session cleanup.
