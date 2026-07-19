@@ -103,6 +103,15 @@ and UI endpoint to a brighter confirmation color. This feedback is presentation
 only: the associated click, hover, selection outline, and order marker remain
 owned by the original engine input and rendering paths.
 
+VR comfort preferences are normalized and persisted under a dedicated browser
+profile key. The launcher exposes dominant hand, stick dead zone, perceived
+world scale, floating-interface width/distance, and a seated height offset.
+They are loaded only into the explicit VR renderer: world scale changes the
+meters-to-engine-unit transform consistently for stereo rendering and picking,
+while the height offset is reapplied whenever the viewer recenters. Normal
+desktop renderer, camera, input, and display settings do not consume these
+values.
+
 Every tracked pointer also carries a ray transformed from the WebXR reference
 space through the initial spatial anchor and the latest real engine view into
 W3D world coordinates. `W3DView` uses that ray only for input-owned object and

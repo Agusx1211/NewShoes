@@ -25,11 +25,25 @@ async function openVrSetting(page) {
   await page.waitForSelector("#webXrButton", { state: "visible" });
 }
 
+async function setRange(page, selector, value) {
+  await page.locator(selector).evaluate((control, next) => {
+    control.value = String(next);
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+    control.dispatchEvent(new Event("change", { bubbles: true }));
+  }, value);
+}
+
 try {
   const page = await browser.newPage();
   await page.goto(new URL("harness/play.html?dist=dist-threaded", server.url).href,
     { waitUntil: "load" });
   await openVrSetting(page);
+  await page.selectOption("#webXrDominantHand", "left");
+  await setRange(page, "#webXrStickDeadzone", 0.7);
+  await setRange(page, "#webXrWorldScale", 1.25);
+  await setRange(page, "#webXrPanelWidth", 1.9);
+  await setRange(page, "#webXrPanelDistance", 2);
+  await setRange(page, "#webXrHeightOffset", 0.25);
   const desktop = await page.evaluate(() => ({
     button: document.querySelector("#webXrButton")?.textContent,
     moduleLoaded: window.CnCPort?.state?.webxr?.moduleLoaded,
@@ -58,6 +72,22 @@ try {
   await page.click("#webXrButton");
   await page.waitForURL((url) => url.searchParams.get("vr") === "1");
   await openVrSetting(page);
+  const persisted = await page.evaluate(() => ({
+    dominantHand: document.querySelector("#webXrDominantHand")?.value,
+    stickDeadzone: document.querySelector("#webXrStickDeadzone")?.value,
+    worldScale: document.querySelector("#webXrWorldScale")?.value,
+    panelWidth: document.querySelector("#webXrPanelWidth")?.value,
+    panelDistance: document.querySelector("#webXrPanelDistance")?.value,
+    heightOffset: document.querySelector("#webXrHeightOffset")?.value,
+  }));
+  assert.deepEqual(persisted, {
+    dominantHand: "left",
+    stickDeadzone: "0.7",
+    worldScale: "1.25",
+    panelWidth: "1.9",
+    panelDistance: "2",
+    heightOffset: "0.25",
+  }, "VR comfort settings must persist across the opt-in reload");
   await page.waitForFunction(() => document.querySelector("#webXrButton")?.textContent
     === "Check headset");
   const prepared = await page.evaluate(() => ({
@@ -78,6 +108,7 @@ try {
     moduleLoaded: window.CnCPort?.state?.webxr?.moduleLoaded,
     phase: window.CnCPort?.state?.webxr?.phase,
     rendererReady: window.CnCPort?.state?.webxr?.renderer !== null,
+    comfort: window.CnCPort?.state?.webxr?.renderer?.comfort,
     requestSessionCalls: globalThis.__webXrLauncherRequestSessionCalls,
   }));
   assert.deepEqual(ready, {
@@ -85,6 +116,15 @@ try {
     moduleLoaded: true,
     phase: "ready",
     rendererReady: true,
+    comfort: {
+      worldScale: 1.25,
+      panelWidthMeters: 1.9,
+      panelDistanceMeters: 2,
+      heightOffsetMeters: 0.25,
+      dominantHand: "left",
+      stickDeadzone: 0.7,
+      stickReleaseThreshold: 0.5,
+    },
     requestSessionCalls: 0,
   }, "headset discovery may prepare rendering but must not consume immersive user activation");
 

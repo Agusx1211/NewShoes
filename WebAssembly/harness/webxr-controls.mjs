@@ -545,6 +545,8 @@ export function createWebXrControls({
       sourceCount: sources.size,
       paired,
       dominantHand: config.dominantHand,
+      pressThreshold: config.pressThreshold,
+      releaseThreshold: config.releaseThreshold,
       sources: Array.from(sources.values(), (sourceState) => ({
         handedness: sourceState.handedness,
         profile: sourceState.profile,

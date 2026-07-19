@@ -475,8 +475,10 @@ export function createWebXrD3D8Renderer({
   executorHooks,
   executorDiag,
   engineUnitsPerMeter = DEFAULT_ENGINE_UNITS_PER_METER,
+  worldScale = 1,
   panelWidthMeters = 1.6,
   panelDistanceMeters = 1.5,
+  heightOffsetMeters = 0,
   controlOptions = null,
   onInputAction = null,
   onStateChange = null,
@@ -494,6 +496,29 @@ export function createWebXrD3D8Renderer({
       throw new TypeError(`native WebXR D3D8 renderer requires executor ${name}`);
     }
   }
+  const configuredWorldScale = Number(worldScale);
+  const configuredHeightOffset = Number(heightOffsetMeters);
+  const configuredEngineUnitsPerMeter = Number(engineUnitsPerMeter);
+  const configuredPanelWidth = Number(panelWidthMeters);
+  const configuredPanelDistance = Number(panelDistanceMeters);
+  if (!Number.isFinite(configuredWorldScale) || configuredWorldScale <= 0
+      || !Number.isFinite(configuredEngineUnitsPerMeter)
+      || configuredEngineUnitsPerMeter <= 0) {
+    throw new TypeError("native WebXR renderer requires positive world scale");
+  }
+  if (!Number.isFinite(configuredPanelWidth) || configuredPanelWidth <= 0
+      || !Number.isFinite(configuredPanelDistance) || configuredPanelDistance <= 0) {
+    throw new TypeError("native WebXR renderer requires positive panel geometry");
+  }
+  if (!Number.isFinite(configuredHeightOffset)) {
+    throw new TypeError("native WebXR renderer requires a finite height offset");
+  }
+  const scaledEngineUnitsPerMeter = configuredEngineUnitsPerMeter / configuredWorldScale;
+  const anchoredViewerTransform = (pose, label) => {
+    const transform = matrix16(pose?.transform?.matrix, label);
+    transform[13] += configuredHeightOffset;
+    return transform;
+  };
   let active = false;
   let anchorTransform = null;
   let pending = null;
@@ -526,6 +551,15 @@ export function createWebXrD3D8Renderer({
     controllerPointer: null,
     enginePickRayReady: false,
     recenterCount: 0,
+    comfort: {
+      worldScale: configuredWorldScale,
+      panelWidthMeters: configuredPanelWidth,
+      panelDistanceMeters: configuredPanelDistance,
+      heightOffsetMeters: configuredHeightOffset,
+      dominantHand: controls.snapshot().dominantHand,
+      stickDeadzone: controls.snapshot().pressThreshold,
+      stickReleaseThreshold: controls.snapshot().releaseThreshold,
+    },
     error: null,
   };
 
@@ -552,9 +586,9 @@ export function createWebXrD3D8Renderer({
     if (!active) return;
     const views = Array.isArray(frameContext.views) ? frameContext.views : [];
     if (views.length === 0) throw new Error("WebXR compositor provided no views");
-    anchorTransform ??= matrix16(frameContext.pose?.transform?.matrix, "initial viewer transform");
+    anchorTransform ??= anchoredViewerTransform(frameContext.pose, "initial viewer transform");
     if (recenterRequested) {
-      anchorTransform = matrix16(frameContext.pose?.transform?.matrix, "recenter viewer transform");
+      anchorTransform = anchoredViewerTransform(frameContext.pose, "recenter viewer transform");
       recenterRequested = false;
       state = { ...state, recenterCount: state.recenterCount + 1 };
     }
@@ -563,7 +597,7 @@ export function createWebXrD3D8Renderer({
       lastBackbufferHeight = Number(pending.packet.present?.backBufferHeight ?? 720) >>> 0;
     }
     if (lastBackbufferWidth > 0 && lastBackbufferHeight > 0) {
-      const panelWidth = Number(panelWidthMeters);
+      const panelWidth = configuredPanelWidth;
       const panelHeight = panelWidth * lastBackbufferHeight / lastBackbufferWidth;
       const controlsState = controls.update({
         time: frameContext.time,
@@ -571,7 +605,7 @@ export function createWebXrD3D8Renderer({
         anchorTransform,
         panelWidthMeters: panelWidth,
         panelHeightMeters: panelHeight,
-        panelDistanceMeters: Number(panelDistanceMeters),
+        panelDistanceMeters: configuredPanelDistance,
         backbufferWidth: lastBackbufferWidth,
         backbufferHeight: lastBackbufferHeight,
         resolveWorldRay: latestEngineView
@@ -579,7 +613,7 @@ export function createWebXrD3D8Renderer({
               targetRayMatrix,
               anchorTransform,
               engineViewMatrix: latestEngineView,
-              engineUnitsPerMeter,
+              engineUnitsPerMeter: scaledEngineUnitsPerMeter,
             })
           : null,
       });
@@ -598,7 +632,7 @@ export function createWebXrD3D8Renderer({
     const overrides = views.map((view) => createWebXrD3D8ViewOverride({
       anchorTransform,
       view,
-      engineUnitsPerMeter,
+      engineUnitsPerMeter: scaledEngineUnitsPerMeter,
       framebufferWidth,
       framebufferHeight,
     }));
@@ -705,8 +739,8 @@ export function createWebXrD3D8Renderer({
           uiProgram,
           views,
           anchorTransform,
-          panelWidth: Number(panelWidthMeters),
-          panelDistance: Number(panelDistanceMeters),
+          panelWidth: configuredPanelWidth,
+          panelDistance: configuredPanelDistance,
         });
         executorDiag.invalidateD3D8ExternalGlState();
       }

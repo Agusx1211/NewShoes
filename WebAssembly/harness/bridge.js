@@ -1425,7 +1425,13 @@ function createThreadedEngineController() {
         replayWebXrD3D8CommandFrame,
       } = await import("./webxr-d3d8-command-stream.mjs"));
       const { createWebXrD3D8Renderer } = await import("./webxr-d3d8-renderer.mjs");
+      const {
+        loadWebXrSettings,
+        webXrRendererOptions,
+      } = await import("./webxr-settings.mjs");
+      const webXrSettings = loadWebXrSettings();
       webXrD3D8Renderer = createWebXrD3D8Renderer({
+        ...webXrRendererOptions(webXrSettings),
         gl,
         executorHooks: d3d8Hooks,
         executorDiag: d3d8Diag,

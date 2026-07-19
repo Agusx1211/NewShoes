@@ -106,6 +106,7 @@
     "test:webxr-world-input": "node harness/webxr_world_input_smoke.mjs",
     "test:webxr-d3d8-renderer": "node harness/webxr_d3d8_renderer_unit.mjs",
     "test:webxr-controls": "node harness/webxr_controls_unit.mjs",
+    "test:webxr-settings": "node harness/webxr_settings_unit.mjs",
     "test:webxr-launcher": "node harness/webxr_launcher_smoke.mjs",
     "test:webxr-spatial-ui": "node harness/webxr_d3d8_spatial_ui_smoke.mjs",
     "test:opfs-sync-read": "node harness/opfs_sync_read_smoke.mjs",

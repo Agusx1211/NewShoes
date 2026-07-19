@@ -27,6 +27,11 @@ import {
 } from "./display-resolution.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import {
+  loadWebXrSettings,
+  normalizeWebXrSettings,
+  saveWebXrSettings,
+} from "./webxr-settings.mjs";
+import {
   runRuntimeShutdownSequence,
   runtimeShutdownWarning,
 } from "./runtime-shutdown-sequence.mjs";
@@ -1876,6 +1881,39 @@ function initDisplayRuntime() {
 
 let desktopGameSettingsBound = false;
 const webXrRequested = queryParams.get("vr") === "1";
+let webXrSettings = loadWebXrSettings();
+
+function syncWebXrComfortSettings() {
+  const values = {
+    webXrDominantHand: webXrSettings.dominantHand,
+    webXrStickDeadzone: String(webXrSettings.stickDeadzone),
+    webXrWorldScale: String(webXrSettings.worldScale),
+    webXrPanelWidth: String(webXrSettings.panelWidthMeters),
+    webXrPanelDistance: String(webXrSettings.panelDistanceMeters),
+    webXrHeightOffset: String(webXrSettings.heightOffsetMeters),
+  };
+  for (const [id, value] of Object.entries(values)) {
+    const control = document.querySelector(`#${id}`);
+    if (control) control.value = value;
+  }
+  const outputs = {
+    webXrStickDeadzoneValue: `${Math.round(webXrSettings.stickDeadzone * 100)}%`,
+    webXrWorldScaleValue: `${Math.round(webXrSettings.worldScale * 100)}%`,
+    webXrPanelWidthValue: `${webXrSettings.panelWidthMeters.toFixed(1)} m`,
+    webXrPanelDistanceValue: `${webXrSettings.panelDistanceMeters.toFixed(1)} m`,
+    webXrHeightOffsetValue: `${Math.round(webXrSettings.heightOffsetMeters * 100)} cm`,
+  };
+  for (const [id, value] of Object.entries(outputs)) {
+    const output = document.querySelector(`#${id}`);
+    if (output) output.value = value;
+  }
+}
+
+function updateWebXrComfortSetting(field, value, persist) {
+  const next = normalizeWebXrSettings({ ...webXrSettings, [field]: value });
+  webXrSettings = persist ? saveWebXrSettings(undefined, next) : next;
+  syncWebXrComfortSettings();
+}
 
 function syncDesktopWebXrSetting(overrideMessage = null) {
   const button = document.querySelector("#webXrButton");
@@ -2007,6 +2045,7 @@ function syncDesktopGameSettings() {
     fullscreenButton.hidden = !fullscreenSupported();
     fullscreenButton.textContent = fullscreenElement() ? "Exit fullscreen" : "Enter fullscreen";
   }
+  syncWebXrComfortSettings();
   syncDesktopWebXrSetting();
 }
 
@@ -2055,6 +2094,28 @@ function bindDesktopGameSettings() {
     track("setting_changed", { category: "display", setting: "fullscreen", value: fullscreenElement() ? "disabled" : "enabled" });
     void (fullscreenElement() ? exitFullscreen() : enterFullscreen());
   });
+  const webXrComfortControls = [
+    ["webXrDominantHand", "dominantHand"],
+    ["webXrStickDeadzone", "stickDeadzone"],
+    ["webXrWorldScale", "worldScale"],
+    ["webXrPanelWidth", "panelWidthMeters"],
+    ["webXrPanelDistance", "panelDistanceMeters"],
+    ["webXrHeightOffset", "heightOffsetMeters"],
+  ];
+  for (const [id, field] of webXrComfortControls) {
+    const control = document.querySelector(`#${id}`);
+    if (!control) continue;
+    if (control instanceof HTMLInputElement) {
+      control.addEventListener("input", () => {
+        updateWebXrComfortSetting(field, Number(control.value), false);
+      });
+    }
+    control.addEventListener("change", () => {
+      const value = field === "dominantHand" ? control.value : Number(control.value);
+      updateWebXrComfortSetting(field, value, true);
+      track("setting_changed", { category: "webxr", setting: field, value: String(value) });
+    });
+  }
   document.querySelector("#shaderTierSelect")?.addEventListener("change", (event) => {
     setShaderTier(event.currentTarget.value);
     track("setting_changed", { category: "shader", setting: "shader_tier", value: event.currentTarget.value === "ff" ? "classic" : "enhanced" });

@@ -91,6 +91,18 @@ const gl = {
   bindFramebuffer: (...args) => log.push(["glBindFramebuffer", ...args]),
 };
 const inputActions = [];
+assert.throws(() => createWebXrD3D8Renderer({
+  gl,
+  executorHooks: hooks,
+  executorDiag: diag,
+  worldScale: 0,
+}), /positive world scale/);
+assert.throws(() => createWebXrD3D8Renderer({
+  gl,
+  executorHooks: hooks,
+  executorDiag: diag,
+  panelDistanceMeters: 0,
+}), /positive panel geometry/);
 const renderer = createWebXrD3D8Renderer({
   gl,
   executorHooks: hooks,
@@ -146,6 +158,15 @@ assert.deepEqual(renderer.snapshot(), {
   controllerPointer: null,
   enginePickRayReady: true,
   recenterCount: 0,
+  comfort: {
+    worldScale: 1,
+    panelWidthMeters: 1.6,
+    panelDistanceMeters: 1.5,
+    heightOffsetMeters: 0,
+    dominantHand: "right",
+    stickDeadzone: 0.55,
+    stickReleaseThreshold: 0.35,
+  },
   error: null,
 });
 
