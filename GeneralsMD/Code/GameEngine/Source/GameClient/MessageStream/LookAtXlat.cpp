@@ -77,6 +77,18 @@ Int SCROLL_AMT = 100;
 
 static const Int edgeScrollSize = 3;
 
+static Bool isScreenEdgeScrollingAllowed()
+{
+#ifdef __EMSCRIPTEN__
+	// The browser uses -win for its platform window and rendering setup, but the
+	// canvas is the complete game input surface. Treat its edges like the stock
+	// fullscreen client instead of disabling edge scrolling with the legacy flag.
+	return TRUE;
+#else
+	return !TheGlobalData->m_windowed;
+#endif
+}
+
 static Mouse::MouseCursor prevCursor = Mouse::ARROW;
 
 //-----------------------------------------------------------------------------
@@ -307,7 +319,7 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 				break;
 			}
 
-			if (!TheGlobalData->m_windowed)
+			if (isScreenEdgeScrollingAllowed())
 			{
 				if (m_isScrolling)
 				{
@@ -492,6 +504,30 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 						// Add in the window scroll amount as the minimum.
 						offset.x += TheGlobalData->m_horizontalScrollSpeedFactor * vec.x * sqr(TheGlobalData->m_keyboardScrollFactor);
 						offset.y += TheGlobalData->m_verticalScrollSpeedFactor * vec.y * sqr(TheGlobalData->m_keyboardScrollFactor);
+
+						// W3DView keeps fixed keyboard and edge-scroll steps at the
+						// stock 800x600 world speed by scaling every screen-space
+						// offset with the render resolution. RMB displacement already
+						// grows with that resolution, so cancel the extra scale here.
+						// At the default Scroll Speed setting this reproduces the stock
+						// projection exactly; other settings scale the whole right-drag
+						// velocity and make the existing slider a real sensitivity control.
+						const Real referenceWidth = 800.0f;
+						const Real referenceHeight = 600.0f;
+						const Real displayWidth = TheDisplay->getWidth();
+						const Real displayHeight = TheDisplay->getHeight();
+						Real sensitivity = 1.0f;
+						if (TheGlobalData->m_keyboardDefaultScrollFactor > 0.0f)
+						{
+							sensitivity = TheGlobalData->m_keyboardScrollFactor
+								/ TheGlobalData->m_keyboardDefaultScrollFactor;
+						}
+						if (displayWidth > 0.0f)
+							offset.x *= referenceWidth / displayWidth;
+						if (displayHeight > 0.0f)
+							offset.y *= referenceHeight / displayHeight;
+						offset.x *= sensitivity;
+						offset.y *= sensitivity;
 					}
 					break;
 				case SCROLL_KEY:
