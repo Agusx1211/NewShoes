@@ -205,10 +205,16 @@ async function enterSkirmish(page, geometry) {
   return textEntry;
 }
 
-async function tapWebXrButton(page, index, { frameWhilePressed = true } = {}) {
+async function tapWebXrButton(page, index, { betweenFrames = false } = {}) {
+  if (betweenFrames) {
+    await page.evaluate((buttonIndex) => window.__emulatedXrButtonTap(buttonIndex), index);
+    await page.waitForTimeout(80);
+    await fullFrame(page);
+    return;
+  }
   await page.evaluate((buttonIndex) => window.__emulatedXrButton(buttonIndex, true), index);
   await page.waitForTimeout(80);
-  if (frameWhilePressed) await fullFrame(page);
+  await fullFrame(page);
   await page.evaluate((buttonIndex) => window.__emulatedXrButton(buttonIndex, false), index);
   await page.waitForTimeout(80);
   await fullFrame(page);
@@ -713,7 +719,7 @@ async function driveWebXrCommandBarFlow(page, geometry, priorTooltip) {
       x: Math.round(geometry.engineWidth / 2),
       y: Math.round(geometry.engineHeight / 3),
     }, "construction placement cancel target");
-    await tapWebXrButton(page, 1, { frameWhilePressed: false });
+    await tapWebXrButton(page, 1, { betweenFrames: true });
     await waitForSelectionState(page, "tracked construction cancel", (state) =>
       state.modes?.pendingPlaceType === null
         && state.commandPath?.rightClickIsClick === 1);
@@ -728,6 +734,70 @@ async function driveWebXrCommandBarFlow(page, geometry, priorTooltip) {
     buildTemplate: command.buildTemplate,
     tooltipName: tooltip.text,
     cancelled: true,
+  };
+}
+
+async function clearBattlefieldPoint(page, geometry) {
+  const response = await rpc(page, "queryDrawables");
+  assert.equal(response?.ok, true,
+    `could not inspect battlefield order targets: ${JSON.stringify(response?.error ?? null)}`);
+  const drawables = response.result?.allDrawables ?? response.result?.drawables ?? [];
+  const occupied = drawables.filter((drawable) => drawable?.onScreen === true
+      && Number.isFinite(drawable.screenPos?.x) && Number.isFinite(drawable.screenPos?.y))
+    .map((drawable) => drawable.screenPos);
+  const candidates = Array.from({ length: 24 }, (_, index) => ({
+    x: Math.round(geometry.engineWidth * (0.15 + (index % 6) * 0.14)),
+    y: Math.round(geometry.engineHeight * (0.18 + Math.floor(index / 6) * 0.13)),
+  }));
+  return candidates.map((point) => ({
+    ...point,
+    clearance: occupied.reduce((nearest, drawable) => Math.min(nearest,
+      Math.hypot(point.x - drawable.x, point.y - drawable.y)), Number.POSITIVE_INFINITY),
+  })).sort((left, right) => right.clearance - left.clearance)[0];
+}
+
+async function driveWebXrContextOrder(page, geometry) {
+  const hud = await waitForFrame(page, "context-order idle-worker target", (candidate) =>
+    candidate?.clientState?.controlBarWindows?.buttonIdleWorker?.clickable === true);
+  await clickEngineButton(page, geometry,
+    hud.clientState.controlBarWindows.buttonIdleWorker, "context-order Idle Worker button");
+  const before = await waitForSelectionState(page, "context-order worker selection", (state) =>
+    state.selectedControllable === true
+      && state.selected?.some((selected) => selected.locallyControlled === true
+        && selected.ai?.ready === true));
+  const unit = before.selected.find((selected) => selected.locallyControlled === true
+    && selected.ai?.ready === true);
+  const target = await clearBattlefieldPoint(page, geometry);
+  await aimWebXrAtEnginePoint(page, geometry, target, "context-order terrain target");
+  await tapWebXrButton(page, 1, { betweenFrames: true });
+
+  const beforePath = before.commandPath;
+  const dispatched = await waitForSelectionState(page, "tracked contextual move dispatch",
+    (state) => state.commandPath?.dispatchMoveCommandCount
+        > beforePath.dispatchMoveCommandCount
+      && state.commandPath?.dispatchLastMoveCommandTypeName === "MSG_DO_MOVETO"
+      && state.commandPath?.dispatchLastMoveHadGroup === 1
+      && state.commandPath?.rightClickIsClick === 1);
+  const changed = await waitForSelectionState(page, "tracked contextual move unit state",
+    (state) => {
+      const selected = state.selected?.find((entry) => entry.id === unit.id);
+      if (!selected) return false;
+      const delta = Math.hypot(selected.worldPos.x - unit.worldPos.x,
+        selected.worldPos.y - unit.worldPos.y);
+      return delta > 1 || selected.ai?.moving === true || selected.ai?.waitingForPath === true;
+    });
+  const changedUnit = changed.selected.find((selected) => selected.id === unit.id);
+  return {
+    selectedTemplate: unit.templateName,
+    selectedObjectId: unit.id,
+    targetPoint: { x: target.x, y: target.y },
+    commandType: dispatched.commandPath.dispatchLastMoveCommandTypeName,
+    dispatchedWithGroup: dispatched.commandPath.dispatchLastMoveHadGroup === 1,
+    rightClickAccepted: dispatched.commandPath.rightClickIsClick === 1,
+    aiMoving: changedUnit.ai.moving,
+    aiWaitingForPath: changedUnit.ai.waitingForPath,
+    worldDistance: Math.hypot(changedUnit.worldPos.x - unit.worldPos.x,
+      changedUnit.worldPos.y - unit.worldPos.y),
   };
 }
 
@@ -975,20 +1045,29 @@ try {
     });
     window.__emulatedXrSession = null;
     window.__emulatedXrSessionCount = 0;
-    window.__emulatedXrTrigger = (down) => {
-      inputSource.gamepad.buttons[0] = {
-        pressed: down === true,
-        touched: down === true,
-        value: down === true ? 1 : 0,
-      };
+    const dispatchInputEdge = (index, down) => {
+      const type = index === 0
+        ? (down ? "selectstart" : "selectend")
+        : index === 1 ? (down ? "squeezestart" : "squeezeend") : null;
+      if (!type || !session) return;
+      const event = new Event(type);
+      Object.defineProperty(event, "inputSource", { value: inputSource });
+      session.dispatchEvent(event);
     };
     window.__emulatedXrButton = (index, down) => {
+      const wasDown = inputSource.gamepad.buttons[index]?.pressed === true;
       inputSource.gamepad.buttons[index] = {
         pressed: down === true,
         touched: down === true,
         value: down === true ? 1 : 0,
       };
+      if (wasDown !== (down === true)) dispatchInputEdge(index, down === true);
     };
+    window.__emulatedXrButtonTap = (index) => {
+      window.__emulatedXrButton(index, true);
+      window.__emulatedXrButton(index, false);
+    };
+    window.__emulatedXrTrigger = (down) => window.__emulatedXrButton(0, down);
     window.__emulatedXrAxes = (x, y) => {
       inputSource.gamepad.axes = [Number(x), Number(y)];
     };
@@ -1122,6 +1201,8 @@ try {
     page, inputGeometry, hudSurfaceFlow.tooltipName,
   );
   stage("tracked controller selected an idle worker and activated a command-bar mode");
+  const contextOrderFlow = await driveWebXrContextOrder(page, inputGeometry);
+  stage("tracked controller dispatched a contextual move through the original command path");
 
   await page.evaluate(() => {
     window.__emulatedXrButton(2, true);
@@ -1364,6 +1445,7 @@ try {
     saveLoadRoundTrip,
     hudSurfaceFlow,
     commandBarFlow,
+    contextOrderFlow,
     textEntry,
     wheelCameraZoom: {
       before: cameraHeightBeforeWheel,

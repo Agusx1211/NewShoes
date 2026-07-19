@@ -60,6 +60,10 @@ class FakeSession {
     this.visibilityState = visibilityState;
     this.listeners.get("visibilitychange")?.();
   }
+
+  fireInput(type, inputSource, timeStamp) {
+    this.listeners.get(type)?.({ type, inputSource, timeStamp });
+  }
 }
 
 class FakeLayer {
@@ -216,6 +220,8 @@ session.inputSources = [{
     buttons: [{ pressed: true, touched: true, value: 1 }],
   },
 }];
+session.fireInput("squeezestart", session.inputSources[0], 120.25);
+session.fireInput("squeezeend", session.inputSources[0], 120.5);
 const frame = {
   getViewerPose(referenceSpace) {
     assert.equal(referenceSpace.type, "local-floor");
@@ -243,6 +249,10 @@ assert.equal(frameEvent.inputSources[0].handedness, "right");
 assert.equal(frameEvent.inputSources[0].targetRayPose.emulatedPosition, true);
 assert.equal(frameEvent.inputSources[0].gripPose.emulatedPosition, false);
 assert.deepEqual(frameEvent.inputSources[0].gamepad.axes, [0.25, -0.5]);
+assert.deepEqual(frameEvent.inputEvents, [
+  { type: "squeezestart", sourceId: frameEvent.inputSources[0].id, time: 120.25 },
+  { type: "squeezeend", sourceId: frameEvent.inputSources[0].id, time: 120.5 },
+]);
 assert.deepEqual(glCalls[1], ["bindFramebuffer", gl.FRAMEBUFFER,
   session.renderState.baseLayer.framebuffer]);
 assert.deepEqual(runtime.snapshot(), {
@@ -286,6 +296,10 @@ assert.equal(rendererEvents.at(-1)[0], "end");
 assert.equal(rendererEvents.at(-1)[1], "session-ended");
 assert.equal(glCanvas.listeners.has("webglcontextlost"), false,
   "session exit must remove its graphics-loss listener");
+for (const type of ["selectstart", "selectend", "squeezestart", "squeezeend"]) {
+  assert.equal(session.listeners.has(type), false,
+    `session exit must remove its ${type} listener`);
+}
 assert.ok(stateChanges.some((state) => state.phase === "starting"));
 assert.ok(stateChanges.some((state) => state.phase === "running"));
 

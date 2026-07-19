@@ -1,6 +1,8 @@
 const IMMERSIVE_VR_MODE = "immersive-vr";
 const LOCAL_FLOOR_REFERENCE_SPACE = "local-floor";
 const LOCAL_REFERENCE_SPACE = "local";
+const INPUT_EVENT_TYPES = ["selectstart", "selectend", "squeezestart", "squeezeend"];
+const MAX_PENDING_INPUT_EVENTS = 64;
 
 function errorText(error) {
   return error?.message ?? String(error);
@@ -152,6 +154,18 @@ export function createWebXrRuntime({
     return current;
   }
 
+  function inputSourceId(source, index = 0) {
+    if (!source || typeof source !== "object") return index;
+    if (!inputSourceIds.has(source)) inputSourceIds.set(source, nextInputSourceId++);
+    return inputSourceIds.get(source);
+  }
+
+  function removeInputListeners(session, listeners) {
+    for (const [type, listener] of listeners ?? []) {
+      session.removeEventListener?.(type, listener);
+    }
+  }
+
   async function probe() {
     if (probePromise) return probePromise;
     probePromise = (async () => {
@@ -201,6 +215,7 @@ export function createWebXrRuntime({
       if (!current || current.session !== session) return snapshot();
       active = null;
       current.session.removeEventListener?.("visibilitychange", current.visibilityListener);
+      removeInputListeners(current.session, current.inputListeners);
       current.gl.canvas?.removeEventListener?.("webglcontextlost", current.contextLossListener);
       try {
         await current.renderer.onSessionEnd?.({ reason, error });
@@ -239,6 +254,7 @@ export function createWebXrRuntime({
     if (!current || current.session !== session) return;
     const visibilityState = String(session.visibilityState ?? "visible");
     const inputSuspended = visibilityState !== "visible";
+    current.inputEvents.length = 0;
     try {
       current.renderer.onSessionVisibilityChange?.({
         session,
@@ -268,18 +284,16 @@ export function createWebXrRuntime({
           frame,
           current.referenceSpace,
           session.inputSources,
-          (source, index) => {
-            if (!source || typeof source !== "object") return index;
-            if (!inputSourceIds.has(source)) inputSourceIds.set(source, nextInputSourceId++);
-            return inputSourceIds.get(source);
-          },
+          (source, index) => inputSourceId(source, index),
         );
+        const inputEvents = current.inputEvents.splice(0);
         current.renderer.renderFrame({
           time: finiteNumber(time),
           frame,
           pose,
           views,
           inputSources,
+          inputEvents,
           session,
           referenceSpace: current.referenceSpace,
           referenceSpaceType: current.referenceSpaceType,
@@ -324,6 +338,7 @@ export function createWebXrRuntime({
       let session = null;
       let visibilityListener = null;
       let contextLossListener = null;
+      let inputListeners = [];
       try {
         session = await sessionRequest;
         const endListener = () => {
@@ -355,8 +370,28 @@ export function createWebXrRuntime({
 
         contextLossListener = () => failSession(session, "graphics-context-lost",
           new Error("WebXR graphics context was lost; reload the game to continue"));
+        inputListeners = INPUT_EVENT_TYPES.map((type) => {
+          const listener = (event) => {
+            const current = active;
+            if (!current || current.session !== session
+                || String(session.visibilityState ?? "visible") !== "visible") return;
+            const source = event?.inputSource ?? null;
+            const sourceIndex = Math.max(0, Array.from(session.inputSources ?? []).indexOf(source));
+            current.inputEvents.push({
+              type,
+              sourceId: inputSourceId(source, sourceIndex),
+              time: finiteNumber(event?.timeStamp),
+            });
+            if (current.inputEvents.length > MAX_PENDING_INPUT_EVENTS) {
+              current.inputEvents.splice(0,
+                current.inputEvents.length - MAX_PENDING_INPUT_EVENTS);
+            }
+          };
+          session.addEventListener(type, listener);
+          return [type, listener];
+        });
         active = { session, renderer, gl, layer, referenceSpace, referenceSpaceType,
-          visibilityListener, contextLossListener, failure: null };
+          visibilityListener, contextLossListener, inputListeners, inputEvents: [], failure: null };
         gl.canvas?.addEventListener?.("webglcontextlost", contextLossListener);
         await renderer.onSessionStart?.({
           session,
@@ -386,6 +421,7 @@ export function createWebXrRuntime({
       } catch (error) {
         if (session) {
           session.removeEventListener?.("visibilitychange", visibilityListener);
+          removeInputListeners(session, inputListeners);
           gl.canvas?.removeEventListener?.("webglcontextlost", contextLossListener);
           try {
             await session.end();

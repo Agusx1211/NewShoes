@@ -295,6 +295,14 @@ export function createWebXrControls({
     emit({ type: "key", code, down: false });
   }
 
+  function setPointerButton(source, sourceState, button, down, target) {
+    const slot = button === "secondary" ? "secondaryDown" : "primaryDown";
+    if (down === sourceState[slot]) return;
+    emit({ type: "button", button, down, ...actionTarget(target) });
+    if (down) pulseHaptics(source, button === "secondary" ? 0.32 : 0.22);
+    sourceState[slot] = down;
+  }
+
   function createSourceState(source, role) {
     return {
       role,
@@ -399,6 +407,7 @@ export function createWebXrControls({
   function update({
     time = 0,
     inputSources = [],
+    inputEvents = [],
     anchorTransform,
     panelWidthMeters,
     panelHeightMeters,
@@ -407,6 +416,7 @@ export function createWebXrControls({
     backbufferHeight,
     resolveWorldRay = null,
   } = {}) {
+    let suppressInputEvents = false;
     if (waitingForNeutral) {
       neutralBlockers = [];
       Array.from(inputSources ?? []).forEach((source, sourceIndex) => {
@@ -425,6 +435,7 @@ export function createWebXrControls({
       if (neutralBlockers.length > 0) return snapshot();
       waitingForNeutral = false;
       neutralBlockers = [];
+      suppressInputEvents = true;
     }
     const seen = new Set();
     const hits = [];
@@ -503,6 +514,29 @@ export function createWebXrControls({
     }
     setModifiers(desiredModifiers);
 
+    if (!suppressInputEvents) {
+      const entriesById = new Map(entries.map((entry) => [
+        String(entry.source?.id ?? entry.source?.index), entry,
+      ]));
+      for (const event of Array.from(inputEvents ?? [])) {
+        const entry = entriesById.get(String(event?.sourceId));
+        if (!entry) continue;
+        const primary = event.type === "selectstart" || event.type === "selectend";
+        const secondary = event.type === "squeezestart" || event.type === "squeezeend";
+        if (!primary && !secondary) continue;
+        const down = event.type.endsWith("start");
+        if (paired && entry.sourceState.role === "offhand") {
+          if (primary) setModifier("alt", "AltLeft", down);
+          else setModifier("control", "ControlLeft", down);
+          continue;
+        }
+        const target = entry.target ?? entry.sourceState.lastTarget;
+        const enabled = entry.sourceState.role === "dominant" && Boolean(target);
+        setPointerButton(entry.source, entry.sourceState,
+          secondary ? "secondary" : "primary", down && enabled, target);
+      }
+    }
+
     for (const { source, sourceState, buttons, axisX, axisY, target } of entries) {
       const trigger = buttonDown(buttons, "trigger");
       const squeeze = buttonDown(buttons, "squeeze");
@@ -514,18 +548,10 @@ export function createWebXrControls({
         sourceState.secondaryActionUsed ||= buttonDown(buttons, "secondaryAction");
       }
 
-      if (primaryDown !== sourceState.primaryDown) {
-        emit({ type: "button", button: "primary", down: primaryDown,
-          ...actionTarget(target ?? sourceState.lastTarget) });
-        if (primaryDown) pulseHaptics(source, 0.22);
-        sourceState.primaryDown = primaryDown;
-      }
-      if (secondaryDown !== sourceState.secondaryDown) {
-        emit({ type: "button", button: "secondary", down: secondaryDown,
-          ...actionTarget(target ?? sourceState.lastTarget) });
-        if (secondaryDown) pulseHaptics(source, 0.32);
-        sourceState.secondaryDown = secondaryDown;
-      }
+      setPointerButton(source, sourceState, "primary", primaryDown,
+        target ?? sourceState.lastTarget);
+      setPointerButton(source, sourceState, "secondary", secondaryDown,
+        target ?? sourceState.lastTarget);
 
       const thumbstickDown = buttonDown(buttons, "thumbstick");
       const primaryActionDown = buttonDown(buttons, "primaryAction");

@@ -742,6 +742,7 @@ export function createWebXrD3D8Renderer({
       const controlsState = controls.update({
         time: frameContext.time,
         inputSources: frameContext.inputSources,
+        inputEvents: frameContext.inputEvents,
         anchorTransform,
         panelWidthMeters: panelWidth,
         panelHeightMeters: panelHeight,

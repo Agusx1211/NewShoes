@@ -118,6 +118,14 @@ pause menu. One Retail run selected `Nuke_ChinaVehicleDozer`, exposed
 `Nuke_ChinaPowerPlant` with the localized “Advanced Nuclear Reactor” tooltip,
 and recorded `rightClickIsClick == 1` in the original command translator.
 
+After cancelling the command-card mode, the gate selects an idle worker again,
+chooses a clear battlefield point, and sends controller squeeze through the
+secondary-mouse bridge. The original translator must report an accepted short
+right click, dispatch `MSG_DO_MOVETO` with a real selection group,
+and then expose motion, pathfinding, or a changed world position for that same
+object. One Retail run selected `Chem_GLAInfantryWorker`, dispatched the move,
+and observed `aiMoving == true` plus 1.10 world units of movement.
+
 When only one tracked controller is available, its stick pans normally. Holding
 B/Y changes horizontal stick movement to original camera rotation and vertical
 movement to the original mouse-wheel path, which lets engine windows scroll and
@@ -133,6 +141,14 @@ module for controller profile and accessibility remapping. XR-standard missing
 buttons simply leave their action inactive rather than inventing a success
 path. Short optional haptic pulses acknowledge target clicks, orders, and
 control-group choices when the active controller exposes a supported actuator.
+
+The runtime supplements per-frame gamepad sampling with the standard WebXR
+`selectstart`/`selectend` and `squeezestart`/`squeezeend` events. A bounded event
+queue preserves short clicks and ordered offhand modifier chords that begin and
+end between compositor frames, then reconciles those edges with the sampled
+button state without duplicating actions. Visibility changes clear queued edges,
+neutral re-arming suppresses the first resumed batch, and session teardown
+removes all four listeners.
 
 The compositor renders one active tracked laser independently in each XR view
 after world and panel composition. Magenta plus an endpoint identifies an exact
@@ -260,8 +276,9 @@ run during ordinary desktop play.
   that preserves the active XRSession.
 - [x] Produce a stock ControlBar tooltip from tracked hover and operate the
   Generals experience HUD surface after an in-session engine load reset.
-- [x] Select an idle worker from the stock HUD, activate a live ControlBar
-  command mode, and cancel it through the mapped controller path.
+- [x] Select an idle worker from the stock HUD, activate and cancel a live
+  ControlBar mode, then dispatch a contextual move through the original command
+  translator and observe the selected unit react.
 - [x] Map the initial tracked controller scheme to the original input paths.
 - [x] Focus an original engine text field from a tracked ray and route native
   browser text events through the existing Win32/IME bridge.

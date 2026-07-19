@@ -103,6 +103,58 @@ assert.deepEqual(controls.snapshot().sources.map(({ handedness, role }) => ({ ha
   { handedness: "right", role: "dominant" },
 ]);
 
+const edgeActions = [];
+const edgeControls = createWebXrControls({ onAction: (action) => edgeActions.push(action) });
+const edgeSource = {
+  ...right,
+  id: 17,
+  gamepad: { mapping: "xr-standard", axes: [0, 0], buttons: buttons() },
+};
+edgeControls.update({
+  ...panel,
+  time: 5,
+  inputSources: [edgeSource],
+  inputEvents: [
+    { type: "squeezestart", sourceId: 17, time: 1 },
+    { type: "squeezeend", sourceId: 17, time: 2 },
+  ],
+});
+const edgeDown = findAction(edgeActions,
+  { type: "button", button: "secondary", down: true });
+const edgeUp = findAction(edgeActions,
+  { type: "button", button: "secondary", down: false });
+assert.ok(edgeDown >= 0 && edgeDown < edgeUp,
+  "event-driven squeeze edges must preserve a quick click that occurs between XR frames");
+assert.equal(edgeControls.snapshot().pointer.pressed, false);
+
+const chordActions = [];
+const chordControls = createWebXrControls({ onAction: (action) => chordActions.push(action) });
+const chordLeft = {
+  ...left,
+  id: 18,
+  gamepad: { mapping: "xr-standard", axes: [0, 0], buttons: buttons() },
+};
+chordControls.update({
+  ...panel,
+  time: 6,
+  inputSources: [chordLeft, edgeSource],
+  inputEvents: [
+    { type: "squeezestart", sourceId: 18, time: 1 },
+    { type: "selectstart", sourceId: 17, time: 2 },
+    { type: "selectend", sourceId: 17, time: 3 },
+    { type: "squeezeend", sourceId: 18, time: 4 },
+  ],
+});
+const chordControlDown = findAction(chordActions,
+  { type: "key", code: "ControlLeft", down: true });
+const chordClickDown = findAction(chordActions,
+  { type: "button", button: "primary", down: true });
+const chordControlUp = findAction(chordActions,
+  { type: "key", code: "ControlLeft", down: false });
+assert.ok(chordControlDown >= 0 && chordControlDown < chordClickDown
+  && chordClickDown < chordControlUp,
+  "event-driven offhand modifiers must retain their order around a between-frame click");
+
 rightButtons[0] = button(true);
 controls.update({ ...panel, time: 10, inputSources: [left, right] });
 assert.equal(controls.snapshot().pointer.pressed, true);
