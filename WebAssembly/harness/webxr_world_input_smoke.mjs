@@ -116,6 +116,43 @@ async function clickEngineButton(page, geometry, button, label) {
   return point;
 }
 
+async function exerciseWebXrTextEntry(page, geometry, skirmishMenu) {
+  const entry = skirmishMenu?.textEntryPlayerName;
+  assert.equal(entry?.clickable, true,
+    `skirmish player-name entry is unavailable: ${JSON.stringify(entry)}`);
+  const point = { x: entry.centerX, y: entry.centerY };
+  await page.waitForFunction(({ x, y }) =>
+    window.CnCPort.state.touchUi?.entries?.some((candidate) =>
+      x >= candidate.rect.x && x < candidate.rect.x + candidate.rect.width
+        && y >= candidate.rect.y && y < candidate.rect.y + candidate.rect.height),
+  point, { timeout: 30000, polling: 100 });
+  const before = String(skirmishMenu.playerNameText ?? "");
+  await clickEngineButton(page, geometry, entry, "skirmish player-name entry");
+  await page.waitForFunction(() => document.activeElement?.id === "touchTextInput"
+    && window.CnCPort.getTouchControlsState?.().keyboardOpen === true
+    && window.CnCPort.getWebXrState()?.systemKeyboardSupported === true,
+  null, { timeout: 30000, polling: 50 });
+  await page.locator("#touchTextInput").evaluate((input) => {
+    input.dispatchEvent(new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      data: "vr",
+      inputType: "insertText",
+    }));
+  });
+  const typed = await waitForFrame(page, "tracked-controller player-name text entry",
+    (candidate) => candidate?.clientState?.skirmishMenu?.playerNameText === `${before}vr`,
+    30000);
+  await page.locator("[data-touch-text-done]").click();
+  await page.waitForFunction(() =>
+    window.CnCPort.getTouchControlsState?.().keyboardOpen === false);
+  return {
+    keyboardSupported: true,
+    before,
+    after: typed.clientState.skirmishMenu.playerNameText,
+  };
+}
+
 async function enterSkirmish(page, geometry) {
   await aimWebXrAtEnginePoint(page, geometry, { x: 32, y: 32 }, "main menu wake-up");
   await page.waitForTimeout(250);
@@ -141,6 +178,7 @@ async function enterSkirmish(page, geometry) {
   }
   frame = await waitForFrame(page, "skirmish options",
     (candidate) => candidate?.clientState?.skirmishMenu?.buttonStart?.clickable === true);
+  const textEntry = await exerciseWebXrTextEntry(page, geometry, frame.clientState.skirmishMenu);
   await clickEngineButton(page, geometry,
     frame.clientState.skirmishMenu.buttonStart, "Start button");
   await waitForFrame(page, "active skirmish", (candidate) => {
@@ -148,6 +186,7 @@ async function enterSkirmish(page, geometry) {
     return gameplay?.inGame === true && gameplay?.loadingMap === false
       && gameplay?.inputEnabled === true && Number(gameplay?.renderedObjectCount ?? 0) > 0;
   }, 6 * 60 * 1000);
+  return textEntry;
 }
 
 async function tapWebXrButton(page, index) {
@@ -322,6 +361,7 @@ try {
         this.renderState = null;
         this.ended = false;
         this.visibilityState = "visible";
+        this.isSystemKeyboardSupported = true;
         this.timers = new Set();
       }
 
@@ -511,7 +551,7 @@ try {
     `emulated immersive session was not available: ${JSON.stringify(support)}`);
   stage("immersive support probe passed");
   await page.evaluate(() => window.CnCPort.startWebXrSession());
-  await enterSkirmish(page, inputGeometry);
+  const textEntry = await enterSkirmish(page, inputGeometry);
   stage("tracked controller operated the floating main shell and skirmish setup");
   await waitForEngineRay(page);
   stage("real engine view produced a tracked world ray");
@@ -676,6 +716,7 @@ try {
     audioHeadOffset: movedListener.lastListener.xrOffset,
     audioListenerRestored: restoredListener.webXrListenerActive === false,
     modalFlow,
+    textEntry,
     wheelCameraZoom: {
       before: cameraHeightBeforeWheel,
       after: cameraHeightAfterWheel,

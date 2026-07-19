@@ -87,9 +87,8 @@ single-player and skirmish setup, loading transition, in-game quit modal, and
 nested Options menu. It verifies original button activation and hover state,
 then returns through the modal stack and resumes the match with the tracked
 controller. This is automated compatibility evidence for the shared floating
-surface and real `GameWindowManager` input path; it does not replace the
-remaining real-headset readability, text-entry, scrolling, and full-flow
-usability evidence.
+surface and real `GameWindowManager` input path; it does not replace real-headset
+readability and full-flow usability evidence.
 
 When only one tracked controller is available, its stick pans normally. Holding
 B/Y changes horizontal stick movement to original camera rotation and vertical
@@ -136,6 +135,21 @@ session exit immediately reapplies the unmodified engine listener. The callback
 is installed only on the explicit VR renderer path, so desktop audio continues
 to consume the original Miles listener unchanged.
 
+When an immersive session reports `isSystemKeyboardSupported`, releasing the
+tracked primary button over an engine-published text-entry rectangle focuses the
+existing browser-native text proxy. Browser `beforeinput` and composition events
+continue through the existing Win32/IME bridge into the original engine gadget;
+the VR path does not maintain a second text value or submit a parallel UI form.
+The proxy is available without exposing the touch toolbar, and its Done action
+retains the established touch behavior. A user agent that presents its system
+keyboard changes the XR session to `visible-blurred`, which is handled by the
+input suspension and neutral re-arm boundary below. Sessions that do not report
+the capability retain physical-keyboard input without opening the proxy, and
+desktop/touch activation remains unchanged. The retail threaded smoke proves
+tracked focus and mutation of the original skirmish player-name field with an
+emulated supported session; system-keyboard presentation still needs real
+headset evidence.
+
 XR visibility is an input-ownership boundary. `visible-blurred` and `hidden`
 immediately release every held controller button, modifier, camera key, pointer,
 and native W3D ray. Returning to `visible` does not re-arm input until all
@@ -174,6 +188,8 @@ run during ordinary desktop play.
 - [x] Drive the retail main shell, skirmish setup, quit modal, nested Options
   surface, hover state, and match resume through a tracked controller ray.
 - [x] Map the initial tracked controller scheme to the original input paths.
+- [x] Focus an original engine text field from a tracked ray and route native
+  browser text events through the existing Win32/IME bridge.
 - [x] Apply head-tracked position/orientation to the engine-owned browser 3D
   audio listener with the same world scale and explicit session cleanup.
 - Add remaining comfort, accessibility, spatial-audio device validation,

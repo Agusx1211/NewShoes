@@ -129,6 +129,7 @@ export function createWebXrRuntime({
     inputSourceCount: 0,
     visibilityState: null,
     inputSuspended: false,
+    systemKeyboardSupported: null,
     framebuffer: null,
     error: null,
   };
@@ -207,6 +208,7 @@ export function createWebXrRuntime({
         referenceSpaceType: null,
         visibilityState: null,
         inputSuspended: false,
+        systemKeyboardSupported: null,
         framebuffer: null,
         error: error ? errorText(error) : null,
       });
@@ -355,6 +357,7 @@ export function createWebXrRuntime({
           inputSourceCount: Number(session.inputSources?.length ?? 0),
           visibilityState: String(session.visibilityState ?? "visible"),
           inputSuspended: String(session.visibilityState ?? "visible") !== "visible",
+          systemKeyboardSupported: session.isSystemKeyboardSupported === true,
           framebuffer: {
             width: finiteNumber(layer.framebufferWidth),
             height: finiteNumber(layer.framebufferHeight),

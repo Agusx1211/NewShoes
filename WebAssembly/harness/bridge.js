@@ -10854,6 +10854,17 @@ function forwardWebXrInputAction(action) {
         point,
       },
     });
+    if (button === 0 && action.down !== true
+        && harnessState.webxr?.systemKeyboardSupported === true) {
+      const inputMode = engineTextInputModeAtPoint(point);
+      if (inputMode) {
+        queueMicrotask(() => {
+          if (harnessState.webxr?.systemKeyboardSupported === true) {
+            touchControls.openTextKeyboard(inputMode);
+          }
+        });
+      }
+    }
     return;
   }
   if (action.type === "wheel" && point) {
@@ -24851,11 +24862,7 @@ async function rpc(command, payload = {}) {
   }
 }
 
-function touchInputModeForClientPoint(clientPoint) {
-  const point = canvasInputPointFromEvent({
-    clientX: clientPoint?.x ?? 0,
-    clientY: clientPoint?.y ?? 0,
-  });
+function engineTextInputModeAtPoint(point) {
   const entries = Array.isArray(harnessState.touchUi?.entries)
     ? harnessState.touchUi.entries : [];
   for (let index = entries.length - 1; index >= 0; --index) {
@@ -24868,6 +24875,13 @@ function touchInputModeForClientPoint(clientPoint) {
     }
   }
   return null;
+}
+
+function touchInputModeForClientPoint(clientPoint) {
+  return engineTextInputModeAtPoint(canvasInputPointFromEvent({
+    clientX: clientPoint?.x ?? 0,
+    clientY: clientPoint?.y ?? 0,
+  }));
 }
 
 function touchFocusedInputMode() {
@@ -25091,6 +25105,11 @@ const touchControls = createTouchControls({
   onViewportKeyboardChange: (open) => {
     harnessState.touchKeyboardOpen = open;
   },
+});
+window.addEventListener("cncport:webxr", (event) => {
+  if (event.detail?.phase !== "running" && touchControls.snapshot().keyboardOpen) {
+    touchControls.closeTextKeyboard();
+  }
 });
 
 paintBlackWindow();

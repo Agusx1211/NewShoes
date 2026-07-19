@@ -19,6 +19,7 @@ class FakeSession {
     this.renderState = null;
     this.ended = false;
     this.visibilityState = "visible";
+    this.isSystemKeyboardSupported = true;
   }
 
   addEventListener(type, listener) {
@@ -235,6 +236,7 @@ assert.deepEqual(runtime.snapshot(), {
   inputSourceCount: 1,
   visibilityState: "visible",
   inputSuspended: false,
+  systemKeyboardSupported: true,
   framebuffer: { width: 2048, height: 1024 },
   error: null,
 });
@@ -254,6 +256,7 @@ assert.deepEqual(rendererEvents.at(-1), ["visibility", "visible"]);
 
 await runtime.stop("unit-test");
 assert.equal(runtime.snapshot().phase, "ready");
+assert.equal(runtime.snapshot().systemKeyboardSupported, null);
 assert.equal(rendererEvents.at(-1)[0], "end");
 assert.equal(rendererEvents.at(-1)[1], "session-ended");
 assert.ok(stateChanges.some((state) => state.phase === "starting"));
