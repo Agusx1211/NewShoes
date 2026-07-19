@@ -216,6 +216,7 @@
     "test:d3d8-buffer-streaming": "node harness/d3d8_buffer_streaming_unit.mjs",
     "test:d3d8-offscreen-viewport-browser": "node harness/d3d8_offscreen_viewport_smoke.mjs",
     "test:d3d8-sm1-transform-switch-browser": "node harness/d3d8_sm1_transform_switch_smoke.mjs",
+    "bench:d3d8-transform-switch": "D3D8_TRANSFORM_BENCH_ITERATIONS=20000 node harness/d3d8_sm1_transform_switch_smoke.mjs",
     "test:d3d8-render-state-mapping": "npm run build:wasm && node dist/d3d8-render-state-mapping-smoke.cjs",
     "test:d3d8-texture-upload-readiness": "npm run build:wasm && node dist/d3d8-texture-upload-readiness-smoke.cjs",
     "test:d3d8-texture-stage-state-mapping": "npm run build:wasm && node dist/d3d8-texture-stage-state-mapping-smoke.cjs",

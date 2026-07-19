@@ -166,12 +166,13 @@ const d3d8DerivedDrawCache = new Map();
 let d3d8DerivedDrawCacheEntries = 0;
 let d3d8DerivedDrawCacheOldest = null;
 let d3d8DerivedDrawCacheNewest = null;
-let d3d8LastTransformUniformWorld = null;
-let d3d8LastTransformUniformView = null;
-let d3d8LastTransformUniformProjection = null;
-let d3d8LastTransformUniformWorldRevision = 0;
-let d3d8LastTransformUniformViewRevision = 0;
-let d3d8LastTransformUniformProjectionRevision = 0;
+let d3d8LastTransformSourceWorld = null;
+let d3d8LastTransformSourceView = null;
+let d3d8LastTransformSourceProjection = null;
+let d3d8LastTransformSourceWorldRevision = 0;
+let d3d8LastTransformSourceViewRevision = 0;
+let d3d8LastTransformSourceProjectionRevision = 0;
+let d3d8TransformUniformGeneration = 1;
 let d3d8LastPointSpriteUniformInfo = null;
 let d3d8LastVertexAttribKey = null;
 let d3d8LastDefaultVertexAttribKey = null;
@@ -2177,7 +2178,6 @@ function bindD3D8Program(program) {
   d3d8CurrentProgram = program;
   d3d8LastVertexAttribKey = null;
   d3d8LastDefaultVertexAttribKey = null;
-  resetD3D8TransformUniformCache();
   resetD3D8UniformSubgroupCaches();
   harnessState.graphics.lastD3D8AppliedRenderState = null;
   harnessState.graphics.lastD3D8UniformKey = null;
@@ -10531,14 +10531,6 @@ function d3d8CachedUniformMatrix4fv(location, matrix) {
   gl.uniformMatrix4fv(location, false, matrix);
 }
 
-function d3d8UploadChangedUniformMatrix4fv(location, matrix) {
-  if (!location) {
-    return;
-  }
-  if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
-  gl.uniformMatrix4fv(location, false, matrix);
-}
-
 function setD3D8Uniform3FromArray(location, values) {
   if (!location) {
     return;
@@ -10560,12 +10552,45 @@ function setD3D8Uniform4FromArray(location, values) {
 }
 
 function resetD3D8TransformUniformCache() {
-  d3d8LastTransformUniformWorld = null;
-  d3d8LastTransformUniformView = null;
-  d3d8LastTransformUniformProjection = null;
-  d3d8LastTransformUniformWorldRevision = 0;
-  d3d8LastTransformUniformViewRevision = 0;
-  d3d8LastTransformUniformProjectionRevision = 0;
+  d3d8LastTransformSourceWorld = null;
+  d3d8LastTransformSourceView = null;
+  d3d8LastTransformSourceProjection = null;
+  d3d8LastTransformSourceWorldRevision = 0;
+  d3d8LastTransformSourceViewRevision = 0;
+  d3d8LastTransformSourceProjectionRevision = 0;
+  d3d8TransformUniformGeneration = (d3d8TransformUniformGeneration + 1) >>> 0;
+  if (d3d8TransformUniformGeneration === 0) {
+    d3d8TransformUniformGeneration = 1;
+  }
+}
+
+// Returns true when this program already has the exact matrix and no WebGL
+// command was needed. Native revisions are the fast path; revision-less
+// callers and repeated same-value SetTransform calls retain exact comparison.
+function d3d8TransformUniformMatchesOrUpload(location, matrix, revision) {
+  if (!location) {
+    return true;
+  }
+  const transformRevision = Number(revision ?? 0) >>> 0;
+  const generationMatches =
+    location.__cncTransformGeneration === d3d8TransformUniformGeneration;
+  if (generationMatches && transformRevision !== 0 &&
+      location.__cncTransformRevision === transformRevision) {
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlSkipped += 1;
+    return true;
+  }
+  const cached = location.__cncTransformMatrix;
+  if (generationMatches && cached && d3d8MatrixEquals(cached, matrix)) {
+    location.__cncTransformRevision = transformRevision;
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlSkipped += 1;
+    return true;
+  }
+  location.__cncTransformGeneration = d3d8TransformUniformGeneration;
+  location.__cncTransformRevision = transformRevision;
+  location.__cncTransformMatrix = rememberD3D8TransformUniformSnapshot(cached, matrix);
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
+  gl.uniformMatrix4fv(location, false, matrix);
+  return false;
 }
 
 function rememberD3D8TransformUniformSnapshot(cached, values) {
@@ -10577,22 +10602,22 @@ function rememberD3D8TransformUniformSnapshot(cached, values) {
 }
 
 function rememberD3D8WorldTransformUniform(world) {
-  d3d8LastTransformUniformWorld = rememberD3D8TransformUniformSnapshot(
-    d3d8LastTransformUniformWorld,
+  d3d8LastTransformSourceWorld = rememberD3D8TransformUniformSnapshot(
+    d3d8LastTransformSourceWorld,
     world,
   );
 }
 
 function rememberD3D8ViewTransformUniform(view) {
-  d3d8LastTransformUniformView = rememberD3D8TransformUniformSnapshot(
-    d3d8LastTransformUniformView,
+  d3d8LastTransformSourceView = rememberD3D8TransformUniformSnapshot(
+    d3d8LastTransformSourceView,
     view,
   );
 }
 
 function rememberD3D8ProjectionTransformUniform(projection) {
-  d3d8LastTransformUniformProjection = rememberD3D8TransformUniformSnapshot(
-    d3d8LastTransformUniformProjection,
+  d3d8LastTransformSourceProjection = rememberD3D8TransformUniformSnapshot(
+    d3d8LastTransformSourceProjection,
     projection,
   );
 }
@@ -12499,20 +12524,20 @@ function paintD3D8DrawIndexed(payload = {}) {
     ? Number(payload.projectionTransformRevision ?? 0) >>> 0
     : 0;
   const worldRevisionUnchanged = worldRevision !== 0 &&
-    worldRevision === d3d8LastTransformUniformWorldRevision && d3d8LastTransformUniformWorld !== null;
+    worldRevision === d3d8LastTransformSourceWorldRevision && d3d8LastTransformSourceWorld !== null;
   const viewRevisionUnchanged = viewRevision !== 0 &&
-    viewRevision === d3d8LastTransformUniformViewRevision && d3d8LastTransformUniformView !== null;
+    viewRevision === d3d8LastTransformSourceViewRevision && d3d8LastTransformSourceView !== null;
   const projectionRevisionUnchanged = projectionRevision !== 0 &&
-    projectionRevision === d3d8LastTransformUniformProjectionRevision &&
-    d3d8LastTransformUniformProjection !== null;
+    projectionRevision === d3d8LastTransformSourceProjectionRevision &&
+    d3d8LastTransformSourceProjection !== null;
   const world = worldRevisionUnchanged
-    ? d3d8LastTransformUniformWorld
+    ? d3d8LastTransformSourceWorld
     : normalizeD3DMatrix(payload.transforms?.world, d3d8DrawMatrixScratch.world);
   const view = viewRevisionUnchanged
-    ? d3d8LastTransformUniformView
+    ? d3d8LastTransformSourceView
     : normalizeD3DMatrix(payload.transforms?.view, d3d8DrawMatrixScratch.view);
   const projection = projectionRevisionUnchanged
-    ? d3d8LastTransformUniformProjection
+    ? d3d8LastTransformSourceProjection
     : normalizeD3DMatrix(payload.transforms?.projection, d3d8DrawMatrixScratch.projection);
   let texture0Transform, texture1Transform, texture2Transform, texture3Transform;
   const transformMask = Number(payload.transformMask ?? 0) >>> 0;
@@ -13880,15 +13905,26 @@ function paintD3D8DrawIndexed(payload = {}) {
             transformDetailStartedAt = now;
           }
         : null;
-      // bindD3D8Program resets the per-program uniform snapshots. The revision
-      // shortcuts above may still be true for the D3D transform itself, but
-      // they cannot prove that the newly bound GL program has received it.
-      const worldTransformUnchanged =
-        d3d8MatrixEquals(d3d8LastTransformUniformWorld, world);
-      const viewTransformUnchanged =
-        d3d8MatrixEquals(d3d8LastTransformUniformView, view);
-      const projectionTransformUnchanged =
-        d3d8MatrixEquals(d3d8LastTransformUniformProjection, projection);
+      // Native revisions avoid reading or comparing unchanged Wasm matrices.
+      // Each linked program retains independent uniform values, so the upload
+      // cache lives on its WebGLUniformLocation and survives program switches.
+      // Revision-less payloads and repeated SetTransform calls with identical
+      // values still take the exact element-wise comparison fallback.
+      const worldTransformUnchanged = d3d8TransformUniformMatchesOrUpload(
+        bridgeProgram.world,
+        world,
+        worldRevision,
+      );
+      const viewTransformUnchanged = d3d8TransformUniformMatchesOrUpload(
+        bridgeProgram.view,
+        view,
+        viewRevision,
+      );
+      const projectionTransformUnchanged = d3d8TransformUniformMatchesOrUpload(
+        bridgeProgram.projection,
+        projection,
+        projectionRevision,
+      );
       recordTransformDetail?.("sortedDrawTransformCompareMs");
       if (worldTransformUnchanged && viewTransformUnchanged && projectionTransformUnchanged) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawTransformUniformCacheHits += 1;
@@ -13897,33 +13933,33 @@ function paintD3D8DrawIndexed(payload = {}) {
       }
       if (worldTransformUnchanged) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawWorldTransformUniformCacheHits += 1;
-        d3d8LastTransformUniformWorldRevision = worldRevision;
       } else {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawWorldTransformUniformCacheMisses += 1;
-        d3d8UploadChangedUniformMatrix4fv(bridgeProgram.world, world);
-        rememberD3D8WorldTransformUniform(world);
-        d3d8LastTransformUniformWorldRevision = worldRevision;
       }
+      if (worldRevision !== 0 && !worldRevisionUnchanged) {
+        rememberD3D8WorldTransformUniform(world);
+      }
+      d3d8LastTransformSourceWorldRevision = worldRevision;
       recordTransformDetail?.("sortedDrawWorldTransformUniformMs");
       if (viewTransformUnchanged) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawViewTransformUniformCacheHits += 1;
-        d3d8LastTransformUniformViewRevision = viewRevision;
       } else {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawViewTransformUniformCacheMisses += 1;
-        d3d8UploadChangedUniformMatrix4fv(bridgeProgram.view, view);
-        rememberD3D8ViewTransformUniform(view);
-        d3d8LastTransformUniformViewRevision = viewRevision;
       }
+      if (viewRevision !== 0 && !viewRevisionUnchanged) {
+        rememberD3D8ViewTransformUniform(view);
+      }
+      d3d8LastTransformSourceViewRevision = viewRevision;
       recordTransformDetail?.("sortedDrawViewTransformUniformMs");
       if (projectionTransformUnchanged) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawProjectionTransformUniformCacheHits += 1;
-        d3d8LastTransformUniformProjectionRevision = projectionRevision;
       } else {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawProjectionTransformUniformCacheMisses += 1;
-        d3d8UploadChangedUniformMatrix4fv(bridgeProgram.projection, projection);
-        rememberD3D8ProjectionTransformUniform(projection);
-        d3d8LastTransformUniformProjectionRevision = projectionRevision;
       }
+      if (projectionRevision !== 0 && !projectionRevisionUnchanged) {
+        rememberD3D8ProjectionTransformUniform(projection);
+      }
+      d3d8LastTransformSourceProjectionRevision = projectionRevision;
       recordTransformDetail?.("sortedDrawProjectionTransformUniformMs");
     }
     // Non-transformed draws leave these uniforms unused but still current.
