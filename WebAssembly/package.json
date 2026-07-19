@@ -50,6 +50,7 @@
     "verify:gamelogic-new-game-dispatch-frontier": "node tools/verify_gamelogic_new_game_dispatch_frontier.mjs",
     "verify:weapon-disarm-fallback": "node tools/verify_weapon_disarm_fallback.mjs",
     "verify:particle-uplink-outer-node-bounds": "node tools/verify_particle_uplink_outer_node_bounds.mjs",
+    "verify:rider-change-contain-template-guard": "node tools/verify_rider_change_contain_template_guard.mjs",
     "verify:w3d-module-factory-frontier": "node tools/verify_w3d_module_factory_frontier.mjs",
     "verify:miles-audio-device-frontier": "node tools/verify_miles_audio_device_frontier.mjs",
     "verify:bink-video-device-frontier": "node tools/verify_bink_video_device_frontier.mjs",
