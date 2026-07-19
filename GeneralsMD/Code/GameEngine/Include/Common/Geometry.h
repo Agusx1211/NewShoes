@@ -155,16 +155,39 @@ public:
 	Real getFootprintArea() const;
 
 	// given an object with this geom, how far above the object's canonical position does its max z extend?
-	Real getMaxHeightAbovePosition() const;
+	inline Real getMaxHeightAbovePosition() const
+	{
+		switch (m_type)
+		{
+			case GEOMETRY_SPHERE:
+				return m_majorRadius;
+
+			case GEOMETRY_BOX:
+			case GEOMETRY_CYLINDER:
+				return m_height;
+		}
+
+		return 0.0f;
+	}
 
 	// given an object with this geom, how far below the object's canonical position does its max z extend?
-	Real getMaxHeightBelowPosition() const;
+	inline Real getMaxHeightBelowPosition() const
+	{
+		return m_type == GEOMETRY_SPHERE ? m_majorRadius : 0.0f;
+	}
 
 	// given an object with this geom, how far above/below the object's canonical position is its center?
-	Real getZDeltaToCenterPosition() const;
+	inline Real getZDeltaToCenterPosition() const
+	{
+		return m_type == GEOMETRY_SPHERE ? 0.0f : m_height * 0.5f;
+	}
 
 	// given an object with this geom, located at 'pos', where is the "center" of the geometry?
-	void getCenterPosition(const Coord3D& pos, Coord3D& center) const;
+	inline void getCenterPosition(const Coord3D& pos, Coord3D& center) const
+	{
+		center = pos;
+		center.z += getZDeltaToCenterPosition();
+	}
 
 	// given an object with this geom, located at 'pos', and another obj with the given
 	// pos & geom, calc the min and max pitches from this to that.
@@ -196,4 +219,3 @@ public:
 };
 
 #endif 
-

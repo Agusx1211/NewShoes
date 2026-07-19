@@ -162,6 +162,7 @@ void TeamRelationMap::loadPostProcess( void )
 // ------------------------------------------------------------------------
 // ------------------------------------------------------------------------
 // ------------------------------------------------------------------------
+
 // STATIC FUNCTIONS ///////////////////////////////////////////////////////////
 static Bool locoSetMatches(LocomotorSurfaceTypeMask lstm, UnsignedInt surfaceBitFlags)
 {
@@ -1481,15 +1482,16 @@ Relationship Team::getRelationship(const Team *that) const
 	}
 
 	// hummm... well, do we have an override for that team's player?
-	if (!m_playerRelations->m_map.empty() && that != NULL)
+	if (!m_playerRelations->isEmpty() && that != NULL)
 	{
 		Player* thatPlayer = that->getControllingPlayer();
 		if (thatPlayer != NULL)
 		{
-			PlayerRelationMapType::const_iterator it = m_playerRelations->m_map.find(thatPlayer->getPlayerIndex());
-			if (it != m_playerRelations->m_map.end())
+			Relationship relationship;
+			if (m_playerRelations->findRelationship(
+				thatPlayer->getPlayerIndex(), &relationship))
 			{
-				return (*it).second;
+				return relationship;
 			}
 		}
 	}
@@ -1586,31 +1588,22 @@ void Team::setOverridePlayerRelationship( Int playerIndex, Relationship r )
 	if (playerIndex != PLAYER_INDEX_INVALID)
 	{
 		// note that this creates the entry if it doesn't exist.
-		m_playerRelations->m_map[playerIndex] = r;
+		m_playerRelations->setRelationship(playerIndex, r);
 	}
 }
 
 // ------------------------------------------------------------------------
 Bool Team::removeOverridePlayerRelationship( Int playerIndex )
 {
-	if (!m_playerRelations->m_map.empty())
+	if (m_playerRelations->isEmpty())
 	{
-		if (playerIndex == PLAYER_INDEX_INVALID)
-		{
-			m_playerRelations->m_map.clear();
-			return true;
-		}
-		else
-		{
-			PlayerRelationMapType::iterator it = m_playerRelations->m_map.find(playerIndex);
-			if (it != m_playerRelations->m_map.end())
-			{
-				m_playerRelations->m_map.erase(it);
-				return true;
-			}
-		}
+		return false;
 	}
-	return false;
+	if (playerIndex == PLAYER_INDEX_INVALID)
+	{
+		return m_playerRelations->clearRelationships();
+	}
+	return m_playerRelations->removeRelationship(playerIndex);
 }
 
 // ------------------------------------------------------------------------
@@ -2752,4 +2745,3 @@ void Team::loadPostProcess( void )
 // ------------------------------------------------------------------------
 // ------------------------------------------------------------------------
 // ------------------------------------------------------------------------
-

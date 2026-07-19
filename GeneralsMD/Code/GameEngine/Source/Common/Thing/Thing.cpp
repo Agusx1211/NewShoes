@@ -91,12 +91,6 @@ Thing::~Thing()
 //DECLARE_PERF_TIMER(ThingMatrixStuff)
 
 //=============================================================================
-const ThingTemplate *Thing::getTemplate() const
-{
-	return m_template;
-}
-
-//=============================================================================
 const Coord3D* Thing::getUnitDirectionVector2D() const
 {
 	//USE_PERF_TIMER(ThingMatrixStuff)
@@ -263,24 +257,6 @@ void Thing::setTransformMatrix( const Matrix3D *mx )
 
 	reactToTransformChange(&oldMtx, &oldPos, oldAngle);
 	DEBUG_ASSERTCRASH(!(_isnan(getPosition()->x) || _isnan(getPosition()->y) || _isnan(getPosition()->z)), ("Drawable/Object position NAN! '%s'\n", m_template->getName().str() ));
-}
-
-//-------------------------------------------------------------------------------------------------
-Bool Thing::isKindOf(KindOfType t) const 
-{ 
-	return getTemplate()->isKindOf(t); 
-}
-
-//-------------------------------------------------------------------------------------------------
-Bool Thing::isKindOfMulti(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) const 
-{ 
-	return getTemplate()->isKindOfMulti(mustBeSet, mustBeClear); 
-}
-
-// ------------------------------------------------------------------------------------------------
-Bool Thing::isAnyKindOf( const KindOfMaskType& anyKindOf ) const
-{
-	return getTemplate()->isAnyKindOf( anyKindOf );
 }
 
 // ------------------------------------------------------------------------------------------------

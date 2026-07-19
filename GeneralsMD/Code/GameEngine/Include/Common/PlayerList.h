@@ -102,7 +102,12 @@ public:
 		you should generally only use this if you want to iterate thru
 		all players, NOT to get a specific player!
 	*/
-	Player *getNthPlayer(Int i);
+	inline Player *getNthPlayer(Int i)
+	{
+		if (static_cast<UnsignedInt>(i) >= MAX_PLAYER_COUNT)
+			return NULL;
+		return m_players[i];
+	}
 
 	/**
 		return the "neutral" Player. there is always a player that is "neutral" wrt

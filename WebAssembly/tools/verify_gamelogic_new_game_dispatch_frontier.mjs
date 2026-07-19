@@ -2,7 +2,7 @@
 // Verifies that the Skirmish start frontier is pinned to the original
 // GameLogic MSG_NEW_GAME dispatch path, that the current shell smoke still
 // stops before claiming original GameLogic ownership, and that the focused
-// runtime smoke links original GlobalData.cpp/PlayerList.cpp/Player.cpp/
+// runtime smoke links original GlobalData.cpp/INIWebpageURL.cpp/PlayerList.cpp/Player.cpp/
 // GameLogic.cpp/GameLogicDispatch.cpp.
 
 import { readFileSync } from "node:fs";
@@ -559,6 +559,10 @@ expect(
   !/shims\/PreRTS\.h|WASM_SHIMS_DIR\}\/PreRTS\.h/.test(shellCompileOptions.block),
   "w3d-window-layout-script-smoke still force-includes the shim PreRTS.h fallback",
 );
+expect(
+  !/CNC_PLAYER_LIST_GET_NTH_PLAYER_TEST_DOUBLE/.test(shellCompileDefinitions.block),
+  "w3d-window-layout-script-smoke still opts into the PlayerList lookup double",
+);
 const originalGameLogicHeaderLine = lineOf(
   gameLogicHeader,
   /class\s+GameLogic\s*:\s*public\s+SubsystemInterface\s*,\s*public\s+Snapshot/,
@@ -580,16 +584,30 @@ const gameStateSentinelLine = lineOf(
   /TheGameState\s*=\s*reinterpret_cast<GameState\s*\*>\s*\(\s*1\s*\)\s*;/,
   "shell smoke GameState sentinel",
 );
-const playerLookupShim = functionBody(
+const shellPlayerListNullLine = lineOf(
   shellSmoke,
-  /Player\s*\*\s*PlayerList::getNthPlayer\s*\(\s*Int\s*\)/,
-  "shell smoke PlayerList::getNthPlayer boundary",
+  /^\tThePlayerList\s*=\s*nullptr\s*;/m,
+  "shell smoke null PlayerList boundary",
 );
-const playerLookupShimReturnLine = expectInBody(
+expect(
+  !/Player\s*\*\s*PlayerList::getNthPlayer\s*\(/.test(shellSmoke),
+  "shell smoke still defines a PlayerList::getNthPlayer double",
+);
+const shellMoneyParser = functionBody(
   shellSmoke,
-  playerLookupShim,
-  /return\s+nullptr\s*;/,
-  "shell smoke PlayerList::getNthPlayer returns null",
+  /Money\s+parse_money_line\s*\(\s*char\s*\*\s*line\s*\)/,
+  "shell smoke money parser",
+);
+const shellMoneyParserCallLine = expectInBody(
+  shellSmoke,
+  shellMoneyParser,
+  /Money::parseMoneyAmount\s*\(\s*&ini\s*,\s*nullptr\s*,\s*&money\s*,\s*nullptr\s*\)\s*;/,
+  "shell smoke real Money parser call",
+);
+const shellStartingCashProofLine = lineOf(
+  shellSmoke,
+  /global_data\.m_defaultStartingCash\.countMoney\s*\(\s*\)\s*==\s*10000[\s\S]*multiplayer_settings\.getDefaultStartingMoney\s*\(\s*\)\.countMoney\s*\(\s*\)\s*==\s*10000/,
+  "shell smoke parsed starting-cash proof",
 );
 
 const runtimeTargetSources = cmakeInvocationBlock(
@@ -811,7 +829,7 @@ const runtimePathLine = lineOf(
 );
 const runtimeSourceLine = lineOf(
   runtimeSmoke,
-  /GlobalData\.cpp\/INI\.cpp\/INIGameData\.cpp\/INIAiData\.cpp\/INIMultiplayer\.cpp\/UserPreferences\.cpp\/MultiplayerSettings\.cpp\/Science\.cpp\/PlayerTemplate\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/AI\.cpp\/AIPathfind\.cpp\/AIPlayer\.cpp\/GhostObject\.cpp\/Weapon\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/TerrainTypes\.cpp\/Radar\.cpp\/PartitionManager\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainRoads\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp\/WW3D\.cpp\/DX8Wrapper\.cpp\/DX8VertexBuffer\.cpp\/DX8IndexBuffer\.cpp/,
+  /GlobalData\.cpp\/INI\.cpp\/INIWebpageURL\.cpp\/INIGameData\.cpp\/INIAiData\.cpp\/INIMultiplayer\.cpp\/UserPreferences\.cpp\/MultiplayerSettings\.cpp\/Science\.cpp\/PlayerTemplate\.cpp\/FunctionLexicon\.cpp\/PlayerList\.cpp\/Player\.cpp\/AI\.cpp\/AIPathfind\.cpp\/AIPlayer\.cpp\/GhostObject\.cpp\/Weapon\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/GameState\.cpp\/TerrainTypes\.cpp\/Radar\.cpp\/PartitionManager\.cpp\/ScriptEngine\.cpp\/Scripts\.cpp\/Shell\.cpp\/GameWindowManagerScript\.cpp\/HeaderTemplate\.cpp\/TerrainRoads\.cpp\/TerrainLogic\.cpp\/W3DTerrainLogic\.cpp\/WorldHeightMap\.cpp\/TerrainVisual\.cpp\/SidesList\.cpp\/ThingFactory\.cpp\/WW3D\.cpp\/DX8Wrapper\.cpp\/DX8VertexBuffer\.cpp\/DX8IndexBuffer\.cpp/,
   "runtime smoke original source JSON",
 );
 const runtimeArchivePathLine = lineOf(
@@ -1237,7 +1255,7 @@ expect(
 );
 const runtimeScriptEngineLine = lineOf(
   runtimeSmoke,
-  /ScriptEngine\s*\*\s*script_engine\s*=\s*new\s+ScriptEngine\s*;/,
+  /ScriptEngineConditionTeamProbe\s*\*\s*script_engine\s*=\s*new\s+ScriptEngineConditionTeamProbe\s*;/,
   "runtime smoke original ScriptEngine allocation",
 );
 const runtimeScriptNormalLine = lineOf(
@@ -1324,8 +1342,11 @@ console.log(JSON.stringify({
     originalGameLogicCppLinked: false,
     originalGameLogicDispatchCppLinked: false,
     gameStateSentinelLine,
-    playerLookupShimLine: playerLookupShim.line,
-    playerLookupShimReturnLine,
+    playerListNullLine: shellPlayerListNullLine,
+    noPlayerLookupDouble: true,
+    moneyParserLine: shellMoneyParser.line,
+    moneyParserCallLine: shellMoneyParserCallLine,
+    startingCashProofLine: shellStartingCashProofLine,
   },
   runtimeTargetBoundary: {
     smokeSource: paths.runtimeSmoke,

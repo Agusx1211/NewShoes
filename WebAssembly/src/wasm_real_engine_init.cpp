@@ -9010,6 +9010,130 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_su
 	return json.c_str();
 }
 
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_benchmark_partition_distance(
+	Int requested_iterations)
+{
+	struct DistanceCase
+	{
+		Object *first;
+		Object *second;
+		DistanceCalculationType mode;
+	};
+
+	static std::string json;
+	json = "{\"ok\":false";
+	if (TheGameLogic == NULL || ThePartitionManager == NULL || !TheGameLogic->isInGame()) {
+		json += ",\"error\":\"gameNotActive\"}";
+		return json.c_str();
+	}
+
+	std::vector<Object *> objects;
+	objects.reserve(256);
+	for (Object *obj = TheGameLogic->getFirstObject(); obj != NULL && objects.size() < 256;
+		obj = obj->getNextObject()) {
+		objects.push_back(obj);
+	}
+	if (objects.size() < 2) {
+		json += ",\"error\":\"insufficientObjects\"";
+		json += ",\"objectCount\":" + std::to_string(objects.size());
+		json += "}";
+		return json.c_str();
+	}
+
+	const Int iterations = requested_iterations < 1 ? 1
+		: requested_iterations > 50000000 ? 50000000 : requested_iterations;
+	const size_t case_count = 4096;
+	std::vector<DistanceCase> cases;
+	cases.reserve(case_count);
+	UnsignedInt random_state = 0x6d2b79f5u;
+	UnsignedInt mode_counts[4] = { 0, 0, 0, 0 };
+	for (size_t index = 0; index < case_count; ++index) {
+		random_state = random_state * 1664525u + 1013904223u;
+		Object *first = objects[random_state % objects.size()];
+		random_state = random_state * 1664525u + 1013904223u;
+		Object *second = objects[random_state % objects.size()];
+		random_state = random_state * 1664525u + 1013904223u;
+		const DistanceCalculationType mode = static_cast<DistanceCalculationType>(
+			(random_state >> 30) & 3u);
+		cases.push_back({ first, second, mode });
+		++mode_counts[static_cast<Int>(mode)];
+	}
+
+	UnsignedInt exact_mismatch_count = 0;
+	UnsignedInt case_fingerprint = 2166136261u;
+	const auto mix_fingerprint = [&case_fingerprint](UnsignedInt value) {
+		case_fingerprint ^= value;
+		case_fingerprint *= 16777619u;
+	};
+	for (const DistanceCase &distance_case : cases) {
+		Coord3D vector = { 0.0f, 0.0f, 0.0f };
+		Real distance_only = ThePartitionManager->getDistanceSquared(
+			distance_case.first, distance_case.second, distance_case.mode, NULL);
+		Real vector_distance = ThePartitionManager->getDistanceSquared(
+			distance_case.first, distance_case.second, distance_case.mode, &vector);
+		if (std::memcmp(&distance_only, &vector_distance, sizeof(Real)) != 0) {
+			++exact_mismatch_count;
+		}
+		distance_only = ThePartitionManager->getDistanceSquared(
+			distance_case.first, distance_case.second->getPosition(), distance_case.mode, NULL);
+		vector_distance = ThePartitionManager->getDistanceSquared(
+			distance_case.first, distance_case.second->getPosition(), distance_case.mode, &vector);
+		if (std::memcmp(&distance_only, &vector_distance, sizeof(Real)) != 0) {
+			++exact_mismatch_count;
+		}
+
+		mix_fingerprint(static_cast<UnsignedInt>(distance_case.first->getID()));
+		mix_fingerprint(static_cast<UnsignedInt>(distance_case.second->getID()));
+		mix_fingerprint(static_cast<UnsignedInt>(distance_case.mode));
+		const Object *fingerprint_objects[2] = { distance_case.first, distance_case.second };
+		for (const Object *fingerprint_object : fingerprint_objects) {
+			const Coord3D *position = fingerprint_object->getPosition();
+			const GeometryInfo &geometry = fingerprint_object->getGeometryInfo();
+			const Real values[] = {
+				position->x,
+				position->y,
+				position->z,
+				geometry.getBoundingCircleRadius(),
+				geometry.getBoundingSphereRadius(),
+				geometry.getZDeltaToCenterPosition(),
+			};
+			for (Real value : values) {
+				UnsignedInt bits = 0;
+				std::memcpy(&bits, &value, sizeof(bits));
+				mix_fingerprint(bits);
+			}
+		}
+	}
+
+	double checksum = 0.0;
+	const double started_at = emscripten_get_now();
+	for (Int iteration = 0; iteration < iterations; ++iteration) {
+		const DistanceCase &distance_case = cases[static_cast<size_t>(iteration) & (case_count - 1)];
+		checksum += ThePartitionManager->getDistanceSquared(
+			distance_case.first, distance_case.second, distance_case.mode, NULL);
+	}
+	const double elapsed_ms = emscripten_get_now() - started_at;
+
+	json = "{\"ok\":true";
+	json += ",\"iterations\":" + std::to_string(iterations);
+	json += ",\"objectCount\":" + std::to_string(objects.size());
+	json += ",\"caseCount\":" + std::to_string(case_count);
+	json += ",\"modeCounts\":[";
+	for (Int mode = 0; mode < 4; ++mode) {
+		if (mode != 0) json += ",";
+		json += std::to_string(mode_counts[mode]);
+	}
+	json += "]";
+	json += ",\"exactMismatchCount\":" + std::to_string(exact_mismatch_count);
+	json += ",\"caseFingerprint\":" + std::to_string(case_fingerprint);
+	json += ",\"elapsedMs\":" + std::to_string(elapsed_ms);
+	json += ",\"nanosecondsPerCall\":"
+		+ std::to_string(elapsed_ms * 1000000.0 / static_cast<double>(iterations));
+	json += ",\"checksum\":" + std::to_string(checksum);
+	json += "}";
+	return json.c_str();
+}
+
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_skirmish_local_template(const char *template_name)
 {
 	static std::string json;
