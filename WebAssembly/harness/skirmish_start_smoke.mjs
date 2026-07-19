@@ -16,6 +16,7 @@ const D3DTOP_DISABLE = 1;
 const WM_MOUSEMOVE = 0x0200;
 const WM_LBUTTONDOWN = 0x0201;
 const WM_LBUTTONUP = 0x0202;
+const omitAudioArchives = process.env.SKIRMISH_START_OMIT_AUDIO_ARCHIVES === "1";
 
 const archiveSpecs = [
   { name: "INIZH.big" },
@@ -48,7 +49,9 @@ const archiveSpecs = [
   { name: "ZZBase_SpeechEnglish.big", sourceName: "base-generals/SpeechEnglish.big" },
   { name: "ZZBase_Maps.big", sourceName: "base-generals/Maps.big" },
   { name: "Gensec.big" },
-];
+].filter((spec) => !omitAudioArchives
+  || !/^(?:(?:AudioEnglish|SpeechEnglish)ZH|base-generals\/(?:Audio(?:English)?|Speech(?:English)?))\.big$/i
+    .test(spec.sourceName ?? spec.name));
 
 const screenshotPath = resolve(
   process.env.SKIRMISH_START_SCREENSHOT ??
@@ -71,7 +74,13 @@ const expectMenuMusicStop = process.env.SKIRMISH_START_EXPECT_MUSIC_STOP === "1"
 const expectEscMenuResume = process.env.SKIRMISH_START_EXPECT_ESC_MENU_RESUME === "1";
 const expectEnemyStartAssets = process.env.SKIRMISH_START_EXPECT_ENEMY_START_ASSETS === "1";
 const expectEnemyAiActivity = process.env.SKIRMISH_START_EXPECT_ENEMY_AI_ACTIVITY === "1";
-const collectPlayerDiagnostics = expectEnemyStartAssets || expectEnemyAiActivity;
+const expectHard4v4 = process.env.SKIRMISH_START_HARD_4V4 === "1";
+const expectWorkerSupplyExitProbe =
+  process.env.SKIRMISH_START_WORKER_SUPPLY_EXIT_PROBE === "1";
+const collectPlayerDiagnostics = expectEnemyStartAssets || expectEnemyAiActivity || expectHard4v4;
+const disablePostActiveRender =
+  process.env.SKIRMISH_START_POST_ACTIVE_DISABLE_RENDER === "1";
+const logPostActiveTiming = process.env.SKIRMISH_START_LOG_POST_ACTIVE === "1";
 const requestedPostActiveFrames = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_FRAMES", 0);
 const enemyAiActivityFrames = parsePositiveInt("SKIRMISH_START_ENEMY_AI_ACTIVITY_FRAMES", 1200);
 const postActiveFrames = expectEnemyAiActivity
@@ -80,14 +89,48 @@ const postActiveFrames = expectEnemyAiActivity
 const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK", frameChunk);
 const musicStopMaxFrames = parsePositiveInt("SKIRMISH_START_MUSIC_STOP_MAX_FRAMES", 360);
 const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
+const requestedSkirmishSeedText = String(process.env.SKIRMISH_START_SEED ?? "").trim();
+const requestedSkirmishSeed = requestedSkirmishSeedText
+  ? Number.parseInt(requestedSkirmishSeedText, 10)
+  : null;
+if (requestedSkirmishSeedText && (!/^\d+$/.test(requestedSkirmishSeedText)
+    || !Number.isInteger(requestedSkirmishSeed)
+    || requestedSkirmishSeed > 0x7fffffff)) {
+  throw new Error(`Invalid SKIRMISH_START_SEED: ${requestedSkirmishSeedText}`);
+}
 const captureD3D8History = process.env.SKIRMISH_START_CAPTURE_D3D8_HISTORY === "1";
 const expectLightPulseProbe = process.env.SKIRMISH_START_LIGHT_PULSE_PROBE === "1";
 const expectReplayRoundTrip = process.env.SKIRMISH_START_REPLAY_ROUNDTRIP === "1";
 const retailReplayFixture = String(process.env.SKIRMISH_REPLAY_FIXTURE ?? "").trim();
+const expectReplayPerformance = process.env.SKIRMISH_START_REPLAY_PERFORMANCE === "1";
+const requireReplayPerformanceVisible =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_REQUIRE_VISIBLE !== "0";
+const disableReplayPerformanceRender =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_DISABLE_RENDER === "1";
+const profileReplayPerformance =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_PROFILE !== "0";
+const requestedD3D8Batch = String(process.env.SKIRMISH_START_D3D8_BATCH ?? "").trim();
+if (requestedD3D8Batch && !/^(?:0|1|false|true|off|on)$/.test(requestedD3D8Batch)) {
+  throw new Error(`Invalid SKIRMISH_START_D3D8_BATCH: ${requestedD3D8Batch}`);
+}
+const replayPerformanceClientFps = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_CLIENT_FPS", 60);
+const replayPerformanceLogicFps = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_LOGIC_FPS", 30);
+const replayPerformanceCatchup = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_CATCHUP", 2);
+const replayPerformanceEndFrame = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_END_FRAME", Number.MAX_SAFE_INTEGER);
+const replayPerformanceGpuProfileStartFrame = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_GPU_PROFILE_START_FRAME", 0);
+const replayPerformanceGpuProfileFrames = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_GPU_PROFILE_FRAMES", 120);
 const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
 const expectParticleVisibilityProbe =
   process.env.SKIRMISH_START_PARTICLE_VISIBILITY_PROBE === "1";
 const expectTouchControlsProbe = process.env.SKIRMISH_START_TOUCH_PROBE === "1";
+const expectSelectionFocusLossProbe =
+  process.env.SKIRMISH_START_SELECTION_FOCUS_LOSS_PROBE === "1";
 const particleVisibilityFrames = parsePositiveInt(
   "SKIRMISH_START_PARTICLE_VISIBILITY_FRAMES", 30);
 const distDir = parseDistDir();
@@ -110,6 +153,12 @@ if ((requestedModLocalPath || requestedModLocalDir) && !requestedModPackage) {
 }
 if (requestedModLocalPath && requestedModLocalDir) {
   throw new Error("Choose either SKIRMISH_START_MOD_LOCAL_PATH or SKIRMISH_START_MOD_LOCAL_DIR");
+}
+if (expectReplayPerformance && !retailReplayFixture) {
+  throw new Error("SKIRMISH_START_REPLAY_PERFORMANCE requires SKIRMISH_REPLAY_FIXTURE");
+}
+if (expectReplayPerformance && replayPerformanceClientFps < replayPerformanceLogicFps) {
+  throw new Error("Replay performance client FPS must be at least the logic FPS");
 }
 
 function parsePositiveInt(name, fallback) {
@@ -152,6 +201,7 @@ function compactGameplay(frame) {
   return {
     framesCompleted: frame?.framesCompleted ?? null,
     gameMode: gameplay?.gameMode ?? null,
+    logicFrame: gameplay?.logicFrame ?? null,
     inGame: gameplay?.inGame ?? null,
     loadingMap: gameplay?.loadingMap ?? null,
     objectCount: gameplay?.objectCount ?? null,
@@ -161,6 +211,7 @@ function compactGameplay(frame) {
     localPlayer: gameplay?.localPlayer ?? null,
     ai: gameplay?.ai ?? null,
     playerDiagnostics: gameplay?.playerDiagnostics ?? null,
+    recorder: gameplay?.recorder ?? null,
     display,
   };
 }
@@ -570,6 +621,65 @@ async function runSummary(page, frames, label = "real engine summary") {
     label);
 }
 
+async function selectSemanticUiRow(page, name, index) {
+  const snapshot = await rpc(page, "agentUiSnapshot");
+  expect(snapshot?.ok === true && snapshot?.result?.ok === true,
+    `semantic UI snapshot failed before selecting ${name}`, snapshot);
+  const window = snapshot.result.windows.find((candidate) =>
+    candidate.name === name && candidate.visible && candidate.interactive);
+  expect(Boolean(window), `semantic UI window is unavailable: ${name}`, snapshot.result);
+  const items = await rpc(page, "agentUiListItems", {
+    windowId: window.id,
+    name: window.name,
+    offset: 0,
+    limit: 32,
+  });
+  expect(items?.ok === true && items?.result?.ok === true,
+    `semantic UI rows are unavailable: ${name}`, items);
+  const row = items.result.rows.find((candidate) => candidate.index === index);
+  expect(Boolean(row), `semantic UI row ${index} is unavailable: ${name}`, items.result);
+  const selected = await rpc(page, "agentUiSelectIndex", {
+    windowId: window.id,
+    name: window.name,
+    index,
+  });
+  expect(selected?.ok === true && selected?.result?.ok === true
+      && selected.result.notificationHandled > 0,
+    `semantic UI selection did not reach the real callback: ${name}`, selected);
+  return {
+    name,
+    index,
+    cells: row.cells,
+    notificationHandled: selected.result.notificationHandled,
+  };
+}
+
+async function configureHard4v4(page) {
+  // Skirmish player rows are Open, Closed, Easy, Medium, Hard. Team rows are
+  // No Team, Team 1..4. Selecting by stable row index keeps this independent
+  // of localization while agentUiSelectIndex still drives the original combo
+  // box notification path.
+  const selections = [];
+  selections.push(await selectSemanticUiRow(
+    page, "SkirmishGameOptionsMenu.wnd:ComboBoxTeam0", 1));
+  for (let slot = 1; slot < 8; slot++) {
+    selections.push(await selectSemanticUiRow(
+      page, `SkirmishGameOptionsMenu.wnd:ComboBoxPlayer${slot}`, 4));
+    selections.push(await selectSemanticUiRow(
+      page, `SkirmishGameOptionsMenu.wnd:ComboBoxTeam${slot}`, slot < 4 ? 1 : 2));
+  }
+  await runSummary(page, 2, "hard 4v4 setup settle");
+  const probe = await rpc(page, "mapCacheProbe");
+  const gameInfo = probe?.probe?.skirmishGameInfo ?? null;
+  const slots = gameInfo?.slots ?? [];
+  expect(slots.length === 8
+      && slots.slice(1).every((slot) => slot.ai === true)
+      && slots.slice(0, 4).every((slot) => slot.teamNumber === 0)
+      && slots.slice(4).every((slot) => slot.teamNumber === 1),
+    "hard 4v4 setup did not persist in the original skirmish GameInfo", gameInfo);
+  return { selections, gameInfo };
+}
+
 async function postMouse(page, message, point) {
   const result = await rpc(page, "postMessage", {
     message,
@@ -628,6 +738,27 @@ async function touchCameraState(page) {
   return snapshot.result.camera;
 }
 
+async function touchNavigationCount(page) {
+  return page.evaluate(() => Number(window.CnCPort.state.touchNavigation?.count ?? 0));
+}
+
+async function waitForTouchNavigationQueued(page, minimumCount) {
+  await page.waitForFunction((expected) => {
+    const navigation = window.CnCPort.state.touchNavigation;
+    return Number(navigation?.count ?? 0) >= expected
+      && Number(navigation?.queuedCount ?? 0) >= Number(navigation.count);
+  }, minimumCount);
+}
+
+async function settleTouchNavigationQueue(page, minimumCount) {
+  await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
+  await waitForTouchNavigationQueued(page, minimumCount);
+  const count = await touchNavigationCount(page);
+  await waitForTouchNavigationQueued(page, count);
+}
+
 function coordinateDelta(left, right) {
   return Math.hypot(
     Number(right?.x ?? 0) - Number(left?.x ?? 0),
@@ -642,6 +773,23 @@ async function driveTouchControlsProbe(page) {
   expect(state?.enabled === true, "touch controls did not enable in a touch context", state);
   expect(await page.locator("#touchControls").isVisible(),
     "touch controls were not visible over the live game");
+  const renderGeometry = await page.evaluate(() => {
+    const canvas = document.querySelector("#viewport");
+    const rect = canvas.getBoundingClientRect();
+    const display = window.CnCPort.state.engineDisplaySize;
+    return {
+      css: { width: rect.width, height: rect.height },
+      display,
+      backingStore: { width: canvas.width, height: canvas.height },
+    };
+  });
+  const cssAspect = renderGeometry.css.width / renderGeometry.css.height;
+  const displayAspect = renderGeometry.display.width / renderGeometry.display.height;
+  expect(Math.abs(cssAspect - displayAspect) <=
+      1 / Math.min(renderGeometry.display.width, renderGeometry.display.height)
+      && renderGeometry.backingStore.width === renderGeometry.display.width
+      && renderGeometry.backingStore.height === renderGeometry.display.height,
+  "mobile render resolution must preserve the device box aspect and backing store", renderGeometry);
   const dismiss = page.locator("[data-touch-action='dismiss-help']");
   if (await dismiss.isVisible()) await dismiss.click();
 
@@ -655,8 +803,10 @@ async function driveTouchControlsProbe(page) {
   let unit = drawables.find((drawable) =>
     drawable?.localOwned === true && drawable?.structure !== true
       && drawable?.kindOf?.selectable === true && drawable?.onScreen === true
-      && drawable?.screenPos?.x > 80 && drawable?.screenPos?.x < 700
-      && drawable?.screenPos?.y > 80 && drawable?.screenPos?.y < 430);
+      && drawable?.screenPos?.x > 80
+      && drawable?.screenPos?.x < renderGeometry.display.width - 80
+      && drawable?.screenPos?.y > 80
+      && drawable?.screenPos?.y < renderGeometry.display.height - 120);
   if (!unit) {
     const offscreenUnit = allDrawables.find((drawable) =>
       drawable?.localOwned === true && drawable?.structure !== true
@@ -731,80 +881,285 @@ async function driveTouchControlsProbe(page) {
   }
 
   const cameraBefore = await touchCameraState(page);
+  const navigationPathBefore = (await rpc(page, "querySelection"))?.result?.commandPath;
   const panStart = [{ x: 280, y: 240 }, { x: 440, y: 240 }];
-  const panEnd = panStart.map((point) => ({ x: point.x + 70, y: point.y + 35 }));
+  let panEnd = panStart.map((point) => ({ x: point.x + 70, y: point.y + 35 }));
   const panStartClient = await Promise.all(panStart.map((point) => touchPointToClient(page, point)));
-  const panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
+  let panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
   await dispatchTouchPointer(page, "pointerdown", 511, panStartClient[0], true);
   await dispatchTouchPointer(page, "pointerdown", 512, panStartClient[1]);
+  let navigationCountBeforeMove = await touchNavigationCount(page);
   await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
   await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
-  await runFrames(page, 4, "touch pan held");
+  await settleTouchNavigationQueue(page, navigationCountBeforeMove + 1);
+  await runFrames(page, 4, "touch direct pan");
+  let cameraPanMoved = await touchCameraState(page);
+  // A random start position can place the camera against the map edge. If the
+  // first drag points farther out of bounds, reverse it while the same gesture
+  // is held so direct translation is still tested without depending on spawn.
+  if (coordinateDelta(cameraBefore.lookAt, cameraPanMoved.lookAt) <= 0.1) {
+    panEnd = panStart.map((point) => ({ x: point.x - 70, y: point.y - 35 }));
+    panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
+    navigationCountBeforeMove = await touchNavigationCount(page);
+    await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
+    await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
+    await settleTouchNavigationQueue(page, navigationCountBeforeMove + 1);
+    await runFrames(page, 4, "touch direct pan reverse from map edge");
+    cameraPanMoved = await touchCameraState(page);
+  }
+  const navigationDiagnostics = await page.evaluate(() => ({
+    touchControls: window.CnCPort.getTouchControlsState?.() ?? null,
+    forwardedNavigation: window.CnCPort.state.touchNavigation ?? null,
+    threadedInputLogs: window.CnCPort.state.threadedEngine?.recentLogs ?? null,
+  }));
+  expect(coordinateDelta(cameraBefore.lookAt, cameraPanMoved.lookAt) > 0.1,
+    "two-finger pan did not move the tactical camera", {
+      cameraBefore,
+      cameraPanMoved,
+      navigationDiagnostics,
+    });
+  await runFrames(page, 12, "touch pan stationary");
+  const cameraPanStationary = await touchCameraState(page);
+  expect(coordinateDelta(cameraPanMoved.lookAt, cameraPanStationary.lookAt) < 0.01
+      && Math.abs(Number(cameraPanMoved.zoom) - Number(cameraPanStationary.zoom)) < 0.0001
+      && Math.abs(Number(cameraPanMoved.angle) - Number(cameraPanStationary.angle)) < 0.0001,
+    "stationary fingers must not leave velocity scrolling active", {
+      cameraPanMoved, cameraPanStationary,
+    });
   await dispatchTouchPointer(page, "pointerup", 511, panEndClient[0], true);
   await dispatchTouchPointer(page, "pointerup", 512, panEndClient[1]);
   await runFrames(page, 6, "touch pan settle");
   const cameraAfterPan = await touchCameraState(page);
-  expect(coordinateDelta(cameraBefore.lookAt, cameraAfterPan.lookAt) > 0.1,
-    "two-finger pan did not move the tactical camera", { cameraBefore, cameraAfterPan });
+  expect(coordinateDelta(cameraPanStationary.lookAt, cameraAfterPan.lookAt) < 0.01
+      && Math.abs(Number(cameraPanStationary.zoom) - Number(cameraAfterPan.zoom)) < 0.0001
+      && Math.abs(Number(cameraPanStationary.angle) - Number(cameraAfterPan.angle)) < 0.0001,
+    "releasing a direct pan must not add residual camera movement", {
+      cameraPanStationary, cameraAfterPan,
+    });
 
-  const pinchLeft = { x: 330, y: 250 };
-  const pinchRight = { x: 450, y: 250 };
-  let leftClient = await touchPointToClient(page, pinchLeft);
-  let rightClient = await touchPointToClient(page, pinchRight);
+  const gestureStartCenter = { x: 390, y: 250 };
+  const gestureStartRadius = 60;
+  let leftClient = await touchPointToClient(page, {
+    x: gestureStartCenter.x - gestureStartRadius,
+    y: gestureStartCenter.y,
+  });
+  let rightClient = await touchPointToClient(page, {
+    x: gestureStartCenter.x + gestureStartRadius,
+    y: gestureStartCenter.y,
+  });
   await dispatchTouchPointer(page, "pointerdown", 521, leftClient, true);
   await dispatchTouchPointer(page, "pointerdown", 522, rightClient);
+  navigationCountBeforeMove = await touchNavigationCount(page);
   for (let step = 1; step <= 5; step += 1) {
-    leftClient = await touchPointToClient(page, { x: pinchLeft.x - step * 10, y: pinchLeft.y });
-    rightClient = await touchPointToClient(page, { x: pinchRight.x + step * 10, y: pinchRight.y });
+    const progress = step / 5;
+    const center = {
+      x: gestureStartCenter.x + 65 * progress,
+      y: gestureStartCenter.y + 30 * progress,
+    };
+    const radius = gestureStartRadius + 45 * progress;
+    const radians = Math.PI / 7 * progress;
+    leftClient = await touchPointToClient(page, {
+      x: center.x - Math.cos(radians) * radius,
+      y: center.y - Math.sin(radians) * radius,
+    });
+    rightClient = await touchPointToClient(page, {
+      x: center.x + Math.cos(radians) * radius,
+      y: center.y + Math.sin(radians) * radius,
+    });
     await dispatchTouchPointer(page, "pointermove", 521, leftClient, true);
     await dispatchTouchPointer(page, "pointermove", 522, rightClient);
+    await page.waitForTimeout(20);
   }
+  await settleTouchNavigationQueue(page, navigationCountBeforeMove + 1);
+  await runFrames(page, 6, "touch combined navigation");
+  const cameraCombined = await touchCameraState(page);
+  const combinedDiagnostics = await page.evaluate(() => ({
+    touchControls: window.CnCPort.getTouchControlsState?.() ?? null,
+    forwardedNavigation: window.CnCPort.state.touchNavigation ?? null,
+    threadedInputLogs: window.CnCPort.state.threadedEngine?.recentLogs ?? null,
+  }));
+  expect(coordinateDelta(cameraAfterPan.lookAt, cameraCombined.lookAt) > 0.1,
+    "combined gesture did not pan the tactical camera", {
+      cameraAfterPan,
+      cameraCombined,
+      combinedDiagnostics,
+    });
+  expect(Math.abs(Number(cameraCombined.zoom) - Number(cameraAfterPan.zoom)) > 0.001,
+    "combined gesture did not pinch-zoom the tactical camera", {
+      cameraAfterPan, cameraCombined,
+    });
+  expect(Math.abs(Number(cameraCombined.angle) - Number(cameraAfterPan.angle)) > 0.001,
+    "combined gesture did not twist the tactical camera", {
+      cameraAfterPan, cameraCombined,
+    });
+  await runFrames(page, 12, "touch combined gesture stationary");
+  const cameraCombinedStationary = await touchCameraState(page);
+  expect(coordinateDelta(cameraCombined.lookAt, cameraCombinedStationary.lookAt) < 0.01
+      && Math.abs(Number(cameraCombined.zoom) - Number(cameraCombinedStationary.zoom)) < 0.0001
+      && Math.abs(Number(cameraCombined.angle) - Number(cameraCombinedStationary.angle)) < 0.0001,
+    "a stationary combined gesture must not continue changing the camera", {
+      cameraCombined, cameraCombinedStationary,
+    });
   await dispatchTouchPointer(page, "pointerup", 521, leftClient, true);
   await dispatchTouchPointer(page, "pointerup", 522, rightClient);
-  await runFrames(page, 8, "touch pinch settle");
-  const cameraAfterPinch = await touchCameraState(page);
-  expect(Math.abs(Number(cameraAfterPinch.zoom) - Number(cameraAfterPan.zoom)) > 0.001,
-    "pinch did not zoom the tactical camera", { cameraAfterPan, cameraAfterPinch });
+  await runFrames(page, 8, "touch combined navigation release");
+  const cameraAfterRelease = await touchCameraState(page);
+  expect(coordinateDelta(cameraCombinedStationary.lookAt, cameraAfterRelease.lookAt) < 0.01
+      && Math.abs(Number(cameraCombinedStationary.zoom) -
+        Number(cameraAfterRelease.zoom)) < 0.0001
+      && Math.abs(Number(cameraCombinedStationary.angle) -
+        Number(cameraAfterRelease.angle)) < 0.0001,
+    "combined navigation release must not add camera drift", {
+      cameraCombinedStationary, cameraAfterRelease,
+    });
 
-  const rotateCenter = { x: 390, y: 250 };
-  const rotateRadius = 65;
-  let rotateLeft = await touchPointToClient(page,
-    { x: rotateCenter.x - rotateRadius, y: rotateCenter.y });
-  let rotateRight = await touchPointToClient(page,
-    { x: rotateCenter.x + rotateRadius, y: rotateCenter.y });
-  await dispatchTouchPointer(page, "pointerdown", 531, rotateLeft, true);
-  await dispatchTouchPointer(page, "pointerdown", 532, rotateRight);
-  for (let step = 1; step <= 5; step += 1) {
-    const radians = step * Math.PI / 18;
-    rotateLeft = await touchPointToClient(page, {
-      x: rotateCenter.x - Math.cos(radians) * rotateRadius,
-      y: rotateCenter.y - Math.sin(radians) * rotateRadius,
-    });
-    rotateRight = await touchPointToClient(page, {
-      x: rotateCenter.x + Math.cos(radians) * rotateRadius,
-      y: rotateCenter.y + Math.sin(radians) * rotateRadius,
-    });
-    await dispatchTouchPointer(page, "pointermove", 531, rotateLeft, true);
-    await dispatchTouchPointer(page, "pointermove", 532, rotateRight);
+  const navigationPathAfter = (await rpc(page, "querySelection"))?.result?.commandPath;
+  expect(Number(navigationPathAfter?.rawRightDownCount) ===
+      Number(navigationPathBefore?.rawRightDownCount)
+      && Number(navigationPathAfter?.rawRightUpCount) ===
+        Number(navigationPathBefore?.rawRightUpCount)
+      && Number(navigationPathAfter?.dispatchMoveCommandCount) ===
+        Number(navigationPathBefore?.dispatchMoveCommandCount),
+  "camera navigation must not leak a right click or contextual order", {
+    navigationPathBefore, navigationPathAfter,
+  });
+
+  const graphics = await inspectGraphics(page);
+  const expectedRenderer = String(
+    process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
+  expect(graphics.contextLost === false && graphics.contextLossBanner === false,
+    "touch navigation run lost its WebGL context", graphics);
+  if (expectedRenderer) {
+    expect(String(graphics.renderer ?? "").toLowerCase().includes(expectedRenderer),
+      "touch navigation run used an unexpected GPU renderer", graphics);
   }
-  await runFrames(page, 4, "touch rotation held");
-  await dispatchTouchPointer(page, "pointerup", 531, rotateLeft, true);
-  await dispatchTouchPointer(page, "pointerup", 532, rotateRight);
-  await runFrames(page, 6, "touch rotation settle");
-  const cameraAfterRotate = await touchCameraState(page);
-  expect(Math.abs(Number(cameraAfterRotate.angle) - Number(cameraAfterPinch.angle)) > 0.001,
-    "two-finger twist did not rotate the tactical camera", {
-      cameraAfterPinch, cameraAfterRotate,
-    });
 
   await page.screenshot({ path: screenshot });
   return {
     enabled: state.enabled,
     selectedObject: { id: unit.id, name: unit.name, localOwned: unit.localOwned },
     order: { before: beforeOrder, after: afterOrder },
-    camera: { before: cameraBefore, afterPan: cameraAfterPan,
-      afterPinch: cameraAfterPinch, afterRotate: cameraAfterRotate },
+    camera: { before: cameraBefore, panMoved: cameraPanMoved,
+      panStationary: cameraPanStationary, afterPan: cameraAfterPan,
+      combined: cameraCombined, combinedStationary: cameraCombinedStationary,
+      afterRelease: cameraAfterRelease },
+    renderGeometry,
+    graphics,
     screenshot,
+  };
+}
+
+async function driveSelectionFocusLossProbe(page) {
+  console.error("[skirmish-start] verify selection modifier focus loss");
+  const query = async () => (await rpc(page, "querySelection"))?.result ?? null;
+  const before = await query();
+  expect(before?.modes?.preferSelection === false,
+    "selection focus-loss probe did not start with additive selection disabled", before);
+
+  await page.keyboard.down("Shift");
+  await page.waitForTimeout(40);
+  await runFrames(page, 4, "selection modifier down");
+  const held = await query();
+  expect(held?.modes?.preferSelection === true,
+    "Shift did not enable additive selection through the real input path", held);
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("blur"));
+  });
+  await page.waitForTimeout(80);
+  await runFrames(page, 4, "selection modifier focus loss");
+  const blurred = await query();
+  expect(blurred?.modes?.preferSelection === false,
+    "focus loss left additive selection enabled", { before, held, blurred });
+
+  await page.keyboard.up("Shift");
+  await page.locator("#viewport").focus();
+  await page.waitForTimeout(40);
+  await runFrames(page, 4, "selection modifier focus restore");
+  const restored = await query();
+  expect(restored?.modes?.preferSelection === false,
+    "focus restore re-enabled additive selection", restored);
+
+  const clickSelect = async (drawable, label) => {
+    const point = {
+      x: Math.round(drawable.screenPos.x),
+      y: Math.round(drawable.screenPos.y),
+    };
+    await postMouse(page, WM_MOUSEMOVE, point);
+    await runFrames(page, 2, `${label} move`);
+    await postMouse(page, WM_LBUTTONDOWN, point);
+    await postMouse(page, WM_LBUTTONUP, point);
+    await runFrames(page, 6, `${label} click`);
+    return query();
+  };
+
+  const displaySize = await page.evaluate(() =>
+    window.CnCPort.state.engineDisplaySize ?? { width: 800, height: 600 });
+  const playableUnits = (drawables) => drawables.filter((drawable) =>
+    drawable?.localOwned === true && drawable?.structure !== true
+      && drawable?.kindOf?.selectable === true && drawable?.onScreen === true
+      && drawable?.screenPos?.x > 80
+      && drawable?.screenPos?.x < displaySize.width - 80
+      && drawable?.screenPos?.y > 80
+      && drawable?.screenPos?.y < displaySize.height - 120);
+
+  let drawablesReply = await rpc(page, "queryDrawables");
+  expect(drawablesReply?.ok === true,
+    "selection focus-loss drawable query failed", drawablesReply);
+  let drawableState = drawablesReply.result ?? drawablesReply.drawables ?? {};
+  let allDrawables = drawableState.allDrawables ?? drawableState.drawables ?? [];
+  let candidates = playableUnits(allDrawables);
+  if (candidates.length === 0) {
+    const offscreenUnit = allDrawables.find((drawable) =>
+      drawable?.localOwned === true && drawable?.structure !== true
+        && drawable?.kindOf?.selectable === true && drawable?.worldPos != null);
+    expect(Boolean(offscreenUnit),
+      "selection focus-loss probe found no selectable local unit", drawableState.stats);
+    const lookAt = await rpc(page, "tacticalViewLookAt", {
+      worldPos: offscreenUnit.worldPos,
+    });
+    expect(lookAt?.ok === true,
+      "selection focus-loss probe could not frame its local unit", { offscreenUnit, lookAt });
+    await runFrames(page, 10, "selection focus-loss frame unit");
+    drawablesReply = await rpc(page, "queryDrawables");
+    expect(drawablesReply?.ok === true,
+      "selection focus-loss drawable query failed after framing", drawablesReply);
+    drawableState = drawablesReply.result ?? drawablesReply.drawables ?? {};
+    allDrawables = drawableState.allDrawables ?? drawableState.drawables ?? [];
+    candidates = playableUnits(allDrawables);
+  }
+  expect(candidates.length > 0,
+    "selection focus-loss probe could not place a local unit in the playable viewport", {
+      stats: drawableState.stats,
+      local: allDrawables.filter((drawable) => drawable?.localOwned === true),
+    });
+
+  const firstUnit = candidates[0];
+  const secondUnit = candidates[1] ?? firstUnit;
+  const selectedFirst = await clickSelect(firstUnit, "selection focus-loss first unit");
+  expect(selectedFirst?.selectCount === 1
+      && selectedFirst.selected?.some((entry) => Number(entry.id) === Number(firstUnit.id)),
+    "first ordinary unit click did not replace the previous selection", selectedFirst);
+  const selectedSecond = await clickSelect(secondUnit, "selection focus-loss second unit");
+  expect(selectedSecond?.selectCount === 1
+      && selectedSecond.selected?.some((entry) => Number(entry.id) === Number(secondUnit.id)),
+    "ordinary unit clicks still accumulated or toggled selection after focus restore", {
+      firstUnit,
+      secondUnit,
+      selectedFirst,
+      selectedSecond,
+    });
+  return {
+    before,
+    held,
+    blurred,
+    restored,
+    selectionClicks: {
+      firstUnit: { id: firstUnit.id, name: firstUnit.name },
+      secondUnit: { id: secondUnit.id, name: secondUnit.name },
+      afterFirst: selectedFirst,
+      afterSecond: selectedSecond,
+    },
   };
 }
 
@@ -1177,6 +1532,388 @@ async function driveReplayRoundTrip(page) {
   };
 }
 
+function replayFrameDuration(bytes) {
+  expect(bytes.length >= 18 && bytes.subarray(0, 6).toString("ascii") === "GENREP",
+    "retail replay fixture has an invalid header", { bytes: bytes.length });
+  const frames = bytes.readUInt32LE(14);
+  expect(frames > 0, "retail replay fixture does not declare a completed duration", { frames });
+  return frames;
+}
+
+function performanceDistribution(values) {
+  const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
+  const percentile = (fraction) => finite.length === 0
+    ? null
+    : finite[Math.min(finite.length - 1, Math.floor((finite.length - 1) * fraction))];
+  return {
+    count: finite.length,
+    p50Ms: percentile(0.5),
+    p95Ms: percentile(0.95),
+    p99Ms: percentile(0.99),
+    maxMs: finite.at(-1) ?? null,
+    over16_7Ms: finite.filter((value) => value > 1000 / 60).length,
+    over33_3Ms: finite.filter((value) => value > 1000 / 30).length,
+    over50Ms: finite.filter((value) => value > 50).length,
+    over100Ms: finite.filter((value) => value > 100).length,
+  };
+}
+
+async function importPerformanceReplay(page) {
+  const fixturePath = resolve(retailReplayFixture);
+  const fixtureBytes = await readFile(fixturePath);
+  const expectedLogicFrames = replayFrameDuration(fixtureBytes);
+  console.error(`[skirmish-start] import performance replay (${expectedLogicFrames} frames)`);
+  const imported = await rpc(page, "importReplay", {
+    name: basename(fixturePath),
+    bytesBase64: fixtureBytes.toString("base64"),
+    persist: false,
+  });
+  expect(imported?.ok === true && imported?.persisted === false,
+    "performance replay fixture could not be imported as a volatile test fixture", imported);
+  return { fixturePath, expectedLogicFrames, imported };
+}
+
+async function driveReplayPerformance(page, performanceReplay) {
+  const { fixturePath, expectedLogicFrames, imported } = performanceReplay;
+  const shellLoop = await rpc(page, "threadedStartLoop", { clientFps: 60, logicFps: 30 });
+  expect(shellLoop?.ok === true, "performance replay shell loop did not start", shellLoop);
+  await page.waitForFunction(() =>
+    Number(window.CnCPort?.state?.threadedEngine?.loop?.clientFrames ?? 0) >= 5,
+  null, { timeout: 10 * 60_000, polling: 250 });
+  const shellStopped = await rpc(page, "threadedStopLoop", { timeoutMs: 120000 });
+  expect(shellStopped?.ok === true, "performance replay shell loop did not stop", shellStopped);
+  const mainMenu = await revealMainMenu(page);
+
+  await clickButton(page, mainMenu.frame.clientState.mainMenu.buttonSinglePlayer,
+    mainMenu.frame.clientState.mainMenu.underButtonSinglePlayerCenter,
+    "performance replay single player");
+  const singlePlayerMenu = await waitForCondition(
+    page, "performance replay single-player menu",
+    (clientState) => clientState.mainMenu?.buttonLoadReplay?.clickable === true
+      || clientState.mainMenu?.buttonSingleBack?.clickable === true,
+    180);
+  if (singlePlayerMenu.frame.clientState.mainMenu.buttonLoadReplay?.clickable !== true) {
+    await clickButton(page, singlePlayerMenu.frame.clientState.mainMenu.buttonSingleBack,
+      null, "performance replay single-player back");
+  }
+  const loadReplay = singlePlayerMenu.frame.clientState.mainMenu.buttonLoadReplay?.clickable === true
+    ? singlePlayerMenu
+    : await waitForCondition(
+      page,
+      "performance replay load entry",
+      (clientState) => clientState.mainMenu?.buttonLoadReplay?.clickable === true,
+      180);
+  await clickButton(page, loadReplay.frame.clientState.mainMenu.buttonLoadReplay,
+    null, "performance replay load replay");
+  const replayButton = await waitForCondition(
+    page,
+    "performance replay list entry",
+    (clientState) => clientState.mainMenu?.buttonReplay?.clickable === true,
+    180);
+  await clickButton(page, replayButton.frame.clientState.mainMenu.buttonReplay,
+    null, "performance replay list");
+  const replayMenu = await waitForCondition(
+    page,
+    "performance replay menu populated",
+    (clientState) => clientState.replayMenu?.parent?.found === true
+      && clientState.replayMenu?.buttonLoad?.clickable === true
+      && clientState.replayMenu?.entryCount > 0,
+    240);
+  const importedDisplayName = imported.name.replace(/\.rep$/i, "");
+  expect(replayMenu.frame.clientState.replayMenu.selectedName === importedDisplayName,
+    "performance replay menu did not select the imported replay", {
+      imported: imported.name,
+      expectedDisplayName: importedDisplayName,
+      selected: replayMenu.frame.clientState.replayMenu.selectedName,
+    });
+  if (requireReplayPerformanceVisible) {
+    await runFrames(page, 2, "performance replay menu visual settle");
+    await page.locator("#viewport").screenshot({ path: replayMenuScreenshotPath });
+  }
+  let renderDisabled = false;
+  if (disableReplayPerformanceRender && !requireReplayPerformanceVisible) {
+    const disabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
+    expect(disabled?.ok === true && disabled?.disabled === true,
+      "performance replay could not disable rendering for CPU isolation", disabled);
+    renderDisabled = true;
+  }
+  await clickButton(page, replayMenu.frame.clientState.replayMenu.buttonLoad,
+    null, "performance replay play");
+  const versionPrompt = await runFrames(page, 2, "performance replay version prompt");
+  if (versionPrompt.frame.clientState.messageBox?.buttonOk?.clickable === true) {
+    await clickWindowByName(page, "MessageBox.wnd:ButtonOk",
+      "performance replay version confirmation");
+  }
+  const playback = await waitForCondition(
+    page,
+    "performance replay playback",
+    (clientState) => clientState.gameplay?.gameMode === 3
+      && clientState.gameplay?.inGame === true
+      && clientState.gameplay?.loadingMap === false
+      && clientState.gameplay?.recorder?.playback === true,
+    maxStartFrames);
+  if (requireReplayPerformanceVisible) {
+    await runFrames(page, 30, "performance replay visible playback settle");
+    await page.locator("#viewport").screenshot({ path: replayPlaybackScreenshotPath });
+  }
+  const startRenderProbe = requireReplayPerformanceVisible
+    ? await sampleViewportGrid(page)
+    : null;
+  if (requireReplayPerformanceVisible) {
+    expect(startRenderProbe.ok === true && startRenderProbe.visibleSampleCount > 0
+        && startRenderProbe.uniqueColorCount > 1,
+      "performance replay start frame is not visibly rendered", startRenderProbe);
+  }
+  if (disableReplayPerformanceRender && !renderDisabled) {
+    const disabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
+    expect(disabled?.ok === true && disabled?.disabled === true,
+      "performance replay could not disable rendering for CPU isolation", disabled);
+    renderDisabled = true;
+  }
+  const profilingFrame = await rpc(page, "realEngineFrameSummary", {
+    frames: 1,
+    profile: profileReplayPerformance,
+  });
+  expect(profilingFrame?.ok === true
+      && profilingFrame.frame?.profile?.enabled === profileReplayPerformance,
+    "performance replay CPU profiling mode was not applied", profilingFrame);
+
+  await page.evaluate(() => {
+    window.__cncSetD3D8PerfCounters?.(true);
+    const capture = {
+      engineFrameMs: [],
+      presentationFrameMs: [],
+      statuses: [],
+      lastClientFrames: 0,
+      lastEngineFrameSamples: 0,
+      maxLogicFrame: 0,
+      lastReplayLogicFrame: null,
+      replayEndEngineFrameSample: null,
+      replayEnded: false,
+      replayPlaybackSeen: false,
+      crcMismatch: false,
+      slowFrameProfiles: [],
+      startedAt: null,
+    };
+    window.__cncReplayPerformanceCapture = capture;
+    window.addEventListener("cncport:threadedstatus", (event) => {
+      const status = event.detail;
+      const loop = status?.loop;
+      if (!loop || !Number.isFinite(loop.clientFrames)) return;
+      if (capture.startedAt !== loop.startedAt) {
+        capture.startedAt = loop.startedAt;
+        capture.lastClientFrames = 0;
+        capture.lastEngineFrameSamples = 0;
+      }
+      const addedClientFrames = Math.max(0, loop.clientFrames - capture.lastClientFrames);
+      const addedEngineFrames = Math.max(0,
+        Number(loop.engineFrameSamples ?? 0) - capture.lastEngineFrameSamples);
+      const appendTail = (target, source, added) => {
+        if (!Array.isArray(source) || added <= 0) return [];
+        const tail = source.slice(-Math.min(added, source.length)).filter(Number.isFinite);
+        target.push(...tail);
+        return tail;
+      };
+      const engineTimes = status.timing?.engineFrameMs;
+      const engineLogicFrames = status.timing?.engineLogicFrames;
+      const engineFrameMs = [];
+      if (Array.isArray(engineTimes) && Array.isArray(engineLogicFrames)
+          && addedEngineFrames > 0) {
+        const tailCount = Math.min(addedEngineFrames, engineTimes.length,
+          engineLogicFrames.length);
+        const firstTailIndex = engineTimes.length - tailCount;
+        const firstEngineFrameSample = Number(loop.engineFrameSamples) - tailCount + 1;
+        for (let i = firstTailIndex; i < engineTimes.length; i += 1) {
+          const frameMs = Number(engineTimes[i]);
+          const logicFrame = Number(engineLogicFrames[i]);
+          const engineFrameSample = firstEngineFrameSample + i - firstTailIndex;
+          if (!Number.isFinite(frameMs) || !Number.isFinite(logicFrame)) continue;
+          if (!capture.replayEnded && capture.lastReplayLogicFrame !== null
+              && logicFrame < capture.lastReplayLogicFrame) {
+            capture.replayEnded = true;
+            capture.replayEndEngineFrameSample = engineFrameSample;
+          }
+          if (capture.replayEnded) continue;
+          capture.lastReplayLogicFrame = logicFrame;
+          capture.engineFrameMs.push(frameMs);
+          engineFrameMs.push(frameMs);
+        }
+      }
+      const presentationFrameMs = appendTail(capture.presentationFrameMs,
+        status.timing?.presentationFrameMs, addedClientFrames);
+      capture.lastClientFrames = loop.clientFrames;
+      capture.lastEngineFrameSamples = Number(loop.engineFrameSamples ?? 0);
+      capture.maxLogicFrame = Math.max(capture.maxLogicFrame,
+        Number(status.frame?.logicFrame ?? 0));
+      const recorder = status.frame?.recorder;
+      if (loop.replayPlaybackSeen === true) {
+        capture.replayPlaybackSeen = true;
+      }
+      if (loop.crcMismatch === true) {
+        capture.crcMismatch = true;
+      }
+      if (Array.isArray(status.timing?.slowFrameProfiles)) {
+        capture.slowFrameProfiles = status.timing.slowFrameProfiles;
+      }
+      capture.statuses.push({
+        now: status.now,
+        clientFrames: loop.clientFrames,
+        engineFrameSamples: loop.engineFrameSamples ?? null,
+        logicFrames: loop.logicFrames,
+        logicFrame: status.frame?.logicFrame ?? null,
+        lastFrameMs: status.frame?.lastFrameMs ?? null,
+        recorder: recorder ?? null,
+        active: loop.active,
+        contextLost: status.contextLost,
+        renderer: status.graphics?.renderer ?? null,
+        d3d8Perf: status.graphics?.d3d8Perf ?? null,
+        engineFrameMs,
+        presentationFrameMs,
+      });
+    });
+  });
+
+  const started = await rpc(page, "threadedStartLoop", {
+    clientFps: replayPerformanceClientFps,
+    logicFps: replayPerformanceLogicFps,
+    catchup: replayPerformanceCatchup,
+    profilingEnabled: profileReplayPerformance,
+  });
+  expect(started?.ok === true, "performance replay paced loop did not start", started);
+  const targetLogicFrame = Math.min(expectedLogicFrames, replayPerformanceEndFrame);
+  const expectedWallMs = targetLogicFrame / replayPerformanceLogicFps * 1000;
+  const completionThreshold = targetLogicFrame === expectedLogicFrames
+    ? Math.max(1, expectedLogicFrames - Math.max(120, replayPerformanceLogicFps * 2))
+    : targetLogicFrame;
+  const waitForReplayEnd = targetLogicFrame === expectedLogicFrames;
+  const waitTimeout = Math.max(600_000, expectedWallMs * 3 + 120_000);
+  const waitForCapture = (target, replayEnd = false) => page.waitForFunction(
+    ({ target: requestedTarget, replayEnd: requestedReplayEnd }) => {
+      const capture = window.__cncReplayPerformanceCapture;
+      return requestedReplayEnd
+        ? capture?.replayEnded === true
+        : capture?.maxLogicFrame >= requestedTarget;
+    },
+    { target, replayEnd },
+    { timeout: waitTimeout, polling: 500 });
+  let completionError = null;
+  let gpuProfile = null;
+  try {
+    if (replayPerformanceGpuProfileStartFrame > 0
+        && replayPerformanceGpuProfileStartFrame < completionThreshold) {
+      const requestedStartFrame = replayPerformanceGpuProfileStartFrame;
+      const requestedEndFrame = Math.min(
+        completionThreshold,
+        requestedStartFrame + replayPerformanceGpuProfileFrames);
+      await waitForCapture(requestedStartFrame);
+      const enabled = await rpc(page, "d3d8PerfConfigure", {
+        timing: true,
+        counters: true,
+        bufferProducers: true,
+        drawProducers: true,
+      });
+      expect(enabled?.ok === true && enabled?.timing === true
+          && enabled?.bufferProducers === true && enabled?.drawProducers === true,
+        "performance replay GPU profiler did not start", enabled);
+      await waitForCapture(requestedEndFrame);
+      const disabled = await rpc(page, "d3d8PerfConfigure", {
+        timing: false,
+        counters: true,
+        bufferProducers: false,
+        drawProducers: false,
+      });
+      expect(disabled?.ok === true && disabled?.timing === false,
+        "performance replay GPU profiler did not stop", disabled);
+      gpuProfile = { requestedStartFrame, requestedEndFrame, enabled, disabled };
+    }
+    await waitForCapture(completionThreshold, waitForReplayEnd);
+  } catch (error) {
+    completionError = error instanceof Error ? error.message : String(error);
+  }
+  const stopped = await rpc(page, "threadedStopLoop", { timeoutMs: 120000 });
+  const finalFrame = await runSummary(page, 1, "performance replay final state");
+  const capture = await page.evaluate(() => window.__cncReplayPerformanceCapture);
+  const endRenderProbe = requireReplayPerformanceVisible
+    ? await sampleViewportGrid(page)
+    : null;
+  const finalScreenshotPath = requireReplayPerformanceVisible ? screenshotPath : null;
+  if (finalScreenshotPath) {
+    await page.locator("#viewport").screenshot({ path: finalScreenshotPath });
+  }
+  const contextLosses = capture.statuses.filter((status) => status.contextLost === true).length;
+  expect(contextLosses === 0, "performance replay lost the WebGL context", { contextLosses });
+  const renderer = capture.statuses.findLast((status) => status.renderer)?.renderer ?? null;
+  const expectedRenderer = String(
+    process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
+  if (expectedRenderer) {
+    expect(String(renderer ?? "").toLowerCase().includes(expectedRenderer),
+      "performance replay used an unexpected GPU renderer", { renderer, expectedRenderer });
+  }
+
+  const completed = waitForReplayEnd
+    ? capture.replayEnded === true && capture.maxLogicFrame >= completionThreshold
+    : capture.maxLogicFrame >= completionThreshold;
+  const recorder = finalFrame.frame?.gameplay?.recorder
+    ?? finalFrame.frame?.clientState?.gameplay?.recorder ?? null;
+  const deterministic = capture.replayPlaybackSeen && capture.crcMismatch === false;
+  const playbackStateValid = targetLogicFrame === expectedLogicFrames
+    || recorder?.playback === true;
+  const slowFrameProfiles = capture.slowFrameProfiles.filter((entry) =>
+    capture.replayEndEngineFrameSample === null
+      || !Number.isFinite(Number(entry?.engineFrameSample))
+      || Number(entry.engineFrameSample) < capture.replayEndEngineFrameSample);
+  const postReplaySlowFrameProfiles = capture.slowFrameProfiles.filter((entry) =>
+    capture.replayEndEngineFrameSample !== null
+      && Number.isFinite(Number(entry?.engineFrameSample))
+      && Number(entry.engineFrameSample) >= capture.replayEndEngineFrameSample);
+  return {
+    ok: completed && stopped?.ok === true && deterministic && playbackStateValid,
+    source: "skirmish-start-replay-performance",
+    fixture: fixturePath,
+    importedReplay: imported.name,
+    expectedLogicFrames,
+    clientFps: replayPerformanceClientFps,
+    logicFps: replayPerformanceLogicFps,
+    catchup: replayPerformanceCatchup,
+    targetLogicFrame,
+    visualRequired: requireReplayPerformanceVisible,
+    renderDisabled: disableReplayPerformanceRender,
+    playbackStart: compactGameplay(playback.frame),
+    finalGameplay: compactGameplay(finalFrame.frame),
+    recorder,
+    replayPlaybackSeen: capture.replayPlaybackSeen,
+    crcMismatch: capture.crcMismatch,
+    deterministic,
+    playbackStateValid,
+    timing: {
+      engine: performanceDistribution(capture.engineFrameMs),
+      presentation: performanceDistribution(capture.presentationFrameMs),
+    },
+    maxLogicFrame: capture.maxLogicFrame,
+    replayEnded: capture.replayEnded,
+    replayEndEngineFrameSample: capture.replayEndEngineFrameSample,
+    completionThreshold,
+    completionError,
+    stopResult: stopped,
+    gpuProfile,
+    statusSamples: capture.statuses,
+    slowFrameProfiles,
+    postReplaySlowFrameProfiles,
+    contextLosses,
+    graphics: {
+      renderer,
+      contextLost: contextLosses > 0,
+    },
+    startRenderProbe,
+    endRenderProbe,
+    screenshots: {
+      menu: requireReplayPerformanceVisible ? replayMenuScreenshotPath : null,
+      playbackStart: requireReplayPerformanceVisible ? replayPlaybackScreenshotPath : null,
+      final: finalScreenshotPath,
+    },
+  };
+}
+
 async function driveEscMenuResume(page) {
   const before = await runFrames(page, 1, "esc menu precheck");
   expect(before.frame?.clientState?.gameplay?.inGame === true &&
@@ -1283,12 +2020,22 @@ async function runPostActiveFrames(page, totalFrames, chunkSize) {
     last = await runSummary(page, frames, "skirmish post-active wait");
     const wallMs = performance.now() - startedAt;
     framesAdvanced += frames;
-    samples.push({
+    const sample = {
       ...compactGameplay(last.frame),
       requestedFrames: frames,
       wallMs,
       wallMsPerFrame: wallMs / frames,
-    });
+    };
+    samples.push(sample);
+    if (logPostActiveTiming) {
+      console.error("[skirmish-start] post-active timing:", JSON.stringify({
+        framesAdvanced,
+        logicFrame: sample.logicFrame,
+        objectCount: sample.objectCount,
+        wallMs: sample.wallMs,
+        wallMsPerFrame: sample.wallMsPerFrame,
+      }));
+    }
   }
   return { result: last, framesAdvanced, samples };
 }
@@ -1629,6 +2376,14 @@ function particleEffectDraws(frame) {
 
 async function inspectGraphics(page) {
   return page.evaluate(() => {
+    const threaded = window.CnCPort?.state?.threadedEngine;
+    if (threaded) {
+      return {
+        renderer: threaded.graphics?.renderer ?? null,
+        contextLost: threaded.contextLost === true,
+        contextLossBanner: Boolean(document.querySelector("#webglContextLostBanner")),
+      };
+    }
     const canvas = document.querySelector("#viewport");
     const context = canvas?.getContext("webgl2");
     const debugInfo = context?.getExtension("WEBGL_debug_renderer_info");
@@ -1950,6 +2705,15 @@ async function main() {
     );
     harnessUrl.searchParams.set("dist", distDir);
     if (process.env.SKIRMISH_START_THREADS === "1") harnessUrl.searchParams.set("threads", "1");
+    if (requestedD3D8Batch) harnessUrl.searchParams.set("d3d8Batch", requestedD3D8Batch);
+    if (expectReplayPerformance) {
+      // Match the shipping play page's low-overhead diagnostics in the engine
+      // worker while retaining counters needed to rank replay render pressure.
+      // Full diagnostics time dozens of sub-phases per draw and can dominate
+      // the workload that this performance gate is meant to measure.
+      harnessUrl.searchParams.set("diag", "lite");
+      harnessUrl.searchParams.set("perfCounters", "1");
+    }
     if (expectLightPulseProbe) {
       // Terrain buffers are created while diagnostics are in lite mode. Keep
       // their CPU mirrors from creation so the probe can compare the original
@@ -2010,17 +2774,71 @@ async function main() {
       "failed to mount imported mod archives", mount?.modSet ?? mount);
     }
 
+    let touchBootResolution = null;
+    if (expectTouchControlsProbe) {
+      // This harness initializes the engine through RPC instead of invoking
+      // play.mjs's normal launch sequence, so explicitly replay the shipping
+      // dynamic-resolution decision through the same pre-init hook.
+      touchBootResolution = await page.evaluate(async () => {
+        const {
+          dynamicResolutionForBox,
+          isIOSLikeNavigator,
+          isIPadLikeNavigator,
+        } = await import("./display-resolution.mjs");
+        const canvas = document.querySelector("#viewport");
+        const rect = canvas.getBoundingClientRect();
+        return dynamicResolutionForBox({
+          cssWidth: rect.width || window.innerWidth,
+          cssHeight: rect.height || window.innerHeight,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          iosLike: isIOSLikeNavigator(navigator),
+          ipadLike: isIPadLikeNavigator(navigator),
+        });
+      });
+    }
+
     console.error("[skirmish-start] real init");
     const init = await rpc(page, "realEngineInit", {
       runDirectory: "/assets/skirmish-start",
-      shellMap: true,
+      shellMap: !expectReplayPerformance,
       modDirectory: mount.modDirectory ?? "",
+      bootWidth: touchBootResolution?.width,
+      bootHeight: touchBootResolution?.height,
     });
     expect(init?.ok === true && init?.aborted === false && init?.frontier?.initReturned === true,
       "real engine init failed", init?.frontier ?? init);
     if (activeMod) {
       expect(init.frontier.commandLine?.includes("-mod /assets/cnc-mods-active"),
         "real engine did not receive the imported mod directory", init.frontier);
+    }
+    if (expectReplayPerformance) {
+      const performanceReplay = await importPerformanceReplay(page);
+      const result = await driveReplayPerformance(page, performanceReplay);
+      await writeFile(outputPath, JSON.stringify(result, null, 2));
+      console.log(JSON.stringify({
+        ok: result.ok,
+        output: outputPath,
+        expectedLogicFrames: result.expectedLogicFrames,
+        completionThreshold: result.completionThreshold,
+        maxLogicFrame: result.maxLogicFrame,
+        recorder: result.recorder,
+        deterministic: result.deterministic,
+        playbackStateValid: result.playbackStateValid,
+        timing: result.timing,
+        completionError: result.completionError,
+      }, null, 2));
+      expect(result.ok, "performance replay did not complete", {
+        output: outputPath,
+        expectedLogicFrames: result.expectedLogicFrames,
+        completionThreshold: result.completionThreshold,
+        maxLogicFrame: result.maxLogicFrame,
+        recorder: result.recorder,
+        deterministic: result.deterministic,
+        playbackStateValid: result.playbackStateValid,
+        completionError: result.completionError,
+        stopResult: result.stopResult,
+      });
+      return;
     }
 
     if (expectReplayRoundTrip) {
@@ -2204,6 +3022,24 @@ async function main() {
       await runSummary(page, 1, "skirmish local template apply settle");
     }
 
+    let hard4v4Setup = null;
+    if (expectHard4v4) {
+      console.error("[skirmish-start] configure hard 4v4 through real menu callbacks");
+      hard4v4Setup = await configureHard4v4(page);
+      console.error("[skirmish-start] hard4v4Setup:", JSON.stringify(hard4v4Setup));
+    }
+
+    let skirmishSeedSet = null;
+    if (requestedSkirmishSeed != null) {
+      console.error(`[skirmish-start] set deterministic seed ${requestedSkirmishSeed}`);
+      skirmishSeedSet = await rpc(page, "realEngineSetSkirmishSeed", {
+        seed: requestedSkirmishSeed,
+      });
+      expect(skirmishSeedSet?.ok === true
+          && skirmishSeedSet?.result?.applied === requestedSkirmishSeed,
+        "skirmish seed setter did not update the original GameInfo", skirmishSeedSet);
+    }
+
     console.error("[skirmish-start] click start");
     const musicBeforeStart = expectMenuMusicStop ? await streamRuntime(page) : null;
     const preSkirmishMusicHandles = expectMenuMusicStop
@@ -2263,6 +3099,32 @@ async function main() {
     let enemyStartAssets = null;
     let enemyAiActivity = null;
     let musicTransition = null;
+    let postActiveRenderDisabled = false;
+    const activeGraphics = await inspectGraphics(page);
+    const expectedRenderer = String(
+      process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
+    expect(activeGraphics.contextLost === false && activeGraphics.contextLossBanner === false,
+      "fresh skirmish lost its WebGL context", activeGraphics);
+    if (expectedRenderer) {
+      expect(String(activeGraphics.renderer ?? "").toLowerCase().includes(expectedRenderer),
+        "fresh skirmish used an unexpected GPU renderer", { activeGraphics, expectedRenderer });
+    }
+    let workerSupplyExitProbe = null;
+    if (expectWorkerSupplyExitProbe) {
+      workerSupplyExitProbe = await rpc(page, "realEngineProbeWorkerSupplyExit");
+      expect(workerSupplyExitProbe?.ok === true
+          && workerSupplyExitProbe?.result?.activeBeforePrepare === false
+          && workerSupplyExitProbe?.result?.preparedForExit === true
+          && workerSupplyExitProbe?.result?.activeBeforeExit === true
+          && workerSupplyExitProbe?.result?.ferryingBeforeExit === true
+          && workerSupplyExitProbe?.result?.wantingBeforeExit === true
+          && workerSupplyExitProbe?.result?.activeAfterExit === false
+          && workerSupplyExitProbe?.result?.idleAfterExit === true
+          && workerSupplyExitProbe?.result?.suppressedReentries === 1
+          && workerSupplyExitProbe?.result?.workerSurvived === true,
+        "worker supply-brain exit did not complete one bounded master-state transition",
+        workerSupplyExitProbe);
+    }
     if (expectMenuMusicStop) {
       console.error("[skirmish-start] wait for pre-skirmish music handles to close");
       const stopped = await waitForHandlesClosed(
@@ -2286,6 +3148,12 @@ async function main() {
           samples: stopped.samples.slice(-16),
         },
       };
+    }
+    if (disablePostActiveRender && postActiveFrames > 0) {
+      const disabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
+      expect(disabled?.ok === true && disabled?.disabled === true,
+        "fresh-skirmish CPU isolation could not disable rendering", disabled);
+      postActiveRenderDisabled = true;
     }
     if (postActiveFrames > 0) {
       console.error(`[skirmish-start] run ${postActiveFrames} post-active frames`);
@@ -2350,6 +3218,9 @@ async function main() {
     }
     const touchControlsProbe = expectTouchControlsProbe
       ? await driveTouchControlsProbe(page)
+      : null;
+    const selectionFocusLossProbe = expectSelectionFocusLossProbe
+      ? await driveSelectionFocusLossProbe(page)
       : null;
     await page.locator("#viewport").screenshot({ path: screenshotPath });
     const renderProbe = await sampleViewportGrid(page);
@@ -2537,6 +3408,8 @@ async function main() {
         ?? mapCache?.probe?.firstOfficialMultiplayerMap
         ?? null,
       skirmishMapSet: skirmishMapSet?.result ?? null,
+      skirmishSeedSet: skirmishSeedSet?.result ?? null,
+      hard4v4Setup,
       loadingScreen: {
         gameplay: loadingGameplay,
         windows: loadingWindows,
@@ -2549,9 +3422,12 @@ async function main() {
       mapPreviewDiagnostic: mapCache?.probe?.mapPreviewDiagnostic ?? null,
       framesAdvancedAfterStart: active.framesAdvanced,
       finalGameplay: compactGameplay(active.result.frame),
+      graphics: activeGraphics,
+      workerSupplyExitProbe: workerSupplyExitProbe?.result ?? null,
       musicTransition,
       shroudDiagnostics,
       postActive: postActive == null ? null : {
+        renderDisabled: postActiveRenderDisabled,
         framesAdvanced: postActive.framesAdvanced,
         finalGameplay: compactGameplay(postActive.result?.frame),
         shroudDiagnostics: postActiveShroudDiagnostics,
@@ -2564,6 +3440,7 @@ async function main() {
       scorchProbe,
       particleVisibilityProbe,
       touchControlsProbe,
+      selectionFocusLossProbe,
       lightPulseProbe,
       replayRoundTrip,
       renderProbe,

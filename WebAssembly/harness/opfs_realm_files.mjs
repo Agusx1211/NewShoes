@@ -64,13 +64,16 @@ async function resolveOpfsFileHandle(opfsPath) {
   return directory.getFileHandle(parts[parts.length - 1], { create: false });
 }
 
-async function createReadAccessHandle(fileHandle) {
+export async function createReadAccessHandle(fileHandle) {
   try {
     return await fileHandle.createSyncAccessHandle({ mode: "read-only" });
   } catch (error) {
-    // Chromium before the access-mode extension rejects the options object.
-    // Preserve the prior exclusive-read behavior on those browsers.
-    if (error?.name !== "TypeError" && error?.name !== "NotSupportedError") throw error;
+    // The access-mode extension is non-standard. Older Chromium rejects its
+    // options object with TypeError/NotSupportedError, while Safari 26.5 has
+    // been observed rejecting the read-only mode with InvalidStateError even
+    // for a file resolved directly from this origin's OPFS. Preserve the
+    // original exclusive-read behavior on browsers without mode support.
+    if (!["TypeError", "NotSupportedError", "InvalidStateError"].includes(error?.name)) throw error;
     return fileHandle.createSyncAccessHandle();
   }
 }

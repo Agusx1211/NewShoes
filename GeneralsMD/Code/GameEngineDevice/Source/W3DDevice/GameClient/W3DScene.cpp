@@ -901,10 +901,15 @@ void RTS3DScene::Flush(RenderInfoClass & rinfo)
 		//USE_PERF_TIMER(translucentRender)
 
 		//don't draw transparent in this mode because they interfere with destination alpha
-		if (m_customPassMode == SCENE_PASS_DEFAULT && Get_Extra_Pass_Polygon_Mode() == EXTRA_PASS_DISABLE)
+		if (m_customPassMode == SCENE_PASS_DEFAULT &&
+			Get_Extra_Pass_Polygon_Mode() == EXTRA_PASS_DISABLE &&
+			!ShaderClass::Is_Backface_Culling_Inverted())
 		{
+			// A reflection recursively flushes this scene while sharing the particle
+			// manager. Leave the main traversal's one-shot request intact for the
+			// framebuffer it was queued for.
 			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.particles.before");
-			DoParticles(rinfo);	//queue up particles for rendering.
+			DoParticles(rinfo);
 			CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.flush.particles.after");
 		}
 
@@ -1268,8 +1273,12 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 		CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.queueShadows.after");
 	}
 
-	// only render particles once per frame
+	// The reflection traversal happens before the main scene and Flush() consumes
+	// this one-shot request.  Queueing here during a mirror pass would therefore
+	// render the particles only into the reflection texture and suppress them from
+	// the main framebuffer for the rest of the frame.
 	if (terrainObject != NULL && TheParticleSystemManager != NULL &&
+		!ShaderClass::Is_Backface_Culling_Inverted() &&
 		Get_Extra_Pass_Polygon_Mode() == EXTRA_PASS_DISABLE)
 	{
 		TheParticleSystemManager->queueParticleRender();

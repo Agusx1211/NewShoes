@@ -468,6 +468,10 @@ public:
 		MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT,
 		MSG_HACK_HINT,
 
+		// Browser touch input stays local to the client.  Pin the value so adding
+		// it cannot renumber legacy raw/meta messages or replay commands.
+		MSG_RAW_TOUCH_NAVIGATION = 999,						///< (previous pixel, current pixel, scale, angle delta)
+
 //*********************************************************************************************************
 //*********************************************************************************************************
 		/*

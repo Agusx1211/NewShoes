@@ -1,3 +1,6 @@
+import { normalizeAgentBridgeConfiguration } from "./agent-bridge-config.mjs";
+import { createAgentTransport } from "./agent-webrtc-transport.mjs";
+
 export const AGENT_PROTOCOL = "cnc-agent/1";
 export const AGENT_SUBPROTOCOL = "cnc-agent.v1";
 
@@ -290,25 +293,6 @@ function cameraView(args) {
   return result;
 }
 
-function normalizeConfig(config, cryptoImpl) {
-  const url = new URL(boundedString(config?.url, "url", 4096));
-  if (url.protocol !== "ws:" && url.protocol !== "wss:") {
-    throw new TypeError("agent bridge URL must use ws: or wss:");
-  }
-  const token = boundedString(config?.token, "token", 4096);
-  const sessionId = config?.sessionId === undefined || config.sessionId === ""
-    ? cryptoImpl.randomUUID()
-    : boundedString(config.sessionId, "sessionId", 128);
-  if (!/^[A-Za-z0-9._-]+$/.test(sessionId)) {
-    throw new TypeError("agent bridge sessionId may contain only letters, numbers, dot, underscore, and hyphen");
-  }
-  const playMode = config?.playMode ?? "global";
-  if (playMode !== "global" && playMode !== "camera") {
-    throw new TypeError("agent bridge playMode must be global or camera");
-  }
-  return Object.freeze({ url: url.href, token, sessionId, playMode });
-}
-
 function publicEndpoint(url) {
   const parsed = new URL(url);
   parsed.username = "";
@@ -322,6 +306,102 @@ function byteLength(value) {
   return new TextEncoder().encode(value).byteLength;
 }
 
+function handshakeMessage(type, config) {
+  return {
+    type,
+    protocol: AGENT_PROTOCOL,
+    token: config.token,
+    sessionId: config.sessionId,
+    playMode: config.playMode,
+    ...(type === "hello" ? { capabilities: [...CAPABILITIES] } : {}),
+  };
+}
+
+export function probeAgentBridgeConnection({
+  config,
+  WebSocketImpl = globalThis.WebSocket,
+  cryptoImpl = globalThis.crypto,
+  timeoutMs = 15000,
+  setTimeoutImpl = globalThis.setTimeout.bind(globalThis),
+  clearTimeoutImpl = globalThis.clearTimeout.bind(globalThis),
+} = {}) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new TypeError("agent bridge probe timeout must be a positive number");
+  }
+  const normalized = normalizeAgentBridgeConfiguration(config, cryptoImpl);
+  return new Promise((resolve, reject) => {
+    let socket;
+    let timer = null;
+    let settled = false;
+    let transportError = "";
+
+    const finish = (error, result = null) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) clearTimeoutImpl(timer);
+      if (socket && socket.readyState < (WebSocketImpl.CLOSING ?? 2)) {
+        socket.close(1000, "connection test complete");
+      }
+      if (error) reject(error);
+      else resolve(result);
+    };
+
+    try {
+      socket = createAgentTransport(normalized, { WebSocketImpl, cryptoImpl });
+    } catch (error) {
+      finish(new Error(`Could not open the bridge connection: ${error?.message ?? String(error)}`));
+      return;
+    }
+    timer = setTimeoutImpl(() => {
+      finish(new Error("Bridge connection test timed out"));
+    }, timeoutMs);
+    socket.addEventListener("open", () => {
+      socket.send(JSON.stringify(handshakeMessage("probe", normalized)));
+    });
+    socket.addEventListener("message", (event) => {
+      const raw = typeof event.data === "string" ? event.data : "";
+      if (byteLength(raw) > MAX_REQUEST_BYTES) {
+        finish(new Error("Bridge returned an oversized connection-test reply"));
+        return;
+      }
+      let message;
+      try {
+        message = JSON.parse(raw);
+      } catch {
+        finish(new Error("Bridge returned an invalid connection-test reply"));
+        return;
+      }
+      if (message?.type !== "probe" || message.ok !== true
+          || message.protocol !== AGENT_PROTOCOL
+          || message.sessionId !== normalized.sessionId
+          || message.playMode !== normalized.playMode) {
+        finish(new Error("Bridge returned an incompatible connection-test reply"));
+        return;
+      }
+      finish(null, {
+        ok: true,
+        protocol: AGENT_PROTOCOL,
+        endpoint: publicEndpoint(normalized.url),
+        sessionId: normalized.sessionId,
+        playMode: normalized.playMode,
+      });
+    });
+    socket.addEventListener("error", () => {
+      transportError = normalized.url.startsWith("webrtc")
+        ? "WebRTC transport error" : "WebSocket transport error";
+    });
+    socket.addEventListener("close", (event) => {
+      if (settled) return;
+      if (event.code === 1008) {
+        finish(new Error("Bridge rejected the browser token or play mode"));
+        return;
+      }
+      const detail = transportError || `WebSocket closed (${event.code})`;
+      finish(new Error(`Bridge connection test failed: ${detail}`));
+    });
+  });
+}
+
 export function createAgentBridgeConnection({
   config,
   rpc,
@@ -332,12 +412,8 @@ export function createAgentBridgeConnection({
   onStatus = () => {},
 } = {}) {
   if (typeof rpc !== "function") throw new TypeError("agent bridge requires the engine RPC function");
-  if (typeof WebSocketImpl !== "function") throw new TypeError("WebSocket is unavailable");
-  if (!cryptoImpl || typeof cryptoImpl.randomUUID !== "function") {
-    throw new TypeError("crypto.randomUUID is unavailable");
-  }
 
-  const normalized = normalizeConfig(config, cryptoImpl);
+  const normalized = normalizeAgentBridgeConfiguration(config, cryptoImpl);
   let socket = null;
   let stopped = false;
   let reconnectTimer = null;
@@ -380,7 +456,8 @@ export function createAgentBridgeConnection({
           protocol: AGENT_PROTOCOL,
           capabilities: [...CAPABILITIES],
           observation: "request-driven",
-          transport: "raw-websocket-json",
+          transport: normalized.url.startsWith("webrtc")
+            ? "webrtc-datachannel-json" : "raw-websocket-json",
           playMode: normalized.playMode,
         };
       case "input.pointerMove": {
@@ -586,7 +663,7 @@ export function createAgentBridgeConnection({
     publish({ phase: "connecting", connected: false });
     let target;
     try {
-      target = new WebSocketImpl(normalized.url, [AGENT_SUBPROTOCOL]);
+      target = createAgentTransport(normalized, { WebSocketImpl, cryptoImpl });
       socket = target;
     } catch (error) {
       publish({ lastError: error?.message ?? String(error) });
@@ -596,14 +673,7 @@ export function createAgentBridgeConnection({
 
     target.addEventListener("open", () => {
       if (target !== socket || stopped) return;
-      target.send(JSON.stringify({
-        type: "hello",
-        protocol: AGENT_PROTOCOL,
-        token: normalized.token,
-        sessionId: normalized.sessionId,
-        playMode: normalized.playMode,
-        capabilities: [...CAPABILITIES],
-      }));
+      target.send(JSON.stringify(handshakeMessage("hello", normalized)));
       publish({ phase: "authenticating", connected: false, lastError: null });
     });
     target.addEventListener("message", (event) => {
@@ -646,7 +716,10 @@ export function createAgentBridgeConnection({
         });
     });
     target.addEventListener("error", () => {
-      if (target === socket) publish({ lastError: "WebSocket transport error" });
+      if (target === socket) publish({
+        lastError: normalized.url.startsWith("webrtc")
+          ? "WebRTC transport error" : "WebSocket transport error",
+      });
     });
     target.addEventListener("close", (event) => {
       if (target !== socket) return;
@@ -654,7 +727,9 @@ export function createAgentBridgeConnection({
       publish({
         phase: stopped ? "stopped" : "disconnected",
         connected: false,
-        lastError: stopped || event.wasClean ? state.lastError : `WebSocket closed (${event.code})`,
+        lastError: stopped || event.wasClean
+          ? state.lastError
+          : `${normalized.url.startsWith("webrtc") ? "WebRTC transport" : "WebSocket"} closed (${event.code})`,
       });
       scheduleReconnect();
     });

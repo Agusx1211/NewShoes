@@ -836,7 +836,14 @@ GlobalData::GlobalData()
 	m_stealthFriendlyOpacity = 0.5f;
 	m_defaultOcclusionDelay = LOGICFRAMES_PER_SECOND * 3;	//default to 3 seconds
 
+#ifdef __EMSCRIPTEN__
+	// Browser asset reads and W3D model creation are synchronous. Pay their
+	// first-use cost while the match loading screen is active instead of on a
+	// live simulation frame when a faction constructs a model for the first time.
+	m_preloadAssets = TRUE;
+#else
 	m_preloadAssets = FALSE;
+#endif
 	m_preloadEverything = FALSE;
 	m_preloadReport = FALSE;
 

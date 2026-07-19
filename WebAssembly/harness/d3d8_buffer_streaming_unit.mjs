@@ -17,6 +17,7 @@ function createFakeGl() {
     bufferSubData: [],
     deletedBuffers: [],
     deletedVertexArrays: [],
+    drawElements: [],
     fences: [],
     flushes: 0,
   };
@@ -26,6 +27,7 @@ function createFakeGl() {
     STREAM_DRAW: 0x88e0,
     STATIC_DRAW: 0x88e4,
     DYNAMIC_DRAW: 0x88e8,
+    MAX_COMBINED_TEXTURE_IMAGE_UNITS: 0x8b4d,
     SYNC_GPU_COMMANDS_COMPLETE: 0x9117,
     ALREADY_SIGNALED: 0x911a,
     TIMEOUT_EXPIRED: 0x911b,
@@ -58,6 +60,9 @@ function createFakeGl() {
     deleteBuffer(buffer) {
       calls.deletedBuffers.push(buffer);
     },
+    drawElements(primitive, count, type, offset) {
+      calls.drawElements.push({ primitive, count, type, offset });
+    },
     fenceSync() {
       nextSyncId += 1;
       const sync = { id: nextSyncId, status: gl.TIMEOUT_EXPIRED };
@@ -72,6 +77,9 @@ function createFakeGl() {
     bindVertexArray() {},
     deleteVertexArray(vertexArray) { calls.deletedVertexArrays.push(vertexArray); },
     getExtension() { return null; },
+    getParameter(parameter) {
+      return parameter === gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS ? 8 : 0;
+    },
     getContextAttributes() { return { stencil: true }; },
   };
   return { gl, calls };
@@ -346,6 +354,34 @@ assert.equal(cappedSummary.dynamicRangePoolSlots, poolLimit);
 assert.equal(cappedSummary.dynamicRangeSlotsDeleted, 2);
 assert.equal(calls.deletedBuffers.length, deletedBeforePoolTrim + 2);
 
+diag.d3d8Textures.set(700, {
+  width: 4,
+  height: 4,
+  depth: 1,
+  levels: 1,
+  format: 21,
+  type: "2d",
+  uploads: 1,
+});
+assert.equal(hooks.cncPortD3D8TextureBind({ stage: 0, id: 700 }), 1);
+diag.queueD3D8PendingDrawBatch({
+  glPrimitive: 4,
+  indexCount: 6,
+  indexType: 0x1403,
+  indexByteOffset: 12,
+});
+const drawsBeforeRedundantTextureBind = calls.drawElements.length;
+assert.equal(hooks.cncPortD3D8TextureBind({ stage: 0, id: 700 }), 1);
+assert.equal(calls.drawElements.length, drawsBeforeRedundantTextureBind);
+assert.equal(hooks.cncPortD3D8TextureBind({ stage: 0, id: 0 }), 1);
+assert.deepEqual(calls.drawElements.at(-1), {
+  primitive: 4,
+  count: 6,
+  type: 0x1403,
+  offset: 12,
+});
+assert.equal(diag.d3d8PerfSummary().drawBatchFlushReasons.textureBind, 1);
+
 console.log(JSON.stringify({
   ok: true,
   source: "d3d8-buffer-streaming-unit",
@@ -355,6 +391,7 @@ console.log(JSON.stringify({
   bufferSubDataCalls: calls.bufferSubData.length,
   fenceCount: calls.fences.length,
   flushCount: calls.flushes,
+  drawElements: calls.drawElements.length,
   dynamicRangePoolLimit: poolLimit,
   trimmedDynamicRangeSlots: cappedSummary.dynamicRangeSlotsDeleted,
 }));

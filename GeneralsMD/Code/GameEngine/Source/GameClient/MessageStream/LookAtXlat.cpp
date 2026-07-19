@@ -363,6 +363,63 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 		}
 
 		//-----------------------------------------------------------------------------
+		case GameMessage::MSG_RAW_TOUCH_NAVIGATION:
+		{
+			disp = DESTROY_MESSAGE;
+			if ((TheShell && TheShell->isShellActive()) || !TheInGameUI->getInputEnabled())
+				break;
+
+			const ICoord2D previous = msg->getArgument( 0 )->pixel;
+			const ICoord2D current = msg->getArgument( 1 )->pixel;
+			const Real scale = msg->getArgument( 2 )->real;
+			const Real angleDelta = msg->getArgument( 3 )->real;
+
+			// Keep the terrain point under the previous centroid attached to the
+			// current centroid while all three parts of the gesture are applied.
+			// Unlike RMB scrolling this is displacement, not velocity: stationary
+			// fingers produce no camera movement.
+			Coord3D anchor;
+			TheTacticalView->screenToTerrain( &previous, &anchor );
+			if (scale != 1.0f)
+			{
+				// Ordinary wheel zoom changes desired height and deliberately eases
+				// the real zoom over later frames.  A direct manipulation must snap
+				// both values together so stationary fingers leave no residual motion.
+				const Real currentZoom = TheTacticalView->getZoom();
+				const Real terrainHeight = TheTacticalView->getTerrainHeightUnderCamera();
+				const Real cameraHeight = terrainHeight
+					+ TheTacticalView->getCurrentHeightAboveGround();
+				if (currentZoom > 0.0f && cameraHeight > 0.0f)
+				{
+					TheTacticalView->setHeightAboveGround(
+						cameraHeight / scale - terrainHeight );
+					const Real desiredCameraHeight = terrainHeight
+						+ TheTacticalView->getHeightAboveGround();
+					TheTacticalView->setZoom(
+						currentZoom * desiredCameraHeight / cameraHeight );
+					// Reconcile the desired height with a zoom clamp, if one applied.
+					TheTacticalView->setHeightAboveGround(
+						cameraHeight * TheTacticalView->getZoom() / currentZoom
+							- terrainHeight );
+				}
+			}
+			if (angleDelta != 0.0f)
+			{
+				TheTacticalView->setAngle( TheTacticalView->getAngle() + angleDelta );
+			}
+
+			Coord3D transformed;
+			TheTacticalView->screenToWorldAtZ( &current, &transformed, anchor.z );
+			Coord2D offset;
+			offset.x = anchor.x - transformed.x;
+			offset.y = anchor.y - transformed.y;
+			TheTacticalView->scrollByWorld( &offset );
+			m_currentPos = current;
+			m_lastMouseMoveFrame = TheGameLogic->getFrame();
+			break;
+		}
+
+		//-----------------------------------------------------------------------------
 		case GameMessage::MSG_RAW_MOUSE_WHEEL:
 		{
 			m_lastMouseMoveFrame = TheGameLogic->getFrame();

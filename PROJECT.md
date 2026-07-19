@@ -56,6 +56,13 @@ versioned raw WebSocket protocol, and the optional Go process in
 the launcher has no agent configuration, it does not import the adapter or
 create a socket, reconnect timer, or per-frame work.
 
+The pre-launch Remote Agent app remembers the enabled state, bridge URL,
+session ID, and fixed play mode in origin-local storage. Its browser credential
+remains memory-only unless the operator explicitly chooses device-local token
+storage. A bounded authenticated probe verifies reachability, credential, and
+mode agreement without registering a playable session or starting the runtime
+adapter.
+
 The `cnc-agent/1` surface exposes the original `GameWindowManager` tree, real
 gadget action paths, fog/stealth-filtered battlefield state, camera-bounded
 visibility, compact tactical object records, and compact terrain grids. The
@@ -163,9 +170,10 @@ work.
 
 The original UDP and lockstep packet paths are retained behind a browser
 transport adapter. Dedicated WebRTC data channels carry game packets, while
-Trystero uses redundant public Nostr relays only for decentralized discovery
-and encrypted SDP exchange. A short four-player threaded match is verified;
-disconnect behavior and long determinism runs remain open.
+Trystero uses the project Nostr relay plus deterministic public fallbacks only
+for decentralized discovery and encrypted SDP exchange. A short four-player
+threaded match is verified; disconnect behavior and long determinism runs
+remain open.
 
 ## Launcher and lifecycle
 

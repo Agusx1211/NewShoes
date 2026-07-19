@@ -146,6 +146,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   if (typeof opts.perfCounters === "boolean") {
     globalThis.__cncSetD3D8PerfCounters?.(opts.perfCounters);
   }
+  if (typeof opts.adjacentBatching === "boolean") {
+    globalThis.__cncSetD3D8AdjacentBatching?.(opts.adjacentBatching);
+  }
 
   // ---- GDI text hooks (synchronous returns -> must live in this realm) ------
   const gdiHooks = createGdiHooks();
@@ -572,6 +575,17 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         Math.max(0, Math.floor(entry.timestamp || 0)),
       );
     }
+    const touchNavigation = entry.touchNavigation ?? null;
+    if (touchNavigation) {
+      Module._cnc_port_post_touch_navigation_lite(
+        touchNavigation.previousX ?? 0,
+        touchNavigation.previousY ?? 0,
+        touchNavigation.currentX ?? 0,
+        touchNavigation.currentY ?? 0,
+        touchNavigation.scale ?? 1,
+        touchNavigation.radians ?? 0,
+      );
+    }
     const win32 = entry.win32 ?? null;
     if (win32) {
       Module._cnc_port_post_browser_message_lite(
@@ -742,10 +756,15 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     nextLogicDue: null,
     clientFrames: 0, // cumulative paced client frames run
     logicFrames: 0, // cumulative logic frames run
+    engineFrameSamples: 0, // cumulative timed engine frames run
+    replayPlaybackSeen: false,
+    crcMismatch: false,
     startedAt: null,
     lastResult: null,
     lastClientFrameStamp: null,
     engineFrameTimes: [], // rolling real-engine update durations (ms)
+    engineLogicFrames: [], // logic frame aligned with each engineFrameTimes sample
+    slowFrameProfiles: [], // slowest profiled frames since the loop started
     presentationFrameTimes: [], // rolling intervals between presented client frames (ms)
     pacingSamples: [], // last ~900 {t, logic} for pacing-evenness probes
     quitRequested: false,
@@ -791,13 +810,50 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     loop.nextLogicDue = null;
     loop.clientFrames = 0;
     loop.logicFrames = 0;
+    loop.engineFrameSamples = 0;
+    loop.replayPlaybackSeen = false;
+    loop.crcMismatch = false;
     loop.startedAt = performance.now();
     loop.lastClientFrameStamp = null;
     loop.engineFrameTimes.length = 0;
+    loop.engineLogicFrames.length = 0;
+    loop.slowFrameProfiles.length = 0;
     loop.presentationFrameTimes.length = 0;
     loop.pacingSamples.length = 0;
     loop.quitRequested = false;
     respond({ cmd: "startLoopResult", id: msg.id, ok: true, pacing, clientFps, logicFps });
+  }
+
+  function recordEngineFrame(result) {
+    const engineFrameMs = Number(result?.lastFrameMs);
+    if (!Number.isFinite(engineFrameMs) || engineFrameMs < 0) {
+      return;
+    }
+    loop.engineFrameSamples += 1;
+    const engineFrameSample = loop.engineFrameSamples;
+    loop.engineFrameTimes.push(engineFrameMs);
+    loop.engineLogicFrames.push(Number(result?.logicFrame));
+    if (result?.recorder?.playback === true) {
+      loop.replayPlaybackSeen = true;
+    }
+    if (result?.recorder?.crcMismatch === true) {
+      loop.crcMismatch = true;
+    }
+    if (loop.engineFrameTimes.length > 600) {
+      loop.engineFrameTimes.shift();
+      loop.engineLogicFrames.shift();
+    }
+    loop.slowFrameProfiles.push({
+      engineFrameSample,
+      logicFrame: result.logicFrame ?? null,
+      clientFrame: result.clientFrame ?? null,
+      lastFrameMs: engineFrameMs,
+      profile: result?.profile ?? null,
+    });
+    loop.slowFrameProfiles.sort((a, b) => b.lastFrameMs - a.lastFrameMs);
+    if (loop.slowFrameProfiles.length > 50) {
+      loop.slowFrameProfiles.length = 50;
+    }
   }
 
   function pumpLoop(stamp) {
@@ -841,9 +897,11 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     try {
       if (logicToRun === 0) {
         result = runPacedFrame(false);
+        recordEngineFrame(result);
       } else {
         for (let i = 0; i < logicToRun; i += 1) {
           result = runPacedFrame(true);
+          recordEngineFrame(result);
           loop.logicFrames += 1;
           if (result?.quitting === true) {
             break;
@@ -871,13 +929,6 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       }
     }
     loop.lastClientFrameStamp = stamp;
-    const engineFrameMs = Number(result.lastFrameMs);
-    if (Number.isFinite(engineFrameMs) && engineFrameMs >= 0) {
-      loop.engineFrameTimes.push(engineFrameMs);
-      if (loop.engineFrameTimes.length > 600) {
-        loop.engineFrameTimes.shift();
-      }
-    }
     loop.clientFrames += 1;
     loop.lastResult = result;
     const browserCursor = result.browserCursor;
@@ -949,11 +1000,16 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         startedAt: loop.startedAt,
         clientFrames: loop.clientFrames,
         logicFrames: loop.logicFrames,
+        engineFrameSamples: loop.engineFrameSamples,
+        replayPlaybackSeen: loop.replayPlaybackSeen,
+        crcMismatch: loop.crcMismatch,
         quitRequested: loop.quitRequested,
       },
       timing: {
         engineFrameMs: loop.engineFrameTimes.slice(),
+        engineLogicFrames: loop.engineLogicFrames.slice(),
         presentationFrameMs: loop.presentationFrameTimes.slice(),
+        slowFrameProfiles: loop.slowFrameProfiles.slice(),
       },
       frame: result ? {
         logicFrame: result.logicFrame,
@@ -963,6 +1019,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         loadProgress: result.loadProgress,
         lastFrameMs: result.lastFrameMs,
         quitting: result.quitting,
+        recorder: result.recorder ?? null,
       } : null,
       networkDiagnostics,
       touchUi,
@@ -1258,6 +1315,42 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         } catch (error) {
           respond({
             cmd: "sm1ShaderAuditResult",
+            id: msg.id,
+            ok: false,
+            error: String((error && error.stack) || error),
+          });
+        }
+        return;
+      }
+      case "d3d8PerfConfigure": {
+        try {
+          const previousSummary = globalThis.__cncD3D8PerfSummary?.() ?? null;
+          const timing = typeof msg.timing === "boolean"
+            ? globalThis.__cncSetD3D8PerfTiming?.(msg.timing)
+            : previousSummary?.timingEnabled;
+          const counters = typeof msg.counters === "boolean"
+            ? globalThis.__cncSetD3D8PerfCounters?.(msg.counters)
+            : previousSummary?.countersEnabled;
+          const bufferProducers = typeof msg.bufferProducers === "boolean"
+            ? globalThis.__cncSetD3D8BufferProducerTracking?.(msg.bufferProducers)
+            : globalThis.__cncGetD3D8BufferProducerTracking?.();
+          const drawProducers = typeof msg.drawProducers === "boolean"
+            ? globalThis.__cncSetD3D8DrawProducerTracking?.(msg.drawProducers)
+            : globalThis.__cncGetD3D8DrawProducerTracking?.();
+          respond({
+            cmd: "d3d8PerfConfigureResult",
+            id: msg.id,
+            ok: true,
+            timing,
+            counters,
+            bufferProducers,
+            drawProducers,
+            previousSummary,
+            summary: globalThis.__cncD3D8PerfSummary?.() ?? null,
+          });
+        } catch (error) {
+          respond({
+            cmd: "d3d8PerfConfigureResult",
             id: msg.id,
             ok: false,
             error: String((error && error.stack) || error),

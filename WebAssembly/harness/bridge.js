@@ -971,6 +971,18 @@ function threadedWorkerPerfCounters() {
   return null;
 }
 
+function threadedWorkerAdjacentBatching() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("d3d8Batch");
+    if (value === "1" || value === "true" || value === "on") return true;
+    if (value === "0" || value === "false" || value === "off") return false;
+  } catch (_error) {
+    // The worker keeps the executor default when no override is available.
+  }
+  return null;
+}
+
 function threadedWorkerShaderTier() {
   // The executor samples the shader tier once at device create via
   // d3d8ShaderTierQuery (URL ?shaderTier= param, then localStorage
@@ -1322,6 +1334,7 @@ function createThreadedEngineController() {
         options: {
           diagLevel: threadedWorkerDiagLevel(),
           perfCounters: threadedWorkerPerfCounters(),
+          adjacentBatching: threadedWorkerAdjacentBatching(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
           udpBridge: threadedUdpBridge,
@@ -1965,6 +1978,17 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "realEngineSetRenderDisabled": {
+      try {
+        const disabled = payload.disabled === true;
+        const applied = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_render_disabled", "number", ["number"],
+          [disabled ? 1 : 0]);
+        return { ok: applied === 1, command, disabled, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "querySelection": {
       try {
         const result = await threadedEngine.engineCall(
@@ -2070,6 +2094,34 @@ async function threadedRpc(command, payload = {}) {
           enabled: reply?.enabled,
           threaded: true,
           error: reply?.ok === true ? undefined : (reply?.error ?? "worker shader audit failed"),
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "d3d8PerfConfigure": {
+      try {
+        await threadedEngine.ensureReady();
+        const reply = await threadedEngine.sendCommand({
+          cmd: "d3d8PerfConfigure",
+          timing: typeof payload.timing === "boolean" ? payload.timing : undefined,
+          counters: typeof payload.counters === "boolean" ? payload.counters : undefined,
+          bufferProducers: typeof payload.bufferProducers === "boolean"
+            ? payload.bufferProducers : undefined,
+          drawProducers: typeof payload.drawProducers === "boolean"
+            ? payload.drawProducers : undefined,
+        }, { timeoutMs: 120000 });
+        return {
+          ok: reply?.ok === true,
+          command,
+          timing: reply?.timing ?? null,
+          counters: reply?.counters ?? null,
+          bufferProducers: reply?.bufferProducers ?? null,
+          drawProducers: reply?.drawProducers ?? null,
+          previousSummary: reply?.previousSummary ?? null,
+          summary: reply?.summary ?? null,
+          threaded: true,
+          error: reply?.ok === true ? undefined : (reply?.error ?? "worker perf configure failed"),
         };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
@@ -2660,6 +2712,25 @@ async function threadedRpc(command, payload = {}) {
         const result = await threadedEngine.engineCall(
           "cnc_port_real_engine_set_skirmish_map", "string", ["string"],
           [String(payload.map ?? payload.mapName ?? "")]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineSetSkirmishSeed": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_set_skirmish_seed", "string", ["number"],
+          [Number(payload.seed)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "realEngineProbeWorkerSupplyExit": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_real_engine_probe_worker_supply_exit", "string", [], []);
         return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
@@ -6152,6 +6223,11 @@ async function loadWasmModule() {
         "string",
         ["string", "string"],
       ),
+      probeMissileGarrisonBound: module.cwrap(
+        "cnc_port_probe_missile_garrison_bound",
+        "string",
+        ["string", "string"],
+      ),
       registerArchiveSet: module.cwrap(
         "cnc_port_register_archive_set",
         "string",
@@ -6169,6 +6245,14 @@ async function loadWasmModule() {
           ["number", "number", "number", "number", "number"],
         )
         : null,
+      postTouchNavigationLite:
+        typeof module._cnc_port_post_touch_navigation_lite === "function"
+          ? module.cwrap(
+            "cnc_port_post_touch_navigation_lite",
+            "number",
+            ["number", "number", "number", "number", "number", "number"],
+          )
+          : null,
       resetBrowserInput: module.cwrap("cnc_port_reset_browser_input", "string", []),
       postBrowserMessage: module.cwrap(
         "cnc_port_post_browser_message",
@@ -6316,6 +6400,16 @@ async function loadWasmModule() {
         "string",
         ["string"],
       ),
+      realEngineSetSkirmishSeed: module.cwrap(
+        "cnc_port_real_engine_set_skirmish_seed",
+        "string",
+        ["number"],
+      ),
+      realEngineProbeWorkerSupplyExit: module.cwrap(
+        "cnc_port_real_engine_probe_worker_supply_exit",
+        "string",
+        [],
+      ),
       realEngineSetSkirmishLocalTemplate: module.cwrap(
         "cnc_port_real_engine_set_skirmish_local_template",
         "string",
@@ -6396,6 +6490,11 @@ async function loadWasmModule() {
       realEngineSetPlayerDiagnostics: module.cwrap(
         "cnc_port_real_engine_set_player_diagnostics",
         null,
+        ["number"],
+      ),
+      realEngineSetRenderDisabled: module.cwrap(
+        "cnc_port_real_engine_set_render_disabled",
+        "number",
         ["number"],
       ),
       realEngineDoFX: module.cwrap(
@@ -10621,6 +10720,58 @@ async function pushBrowserInputToWasmLite({
   return null;
 }
 
+async function pushTouchNavigationToWasmLite({
+  previousPoint,
+  point,
+  scale,
+  radians,
+  sequence = 0,
+} = {}) {
+  const touchNavigation = {
+    previousX: previousPoint?.x ?? point?.x ?? 0,
+    previousY: previousPoint?.y ?? point?.y ?? 0,
+    currentX: point?.x ?? 0,
+    currentY: point?.y ?? 0,
+    scale: Number(scale ?? 1),
+    radians: Number(radians ?? 0),
+  };
+  if (cncPortThreadedMode) {
+    try {
+      await threadedEngine.ensureReady();
+      threadedEngine.forwardInput({ touchNavigation });
+      // forwardInput batches through a microtask. Publish queue completion
+      // only after that microtask has posted the ordered input command, so
+      // probes and diagnostics can distinguish recognition from transport.
+      await new Promise((resolve) => queueMicrotask(resolve));
+      if (harnessState.touchNavigation) {
+        harnessState.touchNavigation.queuedCount = Math.max(
+          Number(harnessState.touchNavigation.queuedCount ?? 0),
+          Number(sequence),
+        );
+      }
+    } catch (_error) {
+      // Realm not ready during asset/init phases; touch input is droppable.
+    }
+    return null;
+  }
+  const wasmModule = await wasmModulePromise;
+  const result = wasmModule?.postTouchNavigationLite?.(
+    touchNavigation.previousX,
+    touchNavigation.previousY,
+    touchNavigation.currentX,
+    touchNavigation.currentY,
+    touchNavigation.scale,
+    touchNavigation.radians,
+  ) ?? 0;
+  if (result === 1 && harnessState.touchNavigation) {
+    harnessState.touchNavigation.queuedCount = Math.max(
+      Number(harnessState.touchNavigation.queuedCount ?? 0),
+      Number(sequence),
+    );
+  }
+  return result;
+}
+
 async function postBrowserMessageToWasm({
   message,
   wParam = 0,
@@ -12424,6 +12575,26 @@ async function rpc(command, payload = {}) {
         }
         return { ok: Boolean(probe?.ok), command, probe, state: snapshotState() };
       }
+    case "probeMissileGarrisonBound":
+      {
+        const moduleResult = await getWasmModuleForArchives("probeMissileGarrisonBound");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        const path = typeof payload.path === "string" && payload.path.length > 0
+          ? payload.path
+          : "/assets/INIZH.big";
+        const snippetPath = "/assets/__missile_garrison_bound_probe.ini";
+        moduleResult.wasmModule.fs.writeFile(snippetPath, String(payload.snippetText ?? ""));
+        const raw = moduleResult.wasmModule.probeMissileGarrisonBound(path, snippetPath);
+        let probe = null;
+        try {
+          probe = JSON.parse(raw);
+        } catch (error) {
+          probe = { ok: false, error: `missile garrison probe returned invalid JSON: ${error}`, raw };
+        }
+        return { ok: Boolean(probe?.ok), command, probe, state: snapshotState() };
+      }
     case "probeObjectIni":
       {
         const moduleResult = await getWasmModuleForArchives("probeObjectIni");
@@ -12523,7 +12694,11 @@ async function rpc(command, payload = {}) {
     case "importReplay":
       {
         try {
-          const result = await replayFileStore.importFile(payload.name, base64ToBytes(payload.bytesBase64));
+          const result = await replayFileStore.importFile(
+            payload.name,
+            base64ToBytes(payload.bytesBase64),
+            { durable: payload.persist !== false },
+          );
           return { command, ...result };
         } catch (error) {
           return { ok: false, command, error: error?.message ?? String(error) };
@@ -12685,6 +12860,47 @@ async function rpc(command, payload = {}) {
           result,
           state: snapshotState(),
         };
+      }
+    case "realEngineSetSkirmishSeed":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSetSkirmishSeed");
+        if (moduleResult.error) {
+          return { ok: false, command: "realEngineSetSkirmishSeed", error: moduleResult.error };
+        }
+        let result = null;
+        let aborted = false;
+        let abortMessage = null;
+        try {
+          result = JSON.parse(moduleResult.wasmModule.realEngineSetSkirmishSeed(
+            Number(payload.seed),
+          ));
+        } catch (error) {
+          aborted = true;
+          abortMessage = error?.message ?? String(error);
+        }
+        recordLog("real engine set skirmish seed", { aborted, abortMessage, result });
+        return {
+          ok: Boolean(result?.ok) && !aborted,
+          command: "realEngineSetSkirmishSeed",
+          aborted,
+          abortMessage,
+          result,
+          state: snapshotState(),
+        };
+      }
+    case "realEngineProbeWorkerSupplyExit":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineProbeWorkerSupplyExit");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        try {
+          const result = JSON.parse(moduleResult.wasmModule.realEngineProbeWorkerSupplyExit());
+          recordLog("real engine probe worker supply exit", result);
+          return { ok: result?.ok === true, command, result, state: snapshotState() };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
       }
     case "d3d8SM1ShaderAudit":
       return {
@@ -13499,6 +13715,16 @@ async function rpc(command, payload = {}) {
           result,
           state: snapshotState(),
         };
+      }
+    case "realEngineSetRenderDisabled":
+      {
+        const moduleResult = await getWasmModuleForArchives("realEngineSetRenderDisabled");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        const disabled = payload.disabled === true;
+        const applied = moduleResult.wasmModule.realEngineSetRenderDisabled(disabled ? 1 : 0);
+        return { ok: applied === 1, command, disabled, state: snapshotState() };
       }
     case "revealLocalMap":
       {
@@ -24367,6 +24593,27 @@ function forwardTouchWheel(steps, clientPoint) {
   });
 }
 
+function forwardTouchNavigation(action) {
+  const previousPoint = touchPointToEngine(action.previousPoint);
+  const point = touchPointToEngine(action.point);
+  const sequence = Number(harnessState.touchNavigation?.count ?? 0) + 1;
+  harnessState.touchNavigation = {
+    count: sequence,
+    queuedCount: Number(harnessState.touchNavigation?.queuedCount ?? 0),
+    previousPoint,
+    point,
+    scale: Number(action.scale),
+    radians: Number(action.radians),
+  };
+  void pushTouchNavigationToWasmLite({
+    previousPoint,
+    point,
+    scale: action.scale,
+    radians: action.radians,
+    sequence,
+  });
+}
+
 let touchRotation = null;
 function startTouchRotation(clientPoint, timestamp) {
   const point = touchPointToEngine(clientPoint);
@@ -24503,6 +24750,7 @@ const touchControls = createTouchControls({
   onMove: forwardTouchMove,
   onButton: forwardTouchButton,
   onWheel: forwardTouchWheel,
+  onNavigate: forwardTouchNavigation,
   onRotateStart: startTouchRotation,
   onRotateMove: moveTouchRotation,
   onRotateEnd: endTouchRotation,

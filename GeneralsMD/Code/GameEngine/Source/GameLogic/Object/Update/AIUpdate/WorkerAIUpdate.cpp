@@ -30,6 +30,8 @@
 // USER INCLUDES //////////////////////////////////////////////////////////////////////////////////
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include <type_traits>
+
 #include "Common/ActionManager.h"
 #include "Common/Team.h"
 #include "Common/StateMachine.h"
@@ -116,6 +118,8 @@ WorkerAIUpdate::WorkerAIUpdate( Thing *thing, const ModuleData* moduleData ) :
 	m_numberBoxes = 0;
 	m_forcePending = FALSE;
 	m_forcedBusyPending = FALSE;
+	m_supplyTruckExitInProgress = FALSE;
+	m_supplyTruckExitReentryCount = 0;
 
 	m_workerMachine = NULL;
 
@@ -463,8 +467,15 @@ Object *WorkerAIUpdate::construct( const ThingTemplate *what,
 // ------------------------------------------------------------------------------------------------
 void WorkerAIUpdate::exitingSupplyTruckState()
 {
+	if( m_supplyTruckExitInProgress )
+	{
+		++m_supplyTruckExitReentryCount;
+		return;
+	}
+
 	if( m_workerMachine->getCurrentStateID() == AS_SUPPLY_TRUCK )
 	{
+		m_supplyTruckExitInProgress = TRUE;
  		// We've been given a Dozer specific order that the Supply Truck machine doesn't recognize
  		// as BUSY (because this command also recognizes its own busy and is likewise waiting).
  		// Explicitly slap it upside the head.
@@ -473,6 +484,7 @@ void WorkerAIUpdate::exitingSupplyTruckState()
  			getObject()->getAIUpdateInterface()->aiIdle(CMD_FROM_AI);
  		}
  		m_workerMachine->setState( AS_DOZER );
+		m_supplyTruckExitInProgress = FALSE;
  		// To clarify, I leave supply truck mode when I notice I am doing something not supply
  		// truck related.  When given a construct command, I wait to do anything until I notice
  		// I'm not busy.  Both states are being polite, so I must force the switch.
@@ -1114,8 +1126,36 @@ Bool WorkerAIUpdate::gainOneBox( Int remainingStock )
 // ------------------------------------------------------------------------------------------------
 Bool WorkerAIUpdate::isSupplyTruckBrainActiveAndBusy()
 {
-	return (m_workerMachine->getCurrentStateID() == AS_SUPPLY_TRUCK)
+	return isSupplyTruckBrainActive()
 				&& (m_supplyTruckStateMachine->getCurrentStateID() == ST_BUSY);
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+Bool WorkerAIUpdate::isSupplyTruckBrainActive() const
+{
+	return m_workerMachine != NULL
+				&& m_workerMachine->getCurrentStateID() == AS_SUPPLY_TRUCK;
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+Bool WorkerAIUpdate::prepareSupplyTruckExitForDiagnostics()
+{
+	if( isSupplyTruckBrainActive() )
+		return FALSE;
+
+	privateIdle( CMD_FROM_AI );
+	m_supplyTruckStateMachine->setState( ST_WANTING );
+	m_workerMachine->setState( AS_SUPPLY_TRUCK );
+	return isSupplyTruckBrainActive() && isCurrentlyFerryingSupplies();
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+StateID WorkerAIUpdate::getSupplyTruckBrainStateForDiagnostics() const
+{
+	return m_supplyTruckStateMachine->getCurrentStateID();
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -1152,7 +1192,7 @@ public:
 	ActAsDozerState( StateMachine *machine ) :State( machine, "ActAsDozerState" ){}
 	virtual StateReturnType onEnter();
 	virtual StateReturnType update();
-	virtual StateReturnType onExit();
+	virtual void onExit( StateExitType status );
 };
 EMPTY_DTOR(ActAsDozerState)
 
@@ -1171,8 +1211,12 @@ public:
 	ActAsSupplyTruckState( StateMachine *machine ) :State( machine, "ActAsSupplyTruckState" ){}
 	virtual StateReturnType onEnter();
 	virtual StateReturnType update();
-	virtual StateReturnType onExit();
+	virtual void onExit( StateExitType status );
 };
+static_assert(std::is_same_v<decltype(&ActAsDozerState::onExit),
+	void (ActAsDozerState::*)(StateExitType)>);
+static_assert(std::is_same_v<decltype(&ActAsSupplyTruckState::onExit),
+	void (ActAsSupplyTruckState::*)(StateExitType)>);
 EMPTY_DTOR(ActAsSupplyTruckState)
 
 // ------------------------------------------------------------------------------------------------
@@ -1285,18 +1329,16 @@ StateReturnType ActAsDozerState::update()
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
-StateReturnType ActAsDozerState::onExit()
+void ActAsDozerState::onExit( StateExitType )
 {
 	Object *owner = getMachineOwner();
 	WorkerAIUpdate *update = (WorkerAIUpdate*)owner->getAIUpdateInterface();
 	if( !update )
 	{
-		return STATE_FAILURE;
+		return;
 	}
 
 	update->resetDozerBrain();
-
-	return STATE_CONTINUE;
 }
 
 
@@ -1316,18 +1358,16 @@ StateReturnType ActAsSupplyTruckState::update()
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
-StateReturnType ActAsSupplyTruckState::onExit()
+void ActAsSupplyTruckState::onExit( StateExitType )
 {
 	Object *owner = getMachineOwner();
 	WorkerAIUpdate *update = (WorkerAIUpdate*)owner->getAIUpdateInterface();
 	if( !update )
 	{
-		return STATE_FAILURE;
+		return;
 	}
 
 	update->resetSupplyTruckBrain();
-
-	return STATE_CONTINUE;
 }
 
 // ------------------------------------------------------------------------------------------------

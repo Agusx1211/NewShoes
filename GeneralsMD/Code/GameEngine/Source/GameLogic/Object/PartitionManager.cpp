@@ -1590,13 +1590,7 @@ PartitionData::~PartitionData()
 	//DEBUG_LOG(("toss pd for pd %08lx obj %08lx\n",this,m_object));
 	removeAllTouchedCells();
 	freeCoiArray();
-	DEBUG_ASSERTCRASH(ThePartitionManager, ("ThePartitionManager is null"));
-	if (ThePartitionManager && ThePartitionManager->isInListDirtyModules(this))
-	{
-		//DEBUG_LOG(("remove pd %08lx from dirty list (%08lx %08lx)\n",this,m_prevDirty,m_nextDirty));
-		ThePartitionManager->removeFromDirtyModules(this);
-		//DEBUG_ASSERTCRASH(!ThePartitionManager->isInListDirtyModules(this), ("hmm\n"));
-	}
+	cancelPendingUpdate();
 } 
 
 //-----------------------------------------------------------------------------
@@ -2049,14 +2043,18 @@ Bool PartitionManager::geomCollidesWithGeom(const Coord3D* pos1,
 //-----------------------------------------------------------------------------
 void PartitionData::updateCellsTouched()
 {
+	Object *obj = getObject();
+	DEBUG_ASSERTCRASH(obj != NULL || m_ghostObject != NULL, ("must be attached to an Object here 1"));
+	if (obj == NULL && m_ghostObject == NULL)
+	{
+		removeAllTouchedCells();
+		return;
+	}
+
 	GeometryType geom;
 	Bool isSmall;
 	Coord3D pos;
 	Real angle,majorRadius,minorRadius;
-
-
-	Object *obj = getObject();
-	DEBUG_ASSERTCRASH(obj != NULL || m_ghostObject != NULL, ("must be attached to an Object here 1"));
 
 	if (obj)
 	{	
@@ -2068,7 +2066,7 @@ void PartitionData::updateCellsTouched()
 		majorRadius = obj->getGeometryInfo().getMajorRadius();
 		minorRadius = obj->getGeometryInfo().getMinorRadius();
 	}
-	else if (m_ghostObject)
+	else
 	{
 		geom = m_ghostObject->getGeometryType();
 		isSmall = m_ghostObject->getGeometrySmall();
@@ -2254,6 +2252,16 @@ void PartitionData::freeCoiArray()
 }
 
 //-----------------------------------------------------------------------------
+void PartitionData::cancelPendingUpdate()
+{
+	DEBUG_ASSERTCRASH(ThePartitionManager, ("ThePartitionManager is null"));
+	if (ThePartitionManager && ThePartitionManager->isInListDirtyModules(this))
+	{
+		ThePartitionManager->removeFromDirtyModules(this);
+	}
+}
+
+//-----------------------------------------------------------------------------
 void PartitionData::attachToObject(Object* object)
 {
 
@@ -2307,6 +2315,7 @@ void PartitionData::detachFromObject()
 		m_object->friend_setPartitionData(NULL);
 	removeAllTouchedCells();
 	freeCoiArray();
+	cancelPendingUpdate();
 
 	//DEBUG_LOG(("detach pd for pd %08lx obj %08lx\n",this,m_object));
 
@@ -2353,6 +2362,7 @@ void PartitionData::detachFromGhostObject(void)
 
 	removeAllTouchedCells();
 	freeCoiArray();
+	cancelPendingUpdate();
 
 	//DEBUG_LOG(("detach pd for pd %08lx obj %08lx\n",this,m_object));
 
