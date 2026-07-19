@@ -169,12 +169,53 @@ async function exerciseWebXrTextEntry(page, geometry, skirmishMenu) {
   };
 }
 
+async function driveWebXrMultiplayerShellFlow(page, geometry, mainMenu) {
+  await clickEngineButton(page, geometry, mainMenu.buttonMultiplayer,
+    "Multiplayer button");
+  const networkButton = await waitForAgentUiWindow(page, "MainMenu.wnd:ButtonNetwork",
+    (window) => window.visible === true && window.interactive === true);
+  await page.waitForTimeout(1000);
+  await fullFrame(page);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(networkButton, "Network button"), "Network button");
+
+  const hostButton = await waitForAgentUiWindow(page, "LanLobbyMenu.wnd:ButtonHost",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(hostButton, "LAN Host button"), "LAN Host button");
+  const gameBackButton = await waitForAgentUiWindow(page,
+    "LanGameOptionsMenu.wnd:ButtonBack",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(gameBackButton, "LAN game-options Back button"),
+    "LAN game-options Back button");
+
+  const lobbyBackButton = await waitForAgentUiWindow(page, "LanLobbyMenu.wnd:ButtonBack",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(lobbyBackButton, "LAN lobby Back button"),
+    "LAN lobby Back button");
+  await waitForFrame(page, "main menu after LAN flow", (candidate) =>
+    candidate?.clientState?.mainMenu?.buttonSinglePlayer?.clickable === true);
+  return {
+    multiplayerOpened: true,
+    lanLobbyOpened: true,
+    hostOptionsOpened: true,
+    returnedToMainMenu: true,
+  };
+}
+
 async function enterSkirmish(page, geometry) {
   await aimWebXrAtEnginePoint(page, geometry, { x: 32, y: 32 }, "main menu wake-up");
   await page.waitForTimeout(250);
   await fullFrame(page);
   await aimWebXrAtEnginePoint(page, geometry, { x: 96, y: 96 }, "main menu wake-up");
   let frame = await waitForFrame(page, "main menu",
+    (candidate) => candidate?.clientState?.mainMenu?.buttonSinglePlayer?.clickable === true);
+  const multiplayerShellFlow = await driveWebXrMultiplayerShellFlow(
+    page, geometry, frame.clientState.mainMenu,
+  );
+  frame = await waitForFrame(page, "main menu before skirmish",
     (candidate) => candidate?.clientState?.mainMenu?.buttonSinglePlayer?.clickable === true);
   await clickEngineButton(page, geometry, frame.clientState.mainMenu.buttonSinglePlayer,
     "Single Player button");
@@ -202,7 +243,7 @@ async function enterSkirmish(page, geometry) {
     return gameplay?.inGame === true && gameplay?.loadingMap === false
       && gameplay?.inputEnabled === true && Number(gameplay?.renderedObjectCount ?? 0) > 0;
   }, 6 * 60 * 1000);
-  return textEntry;
+  return { textEntry, multiplayerShellFlow };
 }
 
 async function tapWebXrButton(page, index, { betweenFrames = false } = {}) {
@@ -801,6 +842,72 @@ async function driveWebXrContextOrder(page, geometry) {
   };
 }
 
+async function driveWebXrExitToShell(page, geometry, rendererFramesBeforeExit) {
+  await tapWebXrButton(page, 5);
+  const exitButton = await waitForAgentUiWindow(page, "QuitMenu.wnd:ButtonExit",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(exitButton, "quit-menu Exit button"),
+    "quit-menu Exit button");
+  const confirmButton = await waitForAgentUiWindow(page,
+    "QuitMessageBox.wnd:ButtonYes",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(confirmButton, "quit confirmation Yes button"),
+    "quit confirmation Yes button");
+  const scoreScreen = await waitForFrame(page, "score screen after confirmed match exit",
+    (candidate) => candidate?.clientState?.gameplay?.inGame === false
+      && candidate?.clientState?.shell?.topFilename === "Menus/ScoreScreen.wnd",
+  120000);
+  const scoreOkButton = await waitForAgentUiWindow(page, "ScoreScreen.wnd:ButtonOk",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(scoreOkButton, "score-screen OK button"),
+    "score-screen OK button");
+  const skirmishBackButton = await waitForAgentUiWindow(page,
+    "SkirmishGameOptionsMenu.wnd:ButtonBack",
+    (window) => window.visible === true && window.interactive === true);
+  await clickEngineButton(page, geometry,
+    targetFromAgentUiWindow(skirmishBackButton, "skirmish-options Back button"),
+    "skirmish-options Back button");
+  let shell = await waitForFrame(page, "shell after leaving skirmish options", (candidate) =>
+    candidate?.clientState?.gameplay?.inGame === false
+      && (candidate?.clientState?.mainMenu?.buttonSinglePlayer?.clickable === true
+        || candidate?.clientState?.mainMenu?.buttonSingleBack?.clickable === true),
+  120000);
+  if (shell.clientState.mainMenu.buttonSinglePlayer?.clickable !== true) {
+    await clickEngineButton(page, geometry,
+      shell.clientState.mainMenu.buttonSingleBack, "single-player Back button");
+    shell = await waitForFrame(page, "main shell after confirmed match exit", (candidate) =>
+      candidate?.clientState?.gameplay?.inGame === false
+        && candidate?.clientState?.mainMenu?.buttonSinglePlayer?.clickable === true,
+    120000);
+  }
+  const singlePlayer = shell.clientState.mainMenu.buttonSinglePlayer;
+  await aimWebXrAtEnginePoint(page, geometry,
+    { x: singlePlayer.centerX, y: singlePlayer.centerY },
+    "restored shell Single Player hover");
+  await waitForAgentUiWindow(page, "MainMenu.wnd:ButtonSinglePlayer",
+    (window) => window.hilited === true);
+  const xr = await page.evaluate(() => window.CnCPort.getWebXrState());
+  assert.equal(xr.phase, "running", "confirmed match exit must preserve the XR session");
+  assert.equal(await page.evaluate(() => window.__emulatedXrSessionCount), 2,
+    "confirmed match exit must not replace the fresh XRSession");
+  assert.ok(Number(xr.renderer?.frames) > rendererFramesBeforeExit,
+    "the XR compositor must continue rendering over the restored main shell");
+  return {
+    confirmationAccepted: true,
+    matchExited: true,
+    scoreScreenShown: scoreScreen.clientState.shell.topFilename === "Menus/ScoreScreen.wnd",
+    scoreScreenDismissed: true,
+    skirmishOptionsDismissed: true,
+    returnedToRootMenu: true,
+    shellHover: true,
+    sessionCount: 2,
+    rendererFramesAfterExit: xr.renderer.frames,
+  };
+}
+
 async function waitForEngineRay(page) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
@@ -904,6 +1011,7 @@ try {
     const targetRaySpace = {};
     const targetRayMatrix = identity();
     const viewerMatrix = identity();
+    const sessionAnchorMatrix = identity();
     const inputSource = {
       handedness: "right",
       targetRayMode: "tracked-pointer",
@@ -1027,6 +1135,9 @@ try {
       value: {
         isSessionSupported: async (mode) => mode === "immersive-vr",
         requestSession: () => {
+          sessionAnchorMatrix[12] = viewerMatrix[12];
+          sessionAnchorMatrix[13] = viewerMatrix[13];
+          sessionAnchorMatrix[14] = viewerMatrix[14];
           session = new EmulatedXrSession();
           sessionCount += 1;
           window.__emulatedXrSession = session;
@@ -1078,9 +1189,9 @@ try {
       const heightMeters = widthMeters * pixelHeight / pixelWidth;
       const u = Math.max(0, Math.min(1, Number(x) / (pixelWidth - 1)));
       const v = Math.max(0, Math.min(1, Number(y) / (pixelHeight - 1)));
-      targetRayMatrix[12] = (u - 0.5) * widthMeters;
-      targetRayMatrix[13] = (0.5 - v) * heightMeters;
-      targetRayMatrix[14] = 0;
+      targetRayMatrix[12] = sessionAnchorMatrix[12] + (u - 0.5) * widthMeters;
+      targetRayMatrix[13] = sessionAnchorMatrix[13] + (0.5 - v) * heightMeters;
+      targetRayMatrix[14] = sessionAnchorMatrix[14];
     };
     window.__emulatedXrViewerPosition = (x, y, z) => {
       viewerMatrix[12] = Number(x);
@@ -1137,8 +1248,8 @@ try {
     `emulated immersive session was not available: ${JSON.stringify(support)}`);
   stage("immersive support probe passed");
   await page.evaluate(() => window.CnCPort.startWebXrSession());
-  const textEntry = await enterSkirmish(page, inputGeometry);
-  stage("tracked controller operated the floating main shell and skirmish setup");
+  const { textEntry, multiplayerShellFlow } = await enterSkirmish(page, inputGeometry);
+  stage("tracked controller operated multiplayer, the main shell, and skirmish setup");
   await waitForEngineRay(page);
   stage("real engine view produced a tracked world ray");
 
@@ -1372,6 +1483,11 @@ try {
     "session re-entry must preserve the live match instead of rebooting the engine");
   stage("fresh immersive session resumed stereo frames, native picking, and spatial audio");
 
+  const exitToShellFlow = await driveWebXrExitToShell(
+    page, inputGeometry, Number(reentered.renderer?.frames ?? 0),
+  );
+  stage("tracked controller confirmed match exit while the XR session rendered the shell");
+
   const contextLossTrigger = await page.evaluate(() => {
     const canvas = document.querySelector("#viewport");
     const context = canvas?.getContext("webgl2");
@@ -1446,6 +1562,8 @@ try {
     hudSurfaceFlow,
     commandBarFlow,
     contextOrderFlow,
+    multiplayerShellFlow,
+    exitToShellFlow,
     textEntry,
     wheelCameraZoom: {
       before: cameraHeightBeforeWheel,

@@ -86,14 +86,16 @@ ordered Win32/DirectInput bridge as desktop input:
 - offhand B/Y: recenter the spatial anchor.
 
 The retail threaded VR smoke drives that path through the original main shell,
-single-player and skirmish setup, loading transition, in-game quit modal,
-save/load and save-description popups, and nested Options menu. It verifies
+Multiplayer and Network menus, LAN lobby and host options, single-player and
+skirmish setup, loading transition, in-game quit modal, save/load and
+save-description popups, and nested Options menu. It verifies
 original button activation and hover state, focuses and types into the stock
 save-description field through the XR system keyboard, cancels without writing
 a save, then returns through the modal stack and resumes the match with the
 tracked controller. This is automated compatibility evidence for the shared
 floating surface and real `GameWindowManager` input path; it does not replace
-real-headset readability and full-flow usability evidence.
+real-headset readability and full-flow usability evidence, and the LAN menu
+coverage does not constitute a two-peer multiplayer match.
 
 The same gate then confirms an ephemeral save through that description dialog,
 resumes and advances the simulation, selects the saved row through the tracked
@@ -125,6 +127,15 @@ right click, dispatch `MSG_DO_MOVETO` with a real selection group,
 and then expose motion, pathfinding, or a changed world position for that same
 object. One Retail run selected `Chem_GLAInfantryWorker`, dispatched the move,
 and observed `aiMoving == true` plus 1.10 world units of movement.
+
+After ending and entering a fresh immersive session over that live match, the
+gate uses the mapped cancel control to open the pause menu and the tracked ray
+to accept Exit and its original confirmation. It requires the match to clear,
+operates the stock skirmish score screen and the preserved shell stack, returns
+to the default main menu, and hovers its Single Player control while the same
+second `XRSession` continues producing compositor frames. This covers the
+single-player end-game surfaces and match-to-shell lifecycle; it does not prove
+a network result screen or real-headset readability.
 
 When only one tracked controller is available, its stick pans normally. Holding
 B/Y changes horizontal stick movement to original camera rotation and vertical
@@ -270,10 +281,11 @@ run during ordinary desktop play.
 - [ ] Prove distinct left/right world rendering on real WebXR hardware.
 - [x] Split pretransformed engine UI presentation into a floating spatial
   surface without replacing original UI ownership.
-- [x] Drive the retail main shell, skirmish setup, quit, save/load,
-  save-description, and Options surfaces through a tracked controller ray,
-  including hover/text state and an ephemeral create/load/delete round trip
-  that preserves the active XRSession.
+- [x] Drive the retail main shell, LAN lobby/host options, skirmish setup, quit,
+  score screen, save/load, save-description, and Options surfaces through a
+  tracked controller ray, including hover/text state, an ephemeral
+  create/load/delete round trip, and a match-to-shell round trip that preserve
+  the active XRSession.
 - [x] Produce a stock ControlBar tooltip from tracked hover and operate the
   Generals experience HUD surface after an in-session engine load reset.
 - [x] Select an idle worker from the stock HUD, activate and cancel a live
