@@ -921,6 +921,7 @@ Bool AIGroup::friend_moveInfantryToPos( const Coord3D *pos, CommandSourceType cm
 	curIndex = 0;
 	Int columnFactor[5] = {0,0,0,0,0};
 	PathfindLayerEnum layer = TheTerrainLogic->getLayerForDestination(pos);
+	std::vector<Coord3D> path;
 	for (theUnit = iter2->first(); theUnit; theUnit = iter2->next())
 	{
 		AIUpdateInterface *ai = theUnit->getAIUpdateInterface();
@@ -930,7 +931,7 @@ Bool AIGroup::friend_moveInfantryToPos( const Coord3D *pos, CommandSourceType cm
  		Int factor = columnFactor[fiveColumnDelta+2];
 		columnFactor[fiveColumnDelta+2] = factor+1;
 
-		std::vector<Coord3D> path;
+		path.clear();
 		PathNode *node = startNode;
 		PathNode *previousNode = m_groundPath->getFirstNode();
 		Coord3D prevPos = *theUnit->getPosition();
@@ -1086,6 +1087,7 @@ void AIGroup::friend_moveFormationToPos( const Coord3D *pos, CommandSourceType c
 	
 	// Move.
 	std::list<Object *>::iterator i;
+	std::vector<Coord3D> path;
 	for( i = m_memberList.begin(); i != m_memberList.end(); ++i )	
 	{
 		if ((*i)->isDisabledByType( DISABLED_HELD ) ) 
@@ -1104,7 +1106,7 @@ void AIGroup::friend_moveFormationToPos( const Coord3D *pos, CommandSourceType c
 		}
 		theUnit->getFormationOffset(&offset);
 		if (startNode) {
-			std::vector<Coord3D> path;
+			path.clear();
 			PathNode *node = startNode;
 			while (node) {
 				Coord3D dest = *node->getPosition();
@@ -1397,6 +1399,7 @@ Bool AIGroup::friend_moveVehicleToPos( const Coord3D *pos, CommandSourceType cmd
 	curIndex = 0;
 	Int columnFactor[5] = {0,0,0,0,0};
 	PathfindLayerEnum layer = TheTerrainLogic->getLayerForDestination(pos);
+	std::vector<Coord3D> path;
 	for (theUnit = iter2->first(); theUnit; theUnit = iter2->next())
 	{
 		AIUpdateInterface *ai = theUnit->getAIUpdateInterface();
@@ -1406,7 +1409,7 @@ Bool AIGroup::friend_moveVehicleToPos( const Coord3D *pos, CommandSourceType cmd
  		Int factor = columnFactor[threeColumnDelta+2];
 		columnFactor[threeColumnDelta+2] = factor+1;
 
-		std::vector<Coord3D> path;
+		path.clear();
 		PathNode *node = startNode;
 		PathNode *previousNode = m_groundPath->getFirstNode();
 		Coord3D prevPos = *theUnit->getPosition();
