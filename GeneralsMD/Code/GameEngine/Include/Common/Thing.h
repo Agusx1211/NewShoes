@@ -59,6 +59,7 @@
 #include "Common/GameMemory.h"
 #include "Common/KindOf.h"
 #include "Common/OVERRIDE.h"
+#include "Common/ThingTemplate.h"
 #include "WWMath/Matrix3D.h"							///< @todo Decide if we're keeping the WWMath libs (MSB)
 
 //-----------------------------------------------------------------------------
@@ -69,7 +70,6 @@ class Object;
 class AIObject;
 class Drawable;
 class Team;
-class ThingTemplate;
 
 //-----------------------------------------------------------------------------
 //           Type Defines
@@ -101,12 +101,18 @@ public:
 	/** 
 		return the thing template for this thing.
 	*/
-	const ThingTemplate *getTemplate() const;
+	inline const ThingTemplate *getTemplate() const { return m_template; }
 
 	// convenience method for patching isKindOf thru to template.
-	Bool isKindOf(KindOfType t) const;
-	Bool isKindOfMulti(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) const;
-	Bool isAnyKindOf(const KindOfMaskType& anyKindOf) const;
+	inline Bool isKindOf(KindOfType t) const { return getTemplate()->isKindOf(t); }
+	inline Bool isKindOfMulti(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) const
+	{
+		return getTemplate()->isKindOfMulti(mustBeSet, mustBeClear);
+	}
+	inline Bool isAnyKindOf(const KindOfMaskType& anyKindOf) const
+	{
+		return getTemplate()->isAnyKindOf(anyKindOf);
+	}
 
 	// physical properties
 	void setPosition( const Coord3D *pos );

@@ -6,6 +6,22 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-19
+
+- Cache D3D8 transform uniforms per program across shader switches ([PR #258](https://github.com/Agusx1211/NewShoes/pull/258)).
+- Skip unused PartitionManager distance-vector work ([PR #262](https://github.com/Agusx1211/NewShoes/pull/262)).
+- Inline hot Thing template and KindOf queries ([PR #264](https://github.com/Agusx1211/NewShoes/pull/264)).
+- Cache bounded player relationship lookups ([PR #267](https://github.com/Agusx1211/NewShoes/pull/267)).
+- Optimize zero-mask and sparse weapon bonus hot paths ([PR #270](https://github.com/Agusx1211/NewShoes/pull/270)).
+- Inline hot GeometryInfo height and center queries ([PR #274](https://github.com/Agusx1211/NewShoes/pull/274)).
+- Avoid redundant terrain extra-blend sampling ([PR #278](https://github.com/Agusx1211/NewShoes/pull/278)).
+- Reuse AIGroup path buffers across group members ([PR #279](https://github.com/Agusx1211/NewShoes/pull/279)).
+- Inline hot WorldHeightMap flip and cliff queries ([PR #280](https://github.com/Agusx1211/NewShoes/pull/280)).
+- Inline hot PlayerList indexed lookups ([PR #283](https://github.com/Agusx1211/NewShoes/pull/283)).
+- Fix Contra X rider-template startup crashes caused by empty slots ([PR #290](https://github.com/Agusx1211/NewShoes/pull/290)).
+- Restore authentic right-drag sensitivity and browser edge scrolling ([PR #291](https://github.com/Agusx1211/NewShoes/pull/291)).
+- Set version 0.5.0 and complete its audited release inventory ([PR #293](https://github.com/Agusx1211/NewShoes/pull/293)).
+
 ## [0.4.0] - 2026-07-19
 
 - Remember Remote Agent settings and add an authenticated pre-launch connection test ([PR #121](https://github.com/Agusx1211/NewShoes/pull/121)).

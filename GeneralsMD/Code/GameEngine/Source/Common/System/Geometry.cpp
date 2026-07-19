@@ -212,55 +212,6 @@ void GeometryInfo::setMaxHeightAbovePosition(Real z)
 }
 
 //=============================================================================
-// given an object with this geom, how far above the object's canonical position does its max z extend?
-Real GeometryInfo::getMaxHeightAbovePosition() const
-{
-	switch(m_type)
-	{
-		case GEOMETRY_SPHERE:
-			return m_majorRadius;
-
-		case GEOMETRY_BOX:
-		case GEOMETRY_CYLINDER:
-			return m_height;
-	};
-
-	return 0.0f;
-}
-
-//=============================================================================
-// given an object with this geom, how far below the object's canonical position does its max z extend?
-Real GeometryInfo::getMaxHeightBelowPosition() const
-{
-	switch(m_type)
-	{
-		case GEOMETRY_SPHERE:
-			return m_majorRadius;
-
-		case GEOMETRY_BOX:
-		case GEOMETRY_CYLINDER:
-			return 0.0f;
-	};
-
-	return 0.0f;
-}
-
-//=============================================================================
-// given an object with this geom, located at 'pos', where is the "center" of the geometry?
-Real GeometryInfo::getZDeltaToCenterPosition() const
-{
-	return (m_type == GEOMETRY_SPHERE) ? 0.0f : (m_height * 0.5f);
-}
-
-//=============================================================================
-// given an object with this geom, located at 'pos', where is the "center" of the geometry?
-void GeometryInfo::getCenterPosition(const Coord3D& pos, Coord3D& center) const
-{
-	center = pos;
-	center.z += getZDeltaToCenterPosition();
-}
-
-//=============================================================================
 void GeometryInfo::expandFootprint(Real radius)
 {
 	m_majorRadius += radius;

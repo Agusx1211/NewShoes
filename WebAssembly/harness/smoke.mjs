@@ -2102,12 +2102,16 @@ try {
     }
 
     await page.mouse.up();
+    // Releasing capture while the pointer is outside the canvas also emits the
+    // uncaptured pointerleave used to move the engine cursor out of its
+    // 3-pixel edge-scroll band. The 4-pixel inset lands one pixel farther in.
+    const pointerExitInteriorX = pointerCaptureDragState.canvas.width - 5;
     const pointerCaptureReleaseState = await waitForHarnessState(
       page,
       (state) => state.browserPointerCapture?.active === false
         && state.browserPointerCapture.releases === 1
-        && state.browserInput?.messageQueue?.count >= 1
-        && state.browserInput.cursor?.x === 1279
+        && state.browserInput?.messageQueue?.count === 2
+        && state.browserInput.cursor?.x === pointerExitInteriorX
         && state.browserInput.cursor?.y === 88,
       "browser pointer-capture release",
     );
@@ -2116,15 +2120,15 @@ try {
     }
     const pointerCaptureReleasePump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
     if (!pointerCaptureReleasePump.ok
-        || pointerCaptureReleasePump.probe.pump?.lastPumped !== 1
+        || pointerCaptureReleasePump.probe.pump?.lastPumped !== 2
         || pointerCaptureReleasePump.probe.messageQueue?.count !== 0) {
       throw new Error(`Browser pointer capture release did not pump through original WndProc: ${JSON.stringify(pointerCaptureReleasePump)}`);
     }
     const pointerCaptureReleaseProbe = await page.evaluate(() => window.CnCPort.rpc("originalWndProcInputProbe"));
     const pointerCaptureReleaseEvent = pointerCaptureReleaseProbe.probe?.mouse?.lastEvent;
     if (!pointerCaptureReleaseProbe.ok
-        || pointerCaptureReleaseProbe.probe.mouse?.lastProbeDrained !== 1
-        || pointerCaptureReleaseEvent?.pos?.x !== 1279
+        || pointerCaptureReleaseProbe.probe.mouse?.lastProbeDrained !== 2
+        || pointerCaptureReleaseEvent?.pos?.x !== pointerExitInteriorX
         || pointerCaptureReleaseEvent?.pos?.y !== 88
         || pointerCaptureReleaseEvent?.left?.state !== "up") {
       throw new Error(`Browser pointer capture release did not feed Win32Mouse: ${JSON.stringify(pointerCaptureReleaseProbe)}`);

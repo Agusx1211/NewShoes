@@ -161,9 +161,11 @@ public:
 	PlayerRelationMap( void );
 	// virtual destructor provided by memory pool object
 
-	/** @todo I'm jsut wrappign this up in a nice snapshot object, we really should isolate
-		* m_map from public access and make access methods for our operations */
-	PlayerRelationMapType m_map;
+	inline Bool isEmpty() const { return m_map.empty(); }
+	inline Bool findRelationship(PlayerIndex playerIndex, Relationship *relationship) const;
+	void setRelationship(PlayerIndex playerIndex, Relationship relationship);
+	Bool removeRelationship(PlayerIndex playerIndex);
+	Bool clearRelationships();
 
 protected:
 
@@ -171,7 +173,38 @@ protected:
 	virtual void xfer( Xfer *xfer );
 	virtual void loadPostProcess( void );
 
+private:
+
+	PlayerRelationMapType m_map;
+	// Derived lookup state. Save/CRC compatibility remains owned by m_map.
+	UnsignedShort m_cachedPlayerIndices;
+	Relationship m_cachedRelationships[MAX_PLAYER_COUNT];
+
 };
+
+inline Bool PlayerRelationMap::findRelationship(
+	PlayerIndex playerIndex,
+	Relationship *relationship) const
+{
+	if (playerIndex >= 0 && playerIndex < MAX_PLAYER_COUNT)
+	{
+		const UnsignedShort playerBit = static_cast<UnsignedShort>(1u << playerIndex);
+		if ((m_cachedPlayerIndices & playerBit) == 0)
+		{
+			return false;
+		}
+		*relationship = m_cachedRelationships[playerIndex];
+		return true;
+	}
+
+	PlayerRelationMapType::const_iterator it = m_map.find(playerIndex);
+	if (it == m_map.end())
+	{
+		return false;
+	}
+	*relationship = (*it).second;
+	return true;
+}
 
 // ----------------------------------------------------------------------------------------------
 /**

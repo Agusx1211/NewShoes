@@ -392,7 +392,6 @@ static Bool distCalcProc_CenterAndCenter_2D(const Coord3D *posA, const Object *o
 static Bool distCalcProc_BoundaryAndBoundary_2D(const Coord3D *posA, const Object *objA, const Coord3D *posB, const Object *objB, Real& abDistSqr, Coord3D& abVec, Real maxDistSqr); 
 static Bool distCalcProc_CenterAndCenter_3D(const Coord3D *posA, const Object *objA, const Coord3D *posB, const Object *objB, Real& abDistSqr, Coord3D& abVec, Real maxDistSqr); 
 static Bool distCalcProc_BoundaryAndBoundary_3D(const Coord3D *posA, const Object *objA, const Coord3D *posB, const Object *objB, Real& abDistSqr, Coord3D& abVec, Real maxDistSqr); 
-
 //-----------------------------------------------------------------------------
 inline void projectCoord3D(Coord3D *coord, const Coord3D *unitDir, Real dist)
 {
@@ -788,15 +787,12 @@ static Bool collideTest_Box_Box(const CollideInfo *a, const CollideInfo *b, Coll
 }
 
 //-----------------------------------------------------------------------------
-static Bool distCalcProc_CenterAndCenter_2D(
-	const Coord3D *posA, 
-	const Object *objA, 
-	const Coord3D *posB, 
-	const Object *objB, 
-	Real& abDistSqr, 
-	Coord3D& abVec,
-	Real maxDistSqr
-)
+static inline Bool distCalcImpl_CenterAndCenter_2D(
+	const Coord3D *posA,
+	const Coord3D *posB,
+	Real& abDistSqr,
+	Coord3D *abVec,
+	Real maxDistSqr)
 {
 	// note that object positions are defined as the bottom center of the geometry,
 	// thus we must add the radius to the z coord to get the proper center of the bounding sphere.
@@ -805,29 +801,37 @@ static Bool distCalcProc_CenterAndCenter_2D(
 	diff.y = posB->y - posA->y;
 	diff.z = 0.0f;
 	
-	//if (abDistSqr)
-	{
-		abDistSqr = sqr(diff.x) + sqr(diff.y);
-	}
+	abDistSqr = sqr(diff.x) + sqr(diff.y);
 
-	//if (abVec)
+	if (abVec)
 	{
-		abVec = diff;
+		*abVec = diff;
 	}
 
 	return abDistSqr < maxDistSqr;
 }
 
 //-----------------------------------------------------------------------------
-static Bool distCalcProc_BoundaryAndBoundary_2D(
-	const Coord3D *posA, 
-	const Object *objA, 
-	const Coord3D *posB, 
-	const Object *objB, 
-	Real& abDistSqr, 
+static Bool distCalcProc_CenterAndCenter_2D(
+	const Coord3D *posA,
+	const Object *objA,
+	const Coord3D *posB,
+	const Object *objB,
+	Real& abDistSqr,
 	Coord3D& abVec,
-	Real maxDistSqr
-)
+	Real maxDistSqr)
+{
+	return distCalcImpl_CenterAndCenter_2D(posA, posB, abDistSqr, &abVec, maxDistSqr);
+}
+
+//-----------------------------------------------------------------------------
+static inline Bool distCalcImpl_BoundaryAndBoundary_2D(
+	const Coord3D *posA,
+	const Coord3D *posB,
+	Real totalRad,
+	Real& abDistSqr,
+	Coord3D *abVec,
+	Real maxDistSqr)
 {
 	Coord3D diff;
 	diff.x = posB->x - posA->x;
@@ -838,8 +842,6 @@ static Bool distCalcProc_BoundaryAndBoundary_2D(
 
 	Real shrinkFactor = 1.0f;
 	Real shrunkenDistSqr = actualDistSqr;
-	Real totalRad = (objA ? objA->getGeometryInfo().getBoundingCircleRadius() : 0.0f) + 
-							(objB ? objB->getGeometryInfo().getBoundingCircleRadius() : 0.0f);
 
 	if (totalRad > 0.0f)
 	{
@@ -852,36 +854,46 @@ static Bool distCalcProc_BoundaryAndBoundary_2D(
 		}
 		else 
 		{
-			shrinkFactor = shrunkenDist / actualDist;
+			if (abVec)
+				shrinkFactor = shrunkenDist / actualDist;
 			shrunkenDistSqr = sqr(shrunkenDist);
 		}
 	}
 
-	//if (abDistSqr)
-	{
-		abDistSqr = shrunkenDistSqr;
-	}
+	abDistSqr = shrunkenDistSqr;
 
-	//if (abVec)
+	if (abVec)
 	{
 		DEBUG_ASSERTCRASH(shrinkFactor >= 0.0f && shrinkFactor <= 1.0f, ("Hmm, this should not be possible."));
 		diff.x *= shrinkFactor;
 		diff.y *= shrinkFactor;
-		abVec = diff;
+		*abVec = diff;
 	}
 	return abDistSqr < maxDistSqr;
 }
 
 //-----------------------------------------------------------------------------
-static Bool distCalcProc_CenterAndCenter_3D(
-	const Coord3D *posA, 
-	const Object *objA, 
-	const Coord3D *posB, 
-	const Object *objB, 
-	Real& abDistSqr, 
+static Bool distCalcProc_BoundaryAndBoundary_2D(
+	const Coord3D *posA,
+	const Object *objA,
+	const Coord3D *posB,
+	const Object *objB,
+	Real& abDistSqr,
 	Coord3D& abVec,
-	Real maxDistSqr
-)
+	Real maxDistSqr)
+{
+	Real totalRad = (objA ? objA->getGeometryInfo().getBoundingCircleRadius() : 0.0f) +
+							(objB ? objB->getGeometryInfo().getBoundingCircleRadius() : 0.0f);
+	return distCalcImpl_BoundaryAndBoundary_2D(posA, posB, totalRad, abDistSqr, &abVec, maxDistSqr);
+}
+
+//-----------------------------------------------------------------------------
+static inline Bool distCalcImpl_CenterAndCenter_3D(
+	const Coord3D *posA,
+	const Coord3D *posB,
+	Real& abDistSqr,
+	Coord3D *abVec,
+	Real maxDistSqr)
 {
 	// note that object positions are defined as the bottom center of the geometry,
 	// thus we must add the radius to the z coord to get the proper center of the bounding sphere.
@@ -890,45 +902,50 @@ static Bool distCalcProc_CenterAndCenter_3D(
 	diff.y = posB->y - posA->y;
 	diff.z = posB->z - posA->z;
 	
-	//if (abDistSqr)
-	{
-		abDistSqr = sqr(diff.x) + sqr(diff.y) + sqr(diff.z);
-	}
+	abDistSqr = sqr(diff.x) + sqr(diff.y) + sqr(diff.z);
 
-	//if (abVec)
+	if (abVec)
 	{
-		abVec = diff;
+		*abVec = diff;
 	}
 	return abDistSqr < maxDistSqr;
 }
 
 //-----------------------------------------------------------------------------
-static Bool distCalcProc_BoundaryAndBoundary_3D(
-	const Coord3D *posA, 
-	const Object *objA, 
-	const Coord3D *posB, 
-	const Object *objB, 
-	Real& abDistSqr, 
+static Bool distCalcProc_CenterAndCenter_3D(
+	const Coord3D *posA,
+	const Object *objA,
+	const Coord3D *posB,
+	const Object *objB,
+	Real& abDistSqr,
 	Coord3D& abVec,
-	Real maxDistSqr
-)
+	Real maxDistSqr)
 {
-	const GeometryInfo* geomA = objA ? &objA->getGeometryInfo() : NULL;
-	const GeometryInfo* geomB = objB ? &objB->getGeometryInfo() : NULL;
+	return distCalcImpl_CenterAndCenter_3D(posA, posB, abDistSqr, &abVec, maxDistSqr);
+}
 
+//-----------------------------------------------------------------------------
+static inline Bool distCalcImpl_BoundaryAndBoundary_3D(
+	const Coord3D *posA,
+	const Coord3D *posB,
+	Real zDeltaA,
+	Real zDeltaB,
+	Real totalRad,
+	Real& abDistSqr,
+	Coord3D *abVec,
+	Real maxDistSqr)
+{
 	// note that object positions are defined as the bottom center of the geometry,
 	// thus we must add the radius to the z coord to get the proper center of the bounding sphere.
 	Coord3D diff;
 	diff.x = posB->x - posA->x;
 	diff.y = posB->y - posA->y;
-	diff.z = ((posB->z + (geomB ? geomB->getZDeltaToCenterPosition() : 0.0f)) 
-						- (posA->z + (geomA ? geomA->getZDeltaToCenterPosition() : 0.0f)));
+	diff.z = ((posB->z + zDeltaB) - (posA->z + zDeltaA));
 	
 	Real actualDistSqr = sqr(diff.x) + sqr(diff.y) + sqr(diff.z);
 
 	Real shrinkFactor = 1.0f;
 	Real shrunkenDistSqr = actualDistSqr;
-	Real totalRad = (geomA?geomA->getBoundingSphereRadius():0) + (geomB?geomB->getBoundingSphereRadius():0);
 	if (totalRad > 0.0f)
 	{
 		Real actualDist = sqrtf(actualDistSqr);
@@ -940,25 +957,87 @@ static Bool distCalcProc_BoundaryAndBoundary_3D(
 		}
 		else 
 		{
-			shrinkFactor = shrunkenDist / actualDist;
+			if (abVec)
+				shrinkFactor = shrunkenDist / actualDist;
 			shrunkenDistSqr = sqr(shrunkenDist);
 		}
 	}
 
-	//if (abDistSqr)
-	{
-		abDistSqr = shrunkenDistSqr;
-	}
+	abDistSqr = shrunkenDistSqr;
 
-	//if (abVec)
+	if (abVec)
 	{
 		DEBUG_ASSERTCRASH(shrinkFactor >= 0.0f && shrinkFactor <= 1.0f, ("Hmm, this should not be possible."));
 		diff.x *= shrinkFactor;
 		diff.y *= shrinkFactor;
 		diff.z *= shrinkFactor;
-		abVec = diff;
+		*abVec = diff;
 	}
 	return abDistSqr < maxDistSqr;
+}
+
+//-----------------------------------------------------------------------------
+static Bool distCalcProc_BoundaryAndBoundary_3D(
+	const Coord3D *posA,
+	const Object *objA,
+	const Coord3D *posB,
+	const Object *objB,
+	Real& abDistSqr,
+	Coord3D& abVec,
+	Real maxDistSqr)
+{
+	const GeometryInfo* geomA = objA ? &objA->getGeometryInfo() : NULL;
+	const GeometryInfo* geomB = objB ? &objB->getGeometryInfo() : NULL;
+	const Real zDeltaA = geomA ? geomA->getZDeltaToCenterPosition() : 0.0f;
+	const Real zDeltaB = geomB ? geomB->getZDeltaToCenterPosition() : 0.0f;
+	const Real totalRad = (geomA ? geomA->getBoundingSphereRadius() : 0.0f) +
+							(geomB ? geomB->getBoundingSphereRadius() : 0.0f);
+	return distCalcImpl_BoundaryAndBoundary_3D(
+		posA, posB, zDeltaA, zDeltaB, totalRad, abDistSqr, &abVec, maxDistSqr);
+}
+
+//-----------------------------------------------------------------------------
+// Keep the distance-only dispatch inline: most callers do not request a vector,
+// so they should not pay for an indirect call or boundary-vector normalization.
+static inline Bool distCalcSquared(
+	const Coord3D *posA,
+	const Object *objA,
+	const Coord3D *posB,
+	const Object *objB,
+	DistanceCalculationType dc,
+	Real& abDistSqr,
+	Real maxDistSqr)
+{
+	switch (dc)
+	{
+		case FROM_CENTER_2D:
+			return distCalcImpl_CenterAndCenter_2D(posA, posB, abDistSqr, NULL, maxDistSqr);
+		case FROM_CENTER_3D:
+			return distCalcImpl_CenterAndCenter_3D(posA, posB, abDistSqr, NULL, maxDistSqr);
+		case FROM_BOUNDINGSPHERE_2D:
+		{
+			const Real totalRad =
+				(objA ? objA->getGeometryInfo().getBoundingCircleRadius() : 0.0f) +
+				(objB ? objB->getGeometryInfo().getBoundingCircleRadius() : 0.0f);
+			return distCalcImpl_BoundaryAndBoundary_2D(
+				posA, posB, totalRad, abDistSqr, NULL, maxDistSqr);
+		}
+		case FROM_BOUNDINGSPHERE_3D:
+		{
+			const GeometryInfo* geomA = objA ? &objA->getGeometryInfo() : NULL;
+			const GeometryInfo* geomB = objB ? &objB->getGeometryInfo() : NULL;
+			const Real zDeltaA = geomA ? geomA->getZDeltaToCenterPosition() : 0.0f;
+			const Real zDeltaB = geomB ? geomB->getZDeltaToCenterPosition() : 0.0f;
+			const Real totalRad = (geomA ? geomA->getBoundingSphereRadius() : 0.0f) +
+				(geomB ? geomB->getBoundingSphereRadius() : 0.0f);
+			return distCalcImpl_BoundaryAndBoundary_3D(
+				posA, posB, zDeltaA, zDeltaB, totalRad, abDistSqr, NULL, maxDistSqr);
+		}
+	}
+
+	DEBUG_CRASH(("Invalid distance calculation type %d", dc));
+	abDistSqr = HUGE_DIST_SQR;
+	return FALSE;
 }
 
 //-----------------------------------------------------------------------------
@@ -976,6 +1055,43 @@ static DistCalcProc theDistCalcProcs[] =
 	distCalcProc_BoundaryAndBoundary_2D, 
 	distCalcProc_BoundaryAndBoundary_3D, 
 };
+
+#ifdef CNC_PARTITION_DISTANCE_TEST_HOOKS
+extern "C" Bool cnc_partition_distance_test_calculate(
+	Int dc,
+	const Coord3D *posA,
+	Real circleRadiusA,
+	Real sphereRadiusA,
+	Real zDeltaA,
+	const Coord3D *posB,
+	Real circleRadiusB,
+	Real sphereRadiusB,
+	Real zDeltaB,
+	Real *abDistSqr,
+	Coord3D *abVec,
+	Real maxDistSqr)
+{
+	if (abDistSqr == NULL)
+		return FALSE;
+
+	switch (dc)
+	{
+		case FROM_CENTER_2D:
+			return distCalcImpl_CenterAndCenter_2D(posA, posB, *abDistSqr, abVec, maxDistSqr);
+		case FROM_CENTER_3D:
+			return distCalcImpl_CenterAndCenter_3D(posA, posB, *abDistSqr, abVec, maxDistSqr);
+		case FROM_BOUNDINGSPHERE_2D:
+			return distCalcImpl_BoundaryAndBoundary_2D(
+				posA, posB, circleRadiusA + circleRadiusB, *abDistSqr, abVec, maxDistSqr);
+		case FROM_BOUNDINGSPHERE_3D:
+			return distCalcImpl_BoundaryAndBoundary_3D(
+				posA, posB, zDeltaA, zDeltaB, sphereRadiusA + sphereRadiusB,
+				*abDistSqr, abVec, maxDistSqr);
+		default:
+			return FALSE;
+	}
+}
+#endif
 
 // NOTE: This *DEPENDS* on the order of the geometry enum defines
 static CollideTestProc theCollideTestProcs[] = 
@@ -3267,7 +3383,7 @@ Object *PartitionManager::getClosestObjects(
 
 	DEBUG_ASSERTCRASH((obj==NULL) != (pos == NULL), ("either obj or pos must be null"));
 
-	DistCalcProc distProc = theDistCalcProcs[dc];
+	DistCalcProc distProc = closestVecArg ? theDistCalcProcs[dc] : NULL;
 
 	const Coord3D *objPos;
 	const Object *objToUse;
@@ -3344,7 +3460,12 @@ Object *PartitionManager::getClosestObjects(
 			
 				Real thisDistSqr;
 				Coord3D distVec;
-				if (!(*distProc)(objPos, objToUse, thisObj->getPosition(), thisObj, thisDistSqr, distVec, closestDistSqr))
+				Bool withinRange = closestVecArg
+					? (*distProc)(objPos, objToUse, thisObj->getPosition(), thisObj,
+						thisDistSqr, distVec, closestDistSqr)
+					: distCalcSquared(objPos, objToUse, thisObj->getPosition(), thisObj,
+						dc, thisDistSqr, closestDistSqr);
+				if (!withinRange)
 					continue;
 
 				if (!filtersAllow(filters, thisObj))
@@ -3363,7 +3484,8 @@ Object *PartitionManager::getClosestObjects(
 					// rest of curRadius)
 					closestObj = thisObj;
 					closestDistSqr = thisDistSqr;
-					closestVec = distVec;
+					if (closestVecArg)
+						closestVec = distVec;
 
 					if (!foundAny)
 					{
@@ -3419,7 +3541,12 @@ Object *PartitionManager::getClosestObjects(
 			// hmm, ok, calc the distance.
 			Real thisDistSqr;
 			Coord3D distVec;
-			if (!(*distProc)(objPos, objToUse, thisObj->getPosition(), thisObj, &thisDistSqr, &distVec, closestDistSqr))
+			Bool withinRange = closestVecArg
+				? (*distProc)(objPos, objToUse, thisObj->getPosition(), thisObj,
+					thisDistSqr, distVec, closestDistSqr)
+				: distCalcSquared(objPos, objToUse, thisObj->getPosition(), thisObj,
+					dc, thisDistSqr, closestDistSqr);
+			if (!withinRange)
 				continue;
 
 			// check the filters now
@@ -3435,7 +3562,8 @@ Object *PartitionManager::getClosestObjects(
 			{
 				closestObj = thisObj;
 				closestDistSqr = thisDistSqr;
-				closestVec = distVec;
+				if (closestVecArg)
+					closestVec = distVec;
 
 				if (!foundAny)
 				{
@@ -3522,24 +3650,28 @@ void PartitionManager::getVectorTo(const Object *obj, const Coord3D *pos, Distan
 //-----------------------------------------------------------------------------
 Real PartitionManager::getDistanceSquared(const Object *obj, const Object *otherObj, DistanceCalculationType dc, Coord3D *vec)
 {
-	DistCalcProc distProc = theDistCalcProcs[dc];
 	Real thisDistSqr;
-	Coord3D thisVec;
-	(*distProc)(obj->getPosition(), obj, otherObj->getPosition(), otherObj, thisDistSqr, thisVec, HUGE_DIST_SQR);
 	if (vec)
-		*vec = thisVec;
+		(*theDistCalcProcs[dc])(
+			obj->getPosition(), obj, otherObj->getPosition(), otherObj,
+			thisDistSqr, *vec, HUGE_DIST_SQR);
+	else
+		distCalcSquared(
+			obj->getPosition(), obj, otherObj->getPosition(), otherObj,
+			dc, thisDistSqr, HUGE_DIST_SQR);
 	return thisDistSqr;
 }
 
 //-----------------------------------------------------------------------------
 Real PartitionManager::getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType dc, Coord3D *vec)
 {
-	DistCalcProc distProc = theDistCalcProcs[dc];
 	Real thisDistSqr;
-	Coord3D thisVec;
-	(*distProc)(obj->getPosition(), obj, pos, NULL, thisDistSqr, thisVec, HUGE_DIST_SQR);
 	if (vec)
-		*vec = thisVec;
+		(*theDistCalcProcs[dc])(
+			obj->getPosition(), obj, pos, NULL, thisDistSqr, *vec, HUGE_DIST_SQR);
+	else
+		distCalcSquared(
+			obj->getPosition(), obj, pos, NULL, dc, thisDistSqr, HUGE_DIST_SQR);
 	return thisDistSqr;
 }
 
@@ -3547,12 +3679,15 @@ Real PartitionManager::getDistanceSquared(const Object *obj, const Coord3D *pos,
 // Gets the distance if obj were at goalPos.  Used to calculate attack position paths.
 Real PartitionManager::getGoalDistanceSquared(const Object *obj, const Coord3D *goalPos, const Object *otherObj, DistanceCalculationType dc, Coord3D *vec)
 {
-	DistCalcProc distProc = theDistCalcProcs[dc];
 	Real thisDistSqr;
-	Coord3D thisVec;
-	(*distProc)(goalPos, obj, otherObj->getPosition(), otherObj, thisDistSqr, thisVec, HUGE_DIST_SQR);
 	if (vec)
-		*vec = thisVec;
+		(*theDistCalcProcs[dc])(
+			goalPos, obj, otherObj->getPosition(), otherObj,
+			thisDistSqr, *vec, HUGE_DIST_SQR);
+	else
+		distCalcSquared(
+			goalPos, obj, otherObj->getPosition(), otherObj,
+			dc, thisDistSqr, HUGE_DIST_SQR);
 	return thisDistSqr;
 }
 
@@ -3560,12 +3695,13 @@ Real PartitionManager::getGoalDistanceSquared(const Object *obj, const Coord3D *
 // Gets the distance if obj were at goalPos.  Used to calculate attack position paths.
 Real PartitionManager::getGoalDistanceSquared(const Object *obj, const Coord3D *goalPos, const Coord3D *otherPos, DistanceCalculationType dc, Coord3D *vec)
 {
-	DistCalcProc distProc = theDistCalcProcs[dc];
 	Real thisDistSqr;
-	Coord3D thisVec;
-	(*distProc)(goalPos, obj, otherPos, NULL, thisDistSqr, thisVec, HUGE_DIST_SQR);
 	if (vec)
-		*vec = thisVec;
+		(*theDistCalcProcs[dc])(
+			goalPos, obj, otherPos, NULL, thisDistSqr, *vec, HUGE_DIST_SQR);
+	else
+		distCalcSquared(
+			goalPos, obj, otherPos, NULL, dc, thisDistSqr, HUGE_DIST_SQR);
 	return thisDistSqr;
 }
 
