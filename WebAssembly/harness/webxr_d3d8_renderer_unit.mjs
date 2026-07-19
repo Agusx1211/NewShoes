@@ -141,6 +141,7 @@ assert.deepEqual(renderer.snapshot(), {
   viewCount: 2,
   worldDraws: 2,
   uiDraws: 0,
+  pointerDraws: 0,
   inputSourceCount: 1,
   controllerPointer: null,
   enginePickRayReady: true,

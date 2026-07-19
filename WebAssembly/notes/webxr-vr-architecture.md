@@ -95,6 +95,14 @@ their action inactive rather than inventing a success path. Short optional
 haptic pulses acknowledge target clicks, orders, and control-group choices when
 the active controller exposes a supported actuator.
 
+The compositor renders one active tracked laser independently in each XR view
+after world and panel composition. Magenta plus an endpoint identifies an exact
+floating engine-UI intersection; amber identifies a battlefield ray without
+inventing an unverified terrain endpoint. A pressed trigger changes the laser
+and UI endpoint to a brighter confirmation color. This feedback is presentation
+only: the associated click, hover, selection outline, and order marker remain
+owned by the original engine input and rendering paths.
+
 Every tracked pointer also carries a ray transformed from the WebXR reference
 space through the initial spatial anchor and the latest real engine view into
 W3D world coordinates. `W3DView` uses that ray only for input-owned object and

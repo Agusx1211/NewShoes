@@ -62,7 +62,8 @@ try {
           };
         }
         if (hook === "cncPortD3D8DrawIndexed") {
-          return () => {
+          return (payload) => {
+            if (((Number(payload?.vertexShaderFvf ?? 0) >>> 0) & 0x004) === 0) return 1;
             gl.colorMask(true, true, true, true);
             gl.clearColor(0.08, 0.55, 0.9, 1);
             gl.clear(gl.COLOR_BUFFER_BIT);
@@ -88,30 +89,49 @@ try {
     );
     renderer.onSessionStart();
     let accepted = null;
-    renderer.acceptFrame({
-      version: 1,
-      sequence: 1,
-      present: { backBufferWidth: 1280, backBufferHeight: 720 },
-      commands: [
-        { hook: "cncPortD3D8BindFramebuffer", args: [{ colorTextureId: 0 }] },
-        { hook: "cncPortD3D8Clear", args: [3, 0, 0, 0, 255, 1, 0] },
-        { hook: "cncPortD3D8DrawIndexed", args: [{ vertexShaderFvf: 0x004 }] },
-        { hook: "cncPortD3D8Present", args: [{}] },
-      ],
-    }, (value) => { accepted = value; });
     const identity = [
       1, 0, 0, 0,
       0, 1, 0, 0,
       0, 0, 1, 0,
       0, 0, 0, 1,
     ];
+    const commands = [
+      { hook: "cncPortD3D8BindFramebuffer", args: [{ colorTextureId: 0 }] },
+      { hook: "cncPortD3D8Clear", args: [3, 0, 0, 0, 255, 1, 0] },
+      { hook: "cncPortD3D8DrawIndexed", args: [{
+        vertexShaderFvf: 0x002,
+        transformMask: 2,
+        transforms: { view: identity },
+      }] },
+      { hook: "cncPortD3D8DrawIndexed", args: [{ vertexShaderFvf: 0x004 }] },
+      { hook: "cncPortD3D8Present", args: [{}] },
+    ];
+    renderer.acceptFrame({
+      version: 1,
+      sequence: 1,
+      present: { backBufferWidth: 1280, backBufferHeight: 720 },
+      commands,
+    }, (value) => { accepted = value; });
+    const targetRay = [...identity];
+    targetRay[12] = -0.3;
+    targetRay[14] = -0.4;
     const projection = [
       1, 0, 0, 0,
       0, 1, 0, 0,
       0, 0, -1.02, -1,
       0, 0, -0.202, 0,
     ];
-    renderer.renderFrame({
+    const inputSource = {
+      handedness: "right",
+      profiles: ["generic-trigger-squeeze-thumbstick"],
+      targetRayPose: { matrix: targetRay },
+      gamepad: {
+        mapping: "xr-standard",
+        axes: [0, 0],
+        buttons: Array.from({ length: 6 }, () => ({ pressed: false, value: 0 })),
+      },
+    };
+    const frameContext = {
       time: 1,
       pose: { transform: { matrix: identity } },
       views: [
@@ -120,28 +140,70 @@ try {
         { eye: "right", viewMatrix: identity, projectionMatrix: projection,
           viewport: { x: 400, y: 0, width: 400, height: 600 } },
       ],
-      inputSources: [],
+      inputSources: [inputSource],
       layer: { framebuffer: null, framebufferWidth: 800, framebufferHeight: 600 },
-    });
-    gl.finish();
-    const pixels = new Uint8Array(800 * 600 * 4);
-    gl.readPixels(0, 0, 800, 600, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-    const halves = [0, 1].map((half) => {
-      let colored = 0;
-      let blue = 0;
-      const startX = half * 400;
-      for (let y = 0; y < 600; y += 1) {
-        for (let x = startX; x < startX + 400; x += 1) {
-          const offset = (y * 800 + x) * 4;
-          if (pixels[offset] + pixels[offset + 1] + pixels[offset + 2] > 48) colored += 1;
-          blue += pixels[offset + 2];
+    };
+    const readHalves = () => {
+      gl.finish();
+      const pixels = new Uint8Array(800 * 600 * 4);
+      gl.readPixels(0, 0, 800, 600, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      return [0, 1].map((half) => {
+        let colored = 0;
+        let blue = 0;
+        let pointerPixels = 0;
+        let pressedPixels = 0;
+        let worldPointerPixels = 0;
+        const startX = half * 400;
+        for (let y = 0; y < 600; y += 1) {
+          for (let x = startX; x < startX + 400; x += 1) {
+            const offset = (y * 800 + x) * 4;
+            if (pixels[offset] + pixels[offset + 1] + pixels[offset + 2] > 48) colored += 1;
+            if (pixels[offset] > 200 && pixels[offset + 1] < 100
+                && pixels[offset + 2] > 150) pointerPixels += 1;
+            if (pixels[offset] > 220 && pixels[offset + 1] > 190
+                && pixels[offset + 2] > 140) pressedPixels += 1;
+            if (pixels[offset] > 200 && pixels[offset + 1] > 100
+                && pixels[offset + 1] < 190 && pixels[offset + 2] < 100) {
+              worldPointerPixels += 1;
+            }
+            blue += pixels[offset + 2];
+          }
         }
-      }
-      return { colored, meanBlue: blue / (400 * 600) };
-    });
+        return {
+          colored,
+          pointerPixels,
+          pressedPixels,
+          worldPointerPixels,
+          meanBlue: blue / (400 * 600),
+        };
+      });
+    };
+    renderer.renderFrame(frameContext);
+    const halves = readHalves();
+    inputSource.gamepad.buttons[0] = { pressed: true, value: 1 };
+    renderer.acceptFrame({
+      version: 1,
+      sequence: 2,
+      present: { backBufferWidth: 1280, backBufferHeight: 720 },
+      commands,
+    }, (value) => { accepted &&= value; });
+    renderer.renderFrame({ ...frameContext, time: 2 });
+    const pressedHalves = readHalves();
+    inputSource.gamepad.buttons[0] = { pressed: false, value: 0 };
+    targetRay[12] = 1;
+    renderer.acceptFrame({
+      version: 1,
+      sequence: 3,
+      present: { backBufferWidth: 1280, backBufferHeight: 720 },
+      commands,
+    }, (value) => { accepted &&= value; });
+    renderer.renderFrame({ ...frameContext, time: 3 });
+    const worldHalves = readHalves();
     return {
       accepted,
       halves,
+      pressedHalves,
+      worldHalves,
       state: renderer.snapshot(),
       glError: gl.getError(),
       windowRenderer,
@@ -150,12 +212,24 @@ try {
   assert.equal(result.accepted, true);
   assert.equal(result.glError, 0);
   assert.equal(result.state.uiDraws, 1);
+  assert.equal(result.state.pointerDraws, 2);
+  assert.equal(result.state.controllerPointer?.target, "world");
   assert.equal(result.state.viewCount, 2);
   assert.ok(!expectedRenderer || result.windowRenderer.toLowerCase().includes(expectedRenderer),
     `Window WebGL renderer does not contain ${expectedRenderer}: ${result.windowRenderer}`);
   for (const half of result.halves) {
     assert.ok(half.colored > 20000 && half.meanBlue > 20,
       `floating panel did not render into both XR views: ${JSON.stringify(result)}`);
+    assert.ok(half.pointerPixels > 25,
+      `tracked pointer feedback did not render into both XR views: ${JSON.stringify(result)}`);
+  }
+  for (const half of result.pressedHalves) {
+    assert.ok(half.pressedPixels > 25,
+      `pressed pointer confirmation did not render into both XR views: ${JSON.stringify(result)}`);
+  }
+  for (const half of result.worldHalves) {
+    assert.ok(half.worldPointerPixels > 25,
+      `battlefield pointer feedback did not render into both XR views: ${JSON.stringify(result)}`);
   }
   await page.locator("#spatial-ui-smoke").screenshot({ path: screenshotPath });
   console.log(JSON.stringify({ ok: true, smoke: "webxr-spatial-ui", result, screenshotPath }));

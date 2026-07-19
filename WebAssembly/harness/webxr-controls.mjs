@@ -195,6 +195,25 @@ function actionTarget(target) {
   } : { target: null, point: null, ray: null };
 }
 
+function spatialPointerRay(targetRayMatrix, lengthMeters) {
+  const matrix = matrix16(targetRayMatrix, "target ray matrix");
+  const direction = [-Number(matrix[8]), -Number(matrix[9]), -Number(matrix[10])];
+  const magnitude = Math.hypot(...direction);
+  if (!(magnitude > 1e-8)) return null;
+  const normalized = direction.map((component) => component / magnitude);
+  const length = Number(lengthMeters);
+  if (!Number.isFinite(length) || length <= 0) return null;
+  const origin = [Number(matrix[12]), Number(matrix[13]), Number(matrix[14])];
+  return {
+    origin,
+    end: origin.map((component, index) => component + normalized[index] * length),
+  };
+}
+
+function cloneSpatialRay(ray) {
+  return ray ? { origin: [...ray.origin], end: [...ray.end] } : null;
+}
+
 export function createWebXrControls({
   onAction = null,
   bindings = {},
@@ -346,6 +365,8 @@ export function createWebXrControls({
         ray: worldRay,
         u: hit?.u ?? null,
         v: hit?.v ?? null,
+        spatialRay: spatialPointerRay(source.targetRayPose.matrix,
+          hit?.distanceMeters ?? 4.5),
       } : null;
       if (target) {
         sourceState.lastTarget = target;
@@ -502,6 +523,8 @@ export function createWebXrControls({
       ...actionTarget(activeHit.target),
       u: activeHit.target.u,
       v: activeHit.target.v,
+      spatialRay: cloneSpatialRay(activeHit.target.spatialRay),
+      pressed: activeHit.trigger,
     } : null;
     if (pointer) emit({ type: "pointer", ...actionTarget(pointer),
       handedness: pointer.handedness });
@@ -530,6 +553,7 @@ export function createWebXrControls({
       pointer: pointer ? {
         ...pointer,
         ...actionTarget(pointer),
+        spatialRay: cloneSpatialRay(pointer.spatialRay),
       } : null,
     };
   }

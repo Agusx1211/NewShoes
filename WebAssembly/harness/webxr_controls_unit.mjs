@@ -94,6 +94,10 @@ assert.deepEqual(actions.at(-1), {
   handedness: "right",
 });
 assert.equal(controls.snapshot().paired, true);
+assert.deepEqual(controls.snapshot().pointer.spatialRay, {
+  origin: [2, 1, 3],
+  end: [2, 1, 1.5],
+}, "the compositor pointer must preserve the tracked reference-space ray");
 assert.deepEqual(controls.snapshot().sources.map(({ handedness, role }) => ({ handedness, role })), [
   { handedness: "left", role: "offhand" },
   { handedness: "right", role: "dominant" },
@@ -101,6 +105,7 @@ assert.deepEqual(controls.snapshot().sources.map(({ handedness, role }) => ({ ha
 
 rightButtons[0] = button(true);
 controls.update({ ...panel, time: 10, inputSources: [left, right] });
+assert.equal(controls.snapshot().pointer.pressed, true);
 assert.ok(actions.some((action) => action.type === "button"
   && action.button === "primary" && action.down === true));
 assert.deepEqual(haptics, [{ intensity: 0.22, duration: 24 }]);
@@ -199,6 +204,10 @@ assert.deepEqual(actions.at(-1), {
   ray: worldRay,
   handedness: "right",
 }, "a ray outside the UI panel must retain an engine-world target");
+assert.deepEqual(controls.snapshot().pointer.spatialRay, {
+  origin: [2.81, 1, 3],
+  end: [2.81, 1, -1.5],
+}, "battlefield feedback must retain the tracked ray without fabricating an engine hit");
 
 const fallbackActions = [];
 const fallback = createWebXrControls({ onAction: (action) => fallbackActions.push(action) });

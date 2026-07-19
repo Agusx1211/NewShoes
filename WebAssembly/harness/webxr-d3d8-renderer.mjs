@@ -290,17 +290,18 @@ function createUiSurface(gl) {
   };
 }
 
+function compileWebXrShader(gl, type, source, label) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    throw new Error(`${label} shader failed: ${gl.getShaderInfoLog(shader)}`);
+  }
+  return shader;
+}
+
 function compileUiProgram(gl) {
-  const compile = (type, source) => {
-    const shader = gl.createShader(type);
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      throw new Error(`WebXR UI shader failed: ${gl.getShaderInfoLog(shader)}`);
-    }
-    return shader;
-  };
-  const vertex = compile(gl.VERTEX_SHADER, `#version 300 es
+  const vertex = compileWebXrShader(gl, gl.VERTEX_SHADER, `#version 300 es
     in vec2 aPosition;
     in vec2 aUv;
     uniform mat4 uMvp;
@@ -309,24 +310,16 @@ function compileUiProgram(gl) {
       gl_Position = uMvp * vec4(aPosition, 0.0, 1.0);
       vUv = aUv;
     }
-  `);
-  const fragment = compile(gl.FRAGMENT_SHADER, `#version 300 es
+  `, "WebXR UI vertex");
+  const fragment = compileWebXrShader(gl, gl.FRAGMENT_SHADER, `#version 300 es
     precision highp float;
     in vec2 vUv;
     uniform sampler2D uTexture;
-    uniform vec2 uCursorUv;
-    uniform float uCursorVisible;
     out vec4 fragColor;
     void main() {
-      vec4 surface = texture(uTexture, vUv);
-      vec2 cursorDelta = (vUv - uCursorUv) * vec2(1.0, 0.75);
-      float cursorDistance = length(cursorDelta);
-      float outer = 1.0 - smoothstep(0.012, 0.016, cursorDistance);
-      float inner = 1.0 - smoothstep(0.005, 0.008, cursorDistance);
-      float ring = max(0.0, outer - inner) * uCursorVisible;
-      fragColor = mix(surface, vec4(0.35, 0.9, 1.0, 1.0), ring);
+      fragColor = texture(uTexture, vUv);
     }
-  `);
+  `, "WebXR UI fragment");
   const program = gl.createProgram();
   gl.attachShader(program, vertex);
   gl.attachShader(program, fragment);
@@ -357,8 +350,54 @@ function compileUiProgram(gl) {
     vertexArray,
     mvp: gl.getUniformLocation(program, "uMvp"),
     texture: gl.getUniformLocation(program, "uTexture"),
-    cursorUv: gl.getUniformLocation(program, "uCursorUv"),
-    cursorVisible: gl.getUniformLocation(program, "uCursorVisible"),
+  };
+}
+
+function compilePointerProgram(gl) {
+  const vertex = compileWebXrShader(gl, gl.VERTEX_SHADER, `#version 300 es
+    in vec3 aPosition;
+    uniform mat4 uMvp;
+    uniform float uPointSize;
+    void main() {
+      gl_Position = uMvp * vec4(aPosition, 1.0);
+      gl_PointSize = uPointSize;
+    }
+  `, "WebXR pointer vertex");
+  const fragment = compileWebXrShader(gl, gl.FRAGMENT_SHADER, `#version 300 es
+    precision highp float;
+    uniform vec4 uColor;
+    uniform float uPoint;
+    out vec4 fragColor;
+    void main() {
+      if (uPoint > 0.5 && distance(gl_PointCoord, vec2(0.5)) > 0.5) discard;
+      fragColor = uColor;
+    }
+  `, "WebXR pointer fragment");
+  const program = gl.createProgram();
+  gl.attachShader(program, vertex);
+  gl.attachShader(program, fragment);
+  gl.linkProgram(program);
+  gl.deleteShader(vertex);
+  gl.deleteShader(fragment);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(`WebXR pointer program failed: ${gl.getProgramInfoLog(program)}`);
+  }
+  const vertexArray = gl.createVertexArray();
+  const buffer = gl.createBuffer();
+  gl.bindVertexArray(vertexArray);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, Float32Array.BYTES_PER_ELEMENT * 6, gl.DYNAMIC_DRAW);
+  const position = gl.getAttribLocation(program, "aPosition");
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 3, gl.FLOAT, false, 12, 0);
+  return {
+    program,
+    vertexArray,
+    buffer,
+    mvp: gl.getUniformLocation(program, "uMvp"),
+    color: gl.getUniformLocation(program, "uColor"),
+    point: gl.getUniformLocation(program, "uPoint"),
+    pointSize: gl.getUniformLocation(program, "uPointSize"),
   };
 }
 
@@ -370,7 +409,6 @@ function renderSpatialUi({
   anchorTransform,
   panelWidth,
   panelDistance,
-  pointer,
 }) {
   const aspect = uiSurface.width / uiSurface.height;
   const model = new Float32Array([
@@ -384,8 +422,6 @@ function renderSpatialUi({
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, uiSurface.texture);
   gl.uniform1i(uiProgram.texture, 0);
-  gl.uniform2f(uiProgram.cursorUv, Number(pointer?.u ?? 0), 1 - Number(pointer?.v ?? 0));
-  gl.uniform1f(uiProgram.cursorVisible, pointer ? 1 : 0);
   gl.disable(gl.DEPTH_TEST);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -398,6 +434,40 @@ function renderSpatialUi({
     gl.uniformMatrix4fv(uiProgram.mvp, false, mvp);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
+}
+
+function renderSpatialPointer({ gl, pointerProgram, views, pointer }) {
+  const origin = Array.from(pointer?.spatialRay?.origin ?? [], Number);
+  const end = Array.from(pointer?.spatialRay?.end ?? [], Number);
+  if (origin.length !== 3 || end.length !== 3
+      || !origin.every(Number.isFinite) || !end.every(Number.isFinite)) return 0;
+  const color = pointer.pressed ? [1, 0.95, 0.75, 1]
+    : pointer.target === "ui" ? [1, 0.2, 0.85, 0.92]
+      : [1, 0.58, 0.12, 0.92];
+  gl.useProgram(pointerProgram.program);
+  gl.bindVertexArray(pointerProgram.vertexArray);
+  gl.bindBuffer(gl.ARRAY_BUFFER, pointerProgram.buffer);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array([...origin, ...end]));
+  gl.uniform4fv(pointerProgram.color, color);
+  gl.disable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.lineWidth(2);
+  for (const view of views) {
+    gl.viewport(view.viewport.x, view.viewport.y, view.viewport.width, view.viewport.height);
+    gl.scissor(view.viewport.x, view.viewport.y, view.viewport.width, view.viewport.height);
+    const mvp = multiplyWebXrColumnMatrices(view.projectionMatrix, view.viewMatrix);
+    gl.uniformMatrix4fv(pointerProgram.mvp, false, mvp);
+    gl.uniform1f(pointerProgram.point, 0);
+    gl.uniform1f(pointerProgram.pointSize, 1);
+    gl.drawArrays(gl.LINES, 0, 2);
+    if (pointer.target === "ui") {
+      gl.uniform1f(pointerProgram.point, 1);
+      gl.uniform1f(pointerProgram.pointSize, pointer.pressed ? 18 : 14);
+      gl.drawArrays(gl.POINTS, 1, 1);
+    }
+  }
+  return views.length;
 }
 
 export function createWebXrD3D8Renderer({
@@ -429,6 +499,7 @@ export function createWebXrD3D8Renderer({
   let pending = null;
   let uiSurface = null;
   let uiProgram = null;
+  let pointerProgram = null;
   let lastBackbufferWidth = 0;
   let lastBackbufferHeight = 0;
   let recenterRequested = false;
@@ -450,6 +521,7 @@ export function createWebXrD3D8Renderer({
     viewCount: 0,
     worldDraws: 0,
     uiDraws: 0,
+    pointerDraws: 0,
     inputSourceCount: 0,
     controllerPointer: null,
     enginePickRayReady: false,
@@ -625,7 +697,6 @@ export function createWebXrD3D8Renderer({
       executorDiag.setD3D8XrViewOverride(null);
       executorDiag.flushD3D8PendingDrawBatch("webxrPresent");
       if (uiDraws > 0) {
-        const pointer = controls.snapshot().pointer;
         executorDiag.bindD3D8ExternalFramebuffer(xrFramebuffer, framebufferWidth, framebufferHeight);
         uiProgram ??= compileUiProgram(gl);
         renderSpatialUi({
@@ -636,8 +707,15 @@ export function createWebXrD3D8Renderer({
           anchorTransform,
           panelWidth: Number(panelWidthMeters),
           panelDistance: Number(panelDistanceMeters),
-          pointer: pointer?.target === "ui" ? pointer : null,
         });
+        executorDiag.invalidateD3D8ExternalGlState();
+      }
+      const pointer = controls.snapshot().pointer;
+      let pointerDraws = 0;
+      if (pointer?.spatialRay) {
+        executorDiag.bindD3D8ExternalFramebuffer(xrFramebuffer, framebufferWidth, framebufferHeight);
+        pointerProgram ??= compilePointerProgram(gl);
+        pointerDraws = renderSpatialPointer({ gl, pointerProgram, views, pointer });
         executorDiag.invalidateD3D8ExternalGlState();
       }
       publish({
@@ -646,6 +724,7 @@ export function createWebXrD3D8Renderer({
         viewCount: views.length,
         worldDraws,
         uiDraws,
+        pointerDraws,
         inputSourceCount: Number(frameContext.inputSources?.length ?? 0),
         controllerPointer: controls.snapshot().pointer,
         error: null,
@@ -677,7 +756,7 @@ export function createWebXrD3D8Renderer({
     finishPending(false);
     executorDiag.setD3D8XrViewOverride(null);
     return publish({ active: false, inputSourceCount: 0, controllerPointer: null,
-      enginePickRayReady: false });
+      enginePickRayReady: false, pointerDraws: 0 });
   }
 
   return {
