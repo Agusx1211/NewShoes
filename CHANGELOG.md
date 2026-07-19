@@ -68,6 +68,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Set version 0.4.0 and complete its audited release inventory ([PR #244](https://github.com/Agusx1211/NewShoes/pull/244)).
 - Clear focus-latched selection modes so unit clicks and friendly transport commands recover ([PR #249](https://github.com/Agusx1211/NewShoes/pull/249)).
 - Keep the main-scene smoke and dust request intact when water reflections flush first ([PR #257](https://github.com/Agusx1211/NewShoes/pull/257)).
+- Finalize the 0.4.0 release inventory after the last integrated fixes ([PR #269](https://github.com/Agusx1211/NewShoes/pull/269)).
 
 ## [0.3.0] - 2026-07-16
 
