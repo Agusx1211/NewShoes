@@ -2431,20 +2431,17 @@ void HeightMapRenderObjClass::renderExtraBlendTiles(void)
 	Int drawStartY=m_map->getDrawOrgY();
 
 	Int visibleBlendTiles = 0;
+	// This list is maintained from successful getExtraAlphaUVData calls.
 	for (Int j=0; j<m_numExtraBlendTiles; j++)
 	{
 		if (visibleBlendTiles >= maxBlendTiles)
 			break;
 
-		Real U[4],V[4];
-		UnsignedByte alpha[4];
-		Bool flipState,cliffState;
 		Int x = m_extraBlendTilePositions[j] & 0xffff;
 		Int y = m_extraBlendTilePositions[j] >> 16;
 
 		if (x >= drawStartX && x < drawEdgeX &&
-			y >= drawStartY && y < drawEdgeY &&
-			m_map->getExtraAlphaUVData(x,y,U,V,alpha,&flipState, &cliffState))
+			y >= drawStartY && y < drawEdgeY)
 		{
 			visibleBlendTiles++;
 		}
