@@ -6,10 +6,10 @@
 // header, and the wasm Mss.H browser startup shim, and emits a JSON report.
 //
 // Verified facts:
-//   - MilesAudioManager::init exists at line 444.
+//   - MilesAudioManager::init exists at line 477.
 //   - Inside init, AudioManager::init() appears before openDevice(), and
 //     AIL_set_file_callbacks(...) appears after openDevice().
-//   - MilesAudioManager::openDevice exists at line 1444.
+//   - MilesAudioManager::openDevice exists at line 1482.
 //   - Inside openDevice, in order: AIL_set_redist_directory, AIL_startup,
 //     AIL_quick_startup, AIL_quick_handles, buildProviderList, selectProvider,
 //     refreshCachedVariables, initDelayFilter.
@@ -90,15 +90,15 @@ function main() {
   const h = readSourceLines(SOURCES.h);
   const shim = readSourceLines(SOURCES.shim);
 
-  // Fact: MilesAudioManager::init exists at line 444.
+  // Fact: MilesAudioManager::init exists at line 477.
   const initLine = lineNumber(
     cpp.lines,
     (line) => /void\s+MilesAudioManager\s*::\s*init\s*\(\s*\)/.test(line),
   );
   facts.initLine = initLine;
-  if (initLine !== 444) {
+  if (initLine !== 477) {
     errors.push(
-      `MilesAudioManager::init expected at line 444 but found at ${initLine}`,
+      `MilesAudioManager::init expected at line 477 but found at ${initLine}`,
     );
   }
 
@@ -163,15 +163,15 @@ function main() {
     }
   }
 
-  // Fact: MilesAudioManager::openDevice exists at line 1444.
+  // Fact: MilesAudioManager::openDevice exists at line 1482.
   const openDeviceDefLine = lineNumber(
     cpp.lines,
     (line) => /void\s+MilesAudioManager\s*::\s*openDevice\s*\(\s*void\s*\)/.test(line),
   );
   facts.openDeviceDefLine = openDeviceDefLine;
-  if (openDeviceDefLine !== 1444) {
+  if (openDeviceDefLine !== 1482) {
     errors.push(
-      `MilesAudioManager::openDevice expected at line 1444 but found at ${openDeviceDefLine}`,
+      `MilesAudioManager::openDevice expected at line 1482 but found at ${openDeviceDefLine}`,
     );
   }
 
