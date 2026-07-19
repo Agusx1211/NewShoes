@@ -559,18 +559,6 @@ WorldHeightMap::WorldHeightMap(ChunkInputStream *pStrm, Bool logicalDataOnly):
 	setupAlphaTiles();
 }
 
-/** Optimized version of method to get triangle flip state of a terrain cell.  Use this
-*	instead of getAlphaUVData() whenever possible.
-*/
-Bool WorldHeightMap::getFlipState(Int xIndex, Int yIndex) const
-{
-	if (xIndex<0 || yIndex<0) return false;
-	if (yIndex>=m_height) return false;
-	if (xIndex>=m_width) return false;
-	if (!m_cellFlipState) return false;
-	return m_cellFlipState[yIndex*m_flipStateWidth + (xIndex >> 3)] & (1<<(xIndex&0x7));
-}
-
 /** Sets the value of the flip state bit.
 */
 void WorldHeightMap::setFlipState(Int xIndex, Int yIndex, Bool value) 
@@ -727,17 +715,6 @@ Real WorldHeightMap::getBilinearSampleSeismicZVelocity( Int x, Int y)
 
 
 
-
-/** Get whether the cell is a cliff cell (impassable to ground vehicles).
-*/
-Bool WorldHeightMap::getCliffState(Int xIndex, Int yIndex) const
-{
-	if (xIndex<0 || yIndex<0) return false;
-	if (yIndex>=m_height) return false;
-	if (xIndex>=m_width) return false;
-	if (!m_cellCliffState) return false;
-	return m_cellCliffState[yIndex*m_flipStateWidth + (xIndex >> 3)] & (1<<(xIndex&0x7));
-}
 
 //=============================================================================
 // setCliffState
@@ -2575,4 +2552,3 @@ Bool  WorldHeightMap::getRawTileData(Short tileNdx, Int width,
 	}
 	return(false);
 }
-

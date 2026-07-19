@@ -273,7 +273,14 @@ public:  // tile and texture info.
 	TextureClass *getEdgeTerrainTexture(void); //< generates if needed and returns blend edge texture
 	/// UV mapping data for a cell to map into the terrain texture.  Returns true if the textures had to be stretched for cliffs.
 	Bool getUVData(Int xIndex, Int yIndex, float U[4], float V[4], Bool fullTile);
-	Bool getFlipState(Int xIndex, Int yIndex) const;
+	inline Bool getFlipState(Int xIndex, Int yIndex) const
+	{
+		if (static_cast<UnsignedInt>(xIndex) >= static_cast<UnsignedInt>(m_width) ||
+			static_cast<UnsignedInt>(yIndex) >= static_cast<UnsignedInt>(m_height) || !m_cellFlipState) {
+			return false;
+		}
+		return m_cellFlipState[yIndex*m_flipStateWidth + (xIndex >> 3)] & (1<<(xIndex&0x7));
+	}
 	///Faster version of above function without all the safety checks - For people that do checks externally.
 	inline Bool getQuickFlipState(Int xIndex, Int yIndex) const
 	{
@@ -282,7 +289,14 @@ public:  // tile and texture info.
 
 	void setFlipState(Int xIndex, Int yIndex, Bool value);
 	void clearFlipStates(void);
-	Bool getCliffState(Int xIndex, Int yIndex) const;
+	inline Bool getCliffState(Int xIndex, Int yIndex) const
+	{
+		if (static_cast<UnsignedInt>(xIndex) >= static_cast<UnsignedInt>(m_width) ||
+			static_cast<UnsignedInt>(yIndex) >= static_cast<UnsignedInt>(m_height) || !m_cellCliffState) {
+			return false;
+		}
+		return m_cellCliffState[yIndex*m_flipStateWidth + (xIndex >> 3)] & (1<<(xIndex&0x7));
+	}
 	Bool getExtraAlphaUVData(Int xIndex, Int yIndex, float U[4], float V[4], UnsignedByte alpha[4], Bool *flip, Bool *cliff);
 	/// UV mapping data for a cell to map into the alpha terrain texture.
 	void getAlphaUVData(Int xIndex, Int yIndex, float U[4], float V[4], UnsignedByte alpha[4], Bool *flip, Bool fullTile);
