@@ -168,7 +168,7 @@
       "name": "Use and manage mods",
       "status": "supported",
       "summary": "The Mod Manager handles engine-data archives and common package containers while explicitly rejecting native components that WebAssembly cannot run.",
-      "reviewedAt": "2026-07-14",
+      "reviewedAt": "2026-07-19",
       "details": [
         "The Mod Manager accepts BIG archives, loose engine-data folders, and downloaded ZIP, 7z, RAR, NSIS, and Clickteam Install Creator packages. Installer packages are decoded as data and never executed. Native DLL or executable components cannot run in the WebAssembly engine and are reported as unsupported rather than silently treated as working.",
         "Players can enable multiple mods, choose archive options, and order them. Later archives and mods retain the engine's normal override precedence. Ordered content hashes produce an exact launch-configuration identity.",
@@ -177,7 +177,9 @@
       "evidence": [
         "WebAssembly/harness/mod-manager-ui.mjs",
         "WebAssembly/harness/mod_manager_browser_smoke.mjs",
-        "WebAssembly/harness/mod_real_package_smoke.mjs"
+        "WebAssembly/harness/mod_real_package_smoke.mjs",
+        "GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/RiderChangeContain.cpp",
+        "WebAssembly/tools/verify_rider_change_contain_template_guard.mjs"
       ]
     },
     {
