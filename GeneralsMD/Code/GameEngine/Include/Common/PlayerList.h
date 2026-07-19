@@ -102,12 +102,16 @@ public:
 		you should generally only use this if you want to iterate thru
 		all players, NOT to get a specific player!
 	*/
+#if defined(CNC_PLAYER_LIST_GET_NTH_PLAYER_TEST_DOUBLE)
+	Player *getNthPlayer(Int i);
+#else
 	inline Player *getNthPlayer(Int i)
 	{
 		if (static_cast<UnsignedInt>(i) >= MAX_PLAYER_COUNT)
 			return NULL;
 		return m_players[i];
 	}
+#endif
 
 	/**
 		return the "neutral" Player. there is always a player that is "neutral" wrt

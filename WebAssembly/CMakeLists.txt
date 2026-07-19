@@ -7188,6 +7188,7 @@ target_include_directories(w3d-window-layout-script-smoke PRIVATE
 )
 
 target_compile_definitions(w3d-window-layout-script-smoke PRIVATE
+  CNC_PLAYER_LIST_GET_NTH_PLAYER_TEST_DOUBLE=1
   CNC_PORT_GAMELOGIC_SUPPORT_NO_OBJECT_RUNTIME=1
   CNC_PORT_GAMELOGIC_SUPPORT_REAL_PRERTS=1
   CNC_PORT_REAL_GAMELOGIC_HEADER=1
