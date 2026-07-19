@@ -99,6 +99,21 @@ EM_JS(void, wasm_d3d8_browser_reset_state, (), {
 		bridge();
 	}
 });
+EM_JS(int, wasm_d3d8_browser_present, (
+	unsigned int present_calls,
+	unsigned int back_buffer_width,
+	unsigned int back_buffer_height
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8Present : null;
+	if (typeof bridge !== "function") {
+		return 0;
+	}
+	return bridge({
+		presentCalls: present_calls >>> 0,
+		backBufferWidth: back_buffer_width >>> 0,
+		backBufferHeight: back_buffer_height >>> 0,
+	}) === true ? 1 : 0;
+});
 // Browser-native display pixel size (canvas CSS box x devicePixelRatio),
 // packed (width << 16) | height so the adapter mode table can expose it as a
 // real display mode. Returns 0 when the bridge is absent (probe pages).
@@ -625,6 +640,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 #else
 void wasm_d3d8_browser_backbuffer_resize(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_reset_state() {}
+int wasm_d3d8_browser_present(unsigned int, unsigned int, unsigned int) { return 0; }
 unsigned int wasm_d3d8_browser_native_mode() { return 0; }
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
 void wasm_d3d8_browser_set_viewport(unsigned int, unsigned int, unsigned int, unsigned int, double, double,
@@ -664,6 +680,7 @@ static_assert(sizeof(WasmD3D8DrawLight) == 108,
 
 WasmD3D8ShimState g_state = {};
 bool g_bound_draw_diagnostics_enabled = true;
+bool g_present_bridge_enabled = false;
 int g_d3d8_module = 0;
 UINT g_next_browser_buffer_id = 1;
 UINT g_next_browser_texture_id = 1;
@@ -3734,6 +3751,16 @@ public:
 	HRESULT Present(const RECT *, const RECT *, HWND, const void *) override
 	{
 		++g_state.present_calls;
+		if (g_present_bridge_enabled) {
+			++g_state.present_bridge_calls;
+			if (wasm_d3d8_browser_present(
+					g_state.present_calls,
+					m_parameters.BackBufferWidth,
+					m_parameters.BackBufferHeight) == 0) {
+				++g_state.present_bridge_failures;
+				return D3DERR_NOTAVAILABLE;
+			}
+		}
 		return S_OK;
 	}
 
@@ -5862,6 +5889,7 @@ private:
 extern "C" void wasm_d3d8_reset_state()
 {
 	std::memset(&g_state, 0, sizeof(g_state));
+	g_present_bridge_enabled = false;
 	wasm_d3d8_browser_reset_state();
 }
 
@@ -5873,6 +5901,11 @@ extern "C" const WasmD3D8ShimState *wasm_d3d8_get_state()
 extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_d3d8_set_bound_draw_diagnostics(int enabled)
 {
 	g_bound_draw_diagnostics_enabled = enabled != 0;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_d3d8_set_present_bridge(int enabled)
+{
+	g_present_bridge_enabled = enabled != 0;
 }
 
 extern "C" HMODULE wasm_d3d8_load_library_a(LPCSTR library_name)

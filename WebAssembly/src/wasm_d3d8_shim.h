@@ -221,6 +221,8 @@ struct WasmD3D8ShimState
 	UINT end_scene_calls;
 	UINT clear_calls;
 	UINT present_calls;
+	UINT present_bridge_calls;
+	UINT present_bridge_failures;
 	DWORD last_clear_flags;
 	D3DCOLOR last_clear_color;
 	float last_clear_z;
@@ -260,3 +262,4 @@ struct WasmD3D8ShimState
 
 extern "C" void wasm_d3d8_reset_state();
 extern "C" const WasmD3D8ShimState *wasm_d3d8_get_state();
+extern "C" void cnc_port_d3d8_set_present_bridge(int enabled);

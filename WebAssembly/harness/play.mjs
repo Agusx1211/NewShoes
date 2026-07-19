@@ -1182,6 +1182,7 @@ async function start() {
     // even if display setup or the first paced-loop start needs a retry.
     runtimeStarted = true;
     syncAgentBridgeApp();
+    window.dispatchEvent(new CustomEvent("cncport:runtimestarted"));
     gameRunning = true;
     renderPerformanceOverlay();
     issueRecorder.setSessionContext({ phase: "running" });
@@ -1311,6 +1312,7 @@ async function exitToDesktop() {
       progressNode.textContent = "Closing Zero Hour…";
       gameRunning = false;
       renderPerformanceOverlay();
+      await window.CnCPort.stopWebXrSession?.("runtime-exit").catch(() => {});
       viewportRetired = retireRuntimeViewport();
       overlay.hidden = true;
       overlay.classList.remove("is-running");
@@ -1873,6 +1875,98 @@ function initDisplayRuntime() {
 }
 
 let desktopGameSettingsBound = false;
+const webXrRequested = queryParams.get("vr") === "1";
+
+function syncDesktopWebXrSetting(overrideMessage = null) {
+  const button = document.querySelector("#webXrButton");
+  const status = document.querySelector("#webXrStatus");
+  if (!button || !status) return;
+  if (!webXrRequested) {
+    button.disabled = false;
+    button.textContent = "Prepare VR";
+    status.textContent = overrideMessage
+      ?? "Reloads into the native stereo render lane; normal desktop play remains the default.";
+    return;
+  }
+  const xr = window.CnCPort?.getWebXrState?.() ?? { phase: "disabled", support: null };
+  if (overrideMessage) status.textContent = overrideMessage;
+  if (["loading", "starting", "ending"].includes(xr.phase)) {
+    button.disabled = true;
+    button.textContent = xr.phase === "starting" ? "Entering VR…"
+      : xr.phase === "ending" ? "Leaving VR…" : "Checking…";
+    if (!overrideMessage) status.textContent = xr.phase === "loading"
+      ? "Checking this browser and connected headset…" : status.textContent;
+    return;
+  }
+  if (xr.phase === "running") {
+    button.disabled = false;
+    button.textContent = "Exit VR";
+    if (!overrideMessage) {
+      status.textContent = "Trigger select · grip order · left stick pan · right stick zoom · A/X cancel · B/Y recenter.";
+    }
+    return;
+  }
+  if (xr.support?.immersiveVrSupported === true) {
+    const rendererReady = xr.renderer !== null && xr.renderer !== undefined;
+    const runtimeReady = window.ZeroHRuntime?.started === true;
+    button.disabled = !rendererReady;
+    button.textContent = runtimeReady ? "Enter VR" : "Enter & launch VR";
+    if (!overrideMessage) status.textContent = rendererReady
+      ? "Headset ready. The world renders in stereo and engine menus become a floating panel."
+      : "Preparing the native renderer for this headset…";
+    return;
+  }
+  button.disabled = false;
+  button.textContent = xr.phase === "unavailable" || xr.phase === "failed"
+    ? "Check again" : "Check headset";
+  if (!overrideMessage) status.textContent = xr.error
+    ?? "Check for an immersive WebXR headset. No XR work runs until you click.";
+}
+
+function bindDesktopWebXrSetting() {
+  const button = document.querySelector("#webXrButton");
+  if (!button || button.dataset.bound === "true") return;
+  button.dataset.bound = "true";
+  button.addEventListener("click", () => {
+    if (!webXrRequested) {
+      const target = new URL(window.location.href);
+      target.searchParams.set("vr", "1");
+      window.location.assign(target.href);
+      return;
+    }
+    const xr = window.CnCPort?.getWebXrState?.() ?? {};
+    try {
+      if (xr.phase === "running") {
+        void window.CnCPort.stopWebXrSession("settings-button").catch((error) => {
+          syncDesktopWebXrSetting(error?.message ?? String(error));
+        });
+      } else if (xr.support?.immersiveVrSupported === true) {
+        // This call reaches navigator.xr.requestSession synchronously, before
+        // the click's transient user activation can expire.
+        const sessionStart = window.CnCPort.startWebXrSession();
+        if (window.ZeroHRuntime?.started !== true) {
+          void window.ZeroHRuntime.launch().catch((error) => {
+            syncDesktopWebXrSetting(`Game launch failed: ${error?.message ?? String(error)}`);
+          });
+        }
+        void sessionStart.catch((error) => {
+          syncDesktopWebXrSetting(error?.message ?? String(error));
+        });
+      } else {
+        void window.CnCPort.probeWebXrSession().catch((error) => {
+          syncDesktopWebXrSetting(error?.message ?? String(error));
+        });
+      }
+    } catch (error) {
+      syncDesktopWebXrSetting(error?.message ?? String(error));
+    }
+    syncDesktopWebXrSetting();
+  });
+  window.addEventListener("cncport:webxr", () => syncDesktopWebXrSetting());
+  window.addEventListener("cncport:runtimestarted", () => syncDesktopWebXrSetting());
+  window.addEventListener("cncport:runtimeclosed", () => syncDesktopWebXrSetting());
+  syncDesktopWebXrSetting();
+}
 
 function syncDesktopGameSettings() {
   const resolutionSelect = document.querySelector("#resolutionSelectLive");
@@ -1913,11 +2007,13 @@ function syncDesktopGameSettings() {
     fullscreenButton.hidden = !fullscreenSupported();
     fullscreenButton.textContent = fullscreenElement() ? "Exit fullscreen" : "Enter fullscreen";
   }
+  syncDesktopWebXrSetting();
 }
 
 function bindDesktopGameSettings() {
   if (desktopGameSettingsBound) return;
   desktopGameSettingsBound = true;
+  bindDesktopWebXrSetting();
   const resolutionSelect = document.querySelector("#resolutionSelectLive");
   resolutionSelect?.addEventListener("change", () => {
     const value = resolutionSelect.value;

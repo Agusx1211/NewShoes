@@ -192,6 +192,17 @@ const cncPortThreadedMode = (() => {
     return false;
   }
 })();
+// Internal native-VR renderer migration lane. This only changes graphics
+// ownership after an explicit ?vr=1 request; ordinary threaded play keeps its
+// direct worker-owned OffscreenCanvas path and does not import or forward any
+// WebXR/D3D8 transport code.
+const cncPortWebXrVrRequested = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || "").get("vr") === "1";
+  } catch (_error) {
+    return false;
+  }
+})();
 const threadedUdpBridge = cncPortThreadedMode && typeof SharedArrayBuffer === "function"
   ? createSharedUdpBridge()
   : null;
@@ -299,20 +310,19 @@ const contextPreserveDrawingBuffer = (() => {
     return true;
   }
 })();
-// Threaded mode: #viewport must stay CONTEXT-FREE so transferControlToOffscreen
-// can hand it to the engine worker realm (a canvas with any context cannot be
-// transferred). The main-realm executor below is constructed against an
-// invisible scratch canvas instead, so the whole main-side diagnostics surface
-// keeps existing — it just never receives real engine draws (those happen in
-// the worker realm's executor).
-const executorCanvas = cncPortThreadedMode ? document.createElement("canvas") : canvas;
-const gl = cncPortThreadedMode ? null : canvas.getContext("webgl2", {
+// Normal threaded mode transfers #viewport to the engine worker unchanged.
+// The explicit native-VR lane instead keeps #viewport and its WebGL2 context
+// in Window (the only realm where WebXR is currently exposed), while the
+// worker receives a separate OffscreenCanvas for synchronous D3D8 semantics.
+const mainRealmOwnsD3D8 = !cncPortThreadedMode || cncPortWebXrVrRequested;
+const executorCanvas = mainRealmOwnsD3D8 ? canvas : document.createElement("canvas");
+const gl = mainRealmOwnsD3D8 ? canvas.getContext("webgl2", {
   alpha: false,
   antialias: false,
   depth: true,
   stencil: true,
   preserveDrawingBuffer: contextPreserveDrawingBuffer,
-});
+}) : null;
 const s3tc = gl ? gl.getExtension("WEBGL_compressed_texture_s3tc") : null;
 
 const fallbackContext = gl ? null : executorCanvas.getContext("2d", { alpha: false });
@@ -468,6 +478,27 @@ const harnessState = {
     fps: 0,
     ticks: 0,
   },
+  webxr: {
+    source: "window_webxr_runtime",
+    phase: "disabled",
+    moduleLoaded: false,
+    support: null,
+    referenceSpaceType: null,
+    frames: 0,
+    viewCount: 0,
+    inputSourceCount: 0,
+    framebuffer: null,
+    error: null,
+    rendererTransport: {
+      requested: cncPortWebXrVrRequested,
+      active: false,
+      sequence: 0,
+      commands: 0,
+      commandBytes: 0,
+      error: null,
+    },
+    renderer: null,
+  },
   timing: null,
   win32Timing: null,
   browserInput: null,
@@ -560,9 +591,10 @@ const harnessState = {
 // this page's canvas/GL context, harness log + state sinks and fresh-view
 // wasm heap accessors. hooks = the 20 Module.cncPortD3D8* functions; diag =
 // the executor-internal surface the harness RPC/diagnostics still read.
-// Threaded mode: executorCanvas is an invisible scratch canvas (the REAL
-// executor lives in the engine worker realm, harness/engine_realm_boot.mjs);
-// this main-realm instance only keeps the diag surface alive.
+// Normal threaded mode: executorCanvas is an invisible scratch canvas (the
+// real executor lives in engine_realm_boot.mjs). The explicit native-VR lane
+// makes this the Window-owned real executor and replays owned frame commands
+// into it; the worker executor remains a synchronous semantic delegate.
 const { hooks: d3d8Hooks, diag: d3d8Diag } = createD3D8Executor({
   canvas: executorCanvas,
   gl,
@@ -1016,6 +1048,10 @@ function createThreadedEngineController() {
   let mssHandlers = null;
   let binkRuntime = null;
   let binkSources = null;
+  let webXrD3D8Ack = null;
+  let replayWebXrD3D8CommandFrame = null;
+  let acknowledgeWebXrD3D8CommandFrame = null;
+  let webXrD3D8Renderer = null;
 
   function threadedLog(message, data) {
     recordLog(`threaded ${message}`, data);
@@ -1186,6 +1222,62 @@ function createThreadedEngineController() {
       return;
     }
     switch (msg.cmd) {
+      case "webxrD3D8Frame": {
+        let acknowledged = -1;
+        const sequence = Number(msg.packet?.sequence ?? 0) >>> 0;
+        const complete = (accepted, error = null) => {
+          const message = error ? (error?.message ?? String(error)) : null;
+          harnessState.webxr.rendererTransport = {
+            ...harnessState.webxr.rendererTransport,
+            active: accepted === true,
+            sequence: accepted === true ? sequence : harnessState.webxr.rendererTransport.sequence,
+            commands: accepted === true ? Number(msg.packet?.commands?.length ?? 0) : 0,
+            commandBytes: accepted === true ? Number(msg.packet?.commandBytes ?? 0) : 0,
+            error: message,
+          };
+          if (webXrD3D8Ack && typeof acknowledgeWebXrD3D8CommandFrame === "function") {
+            acknowledgeWebXrD3D8CommandFrame(webXrD3D8Ack, sequence, accepted === true);
+          }
+        };
+        if (webXrD3D8Renderer?.active) {
+          const queued = webXrD3D8Renderer.acceptFrame(msg.packet, (accepted) => {
+            complete(accepted, accepted ? null : new Error("native WebXR compositor rejected frame"));
+          });
+          if (!queued) {
+            const error = new Error("native WebXR compositor already has a pending frame");
+            threadedLog("native VR D3D8 frame queue failed", { sequence, error: error.message });
+            complete(false, error);
+          }
+          return;
+        }
+        try {
+          if (!webXrD3D8Ack || typeof replayWebXrD3D8CommandFrame !== "function") {
+            throw new Error("native VR D3D8 frame arrived before the Window executor was ready");
+          }
+          const result = replayWebXrD3D8CommandFrame(msg.packet, d3d8Hooks);
+          acknowledged = 1;
+          harnessState.webxr.rendererTransport = {
+            ...harnessState.webxr.rendererTransport,
+            active: true,
+            sequence: result.sequence,
+            commands: result.commands,
+            commandBytes: result.commandBytes,
+            error: null,
+          };
+        } catch (error) {
+          const message = error?.message ?? String(error);
+          threadedLog("native VR D3D8 frame replay failed", { sequence, error: message });
+          harnessState.webxr.rendererTransport = {
+            ...harnessState.webxr.rendererTransport,
+            active: false,
+            error: message,
+          };
+        } finally {
+          complete(acknowledged === 1,
+            acknowledged === 1 ? null : new Error(harnessState.webxr.rendererTransport.error));
+        }
+        return;
+      }
       case "mss":
         handleMssMessage(msg);
         return;
@@ -1323,7 +1415,38 @@ function createThreadedEngineController() {
     // cache keys must reach the worker so it re-sends sample bytes.
     cncPortMssCacheDropNotifier = (keys) => sendPortCommand({ cmd: "mssCacheDrop", keys });
 
-    const offscreen = canvas.transferControlToOffscreen();
+    let webxrD3D8Bridge = null;
+    if (cncPortWebXrVrRequested) {
+      if (!gl || typeof OffscreenCanvas !== "function") {
+        throw new Error("native VR requires Window WebGL2 and OffscreenCanvas support");
+      }
+      ({
+        acknowledgeWebXrD3D8CommandFrame,
+        replayWebXrD3D8CommandFrame,
+      } = await import("./webxr-d3d8-command-stream.mjs"));
+      const { createWebXrD3D8Renderer } = await import("./webxr-d3d8-renderer.mjs");
+      webXrD3D8Renderer = createWebXrD3D8Renderer({
+        gl,
+        executorHooks: d3d8Hooks,
+        executorDiag: d3d8Diag,
+        onInputAction: forwardWebXrInputAction,
+        onStateChange: (renderer) => {
+          harnessState.webxr = { ...harnessState.webxr, renderer };
+        },
+      });
+      harnessState.webxr = {
+        ...harnessState.webxr,
+        renderer: webXrD3D8Renderer.snapshot(),
+      };
+      webXrD3D8Ack = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2));
+      webxrD3D8Bridge = {
+        acknowledgement: webXrD3D8Ack.buffer,
+        timeoutMs: 5000,
+      };
+    }
+    const offscreen = cncPortWebXrVrRequested
+      ? new OffscreenCanvas(canvas.width, canvas.height)
+      : canvas.transferControlToOffscreen();
     const moduleUrl = new URL("./engine_realm_boot.mjs", import.meta.url).href;
     const setupDone = waitForRealmMessage((m) => m.cmd === "setupDone", 30000, "setupDone");
     realmPort.postMessage({
@@ -1338,6 +1461,7 @@ function createThreadedEngineController() {
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
           udpBridge: threadedUdpBridge,
+          webxrD3D8Bridge,
         },
       },
     }, [offscreen]);
@@ -1348,6 +1472,7 @@ function createThreadedEngineController() {
     threadedLog("realm setup complete", {
       hooksInstalled: setup.hooksInstalled?.length ?? 0,
       moduleCommandHandler: setup.moduleCommandHandler === true,
+      webxrD3D8Bridge: setup.webxrD3D8Bridge === true,
     });
     // Pin the standing worker->main channel inside the boot module (its
     // unsolicited posts — status/mss/loopError — ride this respond closure).
@@ -1737,6 +1862,7 @@ function createThreadedEngineController() {
     postCommand,
     registerBinkSources,
     cancelBinkPreparation,
+    get webXrD3D8Renderer() { return webXrD3D8Renderer; },
     get lastStatus() { return lastStatus; },
     get lastLoopError() { return lastLoopError; },
     get engineThreadStarted() { return engineThreadStarted; },
@@ -7082,6 +7208,7 @@ function snapshotState() {
     runtime: harnessState.runtime,
     wasm: harnessState.wasm,
     mainLoop: harnessState.mainLoop,
+    webxr: harnessState.webxr,
     timing: harnessState.timing,
     win32Timing: harnessState.win32Timing,
     canvas: harnessState.canvas,
@@ -10560,6 +10687,67 @@ function wheelWParam(event) {
 function wheelWParamFromSteps(steps) {
   const delta = steps >= 0 ? 120 : -120;
   return (delta & 0xffff) << 16;
+}
+
+function forwardWebXrInputAction(action) {
+  if (!action || !cncPortThreadedMode) return;
+  const point = action.point && Number.isFinite(action.point.x) && Number.isFinite(action.point.y)
+    ? { x: Math.round(action.point.x), y: Math.round(action.point.y) }
+    : null;
+  if (action.type === "pointer" && point) {
+    void pushBrowserInputToWasmLite({
+      cursor: point,
+      win32Message: {
+        message: win32Messages.mouseMove,
+        lParam: win32PointLParam(point),
+        point,
+      },
+    });
+    return;
+  }
+  if (action.type === "button" && point) {
+    const button = action.button === "secondary" ? 2 : 0;
+    const event = { button, timeStamp: performance.now() };
+    const message = mouseButtonMessage(event, action.down === true, point);
+    if (action.down !== true) rememberPointerUpForDoubleClick(event, point);
+    void pushBrowserInputToWasmLite({
+      cursor: point,
+      win32Message: {
+        message,
+        lParam: win32PointLParam(point),
+        point,
+      },
+    });
+    return;
+  }
+  if (action.type === "wheel" && point) {
+    void pushBrowserInputToWasmLite({
+      cursor: point,
+      win32Message: {
+        message: win32Messages.mouseWheel,
+        wParam: wheelWParamFromSteps(action.steps),
+        lParam: win32PointLParam(point),
+        point,
+      },
+    });
+    return;
+  }
+  if (action.type === "key") {
+    const event = { code: String(action.code ?? ""), key: String(action.code ?? "") };
+    const virtualKey = virtualKeyFromEvent(event);
+    if (virtualKey < 0) return;
+    const down = action.down === true;
+    void pushBrowserInputToWasmLite({
+      virtualKey,
+      keyDown: down,
+      directInputCode: directInputScanCodeFromEvent(event),
+      timestamp: performance.now(),
+      win32Message: {
+        message: down ? win32Messages.keyDown : win32Messages.keyUp,
+        wParam: virtualKey,
+      },
+    });
+  }
 }
 
 function win32CharCodeFromEvent(event) {
@@ -25095,6 +25283,95 @@ function disconnectAgentBridge() {
   return finalState;
 }
 
+// WebXR is deliberately demand-loaded. Normal desktop launches do not import
+// the module, enumerate XR devices, create contexts, or install frame/input
+// work. probeWebXrSession() is the explicit pre-launch discovery step. The
+// eventual click handler must call startWebXrSession() only after probe has
+// completed: start is intentionally synchronous until requestSession() is
+// invoked so transient user activation is preserved.
+let webXrRuntimeController = null;
+let webXrRuntimeLoadPromise = null;
+
+function publishWebXrState(runtimeState) {
+  harnessState.webxr = {
+    source: "window_webxr_runtime",
+    moduleLoaded: webXrRuntimeController !== null,
+    rendererTransport: harnessState.webxr.rendererTransport,
+    renderer: harnessState.webxr.renderer,
+    ...runtimeState,
+  };
+  try {
+    window.dispatchEvent(new CustomEvent("cncport:webxr", {
+      detail: { ...harnessState.webxr },
+    }));
+  } catch (_error) {
+    // Harness state remains authoritative in DOM-limited test contexts.
+  }
+  return { ...harnessState.webxr };
+}
+
+async function loadWebXrRuntime() {
+  if (webXrRuntimeController) return webXrRuntimeController;
+  if (!webXrRuntimeLoadPromise) {
+    harnessState.webxr = {
+      ...harnessState.webxr,
+      phase: "loading",
+      error: null,
+    };
+    webXrRuntimeLoadPromise = import("./webxr-runtime.mjs")
+      .then(({ createWebXrRuntime }) => {
+        webXrRuntimeController = createWebXrRuntime({
+          onStateChange: publishWebXrState,
+        });
+        publishWebXrState(webXrRuntimeController.snapshot());
+        return webXrRuntimeController;
+      })
+      .catch((error) => {
+        publishWebXrState({
+          phase: "failed",
+          support: null,
+          referenceSpaceType: null,
+          frames: 0,
+          viewCount: 0,
+          inputSourceCount: 0,
+          framebuffer: null,
+          error: error?.message ?? String(error),
+        });
+        throw error;
+      })
+      .finally(() => {
+        webXrRuntimeLoadPromise = null;
+      });
+  }
+  return webXrRuntimeLoadPromise;
+}
+
+async function probeWebXrSession() {
+  const controller = await loadWebXrRuntime();
+  const result = await controller.probe();
+  if (result.support?.immersiveVrSupported === true && cncPortWebXrVrRequested) {
+    await threadedEngine?.ensureReady();
+    return publishWebXrState(controller.snapshot());
+  }
+  return result;
+}
+
+function startWebXrSession(renderer = null) {
+  if (!webXrRuntimeController) {
+    throw new Error("Probe WebXR before starting from the user gesture");
+  }
+  const nativeRenderer = renderer ?? threadedEngine?.webXrD3D8Renderer ?? null;
+  if (!nativeRenderer) {
+    throw new Error("Start the game with ?vr=1 before entering immersive VR");
+  }
+  return webXrRuntimeController.start(nativeRenderer);
+}
+
+function stopWebXrSession(reason = "requested") {
+  return webXrRuntimeController?.stop(reason)
+    ?? Promise.resolve({ ...harnessState.webxr });
+}
+
 window.CnCPort = {
   rpc,
   state: harnessState,
@@ -25106,6 +25383,10 @@ window.CnCPort = {
     connected: false,
   },
   getTouchControlsState: () => touchControls.snapshot(),
+  probeWebXrSession,
+  startWebXrSession,
+  stopWebXrSession,
+  getWebXrState: () => ({ ...harnessState.webxr }),
   d3d8BridgeCallbacks,
   persistSaves: persistSaveFilesystem,
   persistScheduledSaves: persistScheduledSaveFilesystem,

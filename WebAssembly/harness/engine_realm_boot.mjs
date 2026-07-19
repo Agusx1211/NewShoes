@@ -118,7 +118,42 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     getHeapF64: () => Module.HEAPF64 ?? null,
     preserveDrawingBuffer: opts.preserveDrawingBuffer === true,
   });
-  for (const [name, hook] of Object.entries(d3d8Hooks)) {
+  let installedD3D8Hooks = d3d8Hooks;
+  let webXrD3D8Recorder = null;
+  const webXrBridgeOptions = opts.webxrD3D8Bridge;
+  if (webXrBridgeOptions) {
+    const acknowledgement = webXrBridgeOptions.acknowledgement;
+    if (!(acknowledgement instanceof SharedArrayBuffer)) {
+      throw new Error("engine_realm_boot: native VR bridge requires shared acknowledgement");
+    }
+    const acknowledgementState = new Int32Array(acknowledgement);
+    if (acknowledgementState.length < 2) {
+      throw new Error("engine_realm_boot: native VR acknowledgement is undersized");
+    }
+    const timeoutMs = Math.max(100, Math.min(30000,
+      Number(webXrBridgeOptions.timeoutMs ?? 5000)));
+    const {
+      createWebXrD3D8CommandRecorder,
+      submitWebXrD3D8CommandFrame,
+    } = await import(
+      "./webxr-d3d8-command-stream.mjs"
+    );
+    webXrD3D8Recorder = createWebXrD3D8CommandRecorder({
+      delegateHooks: d3d8Hooks,
+      materializeDrawPayload: d3d8Diag.materializeD3D8DrawPayload,
+      onError: (error) => recordLog("native VR D3D8 recorder failed", {
+        error: error?.message ?? String(error),
+      }),
+      onFrame: (packet) => submitWebXrD3D8CommandFrame({
+        acknowledgement: acknowledgementState,
+        packet,
+        postFrame: (ownedPacket) => postToMain({ cmd: "webxrD3D8Frame", packet: ownedPacket }),
+        timeoutMs,
+      }),
+    });
+    installedD3D8Hooks = webXrD3D8Recorder.hooks;
+  }
+  for (const [name, hook] of Object.entries(installedD3D8Hooks)) {
     Module[name] = hook;
   }
   // Record the worker context's real renderer string once (GATE D evidence:
@@ -1071,6 +1106,10 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       if (!live) {
         live = true;
         recordLog("engine thread live (first main-loop tick)");
+        if (webXrD3D8Recorder) {
+          cwrapFor("cnc_port_d3d8_set_present_bridge", null, ["number"])(1);
+          recordLog("native VR D3D8 Present bridge enabled");
+        }
         // Bound-draw diagnostics cwrap is a wasm call — wire it only now.
         try {
           if (typeof d3d8Diag.setBoundDrawDiagnosticsSetter === "function"
@@ -1431,11 +1470,12 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     realm,
     diagLevel: opts.diagLevel ?? null,
     preserveDrawingBuffer: opts.preserveDrawingBuffer === true,
+    webxrD3D8Bridge: webXrD3D8Recorder !== null,
   });
 
   return {
     hooksInstalled: [
-      ...Object.keys(d3d8Hooks),
+      ...Object.keys(installedD3D8Hooks),
       "cncGdiMeasure",
       "cncGdiRasterizeGlyph",
       ...MSS_HOOKS,
@@ -1453,6 +1493,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       "cncPortBrowserNetworkReconnect",
       "cncPortEngineThreadTick",
     ],
+    webxrD3D8Bridge: webXrD3D8Recorder !== null,
     handleCommand,
   };
 }
