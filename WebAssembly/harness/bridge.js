@@ -1436,6 +1436,7 @@ function createThreadedEngineController() {
         executorHooks: d3d8Hooks,
         executorDiag: d3d8Diag,
         onInputAction: forwardWebXrInputAction,
+        onAudioListenerPose: setWebXrAudioListenerPose,
         onStateChange: (renderer) => {
           harnessState.webxr = { ...harnessState.webxr, renderer };
         },
@@ -1941,6 +1942,7 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "setBrowserAudioMixerVolumes",
   "browserAudioRuntime",
   "browserAudioMixerRuntime",
+  "browserMss3DSamplePlaybackRuntime",
   "shutdownRuntime",
   "forceShutdownRuntime",
   "setD3D8GammaRamp",
@@ -4116,9 +4118,15 @@ function summarizeBrowserMss3DSamplePlaybackRuntime() {
     released: browserMss3DSamplePlaybackRuntime.released,
     listenerUpdates: browserMss3DSamplePlaybackRuntime.listenerUpdates,
     listenerAppliedUpdates: browserMss3DSamplePlaybackRuntime.listenerAppliedUpdates,
+    webXrListenerUpdates: browserMss3DSamplePlaybackRuntime.webXrListenerUpdates,
+    webXrListenerAppliedUpdates:
+      browserMss3DSamplePlaybackRuntime.webXrListenerAppliedUpdates,
+    webXrListenerClears: browserMss3DSamplePlaybackRuntime.webXrListenerClears,
+    webXrListenerActive: browserMss3DSamplePlaybackRuntime.webXrListenerPose !== null,
     samplePositionUpdates: browserMss3DSamplePlaybackRuntime.samplePositionUpdates,
     samplePositionAppliedUpdates: browserMss3DSamplePlaybackRuntime.samplePositionAppliedUpdates,
     activeSources: browserMss3DSamplePlaybackRuntime.activeSources.size,
+    lastEngineListener: browserMss3DSamplePlaybackRuntime.lastEngineListener,
     lastListener: browserMss3DSamplePlaybackRuntime.lastListener,
     lastSamplePosition: browserMss3DSamplePlaybackRuntime.lastSamplePosition,
     lastIgnoredUpdate: browserMss3DSamplePlaybackRuntime.lastIgnoredUpdate,
@@ -4590,8 +4598,13 @@ const browserMss3DSamplePlaybackRuntime = {
   released: 0,
   listenerUpdates: 0,
   listenerAppliedUpdates: 0,
+  webXrListenerUpdates: 0,
+  webXrListenerAppliedUpdates: 0,
+  webXrListenerClears: 0,
   samplePositionUpdates: 0,
   samplePositionAppliedUpdates: 0,
+  lastEngineListener: null,
+  webXrListenerPose: null,
   lastListener: null,
   lastSamplePosition: null,
   lastIgnoredUpdate: null,
@@ -4764,13 +4777,67 @@ function cncPortMss3DSamplePositionUpdate(payload) {
   return true;
 }
 
-function cncPortMss3DListenerUpdate(payload) {
-  browserMss3DSamplePlaybackRuntime.listenerUpdates += 1;
+function normalizeMss3DListenerPayload(payload) {
+  return {
+    handle: Number(payload?.handle ?? 0),
+    x: finiteAudioCoordinate(payload?.x),
+    y: finiteAudioCoordinate(payload?.y),
+    z: finiteAudioCoordinate(payload?.z),
+    frontX: finiteAudioCoordinate(payload?.frontX),
+    frontY: finiteAudioCoordinate(payload?.frontY, 1),
+    frontZ: finiteAudioCoordinate(payload?.frontZ),
+    upX: finiteAudioCoordinate(payload?.upX),
+    upY: finiteAudioCoordinate(payload?.upY),
+    upZ: finiteAudioCoordinate(payload?.upZ, -1),
+    velocityX: finiteAudioCoordinate(payload?.velocityX),
+    velocityY: finiteAudioCoordinate(payload?.velocityY),
+    velocityZ: finiteAudioCoordinate(payload?.velocityZ),
+  };
+}
+
+function normalizeWebXrAudioListenerPose(pose) {
+  if (pose == null) return null;
+  const values = {
+    offsetX: Number(pose?.offset?.x),
+    offsetY: Number(pose?.offset?.y),
+    offsetZ: Number(pose?.offset?.z),
+    frontX: Number(pose?.orientation?.frontX),
+    frontY: Number(pose?.orientation?.frontY),
+    frontZ: Number(pose?.orientation?.frontZ),
+    upX: Number(pose?.orientation?.upX),
+    upY: Number(pose?.orientation?.upY),
+    upZ: Number(pose?.orientation?.upZ),
+  };
+  if (Object.values(values).some((value) => !Number.isFinite(value))) {
+    throw new TypeError("WebXR audio listener pose contains a non-finite value");
+  }
+  return values;
+}
+
+function composeMss3DListenerPayload(engineListener) {
+  const xrPose = browserMss3DSamplePlaybackRuntime.webXrListenerPose;
+  if (!xrPose) return engineListener;
+  return {
+    ...engineListener,
+    x: engineListener.x + xrPose.offsetX,
+    y: engineListener.y + xrPose.offsetY,
+    z: engineListener.z + xrPose.offsetZ,
+    frontX: xrPose.frontX,
+    frontY: xrPose.frontY,
+    frontZ: xrPose.frontZ,
+    upX: xrPose.upX,
+    upY: xrPose.upY,
+    upZ: xrPose.upZ,
+  };
+}
+
+function applyBrowserMss3DListener(engineListener) {
+  const payload = composeMss3DListenerPayload(engineListener);
   const context = browserAudioRuntime.context;
   if (!context?.listener) {
     browserMss3DSamplePlaybackRuntime.lastIgnoredUpdate = {
       phase: "AIL_set_3D_listener",
-      handle: Number(payload?.handle ?? 0),
+      handle: payload.handle,
       reason: "audio-listener-unavailable",
     };
     return false;
@@ -4795,14 +4862,45 @@ function cncPortMss3DListenerUpdate(payload) {
     z: finiteAudioCoordinate(payload?.velocityZ),
   };
   browserMss3DSamplePlaybackRuntime.listenerAppliedUpdates += 1;
+  const xrPose = browserMss3DSamplePlaybackRuntime.webXrListenerPose;
+  if (xrPose) browserMss3DSamplePlaybackRuntime.webXrListenerAppliedUpdates += 1;
   browserMss3DSamplePlaybackRuntime.lastListener = {
-    handle: Number(payload?.handle ?? 0),
+    handle: payload.handle,
+    mode: xrPose ? "webxr-head-tracked" : "engine",
+    enginePosition: {
+      x: engineListener.x,
+      y: engineListener.y,
+      z: engineListener.z,
+    },
+    xrOffset: xrPose ? {
+      x: xrPose.offsetX,
+      y: xrPose.offsetY,
+      z: xrPose.offsetZ,
+    } : null,
     position,
     orientation,
     velocity,
   };
   browserMss3DSamplePlaybackRuntime.lastError = null;
   return true;
+}
+
+function setWebXrAudioListenerPose(pose) {
+  const previous = browserMss3DSamplePlaybackRuntime.webXrListenerPose;
+  const next = normalizeWebXrAudioListenerPose(pose);
+  browserMss3DSamplePlaybackRuntime.webXrListenerUpdates += 1;
+  browserMss3DSamplePlaybackRuntime.webXrListenerPose = next;
+  if (previous && !next) browserMss3DSamplePlaybackRuntime.webXrListenerClears += 1;
+  const engineListener = browserMss3DSamplePlaybackRuntime.lastEngineListener;
+  if (!engineListener) return true;
+  return applyBrowserMss3DListener(engineListener);
+}
+
+function cncPortMss3DListenerUpdate(payload) {
+  browserMss3DSamplePlaybackRuntime.listenerUpdates += 1;
+  const engineListener = normalizeMss3DListenerPayload(payload);
+  browserMss3DSamplePlaybackRuntime.lastEngineListener = engineListener;
+  return applyBrowserMss3DListener(engineListener);
 }
 
 function cncPortMss3DSampleStop(payload) {

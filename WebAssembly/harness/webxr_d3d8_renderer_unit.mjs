@@ -4,6 +4,7 @@ import {
   convertWebXrProjectionToD3DDepth,
   createWebXrD3D8Renderer,
   createWebXrD3D8ViewOverride,
+  createWebXrEngineListenerPose,
   createWebXrEnginePickRay,
 } from "./webxr-d3d8-renderer.mjs";
 
@@ -54,6 +55,48 @@ const enginePickRay = createWebXrEnginePickRay({
 assert.deepEqual(enginePickRay.origin, [0, 0, 0]);
 assert.deepEqual(enginePickRay.end, [0, 0, 10],
   "WebXR -Z must map to the engine camera's +Z-forward world ray");
+const translatedViewer = new Float32Array(identity);
+translatedViewer[12] = 1;
+translatedViewer[13] = 2;
+translatedViewer[14] = -3;
+const engineListenerPose = createWebXrEngineListenerPose({
+  viewerTransform: translatedViewer,
+  anchorTransform: identity,
+  engineViewMatrix: identity,
+  engineUnitsPerMeter: 2,
+});
+assert.deepEqual(engineListenerPose, {
+  offset: { x: 2, y: 4, z: 6 },
+  orientation: {
+    frontX: 0,
+    frontY: 0,
+    frontZ: 1,
+    upX: 0,
+    upY: 1,
+    upZ: 0,
+  },
+}, "the XR viewer pose must use the same scale and handedness as engine rendering");
+const yawedViewer = new Float32Array([
+  0, 0, 1, 0,
+  0, 1, 0, 0,
+  -1, 0, 0, 0,
+  0, 0, 0, 1,
+]);
+assert.deepEqual(createWebXrEngineListenerPose({
+  viewerTransform: yawedViewer,
+  anchorTransform: identity,
+  engineViewMatrix: identity,
+}), {
+  offset: { x: 0, y: 0, z: 0 },
+  orientation: {
+    frontX: 1,
+    frontY: 0,
+    frontZ: 0,
+    upX: 0,
+    upY: 1,
+    upZ: 0,
+  },
+}, "XR head rotation must control the listener orientation, not only its position");
 
 const log = [];
 const hooks = new Proxy({}, {
@@ -91,6 +134,7 @@ const gl = {
   bindFramebuffer: (...args) => log.push(["glBindFramebuffer", ...args]),
 };
 const inputActions = [];
+const audioListenerPoses = [];
 assert.throws(() => createWebXrD3D8Renderer({
   gl,
   executorHooks: hooks,
@@ -108,8 +152,11 @@ const renderer = createWebXrD3D8Renderer({
   executorHooks: hooks,
   executorDiag: diag,
   onInputAction: (action) => inputActions.push(action),
+  onAudioListenerPose: (pose) => audioListenerPoses.push(pose),
 });
 renderer.onSessionStart();
+assert.equal(audioListenerPoses.at(-1), null,
+  "session entry must clear any stale XR audio listener pose");
 let completion = null;
 const worldDraw = {
   statePayloadCanonical: true,
@@ -157,6 +204,7 @@ assert.deepEqual(renderer.snapshot(), {
   inputSourceCount: 1,
   controllerPointer: null,
   enginePickRayReady: true,
+  audioListenerPoseReady: true,
   recenterCount: 0,
   visibilityState: "visible",
   inputSuspended: false,
@@ -173,6 +221,17 @@ assert.deepEqual(renderer.snapshot(), {
   },
   error: null,
 });
+assert.deepEqual(audioListenerPoses.at(-1), {
+  offset: { x: 0, y: 0, z: 0 },
+  orientation: {
+    frontX: 0,
+    frontY: 0,
+    frontZ: 1,
+    upX: 0,
+    upY: 1,
+    upZ: 0,
+  },
+}, "the compositor must publish a head-tracked listener pose after receiving an engine view");
 
 const trackedButtons = Array.from({ length: 6 }, (_, index) =>
   ({ pressed: index === 0, value: index === 0 ? 1 : 0 }));
@@ -215,6 +274,8 @@ assert.equal(renderer.getControlsState().waitingForNeutral, false);
 assert.equal(renderer.snapshot().controllerPointer?.target, "ui",
   "neutral controls must re-arm tracked pointing after visibility resumes");
 renderer.onSessionEnd();
+assert.equal(audioListenerPoses.at(-1), null,
+  "session exit must restore the ordinary engine-owned audio listener");
 assert.ok(inputActions.some((action) => action.type === "button"
   && action.button === "primary" && action.down === false),
 "ending immersive mode must release held engine input");

@@ -112,6 +112,18 @@ while the height offset is reapplied whenever the viewer recenters. Normal
 desktop renderer, camera, input, and display settings do not consume these
 values.
 
+The original `AudioManager` and Miles device continue to own the battlefield
+microphone and positional-sound coordinates. Once the renderer has a real
+engine view, each XR frame derives the viewer's head-relative offset and
+orientation through the same spatial anchor, camera inverse, handedness change,
+and perceived-world scale used by stereo rendering and picking. The Window
+audio bridge composes that offset over the latest engine listener before
+updating the existing Web Audio `AudioListener`; it does not move sound sources
+or create a parallel mixer. Session entry clears stale XR listener state, and
+session exit immediately reapplies the unmodified engine listener. The callback
+is installed only on the explicit VR renderer path, so desktop audio continues
+to consume the original Miles listener unchanged.
+
 XR visibility is an input-ownership boundary. `visible-blurred` and `hidden`
 immediately release every held controller button, modifier, camera key, pointer,
 and native W3D ray. Returning to `visible` does not re-arm input until all
@@ -148,8 +160,10 @@ run during ordinary desktop play.
 - [x] Split pretransformed engine UI presentation into a floating spatial
   surface without replacing original UI ownership.
 - [x] Map the initial tracked controller scheme to the original input paths.
-- Add comfort, accessibility, spatial audio/listener, haptics, lifecycle,
-  performance, compatibility, and non-VR regression coverage.
+- [x] Apply head-tracked position/orientation to the engine-owned browser 3D
+  audio listener with the same world scale and explicit session cleanup.
+- Add remaining comfort, accessibility, spatial-audio device validation,
+  lifecycle, performance, compatibility, and non-VR regression coverage.
 
 ## Evidence required before support claims
 

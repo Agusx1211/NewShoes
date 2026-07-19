@@ -155,6 +155,19 @@ async function waitForEngineRay(page) {
   throw new Error(`real engine did not produce a tracked world ray: ${JSON.stringify(last)}`);
 }
 
+async function waitForWebXrAudioListener(page, label, predicate, waitMs = 30000) {
+  const deadline = Date.now() + waitMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    await fullFrame(page);
+    const response = await rpc(page, "browserMss3DSamplePlaybackRuntime");
+    last = response?.browserMss3DSamplePlaybackRuntime ?? null;
+    if (predicate(last)) return last;
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`${label} timed out: ${JSON.stringify(last)}`);
+}
+
 if (!reuseProfile) {
   await rm(profileDir, { recursive: true, force: true });
 }
@@ -183,6 +196,7 @@ try {
     ];
     const targetRaySpace = {};
     const targetRayMatrix = identity();
+    const viewerMatrix = identity();
     const inputSource = {
       handedness: "right",
       targetRayMode: "tracked-pointer",
@@ -229,12 +243,20 @@ try {
           const makeView = (eye, x) => ({
             eye,
             projectionMatrix: projection,
-            transform: { matrix: identity(), inverse: { matrix: identity() } },
+            transform: {
+              matrix: [...viewerMatrix],
+              inverse: { matrix: [
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                -viewerMatrix[12], -viewerMatrix[13], -viewerMatrix[14], 1,
+              ] },
+            },
             viewport: { x, y: 0, width: halfWidth, height: layer.framebufferHeight },
           });
           const frame = {
             getViewerPose: () => ({
-              transform: { matrix: identity() },
+              transform: { matrix: [...viewerMatrix] },
               views: [makeView("left", 0), makeView("right", halfWidth)],
             }),
             getPose: (space) => space === targetRaySpace
@@ -324,6 +346,11 @@ try {
     window.__emulatedXrAxes = (x, y) => {
       inputSource.gamepad.axes = [Number(x), Number(y)];
     };
+    window.__emulatedXrViewerPosition = (x, y, z) => {
+      viewerMatrix[12] = Number(x);
+      viewerMatrix[13] = Number(y);
+      viewerMatrix[14] = Number(z);
+    };
     window.__emulatedXrNeutral = () => {
       inputSource.gamepad.axes = [0, 0];
       for (let index = 0; index < inputSource.gamepad.buttons.length; index += 1) {
@@ -393,6 +420,37 @@ try {
   assert.ok(driven.result.consumed > active.result.consumed,
     `controller trigger did not reach the original W3D picker: ${JSON.stringify(driven)}`);
   stage("native W3DView accepted the transformed ray");
+
+  const centeredListener = await waitForWebXrAudioListener(page,
+    "centered WebXR audio listener",
+    (runtime) => runtime?.webXrListenerActive === true
+      && runtime?.lastListener?.mode === "webxr-head-tracked"
+      && runtime?.lastListener?.xrOffset != null);
+  const worldScale = Number(running.renderer?.comfort?.worldScale ?? 1);
+  const expectedHeadOffset = 0.25 * (1 / 0.3048) / worldScale;
+  await page.evaluate(() => window.__emulatedXrViewerPosition(0.25, 0, 0));
+  const movedListener = await waitForWebXrAudioListener(page,
+    "head-tracked WebXR audio listener",
+    (runtime) => {
+      const offset = runtime?.lastListener?.xrOffset;
+      return Math.abs(Math.hypot(offset?.x, offset?.y, offset?.z)
+        - expectedHeadOffset) < 0.001;
+    });
+  for (const axis of ["x", "y", "z"]) {
+    assert.ok(Math.abs(movedListener.lastListener.position[axis]
+        - movedListener.lastListener.enginePosition[axis]
+        - movedListener.lastListener.xrOffset[axis]) < 0.001,
+    `XR head movement must offset the engine-owned listener on ${axis}`);
+  }
+  const orientation = movedListener.lastListener.orientation;
+  assert.ok(Math.abs(Math.hypot(orientation.frontX, orientation.frontY, orientation.frontZ) - 1)
+      < 0.001
+    && Math.abs(Math.hypot(orientation.upX, orientation.upY, orientation.upZ) - 1) < 0.001,
+  "XR viewer orientation must publish normalized listener directions");
+  assert.ok(movedListener.webXrListenerAppliedUpdates
+      > centeredListener.webXrListenerAppliedUpdates,
+  "XR frames must apply new head poses to the Web Audio listener");
+  stage("head pose updated the engine-owned HRTF listener at world scale");
 
   await page.evaluate(() => {
     window.__emulatedXrButton(2, true);
@@ -472,6 +530,13 @@ try {
   const cleared = await page.evaluate(() => window.CnCPort.rpc("webxrPickRayState"));
   assert.ok(cleared.result.clears > active.result.clears,
     "ending immersive mode must clear the native W3DView ray");
+  const restoredListener = await waitForWebXrAudioListener(page,
+    "restored engine audio listener",
+    (runtime) => runtime?.webXrListenerActive === false
+      && runtime?.lastListener?.mode === "engine");
+  assert.deepEqual(restoredListener.lastListener.position,
+    restoredListener.lastListener.enginePosition,
+    "session shutdown must restore the unmodified engine listener");
   stage("session shutdown cleared native input state");
 
   console.log(JSON.stringify({
@@ -482,6 +547,8 @@ try {
     cleared: cleared.result,
     runtimeFrames: running.frames,
     rendererFrames: running.renderer?.frames ?? 0,
+    audioHeadOffset: movedListener.lastListener.xrOffset,
+    audioListenerRestored: restoredListener.webXrListenerActive === false,
   }));
 } finally {
   await browser.close();

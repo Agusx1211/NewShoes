@@ -136,6 +136,72 @@ export function createWebXrEnginePickRay({
   };
 }
 
+function normalizedDirection(vector, label) {
+  const length = Math.hypot(vector[0], vector[1], vector[2]);
+  if (!(length > 1e-8)) throw new Error(`${label} has no direction`);
+  return vector.slice(0, 3).map((component) => {
+    const normalized = component / length;
+    return Math.abs(normalized) < 1e-12 ? 0 : normalized;
+  });
+}
+
+export function createWebXrEngineListenerPose({
+  viewerTransform,
+  anchorTransform,
+  engineViewMatrix,
+  engineUnitsPerMeter = DEFAULT_ENGINE_UNITS_PER_METER,
+} = {}) {
+  const viewer = matrix16(viewerTransform, "WebXR viewer transform");
+  const referenceToAnchor = invertWebXrColumnMatrix(anchorTransform);
+  const cameraToWorld = invertWebXrColumnMatrix(engineViewMatrix);
+  const unitsPerMeter = Number(engineUnitsPerMeter);
+  if (!Number.isFinite(unitsPerMeter) || unitsPerMeter <= 0) {
+    throw new TypeError("WebXR engine listener pose requires positive scale");
+  }
+
+  const viewerInAnchor = multiplyWebXrColumnMatrices(referenceToAnchor, viewer);
+  const offsetInView = [
+    viewerInAnchor[12] * unitsPerMeter,
+    viewerInAnchor[13] * unitsPerMeter,
+    -viewerInAnchor[14] * unitsPerMeter,
+    0,
+  ];
+  const forwardInView = [
+    -viewerInAnchor[8],
+    -viewerInAnchor[9],
+    viewerInAnchor[10],
+    0,
+  ];
+  const upInView = [
+    viewerInAnchor[4],
+    viewerInAnchor[5],
+    -viewerInAnchor[6],
+    0,
+  ];
+  const offset = transformWebXrColumnVector(cameraToWorld, offsetInView)
+    .slice(0, 3)
+    .map((component) => Math.abs(component) < 1e-12 ? 0 : component);
+  const front = normalizedDirection(
+    transformWebXrColumnVector(cameraToWorld, forwardInView),
+    "WebXR engine listener forward vector",
+  );
+  const up = normalizedDirection(
+    transformWebXrColumnVector(cameraToWorld, upInView),
+    "WebXR engine listener up vector",
+  );
+  return {
+    offset: { x: offset[0], y: offset[1], z: offset[2] },
+    orientation: {
+      frontX: front[0],
+      frontY: front[1],
+      frontZ: front[2],
+      upX: up[0],
+      upY: up[1],
+      upZ: up[2],
+    },
+  };
+}
+
 export function convertWebXrProjectionToD3DDepth(projectionValue) {
   const projection = matrix16(projectionValue, "WebXR projection matrix");
   // The shared D3D shader converts [0,w] depth to WebGL [-w,w] with
@@ -481,6 +547,7 @@ export function createWebXrD3D8Renderer({
   heightOffsetMeters = 0,
   controlOptions = null,
   onInputAction = null,
+  onAudioListenerPose = null,
   onStateChange = null,
 } = {}) {
   if (!gl || typeof gl.bindFramebuffer !== "function") {
@@ -550,6 +617,7 @@ export function createWebXrD3D8Renderer({
     inputSourceCount: 0,
     controllerPointer: null,
     enginePickRayReady: false,
+    audioListenerPoseReady: false,
     recenterCount: 0,
     visibilityState: null,
     inputSuspended: false,
@@ -595,6 +663,15 @@ export function createWebXrD3D8Renderer({
       anchorTransform = anchoredViewerTransform(frameContext.pose, "recenter viewer transform");
       recenterRequested = false;
       state = { ...state, recenterCount: state.recenterCount + 1 };
+    }
+    if (latestEngineView !== null) {
+      onAudioListenerPose?.(createWebXrEngineListenerPose({
+        viewerTransform: frameContext.pose?.transform?.matrix,
+        anchorTransform,
+        engineViewMatrix: latestEngineView,
+        engineUnitsPerMeter: scaledEngineUnitsPerMeter,
+      }));
+      state = { ...state, audioListenerPoseReady: true };
     }
     if (pending) {
       lastBackbufferWidth = Number(pending.packet.present?.backBufferWidth ?? 1280) >>> 0;
@@ -800,11 +877,13 @@ export function createWebXrD3D8Renderer({
     recenterRequested = false;
     latestEngineView = null;
     onInputAction?.({ type: "pickRay", ray: null });
+    onAudioListenerPose?.(null);
     const visibilityState = String(session?.visibilityState ?? "visible");
     const inputSuspended = visibilityState !== "visible";
     if (inputSuspended) controls.suspend();
     const controlsState = controls.snapshot();
-    return publish({ active: true, enginePickRayReady: false, visibilityState,
+    return publish({ active: true, enginePickRayReady: false,
+      audioListenerPoseReady: false, visibilityState,
       inputSuspended, inputWaitingForNeutral: controlsState.waitingForNeutral,
       inputNeutralBlockers: controlsState.neutralBlockers,
       error: null });
@@ -816,11 +895,13 @@ export function createWebXrD3D8Renderer({
     recenterRequested = false;
     controls.reset();
     onInputAction?.({ type: "pickRay", ray: null });
+    onAudioListenerPose?.(null);
     latestEngineView = null;
     finishPending(false);
     executorDiag.setD3D8XrViewOverride(null);
     return publish({ active: false, inputSourceCount: 0, controllerPointer: null,
-      enginePickRayReady: false, pointerDraws: 0, visibilityState: null,
+      enginePickRayReady: false, audioListenerPoseReady: false,
+      pointerDraws: 0, visibilityState: null,
       inputSuspended: false, inputWaitingForNeutral: false, inputNeutralBlockers: [] });
   }
 
