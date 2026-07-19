@@ -234,6 +234,9 @@ function targetFromAgentUiWindow(window, label) {
 }
 
 async function exerciseWebXrSaveDescription(page, geometry) {
+  const savesBefore = await rpc(page, "listSaves");
+  assert.equal(savesBefore?.ok, true,
+    `save-file baseline is unavailable: ${JSON.stringify(savesBefore)}`);
   const saveButton = await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:ButtonSave",
     (window) => window.visible === true && window.interactive === true);
   const saveTarget = targetFromAgentUiWindow(saveButton, "save/load Save button");
@@ -279,12 +282,18 @@ async function exerciseWebXrSaveDescription(page, geometry) {
     "save-description Cancel button");
   await waitForAgentUiWindow(page, "PopupSaveLoad.wnd:ButtonSave",
     (window) => window.visible === true && window.interactive === true);
+  const savesAfter = await rpc(page, "listSaves");
+  assert.equal(savesAfter?.ok, true,
+    `post-cancel save-file list is unavailable: ${JSON.stringify(savesAfter)}`);
+  assert.deepEqual(savesAfter.files, savesBefore.files,
+    "cancelling the save-description modal must not create or replace a save file");
   return {
     saveHover: hilitedSaveButton.hilited === true,
     keyboardSupported: true,
     before,
     after: typed.value,
     cancelled: true,
+    saveFilesUnchanged: true,
   };
 }
 
