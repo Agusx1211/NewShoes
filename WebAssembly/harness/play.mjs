@@ -1886,6 +1886,7 @@ let webXrSettings = loadWebXrSettings();
 function syncWebXrComfortSettings() {
   const values = {
     webXrDominantHand: webXrSettings.dominantHand,
+    webXrRotationMode: webXrSettings.rotationMode,
     webXrStickDeadzone: String(webXrSettings.stickDeadzone),
     webXrWorldScale: String(webXrSettings.worldScale),
     webXrPanelWidth: String(webXrSettings.panelWidthMeters),
@@ -1896,6 +1897,8 @@ function syncWebXrComfortSettings() {
     const control = document.querySelector(`#${id}`);
     if (control) control.value = value;
   }
+  const motionVignette = document.querySelector("#webXrMotionVignette");
+  if (motionVignette) motionVignette.checked = webXrSettings.motionVignette;
   const outputs = {
     webXrStickDeadzoneValue: `${Math.round(webXrSettings.stickDeadzone * 100)}%`,
     webXrWorldScaleValue: `${Math.round(webXrSettings.worldScale * 100)}%`,
@@ -2096,6 +2099,7 @@ function bindDesktopGameSettings() {
   });
   const webXrComfortControls = [
     ["webXrDominantHand", "dominantHand"],
+    ["webXrRotationMode", "rotationMode"],
     ["webXrStickDeadzone", "stickDeadzone"],
     ["webXrWorldScale", "worldScale"],
     ["webXrPanelWidth", "panelWidthMeters"],
@@ -2111,11 +2115,19 @@ function bindDesktopGameSettings() {
       });
     }
     control.addEventListener("change", () => {
-      const value = field === "dominantHand" ? control.value : Number(control.value);
+      const value = ["dominantHand", "rotationMode"].includes(field)
+        ? control.value : Number(control.value);
       updateWebXrComfortSetting(field, value, true);
       track("setting_changed", { category: "webxr", setting: field, value: String(value) });
     });
   }
+  document.querySelector("#webXrMotionVignette")?.addEventListener("change", (event) => {
+    const value = event.currentTarget.checked;
+    updateWebXrComfortSetting("motionVignette", value, true);
+    track("setting_changed", {
+      category: "webxr", setting: "motionVignette", value: String(value),
+    });
+  });
   document.querySelector("#shaderTierSelect")?.addEventListener("change", (event) => {
     setShaderTier(event.currentTarget.value);
     track("setting_changed", { category: "shader", setting: "shader_tier", value: event.currentTarget.value === "ff" ? "classic" : "enhanced" });

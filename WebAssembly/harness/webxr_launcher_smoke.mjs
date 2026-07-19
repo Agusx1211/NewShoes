@@ -39,6 +39,8 @@ try {
     { waitUntil: "load" });
   await openVrSetting(page);
   await page.selectOption("#webXrDominantHand", "left");
+  await page.selectOption("#webXrRotationMode", "stepped");
+  await page.uncheck("#webXrMotionVignette");
   await setRange(page, "#webXrStickDeadzone", 0.7);
   await setRange(page, "#webXrWorldScale", 1.25);
   await setRange(page, "#webXrPanelWidth", 1.9);
@@ -74,6 +76,8 @@ try {
   await openVrSetting(page);
   const persisted = await page.evaluate(() => ({
     dominantHand: document.querySelector("#webXrDominantHand")?.value,
+    rotationMode: document.querySelector("#webXrRotationMode")?.value,
+    motionVignette: document.querySelector("#webXrMotionVignette")?.checked,
     stickDeadzone: document.querySelector("#webXrStickDeadzone")?.value,
     worldScale: document.querySelector("#webXrWorldScale")?.value,
     panelWidth: document.querySelector("#webXrPanelWidth")?.value,
@@ -82,6 +86,8 @@ try {
   }));
   assert.deepEqual(persisted, {
     dominantHand: "left",
+    rotationMode: "stepped",
+    motionVignette: false,
     stickDeadzone: "0.7",
     worldScale: "1.25",
     panelWidth: "1.9",
@@ -122,6 +128,8 @@ try {
       panelDistanceMeters: 2,
       heightOffsetMeters: 0.25,
       dominantHand: "left",
+      rotationMode: "stepped",
+      motionVignette: false,
       stickDeadzone: 0.7,
       stickReleaseThreshold: 0.5,
     },

@@ -153,6 +153,10 @@ try {
         let pointerPixels = 0;
         let pressedPixels = 0;
         let worldPointerPixels = 0;
+        let centerBlue = 0;
+        let centerPixels = 0;
+        let outerBlue = 0;
+        let outerPixels = 0;
         const startX = half * 400;
         for (let y = 0; y < 600; y += 1) {
           for (let x = startX; x < startX + 400; x += 1) {
@@ -167,6 +171,16 @@ try {
               worldPointerPixels += 1;
             }
             blue += pixels[offset + 2];
+            const normalizedX = ((x - startX + 0.5) / 400) * 2 - 1;
+            const normalizedY = ((y + 0.5) / 600) * 2 - 1;
+            const radius = Math.hypot(normalizedX, normalizedY);
+            if (radius < 0.3) {
+              centerBlue += pixels[offset + 2];
+              centerPixels += 1;
+            } else if (radius > 0.48 && radius < 0.7) {
+              outerBlue += pixels[offset + 2];
+              outerPixels += 1;
+            }
           }
         }
         return {
@@ -175,6 +189,8 @@ try {
           pressedPixels,
           worldPointerPixels,
           meanBlue: blue / (400 * 600),
+          centerMeanBlue: centerBlue / centerPixels,
+          outerMeanBlue: outerBlue / outerPixels,
         };
       });
     };
@@ -190,7 +206,7 @@ try {
     renderer.renderFrame({ ...frameContext, time: 2 });
     const pressedHalves = readHalves();
     inputSource.gamepad.buttons[0] = { pressed: false, value: 0 };
-    targetRay[12] = 1;
+    inputSource.gamepad.axes = [0.8, 0];
     renderer.acceptFrame({
       version: 1,
       sequence: 3,
@@ -198,11 +214,32 @@ try {
       commands,
     }, (value) => { accepted &&= value; });
     renderer.renderFrame({ ...frameContext, time: 3 });
+    const vignetteHalves = readHalves();
+    const vignetteState = renderer.snapshot();
+    inputSource.gamepad.axes = [0, 0];
+    targetRay[12] = 1;
+    renderer.acceptFrame({
+      version: 1,
+      sequence: 4,
+      present: { backBufferWidth: 1280, backBufferHeight: 720 },
+      commands,
+    }, (value) => { accepted &&= value; });
+    renderer.renderFrame({ ...frameContext, time: 4 });
     const worldHalves = readHalves();
+    inputSource.gamepad.axes = [0.8, 0];
+    renderer.acceptFrame({
+      version: 1,
+      sequence: 5,
+      present: { backBufferWidth: 1280, backBufferHeight: 720 },
+      commands,
+    }, (value) => { accepted &&= value; });
+    renderer.renderFrame({ ...frameContext, time: 5 });
     return {
       accepted,
       halves,
       pressedHalves,
+      vignetteHalves,
+      vignetteState,
       worldHalves,
       state: renderer.snapshot(),
       glError: gl.getError(),
@@ -213,6 +250,8 @@ try {
   assert.equal(result.glError, 0);
   assert.equal(result.state.uiDraws, 1);
   assert.equal(result.state.pointerDraws, 2);
+  assert.equal(result.state.vignetteDraws, 2);
+  assert.equal(result.state.vignetteFrames, 2);
   assert.equal(result.state.controllerPointer?.target, "world");
   assert.equal(result.state.viewCount, 2);
   assert.ok(!expectedRenderer || result.windowRenderer.toLowerCase().includes(expectedRenderer),
@@ -227,6 +266,18 @@ try {
     assert.ok(half.pressedPixels > 25,
       `pressed pointer confirmation did not render into both XR views: ${JSON.stringify(result)}`);
   }
+  for (let index = 0; index < result.vignetteHalves.length; index += 1) {
+    const baseline = result.halves[index];
+    const vignette = result.vignetteHalves[index];
+    assert.ok(vignette.outerMeanBlue < baseline.outerMeanBlue * 0.95,
+      `motion vignette did not darken both XR eye peripheries: ${JSON.stringify(result)}`);
+    assert.ok(vignette.centerMeanBlue > baseline.centerMeanBlue * 0.95,
+      `motion vignette obscured the central play area: ${JSON.stringify(result)}`);
+  }
+  assert.deepEqual(result.vignetteState.cameraMotion,
+    { active: true, turning: false, panning: true, zooming: false });
+  assert.equal(result.vignetteState.vignetteDraws, 2);
+  assert.equal(result.vignetteState.vignetteFrames, 1);
   for (const half of result.worldHalves) {
     assert.ok(half.worldPointerPixels > 25,
       `battlefield pointer feedback did not render into both XR views: ${JSON.stringify(result)}`);

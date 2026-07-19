@@ -31,6 +31,10 @@ function expectFiniteRay(ray) {
   return length;
 }
 
+function angularDistance(left, right) {
+  return Math.abs(Math.atan2(Math.sin(left - right), Math.cos(left - right)));
+}
+
 function stage(message) {
   process.stderr.write(`[webxr-world-input] ${message}\n`);
 }
@@ -350,6 +354,10 @@ const browser = await chromium.launchPersistentContext(profileDir, {
 
 try {
   await browser.addInitScript(() => {
+    localStorage.setItem("cncPortWebXrSettings.v1", JSON.stringify({
+      rotationMode: "stepped",
+      motionVignette: true,
+    }));
     const identity = () => [
       1, 0, 0, 0,
       0, 1, 0, 0,
@@ -599,6 +607,8 @@ try {
   const rayLength = expectFiniteRay(active.result);
   const running = await page.evaluate(() => window.CnCPort.getWebXrState());
   assert.equal(running.viewCount, 2, "emulated compositor must supply distinct eye views");
+  assert.equal(running.renderer?.comfort?.rotationMode, "stepped");
+  assert.equal(running.renderer?.comfort?.motionVignette, true);
   assert.equal(running.renderer?.controllerPointer?.target, "ui",
     "tracked controller ray must retain the floating engine UI target");
   await page.evaluate(() => window.__emulatedXrTrigger(true));
@@ -668,6 +678,54 @@ try {
   await waitForSelectionMode(page, "single-controller selection release",
     (modes) => modes.preferSelection === false);
 
+  const cameraBeforeTurn = await fullFrame(page);
+  const cameraAngleBeforeTurn = Number(cameraBeforeTurn?.clientState?.view?.angle);
+  assert.ok(Number.isFinite(cameraAngleBeforeTurn),
+    `real camera angle is unavailable: ${JSON.stringify(cameraBeforeTurn?.clientState?.view)}`);
+  const vignetteFramesBeforeTurn = Number(
+    (await page.evaluate(() => window.CnCPort.getWebXrState().renderer?.vignetteFrames)) ?? 0,
+  );
+  await page.evaluate(() => {
+    window.__emulatedXrButton(5, true);
+    window.__emulatedXrAxes(0.8, 0);
+  });
+  await page.waitForTimeout(50);
+  await fullFrame(page);
+  const cameraAfterTurn = await waitForFrame(page, "single-controller stepped turn",
+    (candidate) => angularDistance(
+      Number(candidate?.clientState?.view?.angle), cameraAngleBeforeTurn,
+    ) > 0.05);
+  const vignetteObserved = await page.evaluate(() => ({
+    cameraMotion: window.CnCPort.getWebXrState().renderer?.cameraMotion,
+    vignetteDraws: window.CnCPort.getWebXrState().renderer?.vignetteDraws,
+    vignetteFrames: window.CnCPort.getWebXrState().renderer?.vignetteFrames,
+  }));
+  assert.ok(Number(vignetteObserved.vignetteFrames) > vignetteFramesBeforeTurn,
+    `the stepped camera frame did not render a comfort vignette: ${JSON.stringify(
+      vignetteObserved)}`);
+  await waitForSelectionMode(page, "single-controller stepped turn release",
+    (modes) => modes.cameraRotateRight === false);
+  assert.equal((await page.evaluate(() =>
+    window.CnCPort.getWebXrState().renderer?.cameraMotion?.active)), false,
+  "the compositor vignette must release with the bounded stepped camera key");
+  const settledTurn = await fullFrame(page);
+  const settledTurnAngle = Number(settledTurn.clientState.view.angle);
+  await page.waitForTimeout(350);
+  const heldTurn = await fullFrame(page);
+  assert.ok(angularDistance(Number(heldTurn.clientState.view.angle), settledTurnAngle) < 0.05,
+    "a held stick must not repeat a stepped turn before returning to neutral");
+  await page.evaluate(() => window.__emulatedXrAxes(0, 0));
+  await page.waitForTimeout(50);
+  await page.evaluate(() => window.__emulatedXrAxes(0.8, 0));
+  await page.waitForTimeout(50);
+  await fullFrame(page);
+  const cameraAfterRearmedTurn = await waitForFrame(page,
+    "neutral-rearmed single-controller stepped turn",
+    (candidate) => angularDistance(
+      Number(candidate?.clientState?.view?.angle), Number(heldTurn.clientState.view.angle),
+    ) > 0.05);
+  await page.evaluate(() => window.__emulatedXrAxes(0, 0));
+
   const cameraBeforeWheel = await fullFrame(page);
   const cameraHeightBeforeWheel = Number(
     cameraBeforeWheel?.clientState?.view?.currentHeightAboveGround,
@@ -675,11 +733,8 @@ try {
   assert.ok(Number.isFinite(cameraHeightBeforeWheel),
     `real camera height is unavailable: ${JSON.stringify(cameraBeforeWheel?.clientState?.view)}`);
   await page.evaluate(() => {
-    window.__emulatedXrButton(5, true);
-    window.__emulatedXrAxes(0.8, -0.8);
+    window.__emulatedXrAxes(0, -0.8);
   });
-  await waitForSelectionMode(page, "single-controller camera layer", (modes) =>
-    modes.cameraRotateRight === true && modes.cameraZoomIn === false);
   const cameraAfterWheel = await waitForFrame(page, "single-controller wheel zoom",
     (candidate) => Number(candidate?.clientState?.view?.currentHeightAboveGround)
       < cameraHeightBeforeWheel - 1);
@@ -692,7 +747,7 @@ try {
   });
   await waitForSelectionMode(page, "single-controller camera release", (modes) =>
     modes.cameraRotateRight === false && modes.cameraZoomIn === false);
-  stage("original modifier, camera-key, and mouse-wheel translators accepted controller layers");
+  stage("stepped camera turns, motion vignette, and mouse-wheel zoom used original input paths");
 
   await page.evaluate(() => {
     window.__emulatedXrButton(2, true);
@@ -811,6 +866,19 @@ try {
     wheelCameraZoom: {
       before: cameraHeightBeforeWheel,
       after: cameraHeightAfterWheel,
+    },
+    steppedTurn: {
+      firstDelta: angularDistance(
+        Number(cameraAfterTurn.clientState.view.angle), cameraAngleBeforeTurn,
+      ),
+      rearmedDelta: angularDistance(
+        Number(cameraAfterRearmedTurn.clientState.view.angle),
+        Number(heldTurn.clientState.view.angle),
+      ),
+      heldStable: angularDistance(
+        Number(heldTurn.clientState.view.angle), settledTurnAngle,
+      ) < 0.05,
+      vignetteObserved,
     },
   }));
 } finally {

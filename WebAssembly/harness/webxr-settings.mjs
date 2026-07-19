@@ -2,6 +2,8 @@ export const WEBXR_SETTINGS_KEY = "cncPortWebXrSettings.v1";
 
 export const DEFAULT_WEBXR_SETTINGS = Object.freeze({
   dominantHand: "right",
+  rotationMode: "continuous",
+  motionVignette: true,
   stickDeadzone: 0.55,
   worldScale: 1,
   panelWidthMeters: 1.6,
@@ -21,6 +23,8 @@ export function normalizeWebXrSettings(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   return {
     dominantHand: source.dominantHand === "left" ? "left" : "right",
+    rotationMode: source.rotationMode === "stepped" ? "stepped" : "continuous",
+    motionVignette: source.motionVignette !== false,
     stickDeadzone: boundedNumber(source.stickDeadzone,
       DEFAULT_WEBXR_SETTINGS.stickDeadzone, 0.35, 0.8, 0.05),
     worldScale: boundedNumber(source.worldScale,
@@ -61,8 +65,10 @@ export function webXrRendererOptions(value) {
     panelWidthMeters: settings.panelWidthMeters,
     panelDistanceMeters: settings.panelDistanceMeters,
     heightOffsetMeters: settings.heightOffsetMeters,
+    motionVignette: settings.motionVignette,
     controlOptions: {
       bindings: { dominantHand: settings.dominantHand },
+      rotationMode: settings.rotationMode,
       pressThreshold: settings.stickDeadzone,
       releaseThreshold: Number(Math.max(0.15, settings.stickDeadzone - 0.2).toFixed(2)),
     },

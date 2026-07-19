@@ -73,9 +73,11 @@ ordered Win32/DirectInput bridge as desktop input:
 
 - dominant trigger/squeeze: engine left/right click for selection, drag, menu
   activation, and contextual orders;
-- dominant thumbstick: held original numpad camera rotate/zoom bindings; holding
-  stick-click changes the vertical axis to the original mouse-wheel path for
-  engine-owned scrolling/zoom, while a neutral stick-click recenters;
+- dominant thumbstick: original numpad camera rotate/zoom bindings; rotation can
+  continuously hold the key or issue one bounded key hold per neutral-rearmed
+  stick deflection; holding stick-click changes the vertical axis to the
+  original mouse-wheel path for engine-owned scrolling/zoom, while a neutral
+  stick-click recenters;
 - dominant A/X and B/Y: original attack-move and cancel hotkeys;
 - offhand thumbstick: held original arrow-key camera pan, or a ten-sector
   original digit/control-group radial while stick-click is held;
@@ -116,13 +118,26 @@ only: the associated click, hover, selection outline, and order marker remain
 owned by the original engine input and rendering paths.
 
 VR comfort preferences are normalized and persisted under a dedicated browser
-profile key. The launcher exposes dominant hand, stick dead zone, perceived
-world scale, floating-interface width/distance, and a seated height offset.
-They are loaded only into the explicit VR renderer: world scale changes the
+profile key. The launcher exposes dominant hand, continuous or stepped turn
+mode, a motion-vignette toggle, stick dead zone, perceived world scale,
+floating-interface width/distance, and a seated height offset. They are loaded
+only into the explicit VR renderer: world scale changes the
 meters-to-engine-unit transform consistently for stereo rendering and picking,
-while the height offset is reapplied whenever the viewer recenters. Normal
-desktop renderer, camera, input, and display settings do not consume these
-values.
+while the height offset is reapplied whenever the viewer recenters. Pan
+sensitivity remains owned by Zero Hour's existing Scroll Speed preference
+because controller pan uses the same original Arrow-key command path.
+
+Stepped turning does not write camera state from JavaScript. It holds the
+original numpad rotate key for a bounded 320 ms interval, releases it, and will
+not issue another turn until the stick returns below the release threshold.
+The compositor derives active turn, pan, and world-zoom state from those routed
+inputs. When enabled, it draws a peripheral black vignette independently into
+every XR view after world, floating UI, and pointer composition; scrolling the
+floating UI does not activate it. The real-WebGL smoke asserts darker peripheral
+pixels in both eyes while preserving the center, and the retail smoke proves a
+vignetted stepped interval changes the authoritative engine camera angle, stops
+while held, and rearms after neutral. Normal desktop rendering and input do not
+consume these values or compile the vignette program.
 
 The original `AudioManager` and Miles device continue to own the battlefield
 microphone and positional-sound coordinates. Once the renderer has a real
@@ -210,6 +225,8 @@ run during ordinary desktop play.
   while restoring native input/audio ownership after each exit.
 - [x] Apply head-tracked position/orientation to the engine-owned browser 3D
   audio listener with the same world scale and explicit session cleanup.
+- [x] Persist continuous/stepped original-key turning and an optional per-eye
+  motion vignette, with engine-angle, neutral-rearm, and pixel evidence.
 - Add remaining comfort, accessibility, spatial-audio device validation,
   lifecycle, performance, compatibility, and non-VR regression coverage.
 

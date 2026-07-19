@@ -162,6 +162,8 @@ assert.ok(actions.some((action) => action.type === "key"
   && action.code === "Numpad6" && action.down === true));
 assert.ok(actions.some((action) => action.type === "key"
   && action.code === "Numpad8" && action.down === true));
+assert.deepEqual(controls.snapshot().cameraMotion,
+  { active: true, turning: true, panning: false, zooming: true });
 
 right.gamepad.axes = [0, 0];
 rightButtons[4] = button(true);
@@ -320,6 +322,8 @@ scrollRightButtons[3] = button(true);
 scrollControls.update({ ...panel, time: 0, inputSources: [scrollLeft, scrollRight] });
 assert.notEqual(findAction(scrollActions, { type: "wheel", steps: 1 }), -1,
   "dominant stick-click plus vertical stick must scroll through the original wheel path");
+assert.equal(scrollControls.snapshot().cameraMotion.active, false,
+  "scrolling the floating UI must not enable the camera-motion vignette");
 const firstScrollCount = scrollActions.filter((action) => action.type === "wheel").length;
 scrollControls.update({ ...panel, time: 200, inputSources: [scrollLeft, scrollRight] });
 assert.equal(scrollActions.filter((action) => action.type === "wheel").length, firstScrollCount,
@@ -338,6 +342,46 @@ scrollRightButtons[3] = button();
 scrollControls.update({ ...panel, time: 410, inputSources: [scrollLeft, scrollRight] });
 assert.equal(scrollActions.some((action) => action.type === "recenter"), true,
   "a neutral dominant stick-click must still recenter on release");
+
+const steppedActions = [];
+const stepped = createWebXrControls({
+  rotationMode: "stepped",
+  onAction: (action) => steppedActions.push(action),
+});
+const steppedLeft = {
+  handedness: "left",
+  targetRayPose: { matrix: transform({ x: 2.1, y: 1, z: 3 }) },
+  gamepad: { axes: [0, 0], buttons: buttons() },
+};
+const steppedRight = {
+  handedness: "right",
+  targetRayPose: { matrix: transform({ x: 2, y: 1, z: 3 }) },
+  gamepad: { axes: [0, 0], buttons: buttons() },
+};
+stepped.update({ ...panel, time: 0, inputSources: [steppedLeft, steppedRight] });
+steppedRight.gamepad.axes = [0.8, 0];
+stepped.update({ ...panel, time: 10, inputSources: [steppedLeft, steppedRight] });
+assert.equal(stepped.snapshot().rotationMode, "stepped");
+assert.equal(stepped.snapshot().cameraMotion.turning, true);
+stepped.update({ ...panel, time: 331, inputSources: [steppedLeft, steppedRight] });
+assert.equal(stepped.snapshot().cameraMotion.active, false,
+  "a stepped turn must release its original camera key after the bounded hold");
+stepped.update({ ...panel, time: 450, inputSources: [steppedLeft, steppedRight] });
+assert.equal(steppedActions.filter((action) => action.type === "key"
+  && action.code === "Numpad6" && action.down).length, 1,
+  "a held stick must not repeat a stepped turn before returning to neutral");
+steppedRight.gamepad.axes = [-0.8, 0];
+stepped.update({ ...panel, time: 455, inputSources: [steppedLeft, steppedRight] });
+assert.equal(steppedActions.some((action) => action.type === "key"
+  && action.code === "Numpad4" && action.down), false,
+  "reversing a deflected stick must not bypass stepped-turn neutral rearming");
+steppedRight.gamepad.axes = [0, 0];
+stepped.update({ ...panel, time: 460, inputSources: [steppedLeft, steppedRight] });
+steppedRight.gamepad.axes = [0.8, 0];
+stepped.update({ ...panel, time: 470, inputSources: [steppedLeft, steppedRight] });
+assert.equal(steppedActions.filter((action) => action.type === "key"
+  && action.code === "Numpad6" && action.down).length, 2,
+  "returning the stick to neutral must re-arm one stepped turn");
 
 const customActions = [];
 const custom = createWebXrControls({
@@ -359,6 +403,7 @@ assert.notEqual(findAction(customActions,
 
 assert.throws(() => createWebXrControls({ pressThreshold: 0.3, releaseThreshold: 0.4 }),
   /release threshold/);
+assert.throws(() => createWebXrControls({ rotationMode: "teleport" }), /rotation mode/);
 
 const anonymous = createWebXrControls();
 anonymous.update({ ...panel, inputSources: [

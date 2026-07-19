@@ -2,6 +2,7 @@ const PRESS_THRESHOLD = 0.55;
 const RELEASE_THRESHOLD = 0.35;
 const SCROLL_INITIAL_REPEAT_MS = 320;
 const SCROLL_REPEAT_MS = 110;
+const STEPPED_TURN_HOLD_MS = 320;
 
 export const DEFAULT_WEBXR_CONTROL_BINDINGS = Object.freeze({
   dominantHand: "right",
@@ -134,7 +135,12 @@ function bindingIndex(value, fallback, label) {
   return number;
 }
 
-function webXrControlConfig({ bindings = {}, pressThreshold, releaseThreshold } = {}) {
+function webXrControlConfig({
+  bindings = {},
+  rotationMode = "continuous",
+  pressThreshold,
+  releaseThreshold,
+} = {}) {
   const dominantHand = bindings.dominantHand ?? DEFAULT_WEBXR_CONTROL_BINDINGS.dominantHand;
   if (dominantHand !== "left" && dominantHand !== "right") {
     throw new TypeError("WebXR dominant hand must be left or right");
@@ -146,12 +152,16 @@ function webXrControlConfig({ bindings = {}, pressThreshold, releaseThreshold } 
   if (configuredRelease >= configuredPress) {
     throw new TypeError("WebXR release threshold must be lower than press threshold");
   }
+  if (rotationMode !== "continuous" && rotationMode !== "stepped") {
+    throw new TypeError("WebXR rotation mode must be continuous or stepped");
+  }
   const buttons = Object.fromEntries(Object.entries(DEFAULT_WEBXR_CONTROL_BINDINGS.buttons)
     .map(([name, fallback]) => [name,
       bindingIndex(bindings.buttons?.[name], fallback, `WebXR ${name} button`)]));
   const keys = { ...DEFAULT_WEBXR_CONTROL_BINDINGS.keys, ...bindings.keys };
   return {
     dominantHand,
+    rotationMode,
     buttons,
     keys,
     pressThreshold: configuredPress,
@@ -219,10 +229,13 @@ function cloneSpatialRay(ray) {
 export function createWebXrControls({
   onAction = null,
   bindings = {},
+  rotationMode = "continuous",
   pressThreshold,
   releaseThreshold,
 } = {}) {
-  const config = webXrControlConfig({ bindings, pressThreshold, releaseThreshold });
+  const config = webXrControlConfig({
+    bindings, rotationMode, pressThreshold, releaseThreshold,
+  });
   const sources = new Map();
   const anonymousSourceIds = new WeakMap();
   const modifiers = { control: false, alt: false, shift: false };
@@ -258,6 +271,11 @@ export function createWebXrControls({
     sourceState.thumbstickUsed = false;
     sourceState.scrollDirection = null;
     sourceState.scrollNextTime = 0;
+    sourceState.scrollMotion = null;
+    sourceState.horizontalMotion = null;
+    sourceState.verticalMotion = null;
+    sourceState.turnDirection = null;
+    sourceState.turnReleaseTime = 0;
   }
 
   function setModifier(name, code, down) {
@@ -296,6 +314,11 @@ export function createWebXrControls({
       thumbstickUsed: false,
       scrollDirection: null,
       scrollNextTime: 0,
+      scrollMotion: null,
+      horizontalMotion: null,
+      verticalMotion: null,
+      turnDirection: null,
+      turnReleaseTime: 0,
       lastTarget: null,
     };
   }
@@ -327,6 +350,7 @@ export function createWebXrControls({
     if (direction === null) {
       sourceState.scrollDirection = null;
       sourceState.scrollNextTime = 0;
+      sourceState.scrollMotion = null;
       return false;
     }
     const now = Number.isFinite(Number(time)) ? Number(time) : 0;
@@ -337,7 +361,39 @@ export function createWebXrControls({
         + (changed ? SCROLL_INITIAL_REPEAT_MS : SCROLL_REPEAT_MS);
     }
     sourceState.scrollDirection = direction;
+    sourceState.scrollMotion = target?.target === "world" ? "zoom" : null;
     return true;
+  }
+
+  function updateCameraTurn(sourceState, axisX, time, enabled) {
+    if (config.rotationMode === "continuous") {
+      sourceState.turnDirection = null;
+      sourceState.turnReleaseTime = 0;
+      setKey(sourceState, "horizontalKey", enabled
+        ? desiredAxisState(axisX, config.keys.rotateLeft, config.keys.rotateRight,
+          sourceState.horizontalKey, config.pressThreshold, config.releaseThreshold)
+        : null);
+      sourceState.horizontalMotion = sourceState.horizontalKey ? "turn" : null;
+      return;
+    }
+
+    const now = Number.isFinite(Number(time)) ? Number(time) : 0;
+    const direction = enabled
+      ? desiredAxisState(axisX, config.keys.rotateLeft, config.keys.rotateRight,
+        sourceState.turnDirection, config.pressThreshold, config.releaseThreshold)
+      : null;
+    if (!enabled || direction === null) {
+      sourceState.turnDirection = null;
+      sourceState.turnReleaseTime = 0;
+      setKey(sourceState, "horizontalKey", null);
+    } else if (sourceState.turnDirection === null) {
+      sourceState.turnDirection = direction;
+      sourceState.turnReleaseTime = now + STEPPED_TURN_HOLD_MS;
+      setKey(sourceState, "horizontalKey", direction);
+    } else if (sourceState.horizontalKey && now >= sourceState.turnReleaseTime) {
+      setKey(sourceState, "horizontalKey", null);
+    }
+    sourceState.horizontalMotion = sourceState.horizontalKey ? "turn" : null;
   }
 
   function update({
@@ -486,15 +542,15 @@ export function createWebXrControls({
           emit({ type: "recenter" });
         }
         if (!thumbstickDown) sourceState.thumbstickUsed = false;
-        setKey(sourceState, "horizontalKey",
-          thumbstickDown ? null
-            : desiredAxisState(axisX, config.keys.rotateLeft, config.keys.rotateRight,
-              sourceState.horizontalKey, config.pressThreshold, config.releaseThreshold));
+        updateCameraTurn(sourceState, axisX, time, !thumbstickDown);
         setKey(sourceState, "verticalKey",
           thumbstickDown ? null
             : desiredAxisState(axisY, config.keys.zoomIn, config.keys.zoomOut,
               sourceState.verticalKey, config.pressThreshold, config.releaseThreshold));
+        sourceState.verticalMotion = sourceState.verticalKey ? "zoom" : null;
       } else if (paired) {
+        sourceState.turnDirection = null;
+        sourceState.turnReleaseTime = 0;
         if (groupCode && !sourceState.groupChosen) {
           stroke(groupCode);
           pulseHaptics(source, 0.16);
@@ -507,6 +563,8 @@ export function createWebXrControls({
         setKey(sourceState, "verticalKey", groupCode ? null
           : desiredAxisState(axisY, config.keys.panUp, config.keys.panDown,
             sourceState.verticalKey, config.pressThreshold, config.releaseThreshold));
+        sourceState.horizontalMotion = sourceState.horizontalKey ? "pan" : null;
+        sourceState.verticalMotion = sourceState.verticalKey ? "pan" : null;
         if (secondaryActionDown && !sourceState.secondaryActionDown) emit({ type: "recenter" });
       } else {
         if (primaryActionDown && !sourceState.primaryActionDown) {
@@ -535,16 +593,23 @@ export function createWebXrControls({
           sourceState.secondaryActionUsed = true;
         }
         const scrolling = updateScroll(sourceState, target, axisY, time, cameraMode);
-        setKey(sourceState, "horizontalKey",
-          groupCode ? null : desiredAxisState(axisX,
-            cameraMode ? config.keys.rotateLeft : config.keys.panLeft,
-            cameraMode ? config.keys.rotateRight : config.keys.panRight,
-            sourceState.horizontalKey, config.pressThreshold, config.releaseThreshold));
+        if (cameraMode && !groupCode) {
+          updateCameraTurn(sourceState, axisX, time, true);
+        } else {
+          sourceState.turnDirection = null;
+          sourceState.turnReleaseTime = 0;
+          setKey(sourceState, "horizontalKey", groupCode ? null
+            : desiredAxisState(axisX, config.keys.panLeft, config.keys.panRight,
+              sourceState.horizontalKey, config.pressThreshold, config.releaseThreshold));
+          sourceState.horizontalMotion = sourceState.horizontalKey ? "pan" : null;
+        }
         setKey(sourceState, "verticalKey",
           groupCode || scrolling ? null : desiredAxisState(axisY,
             cameraMode ? config.keys.zoomIn : config.keys.panUp,
             cameraMode ? config.keys.zoomOut : config.keys.panDown,
             sourceState.verticalKey, config.pressThreshold, config.releaseThreshold));
+        sourceState.verticalMotion = sourceState.verticalKey
+          ? (cameraMode ? "zoom" : "pan") : null;
         if (!primaryActionDown && sourceState.primaryActionDown
             && !sourceState.primaryActionUsed) {
           stroke(config.keys.attackMove);
@@ -606,14 +671,25 @@ export function createWebXrControls({
   }
 
   function snapshot() {
+    const cameraMotion = Array.from(sources.values()).reduce((motion, sourceState) => {
+      motion.turning ||= sourceState.horizontalMotion === "turn";
+      motion.panning ||= sourceState.horizontalMotion === "pan"
+        || sourceState.verticalMotion === "pan";
+      motion.zooming ||= sourceState.verticalMotion === "zoom"
+        || sourceState.scrollMotion === "zoom";
+      motion.active = motion.turning || motion.panning || motion.zooming;
+      return motion;
+    }, { active: false, turning: false, panning: false, zooming: false });
     return {
       sourceCount: sources.size,
       paired,
       dominantHand: config.dominantHand,
+      rotationMode: config.rotationMode,
       pressThreshold: config.pressThreshold,
       releaseThreshold: config.releaseThreshold,
       waitingForNeutral,
       neutralBlockers: [...neutralBlockers],
+      cameraMotion,
       sources: Array.from(sources.values(), (sourceState) => ({
         handedness: sourceState.handedness,
         profile: sourceState.profile,

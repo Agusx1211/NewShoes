@@ -12,6 +12,8 @@ import {
 assert.deepEqual(normalizeWebXrSettings(), DEFAULT_WEBXR_SETTINGS);
 assert.deepEqual(normalizeWebXrSettings({
   dominantHand: "left",
+  rotationMode: "stepped",
+  motionVignette: false,
   stickDeadzone: 0.63,
   worldScale: 9,
   panelWidthMeters: 0,
@@ -19,6 +21,8 @@ assert.deepEqual(normalizeWebXrSettings({
   heightOffsetMeters: -0.38,
 }), {
   dominantHand: "left",
+  rotationMode: "stepped",
+  motionVignette: false,
   stickDeadzone: 0.65,
   worldScale: 1.5,
   panelWidthMeters: 1.2,
@@ -33,6 +37,8 @@ const storage = {
 };
 const saved = saveWebXrSettings(storage, {
   dominantHand: "left",
+  rotationMode: "stepped",
+  motionVignette: false,
   stickDeadzone: 0.7,
   worldScale: 1.25,
   panelWidthMeters: 1.9,
@@ -46,8 +52,10 @@ assert.deepEqual(webXrRendererOptions(saved), {
   panelWidthMeters: 1.9,
   panelDistanceMeters: 2,
   heightOffsetMeters: 0.25,
+  motionVignette: false,
   controlOptions: {
     bindings: { dominantHand: "left" },
+    rotationMode: "stepped",
     pressThreshold: 0.7,
     releaseThreshold: 0.5,
   },

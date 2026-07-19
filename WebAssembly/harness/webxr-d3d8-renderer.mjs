@@ -537,6 +537,55 @@ function renderSpatialPointer({ gl, pointerProgram, views, pointer }) {
   return views.length;
 }
 
+function compileVignetteProgram(gl) {
+  const vertex = compileWebXrShader(gl, gl.VERTEX_SHADER, `#version 300 es
+    const vec2 positions[3] = vec2[3](
+      vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0)
+    );
+    out vec2 vUv;
+    void main() {
+      vec2 position = positions[gl_VertexID];
+      gl_Position = vec4(position, 0.0, 1.0);
+      vUv = position * 0.5 + 0.5;
+    }
+  `, "WebXR vignette vertex");
+  const fragment = compileWebXrShader(gl, gl.FRAGMENT_SHADER, `#version 300 es
+    precision highp float;
+    in vec2 vUv;
+    out vec4 fragColor;
+    void main() {
+      float edge = smoothstep(0.42, 1.0, length(vUv * 2.0 - 1.0));
+      fragColor = vec4(0.0, 0.0, 0.0, edge * 0.78);
+    }
+  `, "WebXR vignette fragment");
+  const program = gl.createProgram();
+  gl.attachShader(program, vertex);
+  gl.attachShader(program, fragment);
+  gl.linkProgram(program);
+  gl.deleteShader(vertex);
+  gl.deleteShader(fragment);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(`WebXR vignette program failed: ${gl.getProgramInfoLog(program)}`);
+  }
+  return { program, vertexArray: gl.createVertexArray() };
+}
+
+function renderMotionVignette({ gl, vignetteProgram, views }) {
+  gl.useProgram(vignetteProgram.program);
+  gl.bindVertexArray(vignetteProgram.vertexArray);
+  gl.colorMask(true, true, true, true);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  for (const view of views) {
+    gl.viewport(view.viewport.x, view.viewport.y, view.viewport.width, view.viewport.height);
+    gl.scissor(view.viewport.x, view.viewport.y, view.viewport.width, view.viewport.height);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  return views.length;
+}
+
 export function createWebXrD3D8Renderer({
   gl,
   executorHooks,
@@ -546,6 +595,7 @@ export function createWebXrD3D8Renderer({
   panelWidthMeters = 1.6,
   panelDistanceMeters = 1.5,
   heightOffsetMeters = 0,
+  motionVignette = true,
   controlOptions = null,
   onInputAction = null,
   onAudioListenerPose = null,
@@ -569,6 +619,7 @@ export function createWebXrD3D8Renderer({
   const configuredEngineUnitsPerMeter = Number(engineUnitsPerMeter);
   const configuredPanelWidth = Number(panelWidthMeters);
   const configuredPanelDistance = Number(panelDistanceMeters);
+  const configuredMotionVignette = motionVignette !== false;
   if (!Number.isFinite(configuredWorldScale) || configuredWorldScale <= 0
       || !Number.isFinite(configuredEngineUnitsPerMeter)
       || configuredEngineUnitsPerMeter <= 0) {
@@ -593,6 +644,7 @@ export function createWebXrD3D8Renderer({
   let uiSurface = null;
   let uiProgram = null;
   let pointerProgram = null;
+  let vignetteProgram = null;
   let lastBackbufferWidth = 0;
   let lastBackbufferHeight = 0;
   let recenterRequested = false;
@@ -607,6 +659,7 @@ export function createWebXrD3D8Renderer({
       onInputAction?.(action);
     },
   });
+  const initialControlsState = controls.snapshot();
   let state = {
     active: false,
     frames: 0,
@@ -615,6 +668,8 @@ export function createWebXrD3D8Renderer({
     worldDraws: 0,
     uiDraws: 0,
     pointerDraws: 0,
+    vignetteDraws: 0,
+    vignetteFrames: 0,
     inputSourceCount: 0,
     controllerPointer: null,
     enginePickRayReady: false,
@@ -624,14 +679,17 @@ export function createWebXrD3D8Renderer({
     inputSuspended: false,
     inputWaitingForNeutral: false,
     inputNeutralBlockers: [],
+    cameraMotion: initialControlsState.cameraMotion,
     comfort: {
       worldScale: configuredWorldScale,
       panelWidthMeters: configuredPanelWidth,
       panelDistanceMeters: configuredPanelDistance,
       heightOffsetMeters: configuredHeightOffset,
-      dominantHand: controls.snapshot().dominantHand,
-      stickDeadzone: controls.snapshot().pressThreshold,
-      stickReleaseThreshold: controls.snapshot().releaseThreshold,
+      dominantHand: initialControlsState.dominantHand,
+      rotationMode: initialControlsState.rotationMode,
+      motionVignette: configuredMotionVignette,
+      stickDeadzone: initialControlsState.pressThreshold,
+      stickReleaseThreshold: initialControlsState.releaseThreshold,
     },
     error: null,
   };
@@ -706,6 +764,7 @@ export function createWebXrD3D8Renderer({
         enginePickRayReady: latestEngineView !== null,
         inputWaitingForNeutral: controlsState.waitingForNeutral,
         inputNeutralBlockers: controlsState.neutralBlockers,
+        cameraMotion: controlsState.cameraMotion,
       };
     }
     if (!pending) return;
@@ -836,6 +895,13 @@ export function createWebXrD3D8Renderer({
         pointerDraws = renderSpatialPointer({ gl, pointerProgram, views, pointer });
         executorDiag.invalidateD3D8ExternalGlState();
       }
+      let vignetteDraws = 0;
+      if (configuredMotionVignette && state.cameraMotion.active) {
+        executorDiag.bindD3D8ExternalFramebuffer(xrFramebuffer, framebufferWidth, framebufferHeight);
+        vignetteProgram ??= compileVignetteProgram(gl);
+        vignetteDraws = renderMotionVignette({ gl, vignetteProgram, views });
+        executorDiag.invalidateD3D8ExternalGlState();
+      }
       publish({
         frames: state.frames + 1,
         sequence: packet.sequence,
@@ -843,6 +909,8 @@ export function createWebXrD3D8Renderer({
         worldDraws,
         uiDraws,
         pointerDraws,
+        vignetteDraws,
+        vignetteFrames: state.vignetteFrames + Number(vignetteDraws > 0),
         inputSourceCount: Number(frameContext.inputSources?.length ?? 0),
         controllerPointer: controls.snapshot().pointer,
         error: null,
@@ -868,6 +936,7 @@ export function createWebXrD3D8Renderer({
       inputSuspended,
       inputWaitingForNeutral: controlsState.waitingForNeutral,
       inputNeutralBlockers: controlsState.neutralBlockers,
+      cameraMotion: controlsState.cameraMotion,
       controllerPointer: inputSuspended ? null : controlsState.pointer,
     });
   }
@@ -887,6 +956,7 @@ export function createWebXrD3D8Renderer({
       audioListenerPoseReady: false, visibilityState,
       inputSuspended, inputWaitingForNeutral: controlsState.waitingForNeutral,
       inputNeutralBlockers: controlsState.neutralBlockers,
+      cameraMotion: controlsState.cameraMotion,
       error: null });
   }
 
@@ -913,8 +983,9 @@ export function createWebXrD3D8Renderer({
     }
     return publish({ active: false, inputSourceCount: 0, controllerPointer: null,
       enginePickRayReady: false, audioListenerPoseReady: false,
-      pointerDraws: 0, visibilityState: null,
-      inputSuspended: false, inputWaitingForNeutral: false, inputNeutralBlockers: [] });
+      pointerDraws: 0, vignetteDraws: 0, visibilityState: null,
+      inputSuspended: false, inputWaitingForNeutral: false, inputNeutralBlockers: [],
+      cameraMotion: controls.snapshot().cameraMotion });
   }
 
   return {
