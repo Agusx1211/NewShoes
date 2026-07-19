@@ -113,17 +113,6 @@ PlayerList::~PlayerList()
 }
 
 //-----------------------------------------------------------------------------
-Player *PlayerList::getNthPlayer(Int i) 
-{ 
-	if( i < 0 || i >= MAX_PLAYER_COUNT )
-	{
-//		DEBUG_CRASH( ("Illegal player index\n") );
-		return NULL;
-	}
-	return m_players[i]; 
-}
-
-//-----------------------------------------------------------------------------
 Player *PlayerList::findPlayerWithNameKey(NameKeyType key)
 {
 	for (Int i = 0; i < m_playerCount; i++)
