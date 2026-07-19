@@ -76,6 +76,10 @@
 #include "GameLogic/Module/PhysicsUpdate.h"
 #include "GameLogic/TerrainLogic.h"
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 #define RATIONALIZE_ATTACK_RANGE
 #define ATTACK_RANGE_IS_2D
 
@@ -1850,6 +1854,9 @@ void Weapon::computeBonus(const Object *source, WeaponBonusConditionFlags extraB
 			flags |= theirContain->getWeaponBonusPassedToPassengers();
 	}
 
+	if (flags == 0)
+		return;
+
 	if (TheGlobalData->m_weaponBonusSet)
 		TheGlobalData->m_weaponBonusSet->appendBonuses(flags, bonus);
 	const WeaponBonusSet* extra = m_template->getExtraBonus();
@@ -3535,14 +3542,18 @@ void WeaponBonusSet::parseWeaponBonusSet(INI* ini)
 //-------------------------------------------------------------------------------------------------
 void WeaponBonusSet::appendBonuses(WeaponBonusConditionFlags flags, WeaponBonus& bonus) const
 {
-	if (flags == 0)
-		return;	// my, that was easy
-
-	for (int i = 0; i < WEAPONBONUSCONDITION_COUNT; ++i)
+	while (flags != 0)
 	{
-		if ((flags & (1 << i)) == 0)
-			continue;
-		
-		this->m_bonus[i].appendBonuses(bonus);
+#if defined(_MSC_VER)
+		unsigned long index;
+		_BitScanForward(&index, flags);
+#else
+		const Int index = __builtin_ctz(flags);
+#endif
+		if (index >= WEAPONBONUSCONDITION_COUNT)
+			break;
+
+		this->m_bonus[index].appendBonuses(bonus);
+		flags &= flags - 1;
 	}
 }
