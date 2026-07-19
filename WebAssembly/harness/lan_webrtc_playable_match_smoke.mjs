@@ -27,6 +27,7 @@ const maximumLogicStallMs = Number.parseInt(process.env.CNC_MAX_LOGIC_STALL_MS ?
 const maxAllowedLogicFrameSkew = threadedTest ? Math.max(30, playerCount - 1) : playerCount - 1;
 const maxAllowedFinalLogicFrameSkew = maxAllowedLogicFrameSkew;
 const activeSampleInterval = threadedTest ? 5 : 30;
+const manualNetworkFrameIntervalMs = Math.ceil(1000 / 30);
 const publicDiscovery = process.env.CNC_TRYSTERO_PUBLIC === "1";
 const configuredRelayUrls = String(process.env.CNC_TRYSTERO_RELAYS ?? "")
   .split(",").map((url) => url.trim()).filter(Boolean);
@@ -498,7 +499,11 @@ try {
   if (process.env.CNC_BROWSER_ARGS) {
     launchOptions.args = process.env.CNC_BROWSER_ARGS.split(/\s+/).filter(Boolean);
   }
-  const separateBrowsers = playerCount >= 4 || process.env.CNC_BROWSER_PER_PLAYER === "1";
+  // Real multiplayer peers have independent browser schedulers. Keep sharing
+  // one browser available for low-resource diagnostics, but do not serialize
+  // the default product evidence through a single renderer/event loop.
+  const separateBrowsers = process.env.CNC_SHARED_BROWSER !== "1"
+    || process.env.CNC_BROWSER_PER_PLAYER === "1";
   parallelClientFrames = process.env.CNC_SERIAL_CLIENT_FRAMES !== "1"
     && (threadedTest || separateBrowsers);
   for (let index = 0; index < playerCount; ++index) {
@@ -820,6 +825,13 @@ try {
   let postActiveStates = null;
   let postActiveDriverTicks = 0;
   for (; postActiveDriverTicks < 600; ++postActiveDriverTicks) {
+    // The ordinary browser loop is wall-clock paced, and the original
+    // Network/Connection send gates use the same 30 Hz interval. A tight
+    // manual verifier loop can otherwise exhaust every attempt while waiting
+    // for frame-info and ACK traffic before another send becomes eligible.
+    if (!threadedTest) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, manualNetworkFrameIntervalMs));
+    }
     postActiveFrames = await allFrames(clients, 1);
     postActiveStates = await Promise.all(clients.map((client) => lanState(client)));
     expect(postActiveStates.every((state) => state.network?.numPlayers === playerCount
