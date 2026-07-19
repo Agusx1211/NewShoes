@@ -550,6 +550,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int state_hash,
 	unsigned int derived_state_hash,
 	unsigned int derived_state_hash_secondary,
+	int spatial_ui_draw,
 	unsigned int producer_ptr,
 	int sorted_draw_profile_scope,
 	unsigned int pixel_shader,
@@ -630,6 +631,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		payload.stateHash = state_hash >>> 0;
 		payload.derivedStateHash = derivedKey;
 		payload.pixelShaderHandle = pixel_shader >>> 0;
+		payload.spatialUi = spatial_ui_draw !== 0;
 		payload.producer = producer;
 		payload.sortedDrawSubmitProfile = sorted_draw_profile_scope !== 0;
 		payload.treeShroud = Module.__cncPortD3D8TreeShroud || null;
@@ -664,7 +666,7 @@ void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned in
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int,
+	unsigned int, unsigned int, unsigned int, int,
 	unsigned int, int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
@@ -681,6 +683,7 @@ static_assert(sizeof(WasmD3D8DrawLight) == 108,
 WasmD3D8ShimState g_state = {};
 bool g_bound_draw_diagnostics_enabled = true;
 bool g_present_bridge_enabled = false;
+bool g_next_spatial_ui_draw = false;
 int g_d3d8_module = 0;
 UINT g_next_browser_buffer_id = 1;
 UINT g_next_browser_texture_id = 1;
@@ -2265,6 +2268,8 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 	const float *ps_constants, const float *vs_constants)
 {
 	const bool profile_sorted_draw_submit = wasm_d3d8_sorted_draw_profile_enabled();
+	const bool spatial_ui_draw = g_next_spatial_ui_draw;
+	g_next_spatial_ui_draw = false;
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
 		index_count == 0 || vertex_stride == 0) {
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.complete");
@@ -2315,6 +2320,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		state_hash,
 		derived_state_hash,
 		derived_state_hash_secondary,
+		spatial_ui_draw ? 1 : 0,
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(producer)),
 		profile_sorted_draw_submit ? 1 : 0,
 		pixel_shader,
@@ -5890,6 +5896,7 @@ extern "C" void wasm_d3d8_reset_state()
 {
 	std::memset(&g_state, 0, sizeof(g_state));
 	g_present_bridge_enabled = false;
+	g_next_spatial_ui_draw = false;
 	wasm_d3d8_browser_reset_state();
 }
 
@@ -5906,6 +5913,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_d3d8_set_bound_draw_diagnostics(in
 extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_d3d8_set_present_bridge(int enabled)
 {
 	g_present_bridge_enabled = enabled != 0;
+}
+
+extern "C" void cnc_port_mark_next_d3d8_spatial_ui_draw()
+{
+	g_next_spatial_ui_draw = true;
 }
 
 extern "C" HMODULE wasm_d3d8_load_library_a(LPCSTR library_name)

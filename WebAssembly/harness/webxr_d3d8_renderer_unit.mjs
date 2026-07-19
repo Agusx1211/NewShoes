@@ -135,6 +135,7 @@ const gl = {
 };
 const inputActions = [];
 const audioListenerPoses = [];
+const worldScene = { active: true, newGameCount: 1, clearGameDataCount: 0 };
 assert.throws(() => createWebXrD3D8Renderer({
   gl,
   executorHooks: hooks,
@@ -151,6 +152,7 @@ const renderer = createWebXrD3D8Renderer({
   gl,
   executorHooks: hooks,
   executorDiag: diag,
+  worldSceneState: () => worldScene,
   onInputAction: (action) => inputActions.push(action),
   onAudioListenerPose: (pose) => audioListenerPoses.push(pose),
 });
@@ -199,6 +201,8 @@ assert.deepEqual(renderer.snapshot(), {
   sequence: 7,
   viewCount: 2,
   worldDraws: 2,
+  retainedWorldDraws: 0,
+  retainedWorldCommandCount: 1,
   uiDraws: 0,
   pointerDraws: 0,
   vignetteDraws: 0,
@@ -304,6 +308,64 @@ assert.ok(inputActions.some((action) => action.type === "pickRay" && action.ray 
   "ending immersive mode must clear the native controller ray");
 assert.equal(renderer.snapshot().controllerPointer, null);
 
+const drawCountBeforeReentry = log.filter((entry) => entry[0] === "hook"
+  && entry[1] === "cncPortD3D8DrawIndexed").length;
+const logLengthBeforeReentry = log.length;
+renderer.onSessionStart();
+let reentryFrameAccepted = null;
+assert.equal(renderer.acceptFrame({
+  version: 1,
+  sequence: 9,
+  present: { backBufferWidth: 1280, backBufferHeight: 720 },
+  commands: [
+    { hook: "cncPortD3D8BindFramebuffer", args: [{ colorTextureId: 0 }] },
+    { hook: "cncPortD3D8Present", args: [{}] },
+  ],
+}, (accepted) => { reentryFrameAccepted = accepted; }), true);
+renderer.renderFrame({
+  pose: { transform: { matrix: identity } },
+  views: [view, { ...view, viewport: { x: 800, y: 0, width: 800, height: 900 } }],
+  inputSources: [],
+  layer: { framebuffer: {}, framebufferWidth: 1600, framebufferHeight: 900 },
+});
+assert.equal(reentryFrameAccepted, true);
+assert.equal(log.filter((entry) => entry[0] === "hook"
+  && entry[1] === "cncPortD3D8DrawIndexed").length, drawCountBeforeReentry + 2,
+"ordinary session replacement must replay the retained world once per compositor view");
+const reboundTextures = log.slice(logLengthBeforeReentry)
+  .filter((entry) => entry[0] === "hook" && entry[1] === "cncPortD3D8TextureBind")
+  .map((entry) => entry[2]);
+assert.deepEqual(reboundTextures, Array.from({ length: 8 }, (_, stage) => ({
+  stage,
+  id: stage === 0 ? 2 : 0,
+})),
+"retained world replay must restore its exact texture-stage bindings");
+assert.equal(renderer.snapshot().retainedWorldDraws, 2);
+assert.equal(renderer.snapshot().retainedWorldCommandCount, 1);
+assert.equal(renderer.snapshot().enginePickRayReady, true);
+
+worldScene.active = false;
+assert.equal(renderer.acceptFrame({
+  version: 1,
+  sequence: 10,
+  present: { backBufferWidth: 1280, backBufferHeight: 720 },
+  commands: [
+    { hook: "cncPortD3D8BindFramebuffer", args: [{ colorTextureId: 0 }] },
+    { hook: "cncPortD3D8Present", args: [{}] },
+  ],
+}, () => {}), true);
+renderer.renderFrame({
+  pose: { transform: { matrix: identity } },
+  views: [view],
+  inputSources: [],
+  layer: { framebuffer: {}, framebufferWidth: 1600, framebufferHeight: 900 },
+});
+assert.equal(log.filter((entry) => entry[0] === "hook"
+  && entry[1] === "cncPortD3D8DrawIndexed").length, drawCountBeforeReentry + 2,
+"leaving the match must invalidate the retained world before shell composition");
+assert.equal(renderer.snapshot().retainedWorldCommandCount, 0);
+assert.equal(renderer.snapshot().enginePickRayReady, false);
+
 const lostRenderer = createWebXrD3D8Renderer({ gl, executorHooks: hooks, executorDiag: diag });
 lostRenderer.onSessionStart();
 let lostFrameAccepted = null;
@@ -311,7 +373,7 @@ const presentCountBeforeLoss = log.filter((entry) => entry[0] === "hook"
   && entry[1] === "cncPortD3D8Present").length;
 assert.equal(lostRenderer.acceptFrame({
   version: 1,
-  sequence: 9,
+  sequence: 11,
   present: { backBufferWidth: 1280, backBufferHeight: 720 },
   commands: [
     { hook: "cncPortD3D8BindFramebuffer", args: [{ colorTextureId: 0 }] },

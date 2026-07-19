@@ -103,6 +103,7 @@
     "test:webxr-d3d8-command-stream": "node harness/webxr_d3d8_command_stream_unit.mjs",
     "test:webxr-d3d8-materialization": "node harness/webxr_d3d8_materialization_unit.mjs",
     "test:webxr-d3d8-threaded-replay": "node harness/webxr_d3d8_threaded_replay_smoke.mjs",
+    "test:webxr-bink-video": "npm run build:bink-decoder && node harness/webxr_bink_video_smoke.mjs",
     "test:webxr-world-input": "node harness/webxr_world_input_smoke.mjs",
     "test:webxr-d3d8-renderer": "node harness/webxr_d3d8_renderer_unit.mjs",
     "test:webxr-controls": "node harness/webxr_controls_unit.mjs",

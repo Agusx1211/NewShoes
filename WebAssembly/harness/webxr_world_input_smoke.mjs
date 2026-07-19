@@ -1131,10 +1131,6 @@ try {
   await waitForSelectionMode(page, "single-controller selection release",
     (modes) => modes.preferSelection === false);
 
-  const cameraBeforeTurn = await fullFrame(page);
-  const cameraAngleBeforeTurn = Number(cameraBeforeTurn?.clientState?.view?.angle);
-  assert.ok(Number.isFinite(cameraAngleBeforeTurn),
-    `real camera angle is unavailable: ${JSON.stringify(cameraBeforeTurn?.clientState?.view)}`);
   const vignetteFramesBeforeTurn = Number(
     (await page.evaluate(() => window.CnCPort.getWebXrState().renderer?.vignetteFrames)) ?? 0,
   );
@@ -1142,20 +1138,33 @@ try {
     window.__emulatedXrButton(5, true);
     window.__emulatedXrAxes(0.8, 0);
   });
-  await page.waitForTimeout(50);
-  await fullFrame(page);
-  const cameraAfterTurn = await waitForFrame(page, "single-controller stepped turn",
-    (candidate) => angularDistance(
-      Number(candidate?.clientState?.view?.angle), cameraAngleBeforeTurn,
-    ) > 0.05);
+  await page.waitForFunction((before) =>
+    Number(window.CnCPort.getWebXrState().renderer?.vignetteFrames ?? 0) > before,
+  vignetteFramesBeforeTurn, { timeout: 30000, polling: 16 });
   const vignetteObserved = await page.evaluate(() => ({
     cameraMotion: window.CnCPort.getWebXrState().renderer?.cameraMotion,
     vignetteDraws: window.CnCPort.getWebXrState().renderer?.vignetteDraws,
     vignetteFrames: window.CnCPort.getWebXrState().renderer?.vignetteFrames,
   }));
   assert.ok(Number(vignetteObserved.vignetteFrames) > vignetteFramesBeforeTurn,
-    `the stepped camera frame did not render a comfort vignette: ${JSON.stringify(
+    `the stepped camera gesture did not render a comfort vignette: ${JSON.stringify(
       vignetteObserved)}`);
+  await page.evaluate(() => window.__emulatedXrAxes(0, 0));
+  await page.waitForFunction(() =>
+    window.CnCPort.getWebXrState().renderer?.cameraMotion?.active === false);
+
+  const cameraBeforeTurn = await fullFrame(page);
+  const cameraAngleBeforeTurn = Number(cameraBeforeTurn?.clientState?.view?.angle);
+  assert.ok(Number.isFinite(cameraAngleBeforeTurn),
+    `real camera angle is unavailable: ${JSON.stringify(cameraBeforeTurn?.clientState?.view)}`);
+  await page.evaluate(() => window.__emulatedXrAxes(0.8, 0));
+  await page.waitForFunction(() =>
+    window.CnCPort.getWebXrState().renderer?.cameraMotion?.turning === true);
+  await fullFrame(page);
+  const cameraAfterTurn = await waitForFrame(page, "single-controller stepped turn",
+    (candidate) => angularDistance(
+      Number(candidate?.clientState?.view?.angle), cameraAngleBeforeTurn,
+    ) > 0.05);
   await waitForSelectionMode(page, "single-controller stepped turn release",
     (modes) => modes.cameraRotateRight === false);
   assert.equal((await page.evaluate(() =>

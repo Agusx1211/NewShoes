@@ -262,6 +262,58 @@ function pretransformedDraw(payload) {
   return ((Number(payload?.vertexShaderFvf ?? 0) >>> 0) & D3DFVF_XYZRHW) === D3DFVF_XYZRHW;
 }
 
+function spatialUiDraw(payload) {
+  // Render2DClass emits ordinary XYZ vertices already converted to clip space,
+  // so the engine tags those draws explicitly rather than making the renderer
+  // guess from identity transforms that unrelated presentation work can share.
+  return payload?.spatialUi === true || pretransformedDraw(payload);
+}
+
+function worldDrawStateFromPacket(packet, boundTextures) {
+  let defaultFramebuffer = true;
+  const draws = [];
+  for (const command of packet?.commands ?? []) {
+    if (command.hook === "cncPortD3D8ResetState") {
+      boundTextures.clear();
+      continue;
+    }
+    if (command.hook === "cncPortD3D8TextureRelease") {
+      const released = Number(command.args?.[0]?.id ?? 0) >>> 0;
+      for (const [stage, id] of boundTextures) {
+        if (id === released) boundTextures.delete(stage);
+      }
+      continue;
+    }
+    if (command.hook === "cncPortD3D8TextureBind") {
+      const payload = command.args?.[0] ?? {};
+      const stage = Number(payload.stage ?? 0) >>> 0;
+      const id = Number(payload.id ?? 0) >>> 0;
+      if (id === 0) boundTextures.delete(stage);
+      else boundTextures.set(stage, id);
+      continue;
+    }
+    if (command.hook === "cncPortD3D8BindFramebuffer") {
+      defaultFramebuffer = (Number(command.args?.[0]?.colorTextureId ?? 0) >>> 0) === 0;
+      continue;
+    }
+    const payload = command.hook === "cncPortD3D8DrawIndexed" ? command.args?.[0] : null;
+    if (defaultFramebuffer && payload && !spatialUiDraw(payload)) {
+      draws.push({
+        command,
+        boundTextures: Array.from({ length: 8 }, (_, stage) =>
+          [stage, Number(boundTextures.get(stage) ?? 0) >>> 0]),
+      });
+    }
+  }
+  return draws;
+}
+
+function normalizedWorldSceneKey(value, fallback) {
+  if (value === undefined) return fallback;
+  if (!value || value.active !== true) return null;
+  return `${Number(value.newGameCount ?? 0)}:${Number(value.clearGameDataCount ?? 0)}`;
+}
+
 function engineViewFromPacket(packet) {
   let defaultFramebuffer = true;
   for (const command of packet?.commands ?? []) {
@@ -270,7 +322,7 @@ function engineViewFromPacket(packet) {
       continue;
     }
     const payload = command.hook === "cncPortD3D8DrawIndexed" ? command.args?.[0] : null;
-    if (defaultFramebuffer && payload && !pretransformedDraw(payload)
+    if (defaultFramebuffer && payload && !spatialUiDraw(payload)
         && ((Number(payload.transformMask ?? 0) >>> 0) & 2) !== 0
         && payload.transforms?.view) {
       return matrix16(payload.transforms.view, "engine view transform");
@@ -597,6 +649,7 @@ export function createWebXrD3D8Renderer({
   heightOffsetMeters = 0,
   motionVignette = true,
   controlOptions = null,
+  worldSceneState = null,
   onInputAction = null,
   onAudioListenerPose = null,
   onStateChange = null,
@@ -649,6 +702,26 @@ export function createWebXrD3D8Renderer({
   let lastBackbufferHeight = 0;
   let recenterRequested = false;
   let latestEngineView = null;
+  let retainedWorldDraws = [];
+  let retainedWorldSceneKey = null;
+  const recordedTextureBindings = new Map();
+  const unscopedWorldSceneKey = "renderer-default";
+  const currentWorldSceneKey = () => normalizedWorldSceneKey(
+    typeof worldSceneState === "function" ? worldSceneState() : undefined,
+    unscopedWorldSceneKey,
+  );
+  const clearRetainedWorld = () => {
+    latestEngineView = null;
+    retainedWorldDraws = [];
+    retainedWorldSceneKey = null;
+  };
+  const synchronizeWorldScene = () => {
+    const sceneKey = currentWorldSceneKey();
+    if (retainedWorldSceneKey !== null && retainedWorldSceneKey !== sceneKey) {
+      clearRetainedWorld();
+    }
+    return sceneKey;
+  };
   const controls = createWebXrControls({
     ...(controlOptions ?? {}),
     onAction: (action) => {
@@ -666,6 +739,8 @@ export function createWebXrD3D8Renderer({
     sequence: 0,
     viewCount: 0,
     worldDraws: 0,
+    retainedWorldDraws: 0,
+    retainedWorldCommandCount: 0,
     uiDraws: 0,
     pointerDraws: 0,
     vignetteDraws: 0,
@@ -702,7 +777,18 @@ export function createWebXrD3D8Renderer({
 
   function acceptFrame(packet, completion) {
     if (!active || pending || !packet || typeof completion !== "function") return false;
-    latestEngineView = engineViewFromPacket(packet) ?? latestEngineView;
+    const sceneKey = synchronizeWorldScene();
+    const packetWorldDraws = worldDrawStateFromPacket(packet, recordedTextureBindings);
+    const engineView = engineViewFromPacket(packet);
+    if (sceneKey !== null && packetWorldDraws.length > 0) {
+      retainedWorldDraws = packetWorldDraws;
+      retainedWorldSceneKey = sceneKey;
+      latestEngineView = engineView ?? latestEngineView;
+    } else if (sceneKey !== null && engineView !== null) {
+      latestEngineView = engineView;
+    } else if (sceneKey === null) {
+      clearRetainedWorld();
+    }
     pending = { packet, completion };
     return true;
   }
@@ -715,6 +801,7 @@ export function createWebXrD3D8Renderer({
 
   function renderFrame(frameContext) {
     if (!active) return;
+    const sceneKey = synchronizeWorldScene();
     const views = Array.isArray(frameContext.views) ? frameContext.views : [];
     if (views.length === 0) throw new Error("WebXR compositor provided no views");
     anchorTransform ??= anchoredViewerTransform(frameContext.pose, "initial viewer transform");
@@ -830,7 +917,7 @@ export function createWebXrD3D8Renderer({
           if (!defaultFramebuffer) {
             executorDiag.setD3D8XrViewOverride(null);
             callHook(executorHooks, command);
-          } else if (pretransformedDraw(command.args?.[0])) {
+          } else if (spatialUiDraw(command.args?.[0])) {
             uiSurface ??= createUiSurface(gl);
             uiSurface.resize(backbufferWidth, backbufferHeight);
             if (uiDraws === 0) {
@@ -874,6 +961,26 @@ export function createWebXrD3D8Renderer({
       }
       executorDiag.setD3D8XrViewOverride(null);
       executorDiag.flushD3D8PendingDrawBatch("webxrPresent");
+      let retainedWorldDrawCount = 0;
+      if (worldDraws === 0 && sceneKey !== null
+          && retainedWorldSceneKey === sceneKey && retainedWorldDraws.length > 0) {
+        for (const retained of retainedWorldDraws) {
+          for (const [stage, id] of retained.boundTextures) {
+            executorHooks.cncPortD3D8TextureBind({ stage, id });
+          }
+          for (const override of overrides) {
+            executorDiag.bindD3D8ExternalFramebuffer(
+              xrFramebuffer, framebufferWidth, framebufferHeight,
+            );
+            executorDiag.setD3D8XrViewOverride(override);
+            callHook(executorHooks, retained.command);
+            retainedWorldDrawCount += 1;
+          }
+        }
+        executorDiag.setD3D8XrViewOverride(null);
+        executorDiag.flushD3D8PendingDrawBatch("webxrRetainedWorld");
+        worldDraws += retainedWorldDrawCount;
+      }
       if (uiDraws > 0) {
         executorDiag.bindD3D8ExternalFramebuffer(xrFramebuffer, framebufferWidth, framebufferHeight);
         uiProgram ??= compileUiProgram(gl);
@@ -908,6 +1015,8 @@ export function createWebXrD3D8Renderer({
         sequence: packet.sequence,
         viewCount: views.length,
         worldDraws,
+        retainedWorldDraws: retainedWorldDrawCount,
+        retainedWorldCommandCount: retainedWorldDraws.length,
         uiDraws,
         pointerDraws,
         vignetteDraws,
@@ -946,7 +1055,7 @@ export function createWebXrD3D8Renderer({
     active = true;
     anchorTransform = null;
     recenterRequested = false;
-    latestEngineView = null;
+    synchronizeWorldScene();
     onInputAction?.({ type: "pickRay", ray: null });
     onAudioListenerPose?.(null);
     const visibilityState = String(session?.visibilityState ?? "visible");
@@ -968,9 +1077,9 @@ export function createWebXrD3D8Renderer({
     controls.reset();
     onInputAction?.({ type: "pickRay", ray: null });
     onAudioListenerPose?.(null);
-    latestEngineView = null;
     const graphicsContextLost = reason === "graphics-context-lost"
       || gl.isContextLost?.() === true;
+    if (graphicsContextLost) clearRetainedWorld();
     if (!graphicsContextLost) {
       executorDiag.setD3D8XrViewOverride(null);
       executorDiag.invalidateD3D8ExternalGlState();

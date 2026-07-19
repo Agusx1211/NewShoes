@@ -63,7 +63,7 @@ try {
         }
         if (hook === "cncPortD3D8DrawIndexed") {
           return (payload) => {
-            if (((Number(payload?.vertexShaderFvf ?? 0) >>> 0) & 0x004) === 0) return 1;
+            if (payload?.testSpatialUi !== true) return 1;
             gl.colorMask(true, true, true, true);
             gl.clearColor(0.08, 0.55, 0.9, 1);
             gl.clear(gl.COLOR_BUFFER_BIT);
@@ -103,7 +103,13 @@ try {
         transformMask: 2,
         transforms: { view: identity },
       }] },
-      { hook: "cncPortD3D8DrawIndexed", args: [{ vertexShaderFvf: 0x004 }] },
+      { hook: "cncPortD3D8DrawIndexed", args: [{
+        vertexShaderFvf: 0x002,
+        transformMask: 7,
+        transforms: { world: identity, view: identity, projection: identity },
+        spatialUi: true,
+        testSpatialUi: true,
+      }] },
       { hook: "cncPortD3D8Present", args: [{}] },
     ];
     renderer.acceptFrame({

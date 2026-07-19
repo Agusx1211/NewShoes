@@ -1435,6 +1435,7 @@ function createThreadedEngineController() {
         gl,
         executorHooks: d3d8Hooks,
         executorDiag: d3d8Diag,
+        worldSceneState: () => harnessState.threadedEngine?.frame?.worldScene,
         onInputAction: forwardWebXrInputAction,
         onAudioListenerPose: setWebXrAudioListenerPose,
         onStateChange: (renderer) => {
