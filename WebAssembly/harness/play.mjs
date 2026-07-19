@@ -1902,7 +1902,7 @@ function syncDesktopWebXrSetting(overrideMessage = null) {
     button.disabled = false;
     button.textContent = "Exit VR";
     if (!overrideMessage) {
-      status.textContent = "Trigger select · grip order · left stick pan · right stick zoom · A/X cancel · B/Y recenter.";
+      status.textContent = "Main hand points and orders; off hand pans and holds waypoint, force-fire, selection, and group layers.";
     }
     return;
   }

@@ -407,6 +407,7 @@ export function createWebXrD3D8Renderer({
   engineUnitsPerMeter = DEFAULT_ENGINE_UNITS_PER_METER,
   panelWidthMeters = 1.6,
   panelDistanceMeters = 1.5,
+  controlOptions = null,
   onInputAction = null,
   onStateChange = null,
 } = {}) {
@@ -433,6 +434,7 @@ export function createWebXrD3D8Renderer({
   let recenterRequested = false;
   let latestEngineView = null;
   const controls = createWebXrControls({
+    ...(controlOptions ?? {}),
     onAction: (action) => {
       if (action.type === "recenter") {
         recenterRequested = true;

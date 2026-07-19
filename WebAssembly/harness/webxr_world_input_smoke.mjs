@@ -57,6 +57,18 @@ async function waitForFrame(page, label, predicate, waitMs = 120000) {
   throw new Error(`${label} timed out: ${JSON.stringify(last?.clientState ?? last)}`);
 }
 
+async function waitForSelectionMode(page, label, predicate, waitMs = 30000) {
+  const deadline = Date.now() + waitMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    await fullFrame(page);
+    last = await rpc(page, "querySelection");
+    if (last?.ok === true && predicate(last.result?.modes ?? {})) return last.result.modes;
+    await page.waitForTimeout(50);
+  }
+  throw new Error(`${label} timed out: ${JSON.stringify(last)}`);
+}
+
 function enginePointToCss(geometry, point) {
   if (!geometry?.engineWidth || !geometry?.engineHeight) return null;
   return {
@@ -301,6 +313,16 @@ try {
         value: down === true ? 1 : 0,
       };
     };
+    window.__emulatedXrButton = (index, down) => {
+      inputSource.gamepad.buttons[index] = {
+        pressed: down === true,
+        touched: down === true,
+        value: down === true ? 1 : 0,
+      };
+    };
+    window.__emulatedXrAxes = (x, y) => {
+      inputSource.gamepad.axes = [Number(x), Number(y)];
+    };
   });
 
   const page = await browser.newPage();
@@ -355,10 +377,52 @@ try {
   await page.evaluate(() => window.__emulatedXrTrigger(true));
   await page.waitForTimeout(250);
   await page.evaluate(() => window.__emulatedXrTrigger(false));
+  await page.waitForTimeout(100);
   const driven = await rpc(page, "webxrPickRayState");
   assert.ok(driven.result.consumed > active.result.consumed,
     `controller trigger did not reach the original W3D picker: ${JSON.stringify(driven)}`);
   stage("native W3DView accepted the transformed ray");
+
+  await page.evaluate(() => {
+    window.__emulatedXrButton(2, true);
+    window.__emulatedXrTrigger(true);
+  });
+  await waitForSelectionMode(page, "single-controller force-fire layer",
+    (modes) => modes.forceAttack === true);
+  await page.evaluate(() => {
+    window.__emulatedXrTrigger(false);
+    window.__emulatedXrButton(2, false);
+  });
+  await waitForSelectionMode(page, "single-controller force-fire release",
+    (modes) => modes.forceAttack === false);
+
+  await page.evaluate(() => window.__emulatedXrButton(3, true));
+  await waitForSelectionMode(page, "single-controller waypoint layer",
+    (modes) => modes.waypoint === true);
+  await page.evaluate(() => window.__emulatedXrButton(3, false));
+  await waitForSelectionMode(page, "single-controller waypoint release",
+    (modes) => modes.waypoint === false);
+
+  await page.evaluate(() => window.__emulatedXrButton(4, true));
+  await waitForSelectionMode(page, "single-controller selection layer",
+    (modes) => modes.preferSelection === true);
+  await page.evaluate(() => window.__emulatedXrButton(4, false));
+  await waitForSelectionMode(page, "single-controller selection release",
+    (modes) => modes.preferSelection === false);
+
+  await page.evaluate(() => {
+    window.__emulatedXrButton(5, true);
+    window.__emulatedXrAxes(0.8, -0.8);
+  });
+  await waitForSelectionMode(page, "single-controller camera layer", (modes) =>
+    modes.cameraRotateRight === true && modes.cameraZoomIn === true);
+  await page.evaluate(() => {
+    window.__emulatedXrAxes(0, 0);
+    window.__emulatedXrButton(5, false);
+  });
+  await waitForSelectionMode(page, "single-controller camera release", (modes) =>
+    modes.cameraRotateRight === false && modes.cameraZoomIn === false);
+  stage("original modifier and camera translators accepted controller layers");
 
   await page.evaluate(() => window.CnCPort.stopWebXrSession("world-input-smoke"));
   await page.waitForFunction(async () => {

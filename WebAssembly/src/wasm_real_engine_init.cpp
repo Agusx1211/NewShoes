@@ -7940,6 +7940,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	json += TheInGameUI->isInForceAttackMode() ? "true" : "false";
 	json += ",\"preferSelection\":";
 	json += TheInGameUI->isInPreferSelectionMode() ? "true" : "false";
+	json += ",\"cameraRotateLeft\":";
+	json += TheInGameUI->isCameraRotatingLeft() ? "true" : "false";
+	json += ",\"cameraRotateRight\":";
+	json += TheInGameUI->isCameraRotatingRight() ? "true" : "false";
+	json += ",\"cameraZoomIn\":";
+	json += TheInGameUI->isCameraZoomingIn() ? "true" : "false";
+	json += ",\"cameraZoomOut\":";
+	json += TheInGameUI->isCameraZoomingOut() ? "true" : "false";
 	json += ",\"placementAnchored\":";
 	json += TheInGameUI->isPlacementAnchored() ? "true" : "false";
 	json += ",\"pendingPlaceType\":";

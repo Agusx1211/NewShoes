@@ -70,12 +70,30 @@ composited as a head-anchored floating panel. `webxr-controls.mjs` intersects
 tracked controller rays with that panel and sends its actions through the same
 ordered Win32/DirectInput bridge as desktop input:
 
-- trigger: engine left click / selection;
-- squeeze: engine right click / contextual order;
-- left thumbstick: held engine arrow keys for camera pan;
-- right thumbstick: engine mouse wheel for zoom;
-- A/X: engine Escape press;
-- B/Y: recenter the spatial anchor.
+- dominant trigger/squeeze: engine left/right click for selection, drag, menu
+  activation, and contextual orders;
+- dominant thumbstick: held original numpad camera rotate/zoom bindings;
+- dominant A/X and B/Y: original attack-move and cancel hotkeys; dominant
+  stick-click recenters the spatial anchor;
+- offhand thumbstick: held original arrow-key camera pan, or a ten-sector
+  original digit/control-group radial while stick-click is held;
+- offhand trigger, squeeze, and A/X: held original Alt waypoint, Ctrl
+  force-fire/group-assign, and Shift preferred-selection/group-add modifiers;
+- offhand B/Y: recenter the spatial anchor.
+
+When only one tracked controller is available, its stick pans normally. Holding
+B/Y changes the stick to original camera rotate/zoom, stick-click selects one of
+all ten control groups, auxiliary holds Ctrl, stick-click without a radial
+direction holds Alt, and A/X holds Shift. Tapping A/X or B/Y still reaches
+attack-move or cancel; pressing both recenters without firing either tap action.
+Holding B/Y while choosing a radial group supplies the original Alt/view-group
+modifier. These are controller layers only: no engine command is synthesized in
+JavaScript. Configurable dominant hand, button indices, key bindings, and
+press/release dead zones are accepted by the controls module for controller
+profile and accessibility remapping. XR-standard missing buttons simply leave
+their action inactive rather than inventing a success path. Short optional
+haptic pulses acknowledge target clicks, orders, and control-group choices when
+the active controller exposes a supported actuator.
 
 Every tracked pointer also carries a ray transformed from the WebXR reference
 space through the initial spatial anchor and the latest real engine view into
