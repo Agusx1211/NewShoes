@@ -24872,6 +24872,25 @@ canvas.addEventListener("pointermove", (event) => {
     },
   });
 });
+canvas.addEventListener("pointerleave", (event) => {
+  if (event.pointerType === "touch" || event.buttons !== 0) return;
+  const point = canvasInputPointFromEvent(event);
+  const targetWidth = harnessState.engineDisplaySize?.width ?? canvas.width;
+  const targetHeight = harnessState.engineDisplaySize?.height ?? canvas.height;
+  const inset = 4;
+  const interiorPoint = {
+    x: Math.max(inset, Math.min(targetWidth - inset - 1, point.x)),
+    y: Math.max(inset, Math.min(targetHeight - inset - 1, point.y)),
+  };
+  void pushBrowserInputToWasmLite({
+    cursor: interiorPoint,
+    win32Message: {
+      message: win32Messages.mouseMove,
+      lParam: win32PointLParam(interiorPoint),
+      point: interiorPoint,
+    },
+  });
+});
 canvas.addEventListener("pointerdown", (event) => {
   try {
     canvas.focus({ preventScroll: true });
