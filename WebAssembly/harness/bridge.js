@@ -4942,7 +4942,7 @@ function cncPortMss3DSampleRelease(payload) {
 const browserMssStreamPlaybackRuntime = {
   source: "MSS stream Web Audio backend proof",
   activeSources: new Map(), // handle -> { source, gain }
-  pendingStarts: new Map(), // handle -> { cancelled: bool }
+  pendingStarts: new Map(), // handle -> identity token { cancelled: bool }
   started: 0,
   decoded: 0,
   scheduled: 0,
@@ -4956,6 +4956,26 @@ const browserMssStreamPlaybackRuntime = {
   lastArchiveError: null,
 };
 
+function cancelBrowserMssStreamPendingStarts() {
+  for (const pending of browserMssStreamPlaybackRuntime.pendingStarts.values()) {
+    pending.cancelled = true;
+  }
+  browserMssStreamPlaybackRuntime.pendingStarts.clear();
+}
+
+function isBrowserMssStreamPendingStartCurrent(handle, pendingStart) {
+  return browserMssStreamPlaybackRuntime.pendingStarts.get(handle) === pendingStart
+    && pendingStart.cancelled !== true;
+}
+
+function releaseBrowserMssStreamPendingStart(handle, pendingStart) {
+  if (browserMssStreamPlaybackRuntime.pendingStarts.get(handle) !== pendingStart) {
+    return false;
+  }
+  browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+  return true;
+}
+
 function resetBrowserMssStreamPlaybackRuntime() {
   for (const active of browserMssStreamPlaybackRuntime.activeSources.values()) {
     try {
@@ -4967,7 +4987,7 @@ function resetBrowserMssStreamPlaybackRuntime() {
     }
   }
   browserMssStreamPlaybackRuntime.activeSources.clear();
-  browserMssStreamPlaybackRuntime.pendingStarts.clear();
+  cancelBrowserMssStreamPendingStarts();
   browserMssStreamPlaybackRuntime.started = 0;
   browserMssStreamPlaybackRuntime.decoded = 0;
   browserMssStreamPlaybackRuntime.scheduled = 0;
@@ -5076,8 +5096,9 @@ async function _startMssStreamAsync(payload) {
   const volume = clamp01(Number(payload.volumeFloat ?? ((payload.volume ?? 127) / 127)));
   const loopCount = Number(payload.loopCount ?? 1);
 
-  // Register pending start for stop-before-start race guard.
-  browserMssStreamPlaybackRuntime.pendingStarts.set(handle, { cancelled: false });
+  // Register an identity token before the first asynchronous boundary.
+  const pendingStart = { cancelled: false };
+  browserMssStreamPlaybackRuntime.pendingStarts.set(handle, pendingStart);
 
   browserMssStreamPlaybackRuntime.started += 1;
   browserMssStreamPlaybackRuntime.eventLog.push(
@@ -5094,16 +5115,13 @@ async function _startMssStreamAsync(payload) {
 
   // Load stream bytes from mounted BIG archives.
   const wasmModule = await wasmModulePromise;
-  if (!wasmModule) {
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
-    browserMssStreamPlaybackRuntime.lastError = "WASM module not available";
+  if (!isBrowserMssStreamPendingStartCurrent(handle, pendingStart)) {
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
     return;
   }
-
-  // Race guard: stop was called before async archive access started.
-  const pending = browserMssStreamPlaybackRuntime.pendingStarts.get(handle);
-  if (pending?.cancelled) {
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+  if (!wasmModule) {
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
+    browserMssStreamPlaybackRuntime.lastError = "WASM module not available";
     return;
   }
 
@@ -5160,8 +5178,12 @@ async function _startMssStreamAsync(payload) {
     }
   }
 
+  if (!isBrowserMssStreamPendingStartCurrent(handle, pendingStart)) {
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
+    return;
+  }
   if (!entry || (!archiveBytes && !opfsPayloadBytes)) {
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
     browserMssStreamPlaybackRuntime.lastError =
       `Stream file not found in any mounted archive: ${filename}`;
     return;
@@ -5174,7 +5196,11 @@ async function _startMssStreamAsync(payload) {
   try {
     decoded = await decodeMssStreamPayload(context, payloadBytes, entry);
   } catch (err) {
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+    if (!isBrowserMssStreamPendingStartCurrent(handle, pendingStart)) {
+      releaseBrowserMssStreamPendingStart(handle, pendingStart);
+      return;
+    }
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
     browserMssStreamPlaybackRuntime.lastError =
       `Failed to decode stream payload: ${err?.message ?? String(err)}`;
     return;
@@ -5182,11 +5208,11 @@ async function _startMssStreamAsync(payload) {
 
   // Race guard: stop was called while archive lookup / MP3 decode was in flight.
   const pendingAfterDecode = browserMssStreamPlaybackRuntime.pendingStarts.get(handle);
-  if (pendingAfterDecode?.cancelled) {
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+  if (pendingAfterDecode !== pendingStart || pendingStart.cancelled === true) {
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
     return;
   }
-  browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+  releaseBrowserMssStreamPendingStart(handle, pendingStart);
 
   browserMssStreamPlaybackRuntime.decoded += 1;
   browserMssStreamPlaybackRuntime.eventLog.push({
@@ -5280,9 +5306,9 @@ function cncPortMssStreamStop(payload) {
   browserMssStreamPlaybackRuntime.stopped += 1;
   browserMssStreamPlaybackRuntime.eventLog.push({ handle, phase: "AIL_close_stream" });
   // Cancel in-flight async start if this stop races ahead of it.
-  const entry = browserMssStreamPlaybackRuntime.pendingStarts?.get(handle);
-  if (entry) {
-    entry.cancelled = true;
+  const pendingStart = browserMssStreamPlaybackRuntime.pendingStarts?.get(handle);
+  if (pendingStart) {
+    pendingStart.cancelled = true;
   }
   try {
     const active = browserMssStreamPlaybackRuntime.activeSources.get(handle);
@@ -5317,10 +5343,7 @@ async function shutdownBrowserAudioRuntime() {
 
   stopSources(browserMssSamplePlaybackRuntime);
   stopSources(browserMss3DSamplePlaybackRuntime);
-  for (const pending of browserMssStreamPlaybackRuntime.pendingStarts.values()) {
-    pending.cancelled = true;
-  }
-  browserMssStreamPlaybackRuntime.pendingStarts.clear();
+  cancelBrowserMssStreamPendingStarts();
   stopSources(browserMssStreamPlaybackRuntime);
   browserMssStreamPlaybackRuntime.musicSourceActive = false;
 
@@ -24703,13 +24726,34 @@ async function rpc(command, payload = {}) {
         }
         resetBrowserMssStreamPlaybackRuntime();
         const handle = Number(payload.handle ?? 33001);
-        const started = cncPortMssStreamStart({
+        const startPayload = {
           handle,
           filename: entryPath,
           volume: Number(payload.volume ?? 96),
           loopCount: Number(payload.loopCount ?? 1),
           playbackRate: Number(payload.playbackRate ?? 44100),
-        });
+        };
+        if (payload.resetDuringStart === true) {
+          const pendingStart = _startMssStreamAsync(startPayload);
+          resetBrowserMssStreamPlaybackRuntime();
+          await pendingStart;
+          const afterReset = summarizeBrowserMssStreamPlaybackRuntime();
+          return {
+            ok: afterReset.pendingStarts === 0
+              && afterReset.activeSources === 0
+              && afterReset.decoded === 0
+              && afterReset.scheduled === 0
+              && afterReset.musicSourceActive === false
+              && afterReset.lastError === null,
+            command,
+            archive: archiveName,
+            path: entryPath,
+            resetDuringStart: true,
+            afterReset,
+            state: snapshotState(),
+          };
+        }
+        const started = cncPortMssStreamStart(startPayload);
         let startError = null;
         try {
           await waitForBrowserMssStreamStart(handle, Number(payload.timeoutMs ?? 8000));

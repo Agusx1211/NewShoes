@@ -616,14 +616,14 @@ function main() {
     cwrap: requirePinnedLine(
       errors,
       bridge.lines,
-      7009,
+      7032,
       /probeMss3DSampleLifecycle:\s*module\.cwrap\("cnc_port_probe_mss_3d_sample_lifecycle",\s*"string",\s*\[\]\)/,
       "bridge 3D sample lifecycle cwrap",
     ),
     rpc: requirePinnedLine(
       errors,
       bridge.lines,
-      24758,
+      24802,
       /case "mss3DSampleLifecycleProbe":/,
       "bridge mss3DSampleLifecycleProbe RPC",
     ),
