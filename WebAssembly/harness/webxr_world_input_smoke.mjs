@@ -597,6 +597,45 @@ async function driveWebXrSaveLoadRoundTrip(page, geometry) {
   };
 }
 
+async function driveWebXrHudSurfaceFlow(page, geometry) {
+  const hud = await waitForFrame(page, "live WebXR HUD", (candidate) => {
+    const controlBar = candidate?.clientState?.controlBarWindows;
+    return controlBar?.moneyDisplay?.found === true
+      && controlBar.moneyDisplay.hidden === false
+      && controlBar.moneyDisplay.managerHidden === false
+      && controlBar?.buttonGeneral?.clickable === true;
+  });
+  const money = hud.clientState.controlBarWindows.moneyDisplay;
+  await aimWebXrAtEnginePoint(page, geometry,
+    { x: money.centerX, y: money.centerY }, "HUD money tooltip hover");
+  const tooltipName = await waitForAgentUiWindow(page,
+    "ControlBarPopupDescription.wnd:StaticTextName",
+    (window) => window.visible === true && window.text.trim().length > 0);
+  const tooltipDescription = await waitForAgentUiWindow(page,
+    "ControlBarPopupDescription.wnd:StaticTextDescription",
+    (window) => window.visible === true && window.text.trim().length > 0);
+
+  const generalButton = hud.clientState.controlBarWindows.buttonGeneral;
+  await clickEngineButton(page, geometry, generalButton, "HUD Generals button");
+  const opened = await waitForFrame(page, "Generals experience surface", (candidate) =>
+    candidate?.clientState?.generalsExpWindows?.parent?.found === true
+      && candidate.clientState.generalsExpWindows.parent.hidden === false
+      && candidate.clientState.generalsExpWindows.parent.managerHidden === false
+      && candidate.clientState.generalsExpWindows.buttonExit?.clickable === true);
+  await clickEngineButton(page, geometry,
+    opened.clientState.generalsExpWindows.buttonExit, "Generals surface Exit button");
+  await waitForFrame(page, "restored WebXR HUD", (candidate) =>
+    candidate?.clientState?.generalsExpWindows?.parent?.hidden === true
+      && candidate?.clientState?.controlBarWindows?.parent?.hidden === false
+      && candidate?.clientState?.gameplay?.inGame === true);
+  return {
+    tooltipName: tooltipName.text,
+    tooltipDescriptionLength: tooltipDescription.text.length,
+    generalsSurfaceOpened: true,
+    generalsSurfaceClosed: true,
+  };
+}
+
 async function waitForEngineRay(page) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
@@ -982,6 +1021,8 @@ try {
   stage("tracked controller operated save/load, save-description, and options modals");
   const saveLoadRoundTrip = await driveWebXrSaveLoadRoundTrip(page, inputGeometry);
   stage("tracked controller saved, loaded, and deleted without ending the XR session");
+  const hudSurfaceFlow = await driveWebXrHudSurfaceFlow(page, inputGeometry);
+  stage("tracked controller operated the live HUD tooltip and Generals surface");
 
   await page.evaluate(() => {
     window.__emulatedXrButton(2, true);
@@ -1222,6 +1263,7 @@ try {
     },
     modalFlow,
     saveLoadRoundTrip,
+    hudSurfaceFlow,
     textEntry,
     wheelCameraZoom: {
       before: cameraHeightBeforeWheel,

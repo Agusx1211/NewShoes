@@ -101,6 +101,9 @@ ray, and accepts the original in-game load confirmation. The simulation frame
 rewinds to the saved range while the existing `XRSession` remains active, both
 views and native picking resume over the restored match, and the temporary save
 is removed through the stock Delete confirmation before the test exits.
+After that reset, tracked hover over the live ControlBar produces the original
+popup-description text, and the controller opens and exits the stock Generals
+experience surface while retaining the restored HUD and match.
 
 When only one tracked controller is available, its stick pans normally. Holding
 B/Y changes horizontal stick movement to original camera rotation and vertical
@@ -242,6 +245,8 @@ run during ordinary desktop play.
   save-description, and Options surfaces through a tracked controller ray,
   including hover/text state and an ephemeral create/load/delete round trip
   that preserves the active XRSession.
+- [x] Produce a stock ControlBar tooltip from tracked hover and operate the
+  Generals experience HUD surface after an in-session engine load reset.
 - [x] Map the initial tracked controller scheme to the original input paths.
 - [x] Focus an original engine text field from a tracked ray and route native
   browser text events through the existing Win32/IME bridge.
