@@ -129,6 +129,7 @@
     "verify:camera-zoom-browser": "node harness/camera_zoom_browser_smoke.mjs",
     "verify:camera-zoom-runtime": "node harness/camera_zoom_runtime_smoke.mjs",
     "verify:camera-scroll-runtime": "node harness/camera_scroll_runtime_smoke.mjs",
+    "verify:terrain-startup-frame": "node harness/terrain_startup_frame_smoke.mjs",
     "verify:shader-tier-config": "node harness/verify_shader_tier_config.mjs",
     "verify:threaded-shader-fidelity": "node harness/shader_fidelity_probe.mjs",
     "verify:save-persistence-order": "node harness/save_persistence_order_smoke.mjs",
