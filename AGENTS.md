@@ -32,6 +32,16 @@ request.
 `AGENTS_PRIVATE.md` is gitignored. Never stage, commit, quote, or publish its
 contents. Its absence is normal and does not block work.
 
+## Agent codename
+
+At the start of every task, after reading the private instructions, use the
+repository's `agent-identity` skill at `.claude/skills/agent-identity/SKILL.md`.
+Run its generator exactly once for the current parent agent identifier, remember
+the resulting codename for the entire task, and do not rerun it unless the
+parent identifier changes. The codename distinguishes concurrent agents that
+have the same GitHub App and model identity without exposing the parent
+identifier itself.
+
 ## Engineering stance
 
 The original engine is the product, but it is no longer an untouchable artifact.
@@ -121,8 +131,9 @@ work:
 2. Use the existing issue when one matches; otherwise create one with
    `gh issue create --repo Agusx1211/NewShoes`.
 3. Read the full issue and its comments before choosing scope.
-4. Mark ownership with an assignee and/or a concise comment naming the branch so
-   another agent does not start the same work.
+4. Mark ownership with an assignee and/or a concise comment naming the branch
+   and the remembered `Agent-Codename` so another agent does not start the same
+   work.
 
 Record newly discovered follow-ups as separate issues instead of expanding the
 current task or adding them to the archived checklists. Add concise progress or
@@ -165,7 +176,7 @@ After implementation and verification:
    only when the work is intentionally incomplete; completed, verified work
    should be ready for review.
 4. Summarize the change and verification in the PR body, ending with the exact
-   `Agent-Model` signature.
+   `Agent-Codename` and `Agent-Model` signatures.
 5. Read the PR back and confirm that it is open, targets `dev`, uses the intended
    head branch, contains the expected commits, and preserves the signature.
 
@@ -184,16 +195,24 @@ Every repository artifact authored by an AI agent MUST identify the exact model
 that authored it. This applies to commits and all GitHub writes, including issue
 and pull request bodies, comments, reviews, discussions, and release notes.
 
+GitHub issue and pull-request prose MUST additionally identify the remembered
+codename from the `agent-identity` skill. This includes issue and PR bodies,
+claim and progress comments, reviews, and handoff notes. The codename is scoped
+to the parent agent identity and supplements rather than replaces the model
+identity. Do not add it to commit trailers.
+
 Before writing or committing, determine the most specific model identity exposed
 by the runtime or its configuration: provider, model family, version, and
 variant or subversion. Do not use a generic identity such as `Codex`, `Claude`,
 or `GPT-5`. If the exact identity cannot be determined, stop before publishing
 and ask the user rather than guessing.
 
-Put the identity on its own final line in GitHub prose and in every commit
-message as a trailer, using this format with the actual identity substituted:
+Put the model identity on its own final line in every commit message as a
+trailer. End GitHub issue and pull-request prose with the codename followed by
+the model identity, using this format with the actual identities substituted:
 
 ```text
+Agent-Codename: MadTank0123
 Agent-Model: OpenAI gpt-5.6-sol
 ```
 

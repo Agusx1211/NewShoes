@@ -18,7 +18,9 @@ players must provide files from a copy they own.
 
 **[Play Project New Shoes](https://newshoes.gg/)**
 
-This public URL points to the current GitHub Pages deployment.
+The launcher About window and
+[deployed build metadata](https://newshoes.gg/harness/build-info.json) identify
+the exact release and commit currently being served.
 
 <p align="center">
   <img src="docs/images/project-new-shoes-zero-hour-menu.webp" alt="Zero Hour faction and skirmish menu rendered by the original engine in the Project New Shoes browser runtime" width="800"><br>
@@ -32,45 +34,50 @@ This public URL points to the current GitHub Pages deployment.
 Project New Shoes is already the real Zero Hour game running in a browser. It
 boots the original engine, runs skirmishes against the original AI, renders the
 game through WebGL2, and uses the original UI, input, simulation, and command
-paths. This is a playable development build with the major systems in place.
+paths. The browser desktop now also owns installation, mods, files, settings,
+diagnostics, multiplayer setup, and optional agent configuration.
 
 | Area | Status | Current support |
 |---|---|---|
-| Engine and shell | ✅ **Works** | The threaded WebAssembly runtime completes the original Zero Hour initialization path and renders the shell and menus. |
-| Skirmish | ✅ **Works** | Playable matches run against the original AI. All official multiplayer maps have been driven to a rendered skirmish state. |
-| Mouse, keyboard, and UI | ✅ **Works** | Browser events feed the original input path, including menus, text entry, camera controls, selection, building, production, movement, and common combat commands. |
-| Game-data installation | ✅ **Works** | The launcher imports an installed copy or complete original media, validates the required archives, and stores them locally in OPFS. |
-| Launcher lifecycle | ✅ **Works** | Display and shader settings, diagnostics, game launch, clean shutdown, browser-local storage, and relaunch are implemented. |
-| Rendering | ✅ **Works** | Terrain, objects, UI, particles, effects, and the shipped D3D8 shader model 1.1 programs render through WebGL2 in enhanced and classic modes. Remaining fidelity fixes are ongoing polish. |
-| Audio | ✅ **Works well** | Engine-driven music, speech, streams, and 2D/3D samples play through Web Audio. Remaining work is focused on edge-case coverage and mixing polish. |
-| Campaign and Generals Challenge | 🧪 **In testing** | The original campaign and challenge paths run through the real engine. Broader mission, cutscene, and win/loss validation is ongoing. |
-| Saves and loading | 🚧 **Broken** | In-game save and load flows are not currently reliable. Browser storage foundations exist, but saves should not yet be treated as supported. |
-| Multiplayer | 🧪 **Playable, experimental** | The original lockstep protocol runs over WebRTC, with short matches verified at up to four players. Long sessions, reconnect/disconnect behavior, determinism coverage, and public signaling hardening remain. |
-| Movies | ✅ **Implemented** | Bink movie presentation and browser-side playback are implemented in the threaded runtime. Broader format coverage and playback polish are ongoing. |
-| Browser support | ✅ **Works** | Chrome and Chromium receive the most testing. Other modern browsers also work when they provide the required web-platform features, but do not yet receive the same validation. |
+| Zero Hour shell and skirmish | ✅ **Supported** | The threaded runtime boots the original shell and runs playable matches against the original AI. All official multiplayer maps have reached a rendered skirmish state. |
+| Installation and browser desktop | ✅ **Supported** | The launcher imports owned game data into OPFS and provides game launch, settings, files, diagnostics, and clean shutdown and relaunch. |
+| Mouse, keyboard, and touch | 🧪 **Supported / in testing** | Mouse and keyboard use the original input path. Phone and tablet layouts add touch selection, orders, camera gestures, hotkeys, and text entry; physical-device and Safari breadth continue to mature. |
+| Rendering, audio, and movies | 🧪 **In testing** | WebGL2 carries terrain, objects, UI, particles, effects, and enhanced or classic D3D8 rendering. Web Audio carries engine sound, and supported classic Bink content uses an on-device decoder. Fidelity and coverage work continue. |
+| Campaign and Generals Challenge | 🧪 **In testing** | Both enter through the real engine. Mission breadth, cutscenes, win/loss flows, and edge cases remain active validation areas. |
+| Mods | ✅ **Supported** | The Mod Manager handles ordered BIG and loose-data mods plus common archive and installer containers. Native Windows DLLs and executables are explicitly unsupported. |
+| Saves and replays | 🧪 **In testing** | The desktop imports, exports, copies, and deletes configuration-isolated files, and focused real save/load and replay round trips pass. Broad long-session and mod coverage continue. |
+| Multiplayer | 🧪 **Experimental** | The original lockstep protocol runs over direct WebRTC data channels with decentralized discovery. Short matches have been verified at up to four players; long sessions, difficult NATs, disconnects, and determinism remain active work. |
+| Device transfer | 🧪 **Experimental** | A user-confirmed encrypted WebRTC flow can move an owned installation, selected mods, saves, and replays between the owner's devices. |
+| Remote and LLM agents | 🧪 **Experimental** | An authenticated Remote Agent bridge and browser-local OpenAI-compatible LLM commanders can use bounded, fog-safe semantic engine interfaces. They are optional and do not bypass game rules. |
+| Browser breadth | 🧪 **In testing** | Chrome and Chromium receive the strongest automated and hands-on coverage. Other modern browsers can work when they expose the required platform features. |
 | Vanilla Generals | 🗓️ **Planned** | Generals data is used by Zero Hour, but the launcher does not currently expose a separate vanilla Generals runtime. |
 
 The big pieces are in place. Current work is focused on fidelity, performance,
-reliability, broader gameplay coverage, and browser validation. See
-[GitHub Issues](https://github.com/Agusx1211/NewShoes/issues) for the live
-backlog.
+reliability, broader gameplay coverage, and browser validation. See the
+[dated project guide](https://newshoes.gg/project.md),
+[deployed build metadata](https://newshoes.gg/harness/build-info.json), and
+[GitHub Issues](https://github.com/Agusx1211/NewShoes/issues) for current
+details.
 
 ## What you need
 
-The runtime requires a modern desktop browser with WebGL2, `SharedArrayBuffer`,
-cross-origin isolation, and Origin Private File System support. Chrome and
-Chromium are the primary tested targets; other capable browsers also work
-without the same level of validation. Localhost is sufficient for development.
-A LAN or hosted deployment must use HTTPS and send the required COOP/COEP
-headers; see the [deployment guide](WebAssembly/DEPLOYMENT.md).
+The runtime requires a modern graphical browser on a desktop, phone, or tablet
+with WebAssembly threads, WebGL2, `OffscreenCanvas`, Web Audio,
+`SharedArrayBuffer`, cross-origin isolation, and Origin Private File System
+support. Chrome and Chromium are the primary tested targets; other capable
+browsers do not yet receive the same validation. Landscape is recommended on
+touch devices because the original UI was designed for a wide screen. Localhost
+is sufficient for development. A LAN or hosted deployment must use HTTPS and
+send the required COOP/COEP headers; see the
+[deployment guide](WebAssembly/DEPLOYMENT.md).
 
-You also need both Generals and Zero Hour retail data. The launcher supports two
-ownership paths:
+You also need a complete English Generals and Zero Hour copy. The launcher
+supports two ownership paths:
 
 1. **Installed digital copy:** choose the game root folder containing the
    Generals and Zero Hour data.
-2. **Original media:** choose the complete Generals and Zero Hour disc or ISO
-   set. Multi-disc releases must be selected together.
+2. **Original media:** choose the complete Generals and Zero Hour disc, ISO,
+   IMG, or MODE1/2352 BIN set. Multi-disc releases must be selected together.
 
 The collection is currently sold through the official
 [Steam bundle](https://store.steampowered.com/bundle/39394/Command_Conquer_The_Ultimate_Collection/)
@@ -102,7 +109,8 @@ WebAssembly browser platform
   D3D8 and SM1 shaders -> WebGL2
   Miles API -> Web Audio
   Win32 input/time/files -> DOM, Emscripten, OPFS
-  UDP/LAN transport -> WebRTC with WebSocket signaling
+  UDP/LAN transport -> direct WebRTC data channels
+  peer discovery -> encrypted negotiation over Nostr relays
 ```
 
 The shipping play path runs the engine on an Emscripten pthread. Rendering uses
@@ -118,25 +126,35 @@ The D3D8 bridge has two rendering tiers:
   pixel shaders to GLSL ES.
 - **Classic** emulates the fixed-function D3D8 pipeline with generated shaders.
 
-The launcher and game share a same-origin browser desktop. The launcher owns
-media selection, installation, settings, diagnostics, and lifecycle. The game
-runtime owns the original engine state. The Playwright harness drives both
-through `window.CnCPort.rpc(...)` and verifies state plus canvas screenshots.
+The launcher and game share a same-origin browser desktop. The main browser
+realm owns media selection, installation, settings, diagnostics, Web Audio,
+multiplayer discovery, and lifecycle; the worker owns the original engine and
+synchronous game state. Optional LLM commanders run in the browser against a
+bounded semantic API. The optional `AgentBridge/` service connects a separate
+authenticated controller over encrypted WebRTC. Neither path replaces engine
+simulation or exposes hidden game information.
+
+The Playwright harness drives the shipping launcher and runtime through
+`window.CnCPort.rpc(...)` and verifies observable engine state together with
+canvas screenshots.
 
 ## Repository layout
 
 ```text
 Generals/             EA's original Generals source
 GeneralsMD/           EA's original Zero Hour source, the primary target
+AgentBridge/          optional authenticated remote-agent REST bridge
 WebAssembly/
   CMakeLists.txt      Emscripten build graph
   shims/              Win32, DirectX, and compiler compatibility
   src/                browser platform and engine boundary code
   harness/            launcher, play page, RPC bridge, and browser tests
   tools/              build, archive extraction, and verification tools
+.claude/skills/       repository workflows used by coding agents
 PROJECT.md            architecture and product direction
 AGENTS.md              current coding-agent policy
 CLAUDE.md              symlink to AGENTS.md
+CHANGELOG.md           release inventory linked to merged pull requests
 archive/               frozen port-era TODO and completion history
 ```
 
@@ -184,31 +202,17 @@ More detail is in [WebAssembly/README.md](WebAssembly/README.md).
 
 ## Automation and supervision
 
-This port was developed mostly by autonomous coding agents with limited human
-supervision. Agustin Aguilar set the direction, supplied local test media,
-performed hands-on playtests, chose tradeoffs, and integrated the work. Agents
-scouted the source, implemented ports, ran browser harnesses, captured GPU
-evidence, reviewed changes, and updated the project history.
+This port was developed mostly by coding agents under human direction. Agustin
+Aguilar supplies local test media, performs hands-on playtests, chooses product
+tradeoffs, and integrates releases. Agents inspect the original source,
+implement changes, run browser harnesses, capture GPU evidence, review work, and
+maintain the repository history.
 
-At the public-readiness audit snapshot, the reachable history records work by
-the following model families. Aliases were consolidated only when the commit
-metadata named the same provider and model:
-
-| Provider and model family | Authored commits |
-|---|---:|
-| OpenAI GPT-5 Codex, including Codex CLI | 1,009 |
-| Z.ai GLM-5.2, through OpenCode and Pi workers | 170 |
-| Anthropic Claude Fable 5 | 121 |
-| Anthropic Claude Opus 4.8 | 48 |
-| Anthropic Claude (model unspecified in metadata) | 3 |
-| Qwen 3.6 27B and 35B variants | 30 |
-| Mistral Medium 3.5 | 17 |
-| DeepSeek V4 Pro | 1 |
-
-Agustin and the upstream EA import author, LFeenanEA, are listed separately in
-the audit. These counts describe commit metadata, not relative contribution
-quality. The reproducible audit method and complete alias inventory are in
-[docs/public-readiness-audit.md](docs/public-readiness-audit.md).
+Agent commits identify their exact provider and model. GitHub issue and
+pull-request prose additionally uses stable commander-style codenames so
+concurrent agents running the same model remain distinguishable. The historical
+public-readiness snapshot, reproducible attribution method, and alias inventory
+remain in [docs/public-readiness-audit.md](docs/public-readiness-audit.md).
 
 ## Contributing
 
