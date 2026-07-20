@@ -5617,12 +5617,13 @@ let originalCursorManifestPromise = null;
 let originalCursorAnimation = {
   cursorFile: null,
   timer: null,
+  retryTimer: null,
   token: 0,
 };
 
 function loadOriginalCursorManifest() {
   if (!originalCursorManifestPromise) {
-    originalCursorManifestPromise = Promise.resolve()
+    const pending = Promise.resolve()
       .then(async () => {
         const prepared = await window.ZeroHAssetLibrary?.originalCursorManifestForLaunch?.();
         if (prepared) return prepared;
@@ -5641,6 +5642,12 @@ function loadOriginalCursorManifest() {
         }
         return manifest;
       });
+    originalCursorManifestPromise = pending;
+    pending.catch(() => {
+      if (originalCursorManifestPromise === pending) {
+        originalCursorManifestPromise = null;
+      }
+    });
   }
   return originalCursorManifestPromise;
 }
@@ -5655,15 +5662,36 @@ function stopOriginalCursorAnimation(cursorFile = null) {
   if (originalCursorAnimation.timer != null) {
     clearTimeout(originalCursorAnimation.timer);
   }
+  if (originalCursorAnimation.retryTimer != null) {
+    clearTimeout(originalCursorAnimation.retryTimer);
+  }
   originalCursorAnimation = {
     cursorFile,
     timer: null,
+    retryTimer: null,
     token: originalCursorAnimation.token + 1,
   };
   return originalCursorAnimation.token;
 }
 
-async function startOriginalCursorAnimation(cursorFile) {
+function originalCursorFrameUrl(frameFile) {
+  return new URL(frameFile, originalCursorManifestUrl).href;
+}
+
+function preloadOriginalCursorFrame(frameUrl) {
+  const image = new Image();
+  if (typeof image.decode === "function") {
+    image.src = frameUrl;
+    return image.decode();
+  }
+  return new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = () => reject(new Error(`cursor frame could not be decoded: ${frameUrl}`));
+    image.src = frameUrl;
+  });
+}
+
+async function startOriginalCursorAnimation(cursorFile, retryAttempt = 0) {
   const token = stopOriginalCursorAnimation(cursorFile);
   const loadingCss = "default";
   canvas.style.cursor = loadingCss;
@@ -5689,6 +5717,15 @@ async function startOriginalCursorAnimation(cursorFile) {
       !Number.isInteger(frameIndex) || typeof cursor.frames[frameIndex] !== "string")) {
       throw new Error(`cursor ${cursorFile} has an invalid frame sequence`);
     }
+    const frameUrls = cursor.frames.map(originalCursorFrameUrl);
+    await Promise.all(frameUrls.map(preloadOriginalCursorFrame));
+    if (token !== originalCursorAnimation.token) {
+      return;
+    }
+    const hotspot = Array.isArray(cursor.hotspot) && cursor.hotspot.length === 2
+      && cursor.hotspot.every((coordinate) => Number.isFinite(coordinate))
+      ? cursor.hotspot.map((coordinate) => Math.max(0, Math.trunc(coordinate)))
+      : [0, 0];
 
     let step = 0;
     const applyFrame = () => {
@@ -5696,9 +5733,8 @@ async function startOriginalCursorAnimation(cursorFile) {
         return;
       }
       const frameIndex = cursor.sequence[step] ?? 0;
-      const frameFile = cursor.frames[frameIndex];
-      const frameUrl = new URL(frameFile, originalCursorManifestUrl).href;
-      const css = `url("${frameUrl}"), default`;
+      const frameUrl = frameUrls[frameIndex];
+      const css = `url("${frameUrl}") ${hotspot[0]} ${hotspot[1]}, default`;
       canvas.style.cursor = css;
       harnessState.browserCursor = {
         source: "game_ani_cursor_css",
@@ -5711,6 +5747,8 @@ async function startOriginalCursorAnimation(cursorFile) {
         step,
         stepCount: cursor.sequence.length,
         frameUrl,
+        hotspot,
+        preloadedFrames: frameUrls.length,
         assetSource: manifest.source ?? "developer_cursor_artifacts",
       };
       const rate = Math.max(1, cursor.rates?.[step] ?? 1);
@@ -5732,8 +5770,22 @@ async function startOriginalCursorAnimation(cursorFile) {
       cursorFile,
       css,
       visible: true,
+      retryAttempt,
       error: error instanceof Error ? error.message : String(error),
     };
+    if (retryAttempt < 3) {
+      const retryDelayMs = 250 * (4 ** retryAttempt);
+      originalCursorAnimation.retryTimer = setTimeout(() => {
+        if (token !== originalCursorAnimation.token
+            || loadCursorStyle() !== "game"
+            || harnessState.browserInput?.cursorSet !== true
+            || harnessState.browserInput?.cursorFile !== cursorFile) {
+          return;
+        }
+        startOriginalCursorAnimation(cursorFile, retryAttempt + 1);
+      }, retryDelayMs);
+      harnessState.browserCursor.retryDelayMs = retryDelayMs;
+    }
   }
 }
 
