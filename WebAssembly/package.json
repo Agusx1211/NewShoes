@@ -143,6 +143,7 @@
     "verify:shader-tier-config": "node harness/verify_shader_tier_config.mjs",
     "verify:threaded-shader-fidelity": "node harness/shader_fidelity_probe.mjs",
     "verify:save-persistence-order": "node harness/save_persistence_order_smoke.mjs",
+    "verify:skirmish-preferences-persistence-runtime": "npm run build:port:threaded:release && node harness/skirmish_preferences_persistence_smoke.mjs",
     "verify:runtime-shutdown-order": "node harness/runtime_shutdown_sequence_smoke.mjs",
     "test:threaded-relaunch-exit-readiness": "node harness/threaded_relaunch_exit_readiness_unit.mjs",
     "verify:replay-file-store": "node harness/replay_file_store_unit.mjs",

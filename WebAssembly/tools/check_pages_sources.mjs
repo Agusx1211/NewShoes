@@ -86,6 +86,7 @@ const scripts = [
   "harness/replay_desktop_transfer_smoke.mjs",
   "harness/runtime-shutdown-sequence.mjs",
   "harness/save-persistence-coordinator.mjs",
+  "harness/skirmish_preferences_persistence_smoke.mjs",
   "harness/shader-tier-config.mjs",
   "harness/udp_realm_bridge.mjs",
   "harness/transfer-user-data-store.mjs",
