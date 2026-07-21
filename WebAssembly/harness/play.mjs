@@ -27,6 +27,11 @@ import {
 } from "./display-resolution.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
 import {
+  loadWebXrSettings,
+  normalizeWebXrSettings,
+  saveWebXrSettings,
+} from "./webxr-settings.mjs";
+import {
   runRuntimeShutdownSequence,
   runtimeShutdownWarning,
 } from "./runtime-shutdown-sequence.mjs";
@@ -1182,6 +1187,7 @@ async function start() {
     // even if display setup or the first paced-loop start needs a retry.
     runtimeStarted = true;
     syncAgentBridgeApp();
+    window.dispatchEvent(new CustomEvent("cncport:runtimestarted"));
     gameRunning = true;
     renderPerformanceOverlay();
     issueRecorder.setSessionContext({ phase: "running" });
@@ -1311,6 +1317,7 @@ async function exitToDesktop() {
       progressNode.textContent = "Closing Zero Hour…";
       gameRunning = false;
       renderPerformanceOverlay();
+      await window.CnCPort.stopWebXrSession?.("runtime-exit").catch(() => {});
       viewportRetired = retireRuntimeViewport();
       overlay.hidden = true;
       overlay.classList.remove("is-running");
@@ -1873,6 +1880,134 @@ function initDisplayRuntime() {
 }
 
 let desktopGameSettingsBound = false;
+const webXrRequested = queryParams.get("vr") === "1";
+let webXrSettings = loadWebXrSettings();
+
+function syncWebXrComfortSettings() {
+  const values = {
+    webXrDominantHand: webXrSettings.dominantHand,
+    webXrRotationMode: webXrSettings.rotationMode,
+    webXrStickDeadzone: String(webXrSettings.stickDeadzone),
+    webXrWorldScale: String(webXrSettings.worldScale),
+    webXrPanelWidth: String(webXrSettings.panelWidthMeters),
+    webXrPanelDistance: String(webXrSettings.panelDistanceMeters),
+    webXrHeightOffset: String(webXrSettings.heightOffsetMeters),
+  };
+  for (const [id, value] of Object.entries(values)) {
+    const control = document.querySelector(`#${id}`);
+    if (control) control.value = value;
+  }
+  const motionVignette = document.querySelector("#webXrMotionVignette");
+  if (motionVignette) motionVignette.checked = webXrSettings.motionVignette;
+  const outputs = {
+    webXrStickDeadzoneValue: `${Math.round(webXrSettings.stickDeadzone * 100)}%`,
+    webXrWorldScaleValue: `${Math.round(webXrSettings.worldScale * 100)}%`,
+    webXrPanelWidthValue: `${webXrSettings.panelWidthMeters.toFixed(1)} m`,
+    webXrPanelDistanceValue: `${webXrSettings.panelDistanceMeters.toFixed(1)} m`,
+    webXrHeightOffsetValue: `${Math.round(webXrSettings.heightOffsetMeters * 100)} cm`,
+  };
+  for (const [id, value] of Object.entries(outputs)) {
+    const output = document.querySelector(`#${id}`);
+    if (output) output.value = value;
+  }
+}
+
+function updateWebXrComfortSetting(field, value, persist) {
+  const next = normalizeWebXrSettings({ ...webXrSettings, [field]: value });
+  webXrSettings = persist ? saveWebXrSettings(undefined, next) : next;
+  syncWebXrComfortSettings();
+}
+
+function syncDesktopWebXrSetting(overrideMessage = null) {
+  const button = document.querySelector("#webXrButton");
+  const status = document.querySelector("#webXrStatus");
+  if (!button || !status) return;
+  if (!webXrRequested) {
+    button.disabled = false;
+    button.textContent = "Prepare VR";
+    status.textContent = overrideMessage
+      ?? "Reloads into the native stereo render lane; normal desktop play remains the default.";
+    return;
+  }
+  const xr = window.CnCPort?.getWebXrState?.() ?? { phase: "disabled", support: null };
+  if (overrideMessage) status.textContent = overrideMessage;
+  if (["loading", "starting", "ending"].includes(xr.phase)) {
+    button.disabled = true;
+    button.textContent = xr.phase === "starting" ? "Entering VR…"
+      : xr.phase === "ending" ? "Leaving VR…" : "Checking…";
+    if (!overrideMessage) status.textContent = xr.phase === "loading"
+      ? "Checking this browser and connected headset…" : status.textContent;
+    return;
+  }
+  if (xr.phase === "running") {
+    button.disabled = false;
+    button.textContent = "Exit VR";
+    if (!overrideMessage) {
+      status.textContent = "Main hand points and orders; off hand pans and holds waypoint, force-fire, selection, and group layers.";
+    }
+    return;
+  }
+  if (xr.support?.immersiveVrSupported === true) {
+    const rendererReady = xr.renderer !== null && xr.renderer !== undefined;
+    const runtimeReady = window.ZeroHRuntime?.started === true;
+    button.disabled = !rendererReady;
+    button.textContent = runtimeReady ? "Enter VR" : "Enter & launch VR";
+    if (!overrideMessage) status.textContent = rendererReady
+      ? "Headset ready. The world renders in stereo and engine menus become a floating panel."
+      : "Preparing the native renderer for this headset…";
+    return;
+  }
+  button.disabled = false;
+  button.textContent = xr.phase === "unavailable" || xr.phase === "failed"
+    ? "Check again" : "Check headset";
+  if (!overrideMessage) status.textContent = xr.error
+    ?? "Check for an immersive WebXR headset. No XR work runs until you click.";
+}
+
+function bindDesktopWebXrSetting() {
+  const button = document.querySelector("#webXrButton");
+  if (!button || button.dataset.bound === "true") return;
+  button.dataset.bound = "true";
+  button.addEventListener("click", () => {
+    if (!webXrRequested) {
+      const target = new URL(window.location.href);
+      target.searchParams.set("vr", "1");
+      window.location.assign(target.href);
+      return;
+    }
+    const xr = window.CnCPort?.getWebXrState?.() ?? {};
+    try {
+      if (xr.phase === "running") {
+        void window.CnCPort.stopWebXrSession("settings-button").catch((error) => {
+          syncDesktopWebXrSetting(error?.message ?? String(error));
+        });
+      } else if (xr.support?.immersiveVrSupported === true) {
+        // This call reaches navigator.xr.requestSession synchronously, before
+        // the click's transient user activation can expire.
+        const sessionStart = window.CnCPort.startWebXrSession();
+        if (window.ZeroHRuntime?.started !== true) {
+          void window.ZeroHRuntime.launch().catch((error) => {
+            syncDesktopWebXrSetting(`Game launch failed: ${error?.message ?? String(error)}`);
+          });
+        }
+        void sessionStart.catch((error) => {
+          syncDesktopWebXrSetting(error?.message ?? String(error));
+        });
+      } else {
+        void window.CnCPort.probeWebXrSession().catch((error) => {
+          syncDesktopWebXrSetting(error?.message ?? String(error));
+        });
+      }
+    } catch (error) {
+      syncDesktopWebXrSetting(error?.message ?? String(error));
+    }
+    syncDesktopWebXrSetting();
+  });
+  window.addEventListener("cncport:webxr", () => syncDesktopWebXrSetting());
+  window.addEventListener("cncport:runtimestarted", () => syncDesktopWebXrSetting());
+  window.addEventListener("cncport:runtimeclosed", () => syncDesktopWebXrSetting());
+  syncDesktopWebXrSetting();
+}
 
 function syncDesktopGameSettings() {
   const resolutionSelect = document.querySelector("#resolutionSelectLive");
@@ -1913,11 +2048,14 @@ function syncDesktopGameSettings() {
     fullscreenButton.hidden = !fullscreenSupported();
     fullscreenButton.textContent = fullscreenElement() ? "Exit fullscreen" : "Enter fullscreen";
   }
+  syncWebXrComfortSettings();
+  syncDesktopWebXrSetting();
 }
 
 function bindDesktopGameSettings() {
   if (desktopGameSettingsBound) return;
   desktopGameSettingsBound = true;
+  bindDesktopWebXrSetting();
   const resolutionSelect = document.querySelector("#resolutionSelectLive");
   resolutionSelect?.addEventListener("change", () => {
     const value = resolutionSelect.value;
@@ -1958,6 +2096,37 @@ function bindDesktopGameSettings() {
   document.querySelector("#fullscreenButton")?.addEventListener("click", () => {
     track("setting_changed", { category: "display", setting: "fullscreen", value: fullscreenElement() ? "disabled" : "enabled" });
     void (fullscreenElement() ? exitFullscreen() : enterFullscreen());
+  });
+  const webXrComfortControls = [
+    ["webXrDominantHand", "dominantHand"],
+    ["webXrRotationMode", "rotationMode"],
+    ["webXrStickDeadzone", "stickDeadzone"],
+    ["webXrWorldScale", "worldScale"],
+    ["webXrPanelWidth", "panelWidthMeters"],
+    ["webXrPanelDistance", "panelDistanceMeters"],
+    ["webXrHeightOffset", "heightOffsetMeters"],
+  ];
+  for (const [id, field] of webXrComfortControls) {
+    const control = document.querySelector(`#${id}`);
+    if (!control) continue;
+    if (control instanceof HTMLInputElement) {
+      control.addEventListener("input", () => {
+        updateWebXrComfortSetting(field, Number(control.value), false);
+      });
+    }
+    control.addEventListener("change", () => {
+      const value = ["dominantHand", "rotationMode"].includes(field)
+        ? control.value : Number(control.value);
+      updateWebXrComfortSetting(field, value, true);
+      track("setting_changed", { category: "webxr", setting: field, value: String(value) });
+    });
+  }
+  document.querySelector("#webXrMotionVignette")?.addEventListener("change", (event) => {
+    const value = event.currentTarget.checked;
+    updateWebXrComfortSetting("motionVignette", value, true);
+    track("setting_changed", {
+      category: "webxr", setting: "motionVignette", value: String(value),
+    });
   });
   document.querySelector("#shaderTierSelect")?.addEventListener("change", (event) => {
     setShaderTier(event.currentTarget.value);

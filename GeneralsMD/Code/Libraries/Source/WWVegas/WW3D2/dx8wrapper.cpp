@@ -482,6 +482,20 @@ void DX8Wrapper::Invalidate_Cached_Render_States(void)
 
 }
 
+void DX8Wrapper::Invalidate_Cached_Textures(void)
+{
+	for (int stage = 0; stage < MAX_TEXTURE_STAGES; ++stage) {
+		if (_Get_D3D_Device8()) {
+			_Get_D3D_Device8()->SetTexture(stage,NULL);
+		}
+		if (Textures[stage] != NULL) {
+			Textures[stage]->Release();
+		}
+		Textures[stage] = NULL;
+	}
+	render_state_changed |= TEXTURES_CHANGED;
+}
+
 void DX8Wrapper::Do_Onetime_Device_Dependent_Shutdowns(void)
 {
 	/*

@@ -827,7 +827,7 @@ export function createTouchControls({
     });
   }
 
-  root.querySelector("[data-touch-text-done]")?.addEventListener("click", closeTextKeyboard);
+  textBar?.querySelector("[data-touch-text-done]")?.addEventListener("click", closeTextKeyboard);
 
   if (textInput) {
     textInput.addEventListener("compositionstart", (event) => {

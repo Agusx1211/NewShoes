@@ -136,13 +136,31 @@ try {
       return bytes;
     }
     function syntheticAni(seed) {
-      const cur = new Uint8Array(22);
+      const width = 2;
+      const height = 2;
+      const bitmapBytes = 40 + 16 * 4 + 8 + 8;
+      const cur = new Uint8Array(22 + bitmapBytes);
       const curView = new DataView(cur.buffer);
       curView.setUint16(2, 2, true);
       curView.setUint16(4, 1, true);
-      cur[6] = 1;
-      cur[7] = 1;
-      cur[21] = seed;
+      cur[6] = width;
+      cur[7] = height;
+      curView.setUint16(10, 1, true);
+      curView.setUint16(12, 1, true);
+      curView.setUint32(14, bitmapBytes, true);
+      curView.setUint32(18, 22, true);
+      curView.setUint32(22, 40, true);
+      curView.setInt32(26, width, true);
+      curView.setInt32(30, height * 2, true);
+      curView.setUint16(34, 1, true);
+      curView.setUint16(36, 4, true);
+      curView.setUint32(42, 16, true);
+      curView.setUint32(54, 16, true);
+      const palette = 22 + 40;
+      cur.set([seed, seed + 1, seed + 2, 0], palette + 4);
+      const pixels = palette + 16 * 4;
+      cur[pixels] = 0x10;
+      cur[pixels + 4] = 0x01;
       const header = new Uint8Array(36);
       const headerView = new DataView(header.buffer);
       headerView.setUint32(0, 36, true);
@@ -276,15 +294,61 @@ try {
     const state = window.CnCPort.state.browserCursor;
     const response = await fetch(state.frameUrl);
     const bytes = new Uint8Array(await response.arrayBuffer());
+    const image = new Image();
+    image.src = state.frameUrl;
+    await image.decode();
+    const probe = document.createElement("canvas");
+    probe.width = image.naturalWidth;
+    probe.height = image.naturalHeight;
+    const context = probe.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, probe.width, probe.height).data;
     return {
       ...state,
       frameFetched: response.ok,
-      frameIsCur: bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 2 && bytes[3] === 0,
+      frameIsPng: bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47,
+      decodedSize: [image.naturalWidth, image.naturalHeight],
+      opaquePixels: [...pixels].filter((_value, index) => index % 4 === 3 && pixels[index] > 0).length,
     };
   });
   assert.equal(browserCursor.cursorFile, "data\\cursors\\SCCAttack.ANI");
   assert.equal(browserCursor.frameFetched, true);
-  assert.equal(browserCursor.frameIsCur, true);
+  assert.equal(browserCursor.frameIsPng, true);
+  assert.deepEqual(browserCursor.hotspot, [1, 1]);
+  assert.deepEqual(browserCursor.decodedSize, [2, 2]);
+  assert.ok(browserCursor.opaquePixels > 0);
+  assert.equal(browserCursor.preloadedFrames, 1);
+  await page.evaluate(async () => {
+    const library = window.ZeroHAssetLibrary;
+    const manifest = await library.originalCursorManifestForLaunch();
+    const original = library.originalCursorManifestForLaunch;
+    window.__cursorRetryProbe = { calls: 0, original };
+    library.originalCursorManifestForLaunch = async () => {
+      window.__cursorRetryProbe.calls += 1;
+      if (window.__cursorRetryProbe.calls === 1) {
+        throw new Error("synthetic transient cursor manifest failure");
+      }
+      return manifest;
+    };
+    window.dispatchEvent(new CustomEvent("cncport:cursorassetschange"));
+  });
+  await page.waitForFunction(() =>
+    window.CnCPort.state.browserCursor?.source === "game_ani_cursor_css_fallback");
+  await page.waitForFunction(() =>
+    window.CnCPort.state.browserCursor?.source === "game_ani_cursor_css"
+      && window.__cursorRetryProbe?.calls >= 2);
+  const cursorRetry = await page.evaluate(() => {
+    const result = {
+      calls: window.__cursorRetryProbe.calls,
+      cursor: window.CnCPort.state.browserCursor,
+    };
+    window.ZeroHAssetLibrary.originalCursorManifestForLaunch = window.__cursorRetryProbe.original;
+    delete window.__cursorRetryProbe;
+    return result;
+  });
+  assert.equal(cursorRetry.calls, 2);
+  assert.equal(cursorRetry.cursor.assetSource, "browser_library_cursor_pack");
+  assert.equal(cursorRetry.cursor.preloadedFrames, 1);
   await page.evaluate(() => {
     document.querySelectorAll("[data-wizard-page]").forEach((wizardPage) => {
       const visible = wizardPage.dataset.wizardPage === "2";
