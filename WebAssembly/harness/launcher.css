@@ -626,8 +626,13 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 }
 
 .analytics-privacy-copy a { color: #176a9b; }
-.game-settings-panel .setting-block { min-height: 58px; }
+.game-settings-panel .setting-block,
+.experimental-settings-panel .setting-block { min-height: 58px; }
 .game-settings-hint { margin: -12px 0 10px; color: #6b7f8b; font-size: 8px; }
+.experimental-warning { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 14px; margin: -9px 0 14px; padding: 15px 17px; color: #744719; border: 2px solid #d69536; border-radius: 4px; background: linear-gradient(135deg, #fff9df, #ffedbd); box-shadow: 0 2px 6px rgba(112,69,19,.14); }
+.experimental-warning > span { width: 42px; height: 42px; display: grid; place-items: center; color: #fff; border-radius: 50%; background: #d17c24; box-shadow: inset 0 1px rgba(255,255,255,.38); font: bold 26px/1 "Trebuchet MS", Tahoma, sans-serif; }
+.experimental-warning strong { display: block; color: #873f18; font: bold 17px/1.2 "Trebuchet MS", Tahoma, sans-serif; }
+.experimental-warning p { margin: 6px 0 0; color: #704d29; font-size: 9px; line-height: 1.5; }
 .game-custom-resolution > div:last-child,
 .game-performance-options > div:last-child { display: flex; align-items: center; gap: 6px; }
 .game-custom-resolution input { width: 72px; height: 27px; padding: 0 6px; color: #3d5565; border: 1px solid #9fb2c0; background: #fff; font-size: 9px; }

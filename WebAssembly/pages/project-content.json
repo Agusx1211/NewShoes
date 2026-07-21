@@ -317,6 +317,7 @@
     "Retail game data is required and not bundled.",
     "Zero Hour is the current target; standalone vanilla Generals is not exposed.",
     "Chrome and Chromium have the strongest validation.",
+    "Immersive VR is experimental and currently does not work well. Real-headset rendering, controls, comfort, performance, and compatibility remain incomplete.",
     "Campaign, Challenge, save/load, replay, movies, long multiplayer sessions, reconnects, difficult NAT environments, performance, and remaining rendering fidelity continue to receive testing and fixes.",
     "Browser storage is scoped to the current browser profile, device, and site origin unless the user exports or transfers data.",
     "Native Windows mod DLLs and executables cannot run in WebAssembly.",
