@@ -3,6 +3,7 @@ const DEFAULTS = Object.freeze({
   panThresholdPx: 8,
   pinchThresholdRatio: 0.04,
   rotationThresholdRadians: Math.PI / 36,
+  selectionRotationLimitRadians: Math.PI / 12,
   longPressMs: 600,
 });
 
@@ -22,6 +23,15 @@ function centroid(left, right) {
   return { x: (left.x + right.x) / 2, y: (left.y + right.y) / 2 };
 }
 
+function pointsCentroid(points) {
+  if (points.length === 0) return { x: 0, y: 0 };
+  const total = points.reduce((sum, point) => ({
+    x: sum.x + point.x,
+    y: sum.y + point.y,
+  }), { x: 0, y: 0 });
+  return { x: total.x / points.length, y: total.y / points.length };
+}
+
 function angle(left, right) {
   return Math.atan2(right.y - left.y, right.x - left.x);
 }
@@ -33,28 +43,49 @@ function normalizedAngleDelta(value) {
   return result;
 }
 
+function rotationBetweenPointSets(previous, current) {
+  if (previous.length !== current.length || previous.length < 2) return 0;
+  const previousCenter = pointsCentroid(previous);
+  const currentCenter = pointsCentroid(current);
+  let dot = 0;
+  let cross = 0;
+  for (let index = 0; index < previous.length; ++index) {
+    const previousX = previous[index].x - previousCenter.x;
+    const previousY = previous[index].y - previousCenter.y;
+    const currentX = current[index].x - currentCenter.x;
+    const currentY = current[index].y - currentCenter.y;
+    dot += previousX * currentX + previousY * currentY;
+    cross += previousX * currentY - previousY * currentX;
+  }
+  return normalizedAngleDelta(Math.atan2(cross, dot));
+}
+
 /**
  * Recognizes RTS touch gestures without knowing anything about the DOM or the
  * engine transport. The emitted actions are consumed by the browser input
- * bridge. Selection and context actions mirror real mouse input; two-finger
- * navigation stays a continuous transform for the engine camera translator.
+ * bridge. A map drag is direct camera navigation while taps and UI drags still
+ * mirror real mouse input. Two fingers provide marquee selection or pinch zoom;
+ * a deliberate three-finger twist rotates the camera.
  */
 export class TouchGestureRecognizer {
   constructor({
     emit = () => {},
     setTimer = (callback, delay) => setTimeout(callback, delay),
     clearTimer = (timer) => clearTimeout(timer),
+    oneFingerDragModeAtPoint = () => "navigate",
     thresholds = {},
   } = {}) {
     this.emit = emit;
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
+    this.oneFingerDragModeAtPoint = oneFingerDragModeAtPoint;
     this.thresholds = { ...DEFAULTS, ...thresholds };
     this.pointers = new Map();
     this.phase = "idle";
     this.primaryId = null;
     this.primaryButtonDown = false;
     this.multi = null;
+    this.triple = null;
     this.longPressTimer = null;
     this.secondaryArmed = false;
     this.navigationActionCount = 0;
@@ -88,6 +119,21 @@ export class TouchGestureRecognizer {
     this.emit({ type: "tap", button, point: copyPoint(point), timestamp });
   }
 
+  emitNavigation(gesture, previousPoint, point, scale, radians, timestamp = 0) {
+    const action = {
+      type: "navigate",
+      gesture,
+      previousPoint: copyPoint(previousPoint),
+      point: copyPoint(point),
+      scale,
+      radians,
+      timestamp,
+    };
+    this.navigationActionCount += 1;
+    this.lastNavigationAction = action;
+    this.emit(action);
+  }
+
   armLongPress() {
     this.clearLongPress();
     this.longPressTimer = this.setTimer(() => {
@@ -102,7 +148,7 @@ export class TouchGestureRecognizer {
     }, this.thresholds.longPressMs);
   }
 
-  startMultiGesture(timestamp = 0) {
+  startMultiGesture(timestamp = 0, suppressTap = false) {
     const tracked = [...this.pointers.values()].slice(0, 2);
     if (tracked.length !== 2) return;
     const center = centroid(tracked[0].current, tracked[1].current);
@@ -117,11 +163,27 @@ export class TouchGestureRecognizer {
       currentAngle: gestureAngle,
       sampleCenter: center,
       sampleDistance: spread,
-      sampleAngle: gestureAngle,
+      kind: "pending",
+      movedIds: new Set(),
+      selectionAllowed: tracked.every((pointer) => pointer.dragMode === "navigate"),
+      suppressTap,
+    };
+    for (const pointer of tracked) pointer.multiStart = copyPoint(pointer.current);
+    this.phase = "two-pending";
+    this.emitMove(center, timestamp);
+  }
+
+  startTripleGesture() {
+    const tracked = [...this.pointers.entries()].slice(0, 3);
+    if (tracked.length !== 3) return;
+    const points = tracked.map(([, pointer]) => copyPoint(pointer.current));
+    this.triple = {
+      ids: tracked.map(([id]) => id),
+      startPoints: points,
+      samplePoints: points,
       active: false,
     };
-    this.phase = "multi";
-    this.emitMove(center, timestamp);
+    this.phase = "three-pending";
   }
 
   pointerDown(event) {
@@ -129,7 +191,15 @@ export class TouchGestureRecognizer {
     const point = pointerPoint(event);
     const timestamp = Number(event.timeStamp ?? 0);
     if (this.pointers.has(id)) return;
-    this.pointers.set(id, { start: point, current: point, timestamp });
+    const requestedMode = this.oneFingerDragModeAtPoint(point);
+    this.pointers.set(id, {
+      start: point,
+      current: point,
+      sample: point,
+      timestamp,
+      dragMode: requestedMode === "drag" ? "drag" : "navigate",
+      multiStart: null,
+    });
 
     if (this.pointers.size === 1) {
       this.primaryId = id;
@@ -139,14 +209,22 @@ export class TouchGestureRecognizer {
       return;
     }
 
-    if (this.pointers.size === 2 && (this.phase === "pending" || this.phase === "drag")) {
+    if (this.pointers.size === 2
+        && ["pending", "drag", "one-navigation"].includes(this.phase)) {
+      const suppressTap = this.phase !== "pending";
       this.clearLongPress();
       if (this.primaryButtonDown) {
         const primary = this.pointers.get(this.primaryId);
         this.emitButton(0, false, primary?.current ?? point, timestamp);
         this.primaryButtonDown = false;
       }
-      this.startMultiGesture(timestamp);
+      this.startMultiGesture(timestamp, suppressTap);
+      return;
+    }
+
+    if (this.pointers.size === 3 && this.phase.startsWith("two-")) {
+      this.finishMulti(timestamp, true, { flush: false });
+      this.startTripleGesture();
     }
   }
 
@@ -164,41 +242,101 @@ export class TouchGestureRecognizer {
     if (!this.multi) return false;
     this.updateMultiState();
 
-    if (!this.multi.active) {
+    if (this.multi.kind === "pending") {
       const translation = distance(this.multi.startCenter, this.multi.currentCenter);
+      const distanceDelta = Math.abs(this.multi.currentDistance - this.multi.startDistance);
       const pinch = Math.abs(this.multi.currentDistance / this.multi.startDistance - 1);
       const rotation = Math.abs(normalizedAngleDelta(
         this.multi.currentAngle - this.multi.startAngle,
       ));
-      if (translation < this.thresholds.panThresholdPx
-          && pinch < this.thresholds.pinchThresholdRatio
-          && rotation < this.thresholds.rotationThresholdRadians) {
+      if (pinch >= this.thresholds.pinchThresholdRatio
+          && distanceDelta >= translation * 0.75
+          && (this.multi.movedIds.size === 2 || distanceDelta >= translation * 1.25)) {
+        this.multi.kind = "pinch";
+        this.phase = "two-pinch";
+      } else if (this.multi.selectionAllowed
+          && this.multi.movedIds.size === 2
+          && translation >= this.thresholds.dragThresholdPx
+          && translation >= distanceDelta * 0.75
+          && rotation < this.thresholds.selectionRotationLimitRadians) {
+        this.multi.kind = "selection";
+        this.phase = "two-selection";
+        this.emitMove(this.multi.startCenter, timestamp);
+        this.emitButton(0, true, this.multi.startCenter, timestamp);
+        this.primaryButtonDown = true;
+      } else {
         return false;
       }
-      this.multi.active = true;
-      this.phase = "multi-navigation";
     }
 
-    const scale = this.multi.currentDistance / this.multi.sampleDistance;
-    const radians = normalizedAngleDelta(this.multi.currentAngle - this.multi.sampleAngle);
-    const moved = distance(this.multi.sampleCenter, this.multi.currentCenter);
-    if (moved > 0.001 || Math.abs(scale - 1) > 0.00001 || Math.abs(radians) > 0.00001) {
-      const action = {
-        type: "navigate",
-        previousPoint: copyPoint(this.multi.sampleCenter),
-        point: copyPoint(this.multi.currentCenter),
-        scale,
-        radians,
-        timestamp,
-      };
-      this.navigationActionCount += 1;
-      this.lastNavigationAction = action;
-      this.emit(action);
+    if (this.multi.kind === "pinch") {
+      const scale = this.multi.currentDistance / this.multi.sampleDistance;
+      if (Math.abs(scale - 1) > 0.00001) {
+        this.emitNavigation("pinch", this.multi.currentCenter, this.multi.currentCenter,
+          scale, 0, timestamp);
+      }
+    } else if (this.multi.kind === "selection"
+        && distance(this.multi.sampleCenter, this.multi.currentCenter) > 0.001) {
+      this.emitMove(this.multi.currentCenter, timestamp);
     }
     this.multi.sampleCenter = this.multi.currentCenter;
     this.multi.sampleDistance = this.multi.currentDistance;
-    this.multi.sampleAngle = this.multi.currentAngle;
     return true;
+  }
+
+  triplePoints() {
+    if (!this.triple) return [];
+    return this.triple.ids.map((id) => copyPoint(this.pointers.get(id)?.current));
+  }
+
+  flushTripleGesture(timestamp = 0) {
+    if (!this.triple) return false;
+    const currentPoints = this.triplePoints();
+    if (currentPoints.length !== 3) return false;
+    if (!this.triple.active) {
+      const rotation = rotationBetweenPointSets(this.triple.startPoints, currentPoints);
+      if (Math.abs(rotation) < this.thresholds.rotationThresholdRadians) return false;
+      this.triple.active = true;
+      this.phase = "three-rotation";
+    }
+    const radians = rotationBetweenPointSets(this.triple.samplePoints, currentPoints);
+    if (Math.abs(radians) > 0.00001) {
+      const center = pointsCentroid(currentPoints);
+      this.emitNavigation("rotate", center, center, 1, radians, timestamp);
+    }
+    this.triple.samplePoints = currentPoints;
+    return true;
+  }
+
+  flushGesture(timestamp = 0) {
+    if (this.phase === "pending") {
+      const pointer = this.pointers.get(this.primaryId);
+      if (!pointer || pointer.dragMode !== "navigate"
+          || distance(pointer.start, pointer.current) < this.thresholds.panThresholdPx) {
+        return false;
+      }
+      this.clearLongPress();
+      this.phase = "one-navigation";
+    }
+    if (this.phase === "one-navigation") {
+      const pointer = this.pointers.get(this.primaryId);
+      if (!pointer || distance(pointer.sample, pointer.current) <= 0.001) return false;
+      this.emitNavigation("pan", pointer.sample, pointer.current, 1, 0, timestamp);
+      pointer.sample = copyPoint(pointer.current);
+      return true;
+    }
+    if (this.phase.startsWith("two-")) return this.flushMultiGesture(timestamp);
+    if (this.phase.startsWith("three-")) return this.flushTripleGesture(timestamp);
+    return false;
+  }
+
+  needsGestureFrame() {
+    if (this.phase === "pending") {
+      return this.pointers.get(this.primaryId)?.dragMode === "navigate";
+    }
+    return this.phase === "one-navigation"
+      || this.phase.startsWith("two-")
+      || this.phase.startsWith("three-");
   }
 
   pointerMove(event) {
@@ -211,11 +349,13 @@ export class TouchGestureRecognizer {
     if (this.phase === "pending" && id === this.primaryId) {
       if (distance(pointer.start, pointer.current) >= this.thresholds.dragThresholdPx) {
         this.clearLongPress();
-        this.phase = "drag";
-        this.emitMove(pointer.start, timestamp);
-        this.emitButton(0, true, pointer.start, timestamp);
-        this.primaryButtonDown = true;
-        this.emitMove(pointer.current, timestamp);
+        if (pointer.dragMode === "drag") {
+          this.phase = "drag";
+          this.emitMove(pointer.start, timestamp);
+          this.emitButton(0, true, pointer.start, timestamp);
+          this.primaryButtonDown = true;
+          this.emitMove(pointer.current, timestamp);
+        }
       }
       return;
     }
@@ -223,15 +363,33 @@ export class TouchGestureRecognizer {
       this.emitMove(pointer.current, timestamp);
       return;
     }
-    if (this.phase.startsWith("multi")) {
+    if (this.phase.startsWith("two-")) {
+      if (this.multi && pointer.multiStart
+          && distance(pointer.multiStart, pointer.current) > 0.001) {
+        this.multi.movedIds.add(id);
+      }
       this.updateMultiState();
     }
   }
 
-  finishMulti(timestamp, cancelled) {
+  finishMulti(timestamp, cancelled, { flush = true } = {}) {
     if (!this.multi) return;
-    if (!cancelled && !this.multi.active) {
-      this.emitClick(2, this.multi.currentCenter, timestamp);
+    if (flush) this.flushMultiGesture(timestamp);
+    if (this.multi.kind === "selection" && this.primaryButtonDown) {
+      this.emitMove(this.multi.currentCenter, timestamp);
+      this.emitButton(0, false, this.multi.currentCenter, timestamp);
+      this.primaryButtonDown = false;
+    } else if (!cancelled && this.multi.kind === "pending" && !this.multi.suppressTap) {
+      const translation = distance(this.multi.startCenter, this.multi.currentCenter);
+      const pinch = Math.abs(this.multi.currentDistance / this.multi.startDistance - 1);
+      const rotation = Math.abs(normalizedAngleDelta(
+        this.multi.currentAngle - this.multi.startAngle,
+      ));
+      if (translation < this.thresholds.panThresholdPx
+          && pinch < this.thresholds.pinchThresholdRatio
+          && rotation < this.thresholds.rotationThresholdRadians) {
+        this.emitClick(2, this.multi.currentCenter, timestamp);
+      }
     }
     this.multi = null;
     this.phase = "swallow";
@@ -244,16 +402,22 @@ export class TouchGestureRecognizer {
     pointer.current = pointerPoint(event);
     const timestamp = Number(event.timeStamp ?? 0);
     this.clearLongPress();
+    this.flushGesture(timestamp);
 
-    if (this.phase.startsWith("multi")) {
-      this.flushMultiGesture(timestamp);
+    if (this.phase.startsWith("two-")) {
       this.finishMulti(timestamp, cancelled);
+    } else if (this.phase.startsWith("three-")) {
+      this.flushTripleGesture(timestamp);
+      this.triple = null;
+      this.phase = "swallow";
     } else if (this.phase === "pending" && id === this.primaryId) {
       if (!cancelled) {
         const button = this.secondaryArmed ? 2 : 0;
         this.emitClick(button, pointer.start, timestamp);
         this.secondaryArmed = false;
       }
+      this.phase = "swallow";
+    } else if (this.phase === "one-navigation" && id === this.primaryId) {
       this.phase = "swallow";
     } else if (this.phase === "drag" && id === this.primaryId) {
       if (this.primaryButtonDown) {
@@ -279,6 +443,7 @@ export class TouchGestureRecognizer {
     this.primaryId = null;
     this.primaryButtonDown = false;
     this.multi = null;
+    this.triple = null;
   }
 
   cancelAll(timestamp = 0) {
@@ -296,7 +461,10 @@ export class TouchGestureRecognizer {
       pointerCount: this.pointers.size,
       secondaryArmed: this.secondaryArmed,
       primaryButtonDown: this.primaryButtonDown,
-      navigationActive: this.multi?.active === true,
+      navigationActive: this.phase === "one-navigation"
+        || this.phase === "two-pinch"
+        || this.phase === "three-rotation",
+      gesture: this.phase,
       navigationActionCount: this.navigationActionCount,
       lastNavigationAction: this.lastNavigationAction,
     };
@@ -340,6 +508,7 @@ export function createTouchControls({
   onText = () => {},
   onComposition = () => {},
   onTap = () => {},
+  oneFingerDragModeAtPoint = () => "navigate",
   textInputModeAtPoint = () => null,
   focusedTextInputMode = () => null,
   onViewportKeyboardChange = () => {},
@@ -373,6 +542,7 @@ export function createTouchControls({
   let composing = false;
 
   const recognizer = new TouchGestureRecognizer({
+    oneFingerDragModeAtPoint,
     emit(action) {
       if (action.point) lastPoint = copyPoint(action.point);
       if (action.type === "move") onMove(action.point, action.timestamp);
@@ -534,12 +704,12 @@ export function createTouchControls({
     if (!handles(event)) return false;
     event.preventDefault();
     recognizer.pointerMove(event);
-    if (recognizer.multi) {
+    if (recognizer.needsGestureFrame()) {
       navigationTimestamp = Number(event.timeStamp ?? performance.now());
       if (navigationFrame === null) {
         navigationFrame = requestAnimationFrame(() => {
           navigationFrame = null;
-          recognizer.flushMultiGesture(navigationTimestamp);
+          recognizer.flushGesture(navigationTimestamp);
         });
       }
     }

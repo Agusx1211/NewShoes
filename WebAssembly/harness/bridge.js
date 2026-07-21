@@ -25050,6 +25050,24 @@ function engineTextInputModeAtPoint(point) {
   return null;
 }
 
+function touchOneFingerDragMode(clientPoint) {
+  if (harnessState.touchUi?.mapGestures !== true
+      || harnessState.touchUi?.dragBlockersTruncated === true) {
+    return "drag";
+  }
+  const point = canvasInputPointFromEvent({
+    clientX: clientPoint?.x ?? 0,
+    clientY: clientPoint?.y ?? 0,
+  });
+  const blockers = Array.isArray(harnessState.touchUi?.dragBlockers)
+    ? harnessState.touchUi.dragBlockers : [];
+  const blocked = blockers.some((rect) => point.x >= Number(rect?.x ?? 0)
+    && point.x < Number(rect?.x ?? 0) + Number(rect?.width ?? 0)
+    && point.y >= Number(rect?.y ?? 0)
+    && point.y < Number(rect?.y ?? 0) + Number(rect?.height ?? 0));
+  return blocked ? "drag" : "navigate";
+}
+
 function touchInputModeForClientPoint(clientPoint) {
   return engineTextInputModeAtPoint(canvasInputPointFromEvent({
     clientX: clientPoint?.x ?? 0,
@@ -25120,6 +25138,7 @@ function forwardTouchNavigation(action) {
     point,
     scale: Number(action.scale),
     radians: Number(action.radians),
+    gesture: String(action.gesture ?? "transform"),
   };
   void pushTouchNavigationToWasmLite({
     previousPoint,
@@ -25273,6 +25292,7 @@ const touchControls = createTouchControls({
   onKeyStroke: (stroke) => { void forwardTouchKeyStroke(stroke); },
   onText: (text) => { void postBrowserTextToWasm(text); },
   onComposition: forwardTouchComposition,
+  oneFingerDragModeAtPoint: touchOneFingerDragMode,
   textInputModeAtPoint: touchInputModeForClientPoint,
   focusedTextInputMode: touchFocusedInputMode,
   onViewportKeyboardChange: (open) => {
