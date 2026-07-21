@@ -21,7 +21,7 @@ const browser = await chromium.launchPersistentContext(profileDir, {
 
 async function openVrSetting(page) {
   await page.click('.desktop-icon[data-open="settings"]');
-  await page.click("#gameTab");
+  await page.click("#experimentalTab");
   await page.waitForSelector("#webXrButton", { state: "visible" });
 }
 
@@ -38,6 +38,23 @@ try {
   await page.goto(new URL("harness/play.html?dist=dist-threaded", server.url).href,
     { waitUntil: "load" });
   await openVrSetting(page);
+  const experimentalSection = await page.evaluate(() => {
+    const vrSettings = [...document.querySelectorAll(".setting-block")]
+      .filter((setting) => /\bVR\b/.test(setting.querySelector("strong")?.textContent ?? ""));
+    return {
+      tab: document.querySelector("#experimentalTab")?.textContent?.trim(),
+      disclaimer: document.querySelector("#experimentalWarningTitle")?.textContent?.trim(),
+      settingCount: vrSettings.length,
+      allSettingsMoved: vrSettings.every((setting) => setting.closest("[data-settings-panel]")?.id
+        === "experimentalPanel"),
+    };
+  });
+  assert.deepEqual(experimentalSection, {
+    tab: "Experimental",
+    disclaimer: "VR currently does not work well.",
+    settingCount: 10,
+    allSettingsMoved: true,
+  }, "all VR controls and the prominent disclaimer must live in the Experimental section");
   await page.selectOption("#webXrDominantHand", "left");
   await page.selectOption("#webXrRotationMode", "stepped");
   await page.uncheck("#webXrMotionVignette");
