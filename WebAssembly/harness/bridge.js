@@ -1982,6 +1982,12 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "realEngineSetLlmAiProfiles",
 ]);
 
+function resizedFrameRendered(redraw) {
+  return redraw?.initReturned === true
+    && Number(redraw?.framesCompleted ?? 0) >= 1
+    && redraw?.exceptionCaught !== true;
+}
+
 async function threadedRpc(command, payload = {}) {
   if (!threadedEngine) {
     return undefined;
@@ -2420,16 +2426,30 @@ async function threadedRpc(command, payload = {}) {
         const result = await threadedEngine.engineCall(
           "cnc_port_real_engine_set_resolution", "string", ["number", "number"],
           [width, height]);
+        const appliedWidth = Number.isFinite(result?.width) && result.width > 0
+          ? result.width : width;
+        const appliedHeight = Number.isFinite(result?.height) && result.height > 0
+          ? result.height : height;
+        let redraw = null;
+        if (result?.ok === true) {
+          // Resetting the OffscreenCanvas backing store clears its presented
+          // image. Repaint in this same worker task so the compositor never
+          // observes that transient black buffer while it waits for the next
+          // paced-loop callback (often mistaken for a mouse-triggered redraw).
+          redraw = await threadedEngine.engineCall(
+            "cnc_port_real_engine_frame_paced", "string", ["number"], [0]);
+          if (!resizedFrameRendered(redraw)) {
+            throw new Error("resolution changed but the first resized frame did not render");
+          }
+        }
         return {
           ok: result?.ok === true,
           command,
           requested: { width, height },
-          applied: {
-            width: Number.isFinite(result?.width) && result.width > 0 ? result.width : width,
-            height: Number.isFinite(result?.height) && result.height > 0 ? result.height : height,
-          },
+          applied: { width: appliedWidth, height: appliedHeight },
           reflow: result?.reflow ?? null,
           error: result?.ok === true ? undefined : (result?.error ?? "resolution change refused"),
+          redraw,
           threaded: true,
         };
       } catch (error) {
