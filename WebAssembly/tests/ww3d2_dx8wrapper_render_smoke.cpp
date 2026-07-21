@@ -48,6 +48,34 @@ int main()
 		expect(state->buffer_lock_calls >= 1, "WW3D init did not lock a fixed buffer") &&
 		expect(state->buffer_unlock_calls >= 1, "WW3D init did not unlock a fixed buffer");
 
+	IDirect3DTexture8 *texture = nullptr;
+	if (ok) {
+		IDirect3DDevice8 *device = DX8Wrapper::_Get_D3D_Device8();
+		ok = expect(SUCCEEDED(device->CreateTexture(
+			16, 16, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture)),
+			"cache invalidation texture creation failed");
+		if (ok) {
+			DX8Wrapper::Set_DX8_Texture(0, texture);
+			ok = ok && expect(SUCCEEDED(device->SetTexture(0, nullptr)),
+				"direct texture unbind failed");
+			const UINT stale_bind_count = wasm_d3d8_get_state()->set_texture_calls;
+			DX8Wrapper::Set_DX8_Texture(0, texture);
+			ok = ok && expect(wasm_d3d8_get_state()->set_texture_calls == stale_bind_count,
+				"texture cache desynchronization did not reproduce");
+
+			DX8Wrapper::Invalidate_Cached_Textures();
+			const UINT invalidated_bind_count = wasm_d3d8_get_state()->set_texture_calls;
+			DX8Wrapper::Set_DX8_Texture(0, texture);
+			ok = ok && expect(
+				wasm_d3d8_get_state()->set_texture_calls == invalidated_bind_count + 1,
+				"texture cache invalidation did not force a device rebind");
+			DX8Wrapper::Set_DX8_Texture(0, nullptr);
+		}
+	}
+	if (texture != nullptr) {
+		texture->Release();
+	}
+
 	if (ok) {
 		DX8Wrapper::Begin_Scene();
 		DX8Wrapper::Clear(true, true, Vector3(0.0f, 0.25f, 0.5f), 0.75f, 1.0f, 0);

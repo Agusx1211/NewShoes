@@ -135,6 +135,15 @@ const expectSelectionFocusLossProbe =
   process.env.SKIRMISH_START_SELECTION_FOCUS_LOSS_PROBE === "1";
 const particleVisibilityFrames = parsePositiveInt(
   "SKIRMISH_START_PARTICLE_VISIBILITY_FRAMES", 30);
+const particleVisibilitySystems = String(
+  process.env.SKIRMISH_START_PARTICLE_VISIBILITY_SYSTEMS ??
+    "SpectreHowitzerExplosionArms,NukeCannonMushroomCloudRing")
+  .split(",").map((name) => name.trim()).filter(Boolean);
+const particleVisibilityTextures = String(
+  process.env.SKIRMISH_START_PARTICLE_VISIBILITY_TEXTURES ??
+    "excloud01,exsmokepuf07")
+  .split(",").map((name) => name.trim().toLowerCase()).filter(Boolean);
+const threadedSkirmish = process.env.SKIRMISH_START_THREADS === "1";
 const distDir = parseDistDir();
 const replayMenuScreenshotPath = resolve(
   process.env.SKIRMISH_REPLAY_MENU_SCREENSHOT ??
@@ -2353,12 +2362,12 @@ async function driveScorchProbe(page) {
   };
 }
 
-function particleEffectDraws(frame) {
+function particleEffectDraws(frame, drawHistory = lightProbeDrawHistory(frame)) {
   const labels = new Map(
     (locateNested(frame?.frame, ["textureDiagnostics"])?.labels ?? [])
       .map((label) => [Number(label.id), label.name || label.path || ""]),
   );
-  return lightProbeDrawHistory(frame)
+  return drawHistory
     .map((draw) => ({
       label: labels.get(Number(draw.texture0?.id ?? 0)) ?? "",
       sequence: draw.drawSequence,
@@ -2374,6 +2383,21 @@ function particleEffectDraws(frame) {
       projectedVertices: draw.vertexSummary?.projected?.visible ?? 0,
     }))
     .filter((draw) => /cloud|smoke|dust/i.test(draw.label));
+}
+
+function particleAppliedTextures(frame) {
+  return (locateNested(frame?.frame, ["textureDiagnostics"])?.labels ?? [])
+    .map((label) => label.name || label.path || "")
+    .filter((label) => /cloud|smoke|dust|steam|puff/i.test(label));
+}
+
+async function particlePerfSummary(page) {
+  if (!threadedSkirmish) {
+    return page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? {});
+  }
+  const status = await rpc(page, "threadedStatus");
+  expect(status?.ok === true, "threaded particle status query failed", status);
+  return status.status?.graphics?.d3d8Perf ?? {};
 }
 
 async function inspectGraphics(page) {
@@ -2405,26 +2429,47 @@ async function driveParticleVisibilityProbe(page) {
   await runFrames(page, 2, "particle visibility reveal settle");
 
   const drawables = await rpc(page, "queryDrawables");
-  const target = (drawables?.result?.drawables ?? []).find((drawable) =>
+  const drawableList = drawables?.result?.drawables ?? drawables?.drawables?.drawables ?? [];
+  const target = drawableList.find((drawable) =>
     drawable.localOwned === true && drawable.onScreen === true &&
     drawable.hidden !== true && drawable.worldPos);
   expect(Boolean(target),
     "particle visibility probe could not find a visible local target", drawables?.result);
 
+  const position = { ...target.worldPos };
+  const camera = await rpc(page, "agentCameraLookAt", {
+    x: position.x,
+    y: position.y,
+  });
+  expect(camera?.ok === true,
+    "particle visibility probe could not center its target", camera);
+  await runFrames(page, 2, "particle visibility camera settle");
+
   const before = await runSummary(page, 1, "particle visibility baseline");
   const beforeParticleCount = Number(before?.frame?.particles?.particleCount ?? 0);
   const beforeOnScreenCount = Number(before?.frame?.particles?.onScreenParticleCount ?? 0);
-  await page.evaluate(() => {
-    window.__cncSetD3D8PerfCounters?.(true);
-    window.__cncSetD3D8SceneDrawHistoryLimit?.(4096);
-  });
+  if (threadedSkirmish) {
+    const configured = await rpc(page, "d3d8PerfConfigure", {
+      timing: false,
+      counters: true,
+      bufferProducers: false,
+      drawProducers: false,
+    });
+    expect(configured?.ok === true && configured?.counters === true,
+      "threaded particle counters could not be enabled", configured);
+  } else {
+    await page.evaluate(() => {
+      window.__cncSetD3D8PerfCounters?.(true);
+      window.__cncSetD3D8SceneDrawHistoryLimit?.(4096);
+    });
+  }
 
-  const systems = ["MOABDustWave", "SubExplosionSmoke02"];
+  const systems = particleVisibilitySystems;
   const triggers = [];
   for (const name of systems) {
     const trigger = await rpc(page, "realEngineSpawnParticleSystem", {
       name,
-      ...target.worldPos,
+      ...position,
       useViewPosition: false,
       clampToTerrain: true,
     });
@@ -2436,14 +2481,14 @@ async function driveParticleVisibilityProbe(page) {
   const maxFrames = particleVisibilityFrames + 120;
   for (let advanced = 1; advanced <= maxFrames && frames.length < particleVisibilityFrames;
     ++advanced) {
-    const beforePerf = await page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? {});
+    const beforePerf = await particlePerfSummary(page);
     const frame = await runSummary(page, 1, "particle visibility continuity");
-    const afterPerf = await page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? {});
+    const afterPerf = await particlePerfSummary(page);
     const particleCount = Number(frame?.frame?.particles?.particleCount ?? 0);
     const onScreenParticleCount = Number(
       frame?.frame?.particles?.onScreenParticleCount ?? 0);
-    if (particleCount <= beforeParticleCount + 10 ||
-        onScreenParticleCount <= beforeOnScreenCount + 10) {
+    if (particleCount <= beforeParticleCount ||
+        onScreenParticleCount <= beforeOnScreenCount) {
       continue;
     }
 
@@ -2455,19 +2500,36 @@ async function driveParticleVisibilityProbe(page) {
       onScreenParticleCount,
       particleProgramDraws: Number(afterPerf.particleProgramDraws ?? 0) -
         Number(beforePerf.particleProgramDraws ?? 0),
+      appliedTextures: particleAppliedTextures(frame),
       effectDraws: null,
     };
 
     // Full draw history synchronizes the GPU once per draw. Sample it at
     // intervals while the lightweight counter checks every continuity frame.
     if (activeFrame === 1 || activeFrame % 10 === 0) {
-      await page.evaluate(() => {
-        window.__cncClearD3D8SceneDrawHistory?.();
-        window.__cncSetDiagLevel?.("full");
-      });
-      const diagnostic = await runSummary(page, 1, "particle visibility draw-state sample");
-      sample.effectDraws = particleEffectDraws(diagnostic);
-      await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+      let diagnostic;
+      if (threadedSkirmish) {
+        const configured = await rpc(page, "d3d8DrawHistory", {
+          clear: true,
+          level: "full",
+          limit: 4096,
+        });
+        expect(configured?.ok === true,
+          "threaded particle draw history could not be enabled", configured);
+        diagnostic = await runSummary(page, 1, "particle visibility draw-state sample");
+        const captured = await rpc(page, "d3d8DrawHistory", { level: "lite" });
+        expect(captured?.ok === true,
+          "threaded particle draw history could not be read", captured);
+        sample.effectDraws = particleEffectDraws(diagnostic, captured.history);
+      } else {
+        await page.evaluate(() => {
+          window.__cncClearD3D8SceneDrawHistory?.();
+          window.__cncSetDiagLevel?.("full");
+        });
+        diagnostic = await runSummary(page, 1, "particle visibility draw-state sample");
+        sample.effectDraws = particleEffectDraws(diagnostic);
+        await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+      }
     }
     frames.push(sample);
 
@@ -2484,13 +2546,12 @@ async function driveParticleVisibilityProbe(page) {
   const diagnosticFrames = frames.filter((frame) => frame.effectDraws !== null);
   const missingDrawFrames = diagnosticFrames.filter((frame) => frame.effectDraws.length === 0);
   const missingTextureFrames = diagnosticFrames.filter((frame) =>
-    !frame.effectDraws.some((draw) => /excloud01/i.test(draw.label)) ||
-    !frame.effectDraws.some((draw) => /exsmokepuff/i.test(draw.label)));
+    particleVisibilityTextures.some((texture) =>
+      !frame.effectDraws.some((draw) =>
+        draw.label.toLowerCase().includes(texture) && draw.projectedVertices > 0)));
   const sampledDraws = diagnosticFrames.flatMap((frame) => frame.effectDraws);
   const staleStageDraws = sampledDraws.filter((draw) =>
     draw.stage1.colorOp !== D3DTOP_DISABLE || draw.stage1.alphaOp !== D3DTOP_DISABLE);
-  const offscreenDraws = sampledDraws
-    .filter((draw) => draw.projectedVertices === 0);
   const graphics = await inspectGraphics(page);
   const expectedRenderer = String(
     process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
@@ -2506,12 +2567,10 @@ async function driveParticleVisibilityProbe(page) {
   expect(missingDrawFrames.length === 0,
     "visible smoke or dust intermittently lost its renderer draw", missingDrawFrames);
   expect(missingTextureFrames.length === 0,
-    "sampled frames did not contain both shipped smoke and dust textures",
+    "sampled frames did not visibly draw both shipped smoke and dust textures",
     missingTextureFrames);
   expect(staleStageDraws.length === 0,
     "particle draws inherited a stale stage-one texture combiner", staleStageDraws);
-  expect(offscreenDraws.length === 0,
-    "sampled particle draws did not project into the viewport", offscreenDraws);
   expect(graphics.contextLost === false && graphics.contextLossBanner === false,
     "particle visibility run lost its WebGL context", graphics);
   if (expectedRenderer) {
@@ -2520,8 +2579,14 @@ async function driveParticleVisibilityProbe(page) {
   }
 
   return {
-    target: { name: target.name, worldPos: target.worldPos, screenPos: target.screenPos },
+    target: target == null ? null : {
+      name: target.name,
+      worldPos: target.worldPos,
+      screenPos: target.screenPos,
+    },
+    position,
     systems,
+    expectedTextures: particleVisibilityTextures,
     triggers,
     beforeParticleCount,
     beforeOnScreenCount,

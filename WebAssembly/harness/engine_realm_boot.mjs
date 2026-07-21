@@ -1415,6 +1415,33 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         }
         return;
       }
+      case "d3d8DrawHistory": {
+        try {
+          if (msg.level === "lite" || msg.level === "full") {
+            globalThis.__cncSetDiagLevel?.(msg.level);
+          }
+          if (Number.isFinite(Number(msg.limit)) && Number(msg.limit) > 0) {
+            globalThis.__cncSetD3D8SceneDrawHistoryLimit?.(Number(msg.limit));
+          }
+          if (msg.clear === true) {
+            globalThis.__cncClearD3D8SceneDrawHistory?.();
+          }
+          respond({
+            cmd: "d3d8DrawHistoryResult",
+            id: msg.id,
+            ok: true,
+            history: d3d8Diag.d3d8SceneDrawHistory(),
+          });
+        } catch (error) {
+          respond({
+            cmd: "d3d8DrawHistoryResult",
+            id: msg.id,
+            ok: false,
+            error: String((error && error.stack) || error),
+          });
+        }
+        return;
+      }
       case "opfsReadRange": {
         // Read [offset, offset+length) of a staged OPFS archive in THIS realm
         // — the sync access handles live here and reads are stateless {at}.

@@ -2280,6 +2280,26 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "d3d8DrawHistory": {
+      try {
+        await threadedEngine.ensureReady();
+        const reply = await threadedEngine.sendCommand({
+          cmd: "d3d8DrawHistory",
+          level: payload.level,
+          limit: payload.limit,
+          clear: payload.clear === true,
+        }, { timeoutMs: 120000 });
+        return {
+          ok: reply?.ok === true,
+          command,
+          history: reply?.history ?? [],
+          threaded: true,
+          error: reply?.ok === true ? undefined : (reply?.error ?? "worker draw history failed"),
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "screenshot":
       return { ok: true, command, screenshot: snapshotThreadedViewport(), threaded: true };
     case "threadedStatus": {
