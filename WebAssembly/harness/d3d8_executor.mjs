@@ -14618,6 +14618,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     d3d8PerfSummary,
     d3d8SM1ShaderAuditSummary,
     setD3D8SM1ShaderAuditEnabled,
+    d3d8SceneDrawHistory: () =>
+      Array.isArray(harnessState.graphics.d3d8SceneDrawHistory)
+        ? harnessState.graphics.d3d8SceneDrawHistory
+        : [],
     applyD3D8BoundDrawDiagnosticsLevel,
     d3dColorToNormalizedRgba,
     d3dMaterialSourceName,
