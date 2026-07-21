@@ -44,6 +44,7 @@
 #include "Common/PlayerTemplate.h"
 #include "Common/Radar.h"
 #include "Common/Recorder.h"
+#include "Common/ResourceGatheringManager.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/GameLOD.h"
 #include "GameClient/ControlBar.h"
@@ -8933,17 +8934,24 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_su
 {
 	static std::string json;
 	Object *worker_object = NULL;
+	Object *supply_warehouse = NULL;
 	WorkerAIUpdate *worker_update = NULL;
 	if (TheGameLogic != NULL) {
 		for (Object *obj = TheGameLogic->getFirstObject(); obj != NULL; obj = obj->getNextObject()) {
 			AIUpdateInterface *ai = obj->getAIUpdateInterface();
 			if (ai != NULL && ai->getWorkerAIInterface() != NULL) {
 				WorkerAIUpdate *candidate = static_cast<WorkerAIUpdate *>(ai);
-				if (candidate->isSupplyTruckBrainActive()) {
+				Player *player = obj->getControllingPlayer();
+				ResourceGatheringManager *manager =
+					player != NULL ? player->getResourceGatheringManager() : NULL;
+				Object *candidate_warehouse = manager != NULL
+					? manager->findBestSupplyWarehouse(obj) : NULL;
+				if (candidate_warehouse == NULL) {
 					continue;
 				}
 				worker_object = obj;
 				worker_update = candidate;
+				supply_warehouse = candidate_warehouse;
 				break;
 			}
 		}
@@ -8951,12 +8959,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_su
 
 	json = "{";
 	json += "\"ok\":false";
-	if (worker_object == NULL || worker_update == NULL) {
-		json += ",\"error\":\"workerNotFound\"}";
+	if (worker_object == NULL || worker_update == NULL || supply_warehouse == NULL) {
+		json += ",\"error\":\"workerWithSupplyWarehouseNotFound\"}";
 		return json.c_str();
 	}
 
 	const ObjectID worker_id = worker_object->getID();
+	const ObjectID supply_warehouse_id = supply_warehouse->getID();
+	const Bool initially_active = worker_update->isSupplyTruckBrainActive();
+	if (initially_active) {
+		worker_update->exitingSupplyTruckState();
+	}
 	const Bool active_before_prepare = worker_update->isSupplyTruckBrainActive();
 	const UnsignedInt reentries_before =
 		worker_update->getSupplyTruckExitReentryCountForDiagnostics();
@@ -8974,19 +8987,55 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_su
 	const Bool active_after_exit = worker_update->isSupplyTruckBrainActive();
 	const StateID supply_state_after_exit =
 		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const Bool automatic_supply_prepared =
+		worker_update->prepareAutomaticSupplyForDiagnostics();
+	const Bool automatic_active_before_handoff =
+		worker_update->isSupplyTruckBrainActive();
+	const StateID automatic_state_before_handoff =
+		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const Bool automatic_force_before_handoff =
+		worker_update->isForcedIntoWantingState();
+	worker_update->update();
+	const Bool automatic_active_after_handoff =
+		worker_update->isSupplyTruckBrainActive();
+	const StateID automatic_state_after_handoff =
+		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const Bool automatic_force_after_handoff =
+		worker_update->isForcedIntoWantingState();
+	worker_update->update();
+	const Bool automatic_active_after_assignment =
+		worker_update->isSupplyTruckBrainActive();
+	const StateID automatic_state_after_assignment =
+		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const Bool automatic_docking_after_assignment =
+		worker_update->getAIStateType() == AI_DOCK;
 	const Bool worker_survived = TheGameLogic->findObjectByID(worker_id) == worker_object;
+	const Bool warehouse_survived =
+		TheGameLogic->findObjectByID(supply_warehouse_id) == supply_warehouse;
 	const Bool ok = !active_before_prepare && prepared_for_exit
 		&& active_before_exit && ferrying_before_exit && supply_state_before_exit == ST_WANTING
 		&& !active_after_exit && supply_state_after_exit == ST_IDLE
-		&& reentry_delta == 1 && worker_survived;
+		&& reentry_delta == 1
+		&& automatic_supply_prepared && automatic_active_before_handoff
+		&& automatic_state_before_handoff == ST_BUSY && automatic_force_before_handoff
+		&& automatic_active_after_handoff && automatic_state_after_handoff == ST_WANTING
+		&& !automatic_force_after_handoff
+		&& automatic_active_after_assignment
+		&& automatic_state_after_assignment == ST_DOCKING
+		&& automatic_docking_after_assignment
+		&& worker_survived && warehouse_survived;
 
 	json = "{";
 	json += "\"ok\":";
 	json += ok ? "true" : "false";
 	json += ",\"workerId\":" + std::to_string(static_cast<unsigned long long>(worker_id));
+	json += ",\"supplyWarehouseId\":"
+		+ std::to_string(static_cast<unsigned long long>(supply_warehouse_id));
 	const ThingTemplate *worker_template = worker_object->getTemplate();
 	json += ",\"template\":\"" + json_escape(
 		worker_template != NULL ? worker_template->getName().str() : "") + "\"";
+	json += ",\"initiallyActive\":";
+	json += initially_active ? "true" : "false";
 	json += ",\"activeBeforePrepare\":";
 	json += active_before_prepare ? "true" : "false";
 	json += ",\"preparedForExit\":";
@@ -9003,9 +9052,31 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_su
 	json += supply_state_after_exit == ST_IDLE ? "true" : "false";
 	json += ",\"suppressedReentries\":"
 		+ std::to_string(static_cast<unsigned long long>(reentry_delta));
+	json += ",\"automaticSupplyPrepared\":";
+	json += automatic_supply_prepared ? "true" : "false";
+	json += ",\"automaticActiveBeforeHandoff\":";
+	json += automatic_active_before_handoff ? "true" : "false";
+	json += ",\"automaticBusyBeforeHandoff\":";
+	json += automatic_state_before_handoff == ST_BUSY ? "true" : "false";
+	json += ",\"automaticForceBeforeHandoff\":";
+	json += automatic_force_before_handoff ? "true" : "false";
+	json += ",\"automaticActiveAfterHandoff\":";
+	json += automatic_active_after_handoff ? "true" : "false";
+	json += ",\"automaticWantingAfterHandoff\":";
+	json += automatic_state_after_handoff == ST_WANTING ? "true" : "false";
+	json += ",\"automaticForceClearedAfterHandoff\":";
+	json += !automatic_force_after_handoff ? "true" : "false";
+	json += ",\"automaticActiveAfterAssignment\":";
+	json += automatic_active_after_assignment ? "true" : "false";
+	json += ",\"automaticDockingStateAfterAssignment\":";
+	json += automatic_state_after_assignment == ST_DOCKING ? "true" : "false";
+	json += ",\"automaticDockingAfterAssignment\":";
+	json += automatic_docking_after_assignment ? "true" : "false";
 	json += ",\"elapsedMs\":" + std::to_string(static_cast<unsigned long long>(elapsed_ms));
 	json += ",\"workerSurvived\":";
 	json += worker_survived ? "true" : "false";
+	json += ",\"warehouseSurvived\":";
+	json += warehouse_survived ? "true" : "false";
 	json += "}";
 	return json.c_str();
 }
