@@ -3519,7 +3519,8 @@ void W3DDisplay::preloadTextureAssets( AsciiString texture )
 	if( m_assetManager )
 	{
 		TextureClass *theTexture = m_assetManager->Get_Texture( texture.str() );
-		theTexture->Release_Ref();//release reference
+		if (theTexture)
+			theTexture->Release_Ref();//release reference
 	}  // end if
 
 }  // end preloadModelAssets

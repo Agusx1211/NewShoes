@@ -99,6 +99,21 @@ EM_JS(void, wasm_d3d8_browser_reset_state, (), {
 		bridge();
 	}
 });
+EM_JS(int, wasm_d3d8_browser_present, (
+	unsigned int present_calls,
+	unsigned int back_buffer_width,
+	unsigned int back_buffer_height
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8Present : null;
+	if (typeof bridge !== "function") {
+		return 0;
+	}
+	return bridge({
+		presentCalls: present_calls >>> 0,
+		backBufferWidth: back_buffer_width >>> 0,
+		backBufferHeight: back_buffer_height >>> 0,
+	}) === true ? 1 : 0;
+});
 // Browser-native display pixel size (canvas CSS box x devicePixelRatio),
 // packed (width << 16) | height so the adapter mode table can expose it as a
 // real display mode. Returns 0 when the bridge is absent (probe pages).
@@ -535,6 +550,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int state_hash,
 	unsigned int derived_state_hash,
 	unsigned int derived_state_hash_secondary,
+	int spatial_ui_draw,
 	unsigned int producer_ptr,
 	int sorted_draw_profile_scope,
 	unsigned int pixel_shader,
@@ -615,6 +631,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		payload.stateHash = state_hash >>> 0;
 		payload.derivedStateHash = derivedKey;
 		payload.pixelShaderHandle = pixel_shader >>> 0;
+		payload.spatialUi = spatial_ui_draw !== 0;
 		payload.producer = producer;
 		payload.sortedDrawSubmitProfile = sorted_draw_profile_scope !== 0;
 		payload.treeShroud = Module.__cncPortD3D8TreeShroud || null;
@@ -625,6 +642,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 #else
 void wasm_d3d8_browser_backbuffer_resize(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_reset_state() {}
+int wasm_d3d8_browser_present(unsigned int, unsigned int, unsigned int) { return 0; }
 unsigned int wasm_d3d8_browser_native_mode() { return 0; }
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
 void wasm_d3d8_browser_set_viewport(unsigned int, unsigned int, unsigned int, unsigned int, double, double,
@@ -648,7 +666,7 @@ void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned in
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int,
+	unsigned int, unsigned int, unsigned int, int,
 	unsigned int, int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
@@ -664,6 +682,8 @@ static_assert(sizeof(WasmD3D8DrawLight) == 108,
 
 WasmD3D8ShimState g_state = {};
 bool g_bound_draw_diagnostics_enabled = true;
+bool g_present_bridge_enabled = false;
+bool g_next_spatial_ui_draw = false;
 int g_d3d8_module = 0;
 UINT g_next_browser_buffer_id = 1;
 UINT g_next_browser_texture_id = 1;
@@ -2248,6 +2268,8 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 	const float *ps_constants, const float *vs_constants)
 {
 	const bool profile_sorted_draw_submit = wasm_d3d8_sorted_draw_profile_enabled();
+	const bool spatial_ui_draw = g_next_spatial_ui_draw;
+	g_next_spatial_ui_draw = false;
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
 		index_count == 0 || vertex_stride == 0) {
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.complete");
@@ -2298,6 +2320,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		state_hash,
 		derived_state_hash,
 		derived_state_hash_secondary,
+		spatial_ui_draw ? 1 : 0,
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(producer)),
 		profile_sorted_draw_submit ? 1 : 0,
 		pixel_shader,
@@ -3734,6 +3757,16 @@ public:
 	HRESULT Present(const RECT *, const RECT *, HWND, const void *) override
 	{
 		++g_state.present_calls;
+		if (g_present_bridge_enabled) {
+			++g_state.present_bridge_calls;
+			if (wasm_d3d8_browser_present(
+					g_state.present_calls,
+					m_parameters.BackBufferWidth,
+					m_parameters.BackBufferHeight) == 0) {
+				++g_state.present_bridge_failures;
+				return D3DERR_NOTAVAILABLE;
+			}
+		}
 		return S_OK;
 	}
 
@@ -5862,6 +5895,8 @@ private:
 extern "C" void wasm_d3d8_reset_state()
 {
 	std::memset(&g_state, 0, sizeof(g_state));
+	g_present_bridge_enabled = false;
+	g_next_spatial_ui_draw = false;
 	wasm_d3d8_browser_reset_state();
 }
 
@@ -5873,6 +5908,16 @@ extern "C" const WasmD3D8ShimState *wasm_d3d8_get_state()
 extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_d3d8_set_bound_draw_diagnostics(int enabled)
 {
 	g_bound_draw_diagnostics_enabled = enabled != 0;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void cnc_port_d3d8_set_present_bridge(int enabled)
+{
+	g_present_bridge_enabled = enabled != 0;
+}
+
+extern "C" void cnc_port_mark_next_d3d8_spatial_ui_draw()
+{
+	g_next_spatial_ui_draw = true;
 }
 
 extern "C" HMODULE wasm_d3d8_load_library_a(LPCSTR library_name)

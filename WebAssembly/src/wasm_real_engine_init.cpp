@@ -6509,6 +6509,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int
 	json += (TheGameLogic != NULL && TheGameLogic->isLoadSessionActive()) ? "true" : "false";
 	json += ",\"loadProgress\":" + std::to_string(
 		TheGameLogic != NULL ? (long long)TheGameLogic->getLoadSessionProgress() : -1);
+	const bool world_scene_active = TheGameLogic != NULL && TheGameLogic->isInGame()
+		&& !TheGameLogic->isLoadingMap() && !TheGameLogic->isLoadingSave()
+		&& !TheGameLogic->isClearingGameData();
+	json += ",\"worldScene\":{\"active\":";
+	json += world_scene_active ? "true" : "false";
+	json += ",\"newGameCount\":"
+		+ std::to_string(cnc_port_logic_dispatch_new_game_count());
+	json += ",\"clearGameDataCount\":"
+		+ std::to_string(cnc_port_logic_dispatch_clear_game_data_count());
+	json += "}";
 	json += ",\"browserCursor\":{\"cursorSet\":";
 	json += WasmWin32Input::current_cursor != NULL ? "true" : "false";
 	json += ",\"cursorFile\":";
@@ -7940,6 +7950,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	json += TheInGameUI->isInForceAttackMode() ? "true" : "false";
 	json += ",\"preferSelection\":";
 	json += TheInGameUI->isInPreferSelectionMode() ? "true" : "false";
+	json += ",\"cameraRotateLeft\":";
+	json += TheInGameUI->isCameraRotatingLeft() ? "true" : "false";
+	json += ",\"cameraRotateRight\":";
+	json += TheInGameUI->isCameraRotatingRight() ? "true" : "false";
+	json += ",\"cameraZoomIn\":";
+	json += TheInGameUI->isCameraZoomingIn() ? "true" : "false";
+	json += ",\"cameraZoomOut\":";
+	json += TheInGameUI->isCameraZoomingOut() ? "true" : "false";
 	json += ",\"placementAnchored\":";
 	json += TheInGameUI->isPlacementAnchored() ? "true" : "false";
 	json += ",\"pendingPlaceType\":";

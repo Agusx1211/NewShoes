@@ -211,6 +211,11 @@ const d3d8DrawMatrixScratch = {
   world: new Float32Array(16),
   view: new Float32Array(16),
   projection: new Float32Array(16),
+  xrView: new Float32Array(16),
+  xrEngineViewProjection: new Float32Array(16),
+  xrEngineViewProjectionInverse: new Float32Array(16),
+  xrViewProjection: new Float32Array(16),
+  xrClipTransform: new Float32Array(16),
 };
 let d3d8CurrentVertexArray = null;
 let d3d8CurrentVertexArrayKey = null;
@@ -540,6 +545,11 @@ const d3d8BufferStats = {
 const d3d8BufferProducerStats = new Map();
 const d3d8DrawProducerStats = new Map();
 let d3d8ViewportState = null;
+// Non-null only while the Window-owned WebXR renderer replays a world draw.
+// Matrices are WebGL column-major: viewPrefix is applied ahead of the engine
+// camera view, and projection has already been converted to the D3D [0,w]
+// depth convention that the shared shader maps back to WebGL [-w,w].
+let d3d8XrViewOverride = null;
 let browser_fbo_incomplete_count = 0;
 // When the player picks an explicit engine render resolution (resolution
 // selector / fullscreen auto-native), the WebGL2 backing store must stay at THAT
@@ -1284,6 +1294,21 @@ function invalidateD3D8DrawStateCache() {
   resetD3D8UniformSubgroupCaches();
 }
 
+// Raw WebXR compositor/UI commands share this WebGL2 context with the D3D8
+// executor. Forget every cached GL identity/state they can disturb so the next
+// engine draw rebinds its real program, VAO, buffers, textures, and write masks.
+function invalidateD3D8ExternalGlState() {
+  invalidateD3D8DrawStateCache();
+  d3d8CurrentProgram = null;
+  d3d8CurrentVertexArray = null;
+  d3d8CurrentVertexArrayKey = null;
+  d3d8CurrentArrayBuffer = null;
+  d3d8CurrentElementArrayBuffer = null;
+  d3d8CurrentDepthMask = null;
+  d3d8CurrentColorMask = [null, null, null, null];
+  invalidateD3D8GlTextureBindingCache();
+}
+
 function clearD3D8DerivedDrawCache() {
   d3d8DerivedDrawCache.clear();
   d3d8DerivedDrawCacheEntries = 0;
@@ -1969,6 +1994,9 @@ function normalizeD3D8Viewport(payload = {}, drawingBuffer = currentRenderSurfac
 }
 
 function currentD3D8ViewportPayload(drawingBuffer = currentRenderSurfaceSize()) {
+  if (d3d8XrViewOverride) {
+    return d3d8XrViewOverride.viewport;
+  }
   if (d3d8ViewportState) {
     return d3d8ViewportState;
   }
@@ -1982,6 +2010,136 @@ function currentD3D8ViewportPayload(drawingBuffer = currentRenderSurfaceSize()) 
     targetWidth: drawingBuffer.width,
     targetHeight: drawingBuffer.height,
   };
+}
+
+function multiplyD3D8ColumnMatrices(left, right, target) {
+  for (let column = 0; column < 4; column += 1) {
+    for (let row = 0; row < 4; row += 1) {
+      let value = 0;
+      for (let inner = 0; inner < 4; inner += 1) {
+        value += left[inner * 4 + row] * right[column * 4 + inner];
+      }
+      target[column * 4 + row] = value;
+    }
+  }
+  return target;
+}
+
+function invertD3D8ColumnMatrix(matrix, target) {
+  const a00 = matrix[0], a01 = matrix[1], a02 = matrix[2], a03 = matrix[3];
+  const a10 = matrix[4], a11 = matrix[5], a12 = matrix[6], a13 = matrix[7];
+  const a20 = matrix[8], a21 = matrix[9], a22 = matrix[10], a23 = matrix[11];
+  const a30 = matrix[12], a31 = matrix[13], a32 = matrix[14], a33 = matrix[15];
+  const b00 = a00 * a11 - a01 * a10;
+  const b01 = a00 * a12 - a02 * a10;
+  const b02 = a00 * a13 - a03 * a10;
+  const b03 = a01 * a12 - a02 * a11;
+  const b04 = a01 * a13 - a03 * a11;
+  const b05 = a02 * a13 - a03 * a12;
+  const b06 = a20 * a31 - a21 * a30;
+  const b07 = a20 * a32 - a22 * a30;
+  const b08 = a20 * a33 - a23 * a30;
+  const b09 = a21 * a32 - a22 * a31;
+  const b10 = a21 * a33 - a23 * a31;
+  const b11 = a22 * a33 - a23 * a32;
+  const determinant = b00 * b11 - b01 * b10 + b02 * b09
+    + b03 * b08 - b04 * b07 + b05 * b06;
+  if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-12) return null;
+  const inverseDeterminant = 1 / determinant;
+  target[0] = (a11 * b11 - a12 * b10 + a13 * b09) * inverseDeterminant;
+  target[1] = (a02 * b10 - a01 * b11 - a03 * b09) * inverseDeterminant;
+  target[2] = (a31 * b05 - a32 * b04 + a33 * b03) * inverseDeterminant;
+  target[3] = (a22 * b04 - a21 * b05 - a23 * b03) * inverseDeterminant;
+  target[4] = (a12 * b08 - a10 * b11 - a13 * b07) * inverseDeterminant;
+  target[5] = (a00 * b11 - a02 * b08 + a03 * b07) * inverseDeterminant;
+  target[6] = (a32 * b02 - a30 * b05 - a33 * b01) * inverseDeterminant;
+  target[7] = (a20 * b05 - a22 * b02 + a23 * b01) * inverseDeterminant;
+  target[8] = (a10 * b10 - a11 * b08 + a13 * b06) * inverseDeterminant;
+  target[9] = (a01 * b08 - a00 * b10 - a03 * b06) * inverseDeterminant;
+  target[10] = (a30 * b04 - a31 * b02 + a33 * b00) * inverseDeterminant;
+  target[11] = (a21 * b02 - a20 * b04 - a23 * b00) * inverseDeterminant;
+  target[12] = (a11 * b07 - a10 * b09 - a12 * b06) * inverseDeterminant;
+  target[13] = (a00 * b09 - a01 * b07 + a02 * b06) * inverseDeterminant;
+  target[14] = (a31 * b01 - a30 * b03 - a32 * b00) * inverseDeterminant;
+  target[15] = (a20 * b03 - a21 * b01 + a22 * b00) * inverseDeterminant;
+  return target;
+}
+
+function computeD3D8XrClipTransform(engineView, engineProjection) {
+  if (!d3d8XrViewOverride || !engineView || !engineProjection) return null;
+  const engineViewProjection = multiplyD3D8ColumnMatrices(
+    engineProjection,
+    engineView,
+    d3d8DrawMatrixScratch.xrEngineViewProjection,
+  );
+  const inverse = invertD3D8ColumnMatrix(
+    engineViewProjection,
+    d3d8DrawMatrixScratch.xrEngineViewProjectionInverse,
+  );
+  if (!inverse) return null;
+  const xrViewProjection = multiplyD3D8ColumnMatrices(
+    d3d8XrViewOverride.projection,
+    multiplyD3D8ColumnMatrices(
+      d3d8XrViewOverride.viewPrefix,
+      engineView,
+      d3d8DrawMatrixScratch.xrView,
+    ),
+    d3d8DrawMatrixScratch.xrViewProjection,
+  );
+  return multiplyD3D8ColumnMatrices(
+    xrViewProjection,
+    inverse,
+    d3d8DrawMatrixScratch.xrClipTransform,
+  );
+}
+
+function setD3D8XrViewOverride(override) {
+  flushD3D8PendingDrawBatch("xrViewOverride");
+  if (override === null) {
+    d3d8XrViewOverride = null;
+  } else {
+    const viewPrefix = normalizeD3DMatrix(override?.viewPrefix);
+    const projection = normalizeD3DMatrix(override?.projection);
+    const viewport = override?.viewport;
+    if (!viewPrefix || !projection || !viewport
+        || !(Number(viewport.width) > 0) || !(Number(viewport.height) > 0)) {
+      throw new TypeError("D3D8 WebXR view override requires matrices and a positive viewport");
+    }
+    d3d8XrViewOverride = {
+      viewPrefix: new Float32Array(viewPrefix),
+      projection: new Float32Array(projection),
+      viewport: {
+        x: Number(viewport.x) >>> 0,
+        y: Number(viewport.y) >>> 0,
+        width: Number(viewport.width) >>> 0,
+        height: Number(viewport.height) >>> 0,
+        minZ: 0,
+        maxZ: 1,
+        targetWidth: Number(override.targetWidth ?? viewport.width) >>> 0,
+        targetHeight: Number(override.targetHeight ?? viewport.height) >>> 0,
+      },
+    };
+  }
+  invalidateD3D8NormalizedViewportCache();
+  invalidateD3D8AppliedViewportCache();
+  // The engine source matrices remain valid across eyes; only their uploaded
+  // per-program values change when the compositor override changes.
+  invalidateD3D8TransformUniformGeneration();
+}
+
+function bindD3D8ExternalFramebuffer(framebuffer, width, height) {
+  if (!gl || !framebuffer || !(Number(width) > 0) || !(Number(height) > 0)) {
+    throw new TypeError("D3D8 external framebuffer requires a GL framebuffer and size");
+  }
+  invalidateD3D8DrawStateCache();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  d3d8CurrentFramebuffer = framebuffer;
+  d3d8CurrentFramebufferWidth = Number(width) >>> 0;
+  d3d8CurrentFramebufferHeight = Number(height) >>> 0;
+  d3d8CurrentFramebufferColorTextureId = 0;
+  invalidateD3D8NormalizedViewportCache();
+  invalidateD3D8AppliedViewportCache();
+  return true;
 }
 
 function cachedD3D8NormalizedViewport() {
@@ -8807,6 +8965,8 @@ function d3d8SM1BuildVertexSource(vsShader) {
   }
   lines.push("uniform vec4 uVsConst[96];");
   lines.push("uniform float uDepthBias;");
+  lines.push("uniform bool uUseXrClipTransform;");
+  lines.push("uniform mat4 uXrClipTransform;");
   // Full fixed-function varying interface: a translated vertex shader must
   // link against BOTH translated fragments and the FF fragment cascade (the
   // shipped tree path is Trees.vso + FF pixel stages), and the FF fragment
@@ -8857,7 +9017,8 @@ function d3d8SM1BuildVertexSource(vsShader) {
   }
   // D3D clip space -> GL clip space (z in [0,w] -> [-w,w]), matching the
   // fixed-function vertex stage, including the shim depth-bias convention.
-  lines.push("  gl_Position = vec4(vsOPos.x, vsOPos.y, vsOPos.z * 2.0 - vsOPos.w, vsOPos.w);");
+  lines.push("  vec4 finalOPos = uUseXrClipTransform ? uXrClipTransform * vsOPos : vsOPos;");
+  lines.push("  gl_Position = vec4(finalOPos.x, finalOPos.y, finalOPos.z * 2.0 - finalOPos.w, finalOPos.w);");
   lines.push("  gl_Position.z -= uDepthBias * gl_Position.w;");
   lines.push("  vColor = clamp(vsOD0, 0.0, 1.0);");
   lines.push("  vFlatColor = vColor;");
@@ -9040,6 +9201,8 @@ function ensureD3D8ShaderPairProgram(vsHandle, psHandle) {
     bridgeProgram.bumpEnv = gl.getUniformLocation(program, "uBumpEnv[0]");
     bridgeProgram.bumpEnvL = gl.getUniformLocation(program, "uBumpEnvL[0]");
     bridgeProgram.vsConst = gl.getUniformLocation(program, "uVsConst[0]");
+    bridgeProgram.useXrClipTransform = gl.getUniformLocation(program, "uUseXrClipTransform");
+    bridgeProgram.xrClipTransform = gl.getUniformLocation(program, "uXrClipTransform");
     bridgeProgram.sm1Pair = true;
     bridgeProgram.sm1PsHandle = psHandle;
     bridgeProgram.sm1VsHandle = vsHandle;
@@ -10558,6 +10721,10 @@ function resetD3D8TransformUniformCache() {
   d3d8LastTransformSourceWorldRevision = 0;
   d3d8LastTransformSourceViewRevision = 0;
   d3d8LastTransformSourceProjectionRevision = 0;
+  invalidateD3D8TransformUniformGeneration();
+}
+
+function invalidateD3D8TransformUniformGeneration() {
   d3d8TransformUniformGeneration = (d3d8TransformUniformGeneration + 1) >>> 0;
   if (d3d8TransformUniformGeneration === 0) {
     d3d8TransformUniformGeneration = 1;
@@ -12392,6 +12559,80 @@ function d3d8WasmFloatView(ptr, floatCount) {
   return heap.subarray(offset, offset + floatCount);
 }
 
+function materializeD3D8DrawPayload(payload = {}) {
+  if (payload.statePayloadPointers !== true) {
+    return payload;
+  }
+  const requiredCopy = (value, label) => {
+    if (value === null) {
+      throw new Error(`cannot materialize D3D8 draw ${label} from wasm memory`);
+    }
+    return value;
+  };
+  const matrixCopy = (pointer, label, required = false) => {
+    const address = Number(pointer ?? 0) >>> 0;
+    if (address === 0) {
+      if (required) {
+        throw new Error(`cannot materialize D3D8 draw ${label}: missing pointer`);
+      }
+      return null;
+    }
+    const matrix = normalizeD3DMatrix(address);
+    return Array.from(requiredCopy(matrix, label));
+  };
+  const transformMask = Number(payload.transformMask ?? 0) >>> 0;
+  const pixelShaderHandle = Number(payload.pixelShaderHandle ?? 0) >>> 0;
+  const vertexShaderFvf = Number(payload.vertexShaderFvf ?? 0) >>> 0;
+  const sm1VertexDraw = (vertexShaderFvf & 0x80000000) !== 0;
+  const psConstants = pixelShaderHandle !== 0
+    ? requiredCopy(d3d8WasmFloatView(payload.psConstantsPtr, 8 * 4), "pixel shader constants")
+    : null;
+  const vsConstants = sm1VertexDraw
+    ? requiredCopy(d3d8WasmFloatView(payload.vsConstantsPtr, 96 * 4), "vertex shader constants")
+    : null;
+  const treeShroud = payload.treeShroud
+    ? {
+        c32: Array.from(payload.treeShroud.c32 ?? []),
+        c33: Array.from(payload.treeShroud.c33 ?? []),
+      }
+    : null;
+  return {
+    ...payload,
+    __reusedD3D8DrawPayload: false,
+    statePayloadPointers: false,
+    statePayloadCanonical: true,
+    transforms: {
+      world: matrixCopy(payload.transforms?.world, "world transform", (transformMask & 1) !== 0),
+      view: matrixCopy(payload.transforms?.view, "view transform", (transformMask & 2) !== 0),
+      projection: matrixCopy(payload.transforms?.projection, "projection transform",
+        (transformMask & 4) !== 0),
+      texture0: matrixCopy(payload.transforms?.texture0, "texture0 transform"),
+      texture1: matrixCopy(payload.transforms?.texture1, "texture1 transform"),
+      texture2: matrixCopy(payload.transforms?.texture2, "texture2 transform"),
+      texture3: matrixCopy(payload.transforms?.texture3, "texture3 transform"),
+    },
+    renderState: requiredCopy(
+      copyD3D8RenderStateFromWasm(payload.renderStatePtr),
+      "render state",
+    ),
+    clipPlanes: requiredCopy(
+      copyD3D8ClipPlanesFromWasm(payload.clipPlanesPtr),
+      "clip planes",
+    ),
+    lights: requiredCopy(copyD3D8LightsFromWasm(payload.lightsPtr), "lights"),
+    material: requiredCopy(copyD3D8MaterialFromWasm(payload.materialPtr), "material"),
+    psConstants: psConstants ? Array.from(psConstants) : null,
+    vsConstants: vsConstants ? Array.from(vsConstants) : null,
+    treeShroud,
+  };
+}
+
+function presentD3D8Frame() {
+  flushD3D8PendingDrawBatch("present");
+  drainD3D8BufferRetirements();
+  return true;
+}
+
 function paintD3D8DrawIndexed(payload = {}) {
   const drawSequence = (Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0) + 1;
   const vertexByteSize = Number(payload.vertexBytes ?? 0) >>> 0;
@@ -12533,12 +12774,22 @@ function paintD3D8DrawIndexed(payload = {}) {
   const world = worldRevisionUnchanged
     ? d3d8LastTransformSourceWorld
     : normalizeD3DMatrix(payload.transforms?.world, d3d8DrawMatrixScratch.world);
-  const view = viewRevisionUnchanged
+  const engineView = viewRevisionUnchanged
     ? d3d8LastTransformSourceView
     : normalizeD3DMatrix(payload.transforms?.view, d3d8DrawMatrixScratch.view);
-  const projection = projectionRevisionUnchanged
+  const engineProjection = projectionRevisionUnchanged
     ? d3d8LastTransformSourceProjection
     : normalizeD3DMatrix(payload.transforms?.projection, d3d8DrawMatrixScratch.projection);
+  const view = d3d8XrViewOverride && engineView
+    ? multiplyD3D8ColumnMatrices(
+      d3d8XrViewOverride.viewPrefix,
+      engineView,
+      d3d8DrawMatrixScratch.xrView,
+    )
+    : engineView;
+  const projection = d3d8XrViewOverride
+    ? d3d8XrViewOverride.projection
+    : engineProjection;
   let texture0Transform, texture1Transform, texture2Transform, texture3Transform;
   const transformMask = Number(payload.transformMask ?? 0) >>> 0;
   const useTransforms = transformMask === 7 && world !== null && view !== null && projection !== null;
@@ -13516,6 +13767,16 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     if (bridgeProgram.sm1Pair) {
       uploadD3D8SM1DrawUniforms(bridgeProgram, payload, renderState);
+      if (bridgeProgram.sm1VsHandle) {
+        const xrClipTransform = computeD3D8XrClipTransform(engineView, engineProjection);
+        if (d3d8XrViewOverride && !xrClipTransform) {
+          throw new Error("cannot transform programmable D3D8 vertex output into WebXR eye space");
+        }
+        d3d8CachedUniform1i(bridgeProgram.useXrClipTransform, xrClipTransform ? 1 : 0);
+        if (xrClipTransform) {
+          d3d8CachedUniformMatrix4fv(bridgeProgram.xrClipTransform, xrClipTransform);
+        }
+      }
     }
     recordDrawSubphase?.("sortedDrawTextureBindMs");
     recordDrawPhase?.("sortedDrawGeometryMs");
@@ -13947,7 +14208,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawViewTransformUniformCacheMisses += 1;
       }
       if (viewRevision !== 0 && !viewRevisionUnchanged) {
-        rememberD3D8ViewTransformUniform(view);
+        rememberD3D8ViewTransformUniform(engineView);
       }
       d3d8LastTransformSourceViewRevision = viewRevision;
       recordTransformDetail?.("sortedDrawViewTransformUniformMs");
@@ -13957,7 +14218,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         if (d3d8PerfCountersEnabled) d3d8PerfStats.drawProjectionTransformUniformCacheMisses += 1;
       }
       if (projectionRevision !== 0 && !projectionRevisionUnchanged) {
-        rememberD3D8ProjectionTransformUniform(projection);
+        rememberD3D8ProjectionTransformUniform(engineProjection);
       }
       d3d8LastTransformSourceProjectionRevision = projectionRevision;
       recordTransformDetail?.("sortedDrawProjectionTransformUniformMs");
@@ -14566,6 +14827,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   // Module config object (plus d3d8BridgeCallbacks() on window.CnCPort).
   const hooks = {
     cncPortD3D8ResetState: invalidateD3D8DrawStateCache,
+    cncPortD3D8Present: presentD3D8Frame,
     cncPortD3D8Clear: paintD3D8Clear,
     cncPortD3D8SetViewport: setD3D8Viewport,
     cncPortD3D8SetGammaRamp: setD3D8GammaRamp,
@@ -14627,6 +14889,12 @@ function paintD3D8DrawIndexed(payload = {}) {
     onD3D8BackbufferResize,
     releaseD3D8ProbeBackingStore,
     sampleD3D8TextureCenter,
+    materializeD3D8DrawPayload,
+    bindD3D8ExternalFramebuffer,
+    setD3D8XrViewOverride,
+    computeD3D8XrClipTransform,
+    invalidateD3D8DrawStateCache,
+    invalidateD3D8ExternalGlState,
     d3d8Buffers,
     d3d8Textures,
     acquireD3D8DynamicRangeSlot,

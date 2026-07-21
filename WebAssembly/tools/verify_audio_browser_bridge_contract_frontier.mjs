@@ -46,22 +46,22 @@
 //        playTrack @102, whose body order is allocateAudioRequest(true) ->
 //        m_pendingEvent -> m_request = AR_Play -> appendAudioRequest.
 //
-//   4. MilesAudioManager::processRequest @2940 (MilesAudioManager.cpp) body
+//   4. MilesAudioManager::processRequest @3039 (MilesAudioManager.cpp) body
 //        order: switch(req->m_request) -> case AR_Play ->
 //        playAudioEvent(req->m_pendingEvent); case AR_Pause ->
 //        pauseAudioEvent(req->m_handleToInteractOn); case AR_Stop ->
 //        stopAudioEvent(req->m_handleToInteractOn).
 //
-//   5. MilesAudioManager::playAudioEvent @661 is the bridge replacement seam:
+//   5. MilesAudioManager::playAudioEvent @694 is the bridge replacement seam:
 //        switch(info->m_soundType) branches call playStream @735,
 //        playSample3D @802, and playSample @873. The seam function defs are
-//        pinned at playStream @2783, playSample @2798, playSample3D @2820.
+//        pinned at playStream @2845, playSample @2888, playSample3D @2914.
 //        These — not the Common request managers — are what a Web Audio
 //        backend must replace/retarget.
 //
-//   6. MilesAudioManager::notifyOfAudioCompletion @1531 body order:
+//   6. MilesAudioManager::notifyOfAudioCompletion @1569 body order:
 //        findPlayingAudioFrom -> m_status = PS_Stopped; and
-//        MilesAudioManager::processPlayingList @2266 body order:
+//        MilesAudioManager::processPlayingList @2325 body order:
 //        m_playingSounds.begin -> PS_Stopped -> releasePlayingAudio ->
 //        erase. This is the completion/drain contract a browser
 //        AudioBufferSourceNode.onended callback must trigger by equivalent
@@ -353,7 +353,7 @@ function main() {
     const defLine = pinDef(
       miles,
       /void\s+MilesAudioManager\s*::\s*processRequest\s*\(\s*AudioRequest\s*\*\s*req\s*\)/,
-      2940,
+      3039,
       errors,
       facts,
       "milesProcessRequestDefLine",
@@ -392,7 +392,7 @@ function main() {
     const defLine = pinDef(
       miles,
       /void\s+MilesAudioManager\s*::\s*playAudioEvent\s*\(\s*AudioEventRTS\s*\*\s*event\s*\)/,
-      661,
+      694,
       errors,
       facts,
       "milesPlayAudioEventDefLine",
@@ -429,17 +429,17 @@ function main() {
       [
         {
           key: "playStream_def",
-          line: 2783,
+          line: 2845,
           re: /void\s+MilesAudioManager\s*::\s*playStream\s*\(/,
         },
         {
           key: "playSample_def",
-          line: 2798,
+          line: 2888,
           re: /void\s*\*\s*MilesAudioManager\s*::\s*playSample\s*\(/,
         },
         {
           key: "playSample3D_def",
-          line: 2820,
+          line: 2914,
           re: /void\s*\*\s*MilesAudioManager\s*::\s*playSample3D\s*\(/,
         },
       ],
@@ -456,7 +456,7 @@ function main() {
     const defLine = pinDef(
       miles,
       /void\s+MilesAudioManager\s*::\s*notifyOfAudioCompletion\s*\(\s*UnsignedInt\s+audioCompleted/,
-      1531,
+      1569,
       errors,
       facts,
       "milesNotifyOfAudioCompletionDefLine",
@@ -482,7 +482,7 @@ function main() {
     const processDefLine = pinDef(
       miles,
       /void\s+MilesAudioManager\s*::\s*processPlayingList\s*\(\s*void\s*\)/,
-      2266,
+      2325,
       errors,
       facts,
       "milesProcessPlayingListDefLine",

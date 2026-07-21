@@ -192,6 +192,17 @@ const cncPortThreadedMode = (() => {
     return false;
   }
 })();
+// Internal native-VR renderer migration lane. This only changes graphics
+// ownership after an explicit ?vr=1 request; ordinary threaded play keeps its
+// direct worker-owned OffscreenCanvas path and does not import or forward any
+// WebXR/D3D8 transport code.
+const cncPortWebXrVrRequested = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || "").get("vr") === "1";
+  } catch (_error) {
+    return false;
+  }
+})();
 const threadedUdpBridge = cncPortThreadedMode && typeof SharedArrayBuffer === "function"
   ? createSharedUdpBridge()
   : null;
@@ -299,20 +310,19 @@ const contextPreserveDrawingBuffer = (() => {
     return true;
   }
 })();
-// Threaded mode: #viewport must stay CONTEXT-FREE so transferControlToOffscreen
-// can hand it to the engine worker realm (a canvas with any context cannot be
-// transferred). The main-realm executor below is constructed against an
-// invisible scratch canvas instead, so the whole main-side diagnostics surface
-// keeps existing — it just never receives real engine draws (those happen in
-// the worker realm's executor).
-const executorCanvas = cncPortThreadedMode ? document.createElement("canvas") : canvas;
-const gl = cncPortThreadedMode ? null : canvas.getContext("webgl2", {
+// Normal threaded mode transfers #viewport to the engine worker unchanged.
+// The explicit native-VR lane instead keeps #viewport and its WebGL2 context
+// in Window (the only realm where WebXR is currently exposed), while the
+// worker receives a separate OffscreenCanvas for synchronous D3D8 semantics.
+const mainRealmOwnsD3D8 = !cncPortThreadedMode || cncPortWebXrVrRequested;
+const executorCanvas = mainRealmOwnsD3D8 ? canvas : document.createElement("canvas");
+const gl = mainRealmOwnsD3D8 ? canvas.getContext("webgl2", {
   alpha: false,
   antialias: false,
   depth: true,
   stencil: true,
   preserveDrawingBuffer: contextPreserveDrawingBuffer,
-});
+}) : null;
 const s3tc = gl ? gl.getExtension("WEBGL_compressed_texture_s3tc") : null;
 
 const fallbackContext = gl ? null : executorCanvas.getContext("2d", { alpha: false });
@@ -468,6 +478,27 @@ const harnessState = {
     fps: 0,
     ticks: 0,
   },
+  webxr: {
+    source: "window_webxr_runtime",
+    phase: "disabled",
+    moduleLoaded: false,
+    support: null,
+    referenceSpaceType: null,
+    frames: 0,
+    viewCount: 0,
+    inputSourceCount: 0,
+    framebuffer: null,
+    error: null,
+    rendererTransport: {
+      requested: cncPortWebXrVrRequested,
+      active: false,
+      sequence: 0,
+      commands: 0,
+      commandBytes: 0,
+      error: null,
+    },
+    renderer: null,
+  },
   timing: null,
   win32Timing: null,
   browserInput: null,
@@ -560,9 +591,10 @@ const harnessState = {
 // this page's canvas/GL context, harness log + state sinks and fresh-view
 // wasm heap accessors. hooks = the 20 Module.cncPortD3D8* functions; diag =
 // the executor-internal surface the harness RPC/diagnostics still read.
-// Threaded mode: executorCanvas is an invisible scratch canvas (the REAL
-// executor lives in the engine worker realm, harness/engine_realm_boot.mjs);
-// this main-realm instance only keeps the diag surface alive.
+// Normal threaded mode: executorCanvas is an invisible scratch canvas (the
+// real executor lives in engine_realm_boot.mjs). The explicit native-VR lane
+// makes this the Window-owned real executor and replays owned frame commands
+// into it; the worker executor remains a synchronous semantic delegate.
 const { hooks: d3d8Hooks, diag: d3d8Diag } = createD3D8Executor({
   canvas: executorCanvas,
   gl,
@@ -1016,6 +1048,10 @@ function createThreadedEngineController() {
   let mssHandlers = null;
   let binkRuntime = null;
   let binkSources = null;
+  let webXrD3D8Ack = null;
+  let replayWebXrD3D8CommandFrame = null;
+  let acknowledgeWebXrD3D8CommandFrame = null;
+  let webXrD3D8Renderer = null;
 
   function threadedLog(message, data) {
     recordLog(`threaded ${message}`, data);
@@ -1186,6 +1222,62 @@ function createThreadedEngineController() {
       return;
     }
     switch (msg.cmd) {
+      case "webxrD3D8Frame": {
+        let acknowledged = -1;
+        const sequence = Number(msg.packet?.sequence ?? 0) >>> 0;
+        const complete = (accepted, error = null) => {
+          const message = error ? (error?.message ?? String(error)) : null;
+          harnessState.webxr.rendererTransport = {
+            ...harnessState.webxr.rendererTransport,
+            active: accepted === true,
+            sequence: accepted === true ? sequence : harnessState.webxr.rendererTransport.sequence,
+            commands: accepted === true ? Number(msg.packet?.commands?.length ?? 0) : 0,
+            commandBytes: accepted === true ? Number(msg.packet?.commandBytes ?? 0) : 0,
+            error: message,
+          };
+          if (webXrD3D8Ack && typeof acknowledgeWebXrD3D8CommandFrame === "function") {
+            acknowledgeWebXrD3D8CommandFrame(webXrD3D8Ack, sequence, accepted === true);
+          }
+        };
+        if (webXrD3D8Renderer?.active) {
+          const queued = webXrD3D8Renderer.acceptFrame(msg.packet, (accepted) => {
+            complete(accepted, accepted ? null : new Error("native WebXR compositor rejected frame"));
+          });
+          if (!queued) {
+            const error = new Error("native WebXR compositor already has a pending frame");
+            threadedLog("native VR D3D8 frame queue failed", { sequence, error: error.message });
+            complete(false, error);
+          }
+          return;
+        }
+        try {
+          if (!webXrD3D8Ack || typeof replayWebXrD3D8CommandFrame !== "function") {
+            throw new Error("native VR D3D8 frame arrived before the Window executor was ready");
+          }
+          const result = replayWebXrD3D8CommandFrame(msg.packet, d3d8Hooks);
+          acknowledged = 1;
+          harnessState.webxr.rendererTransport = {
+            ...harnessState.webxr.rendererTransport,
+            active: true,
+            sequence: result.sequence,
+            commands: result.commands,
+            commandBytes: result.commandBytes,
+            error: null,
+          };
+        } catch (error) {
+          const message = error?.message ?? String(error);
+          threadedLog("native VR D3D8 frame replay failed", { sequence, error: message });
+          harnessState.webxr.rendererTransport = {
+            ...harnessState.webxr.rendererTransport,
+            active: false,
+            error: message,
+          };
+        } finally {
+          complete(acknowledged === 1,
+            acknowledged === 1 ? null : new Error(harnessState.webxr.rendererTransport.error));
+        }
+        return;
+      }
       case "mss":
         handleMssMessage(msg);
         return;
@@ -1323,7 +1415,50 @@ function createThreadedEngineController() {
     // cache keys must reach the worker so it re-sends sample bytes.
     cncPortMssCacheDropNotifier = (keys) => sendPortCommand({ cmd: "mssCacheDrop", keys });
 
-    const offscreen = canvas.transferControlToOffscreen();
+    let webxrD3D8Bridge = null;
+    if (cncPortWebXrVrRequested) {
+      if (!gl || typeof OffscreenCanvas !== "function") {
+        throw new Error("native VR requires Window WebGL2 and OffscreenCanvas support");
+      }
+      ({
+        acknowledgeWebXrD3D8CommandFrame,
+        replayWebXrD3D8CommandFrame,
+      } = await import("./webxr-d3d8-command-stream.mjs"));
+      const { createWebXrD3D8Renderer } = await import("./webxr-d3d8-renderer.mjs");
+      const {
+        loadWebXrSettings,
+        webXrRendererOptions,
+      } = await import("./webxr-settings.mjs");
+      const webXrSettings = loadWebXrSettings();
+      webXrD3D8Renderer = createWebXrD3D8Renderer({
+        ...webXrRendererOptions(webXrSettings),
+        gl,
+        executorHooks: d3d8Hooks,
+        executorDiag: d3d8Diag,
+        worldSceneState: () => harnessState.threadedEngine?.frame?.worldScene,
+        onInputAction: forwardWebXrInputAction,
+        onAudioListenerPose: setWebXrAudioListenerPose,
+        onStateChange: (renderer) => {
+          harnessState.webxr = { ...harnessState.webxr, renderer };
+        },
+      });
+      harnessState.webxr = {
+        ...harnessState.webxr,
+        renderer: webXrD3D8Renderer.snapshot(),
+      };
+      webXrD3D8Ack = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2));
+      webxrD3D8Bridge = {
+        acknowledgement: webXrD3D8Ack.buffer,
+        // Session teardown may drain a complete pending frame back through the
+        // ordinary Window executor while the browser changes XR framebuffers.
+        // Keep that ownership handoff bounded, but allow slow GPU transitions
+        // to acknowledge before the worker makes its recorder failure sticky.
+        timeoutMs: 30000,
+      };
+    }
+    const offscreen = cncPortWebXrVrRequested
+      ? new OffscreenCanvas(canvas.width, canvas.height)
+      : canvas.transferControlToOffscreen();
     const moduleUrl = new URL("./engine_realm_boot.mjs", import.meta.url).href;
     const setupDone = waitForRealmMessage((m) => m.cmd === "setupDone", 30000, "setupDone");
     realmPort.postMessage({
@@ -1338,6 +1473,7 @@ function createThreadedEngineController() {
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
           udpBridge: threadedUdpBridge,
+          webxrD3D8Bridge,
         },
       },
     }, [offscreen]);
@@ -1348,6 +1484,7 @@ function createThreadedEngineController() {
     threadedLog("realm setup complete", {
       hooksInstalled: setup.hooksInstalled?.length ?? 0,
       moduleCommandHandler: setup.moduleCommandHandler === true,
+      webxrD3D8Bridge: setup.webxrD3D8Bridge === true,
     });
     // Pin the standing worker->main channel inside the boot module (its
     // unsolicited posts — status/mss/loopError — ride this respond closure).
@@ -1737,6 +1874,7 @@ function createThreadedEngineController() {
     postCommand,
     registerBinkSources,
     cancelBinkPreparation,
+    get webXrD3D8Renderer() { return webXrD3D8Renderer; },
     get lastStatus() { return lastStatus; },
     get lastLoopError() { return lastLoopError; },
     get engineThreadStarted() { return engineThreadStarted; },
@@ -1809,6 +1947,7 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "setBrowserAudioMixerVolumes",
   "browserAudioRuntime",
   "browserAudioMixerRuntime",
+  "browserMss3DSamplePlaybackRuntime",
   "shutdownRuntime",
   "forceShutdownRuntime",
   "setD3D8GammaRamp",
@@ -1882,6 +2021,20 @@ async function threadedRpc(command, payload = {}) {
         wasmStateSource,
         threadedEngine: threadedEngine.lastStatus,
       };
+    }
+    case "webxrPickRayState": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_webxr_pick_ray_state", "string", [], [], { timeoutMs: 120000 });
+        return {
+          ok: result?.source === "W3DView WebXR input ray",
+          command,
+          result,
+          threaded: true,
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
     }
     case "mountArchive":
     case "mountArchives":
@@ -3980,9 +4133,15 @@ function summarizeBrowserMss3DSamplePlaybackRuntime() {
     released: browserMss3DSamplePlaybackRuntime.released,
     listenerUpdates: browserMss3DSamplePlaybackRuntime.listenerUpdates,
     listenerAppliedUpdates: browserMss3DSamplePlaybackRuntime.listenerAppliedUpdates,
+    webXrListenerUpdates: browserMss3DSamplePlaybackRuntime.webXrListenerUpdates,
+    webXrListenerAppliedUpdates:
+      browserMss3DSamplePlaybackRuntime.webXrListenerAppliedUpdates,
+    webXrListenerClears: browserMss3DSamplePlaybackRuntime.webXrListenerClears,
+    webXrListenerActive: browserMss3DSamplePlaybackRuntime.webXrListenerPose !== null,
     samplePositionUpdates: browserMss3DSamplePlaybackRuntime.samplePositionUpdates,
     samplePositionAppliedUpdates: browserMss3DSamplePlaybackRuntime.samplePositionAppliedUpdates,
     activeSources: browserMss3DSamplePlaybackRuntime.activeSources.size,
+    lastEngineListener: browserMss3DSamplePlaybackRuntime.lastEngineListener,
     lastListener: browserMss3DSamplePlaybackRuntime.lastListener,
     lastSamplePosition: browserMss3DSamplePlaybackRuntime.lastSamplePosition,
     lastIgnoredUpdate: browserMss3DSamplePlaybackRuntime.lastIgnoredUpdate,
@@ -4454,8 +4613,13 @@ const browserMss3DSamplePlaybackRuntime = {
   released: 0,
   listenerUpdates: 0,
   listenerAppliedUpdates: 0,
+  webXrListenerUpdates: 0,
+  webXrListenerAppliedUpdates: 0,
+  webXrListenerClears: 0,
   samplePositionUpdates: 0,
   samplePositionAppliedUpdates: 0,
+  lastEngineListener: null,
+  webXrListenerPose: null,
   lastListener: null,
   lastSamplePosition: null,
   lastIgnoredUpdate: null,
@@ -4628,13 +4792,67 @@ function cncPortMss3DSamplePositionUpdate(payload) {
   return true;
 }
 
-function cncPortMss3DListenerUpdate(payload) {
-  browserMss3DSamplePlaybackRuntime.listenerUpdates += 1;
+function normalizeMss3DListenerPayload(payload) {
+  return {
+    handle: Number(payload?.handle ?? 0),
+    x: finiteAudioCoordinate(payload?.x),
+    y: finiteAudioCoordinate(payload?.y),
+    z: finiteAudioCoordinate(payload?.z),
+    frontX: finiteAudioCoordinate(payload?.frontX),
+    frontY: finiteAudioCoordinate(payload?.frontY, 1),
+    frontZ: finiteAudioCoordinate(payload?.frontZ),
+    upX: finiteAudioCoordinate(payload?.upX),
+    upY: finiteAudioCoordinate(payload?.upY),
+    upZ: finiteAudioCoordinate(payload?.upZ, -1),
+    velocityX: finiteAudioCoordinate(payload?.velocityX),
+    velocityY: finiteAudioCoordinate(payload?.velocityY),
+    velocityZ: finiteAudioCoordinate(payload?.velocityZ),
+  };
+}
+
+function normalizeWebXrAudioListenerPose(pose) {
+  if (pose == null) return null;
+  const values = {
+    offsetX: Number(pose?.offset?.x),
+    offsetY: Number(pose?.offset?.y),
+    offsetZ: Number(pose?.offset?.z),
+    frontX: Number(pose?.orientation?.frontX),
+    frontY: Number(pose?.orientation?.frontY),
+    frontZ: Number(pose?.orientation?.frontZ),
+    upX: Number(pose?.orientation?.upX),
+    upY: Number(pose?.orientation?.upY),
+    upZ: Number(pose?.orientation?.upZ),
+  };
+  if (Object.values(values).some((value) => !Number.isFinite(value))) {
+    throw new TypeError("WebXR audio listener pose contains a non-finite value");
+  }
+  return values;
+}
+
+function composeMss3DListenerPayload(engineListener) {
+  const xrPose = browserMss3DSamplePlaybackRuntime.webXrListenerPose;
+  if (!xrPose) return engineListener;
+  return {
+    ...engineListener,
+    x: engineListener.x + xrPose.offsetX,
+    y: engineListener.y + xrPose.offsetY,
+    z: engineListener.z + xrPose.offsetZ,
+    frontX: xrPose.frontX,
+    frontY: xrPose.frontY,
+    frontZ: xrPose.frontZ,
+    upX: xrPose.upX,
+    upY: xrPose.upY,
+    upZ: xrPose.upZ,
+  };
+}
+
+function applyBrowserMss3DListener(engineListener) {
+  const payload = composeMss3DListenerPayload(engineListener);
   const context = browserAudioRuntime.context;
   if (!context?.listener) {
     browserMss3DSamplePlaybackRuntime.lastIgnoredUpdate = {
       phase: "AIL_set_3D_listener",
-      handle: Number(payload?.handle ?? 0),
+      handle: payload.handle,
       reason: "audio-listener-unavailable",
     };
     return false;
@@ -4659,14 +4877,45 @@ function cncPortMss3DListenerUpdate(payload) {
     z: finiteAudioCoordinate(payload?.velocityZ),
   };
   browserMss3DSamplePlaybackRuntime.listenerAppliedUpdates += 1;
+  const xrPose = browserMss3DSamplePlaybackRuntime.webXrListenerPose;
+  if (xrPose) browserMss3DSamplePlaybackRuntime.webXrListenerAppliedUpdates += 1;
   browserMss3DSamplePlaybackRuntime.lastListener = {
-    handle: Number(payload?.handle ?? 0),
+    handle: payload.handle,
+    mode: xrPose ? "webxr-head-tracked" : "engine",
+    enginePosition: {
+      x: engineListener.x,
+      y: engineListener.y,
+      z: engineListener.z,
+    },
+    xrOffset: xrPose ? {
+      x: xrPose.offsetX,
+      y: xrPose.offsetY,
+      z: xrPose.offsetZ,
+    } : null,
     position,
     orientation,
     velocity,
   };
   browserMss3DSamplePlaybackRuntime.lastError = null;
   return true;
+}
+
+function setWebXrAudioListenerPose(pose) {
+  const previous = browserMss3DSamplePlaybackRuntime.webXrListenerPose;
+  const next = normalizeWebXrAudioListenerPose(pose);
+  browserMss3DSamplePlaybackRuntime.webXrListenerUpdates += 1;
+  browserMss3DSamplePlaybackRuntime.webXrListenerPose = next;
+  if (previous && !next) browserMss3DSamplePlaybackRuntime.webXrListenerClears += 1;
+  const engineListener = browserMss3DSamplePlaybackRuntime.lastEngineListener;
+  if (!engineListener) return true;
+  return applyBrowserMss3DListener(engineListener);
+}
+
+function cncPortMss3DListenerUpdate(payload) {
+  browserMss3DSamplePlaybackRuntime.listenerUpdates += 1;
+  const engineListener = normalizeMss3DListenerPayload(payload);
+  browserMss3DSamplePlaybackRuntime.lastEngineListener = engineListener;
+  return applyBrowserMss3DListener(engineListener);
 }
 
 function cncPortMss3DSampleStop(payload) {
@@ -4704,7 +4953,7 @@ function cncPortMss3DSampleRelease(payload) {
 const browserMssStreamPlaybackRuntime = {
   source: "MSS stream Web Audio backend proof",
   activeSources: new Map(), // handle -> { source, gain }
-  pendingStarts: new Map(), // handle -> { cancelled: bool }
+  pendingStarts: new Map(), // handle -> identity token { cancelled: bool }
   started: 0,
   decoded: 0,
   scheduled: 0,
@@ -4718,6 +4967,26 @@ const browserMssStreamPlaybackRuntime = {
   lastArchiveError: null,
 };
 
+function cancelBrowserMssStreamPendingStarts() {
+  for (const pending of browserMssStreamPlaybackRuntime.pendingStarts.values()) {
+    pending.cancelled = true;
+  }
+  browserMssStreamPlaybackRuntime.pendingStarts.clear();
+}
+
+function isBrowserMssStreamPendingStartCurrent(handle, pendingStart) {
+  return browserMssStreamPlaybackRuntime.pendingStarts.get(handle) === pendingStart
+    && pendingStart.cancelled !== true;
+}
+
+function releaseBrowserMssStreamPendingStart(handle, pendingStart) {
+  if (browserMssStreamPlaybackRuntime.pendingStarts.get(handle) !== pendingStart) {
+    return false;
+  }
+  browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+  return true;
+}
+
 function resetBrowserMssStreamPlaybackRuntime() {
   for (const active of browserMssStreamPlaybackRuntime.activeSources.values()) {
     try {
@@ -4729,7 +4998,7 @@ function resetBrowserMssStreamPlaybackRuntime() {
     }
   }
   browserMssStreamPlaybackRuntime.activeSources.clear();
-  browserMssStreamPlaybackRuntime.pendingStarts.clear();
+  cancelBrowserMssStreamPendingStarts();
   browserMssStreamPlaybackRuntime.started = 0;
   browserMssStreamPlaybackRuntime.decoded = 0;
   browserMssStreamPlaybackRuntime.scheduled = 0;
@@ -4838,8 +5107,9 @@ async function _startMssStreamAsync(payload) {
   const volume = clamp01(Number(payload.volumeFloat ?? ((payload.volume ?? 127) / 127)));
   const loopCount = Number(payload.loopCount ?? 1);
 
-  // Register pending start for stop-before-start race guard.
-  browserMssStreamPlaybackRuntime.pendingStarts.set(handle, { cancelled: false });
+  // Register an identity token before the first asynchronous boundary.
+  const pendingStart = { cancelled: false };
+  browserMssStreamPlaybackRuntime.pendingStarts.set(handle, pendingStart);
 
   browserMssStreamPlaybackRuntime.started += 1;
   browserMssStreamPlaybackRuntime.eventLog.push(
@@ -4856,16 +5126,13 @@ async function _startMssStreamAsync(payload) {
 
   // Load stream bytes from mounted BIG archives.
   const wasmModule = await wasmModulePromise;
-  if (!wasmModule) {
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
-    browserMssStreamPlaybackRuntime.lastError = "WASM module not available";
+  if (!isBrowserMssStreamPendingStartCurrent(handle, pendingStart)) {
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
     return;
   }
-
-  // Race guard: stop was called before async archive access started.
-  const pending = browserMssStreamPlaybackRuntime.pendingStarts.get(handle);
-  if (pending?.cancelled) {
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+  if (!wasmModule) {
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
+    browserMssStreamPlaybackRuntime.lastError = "WASM module not available";
     return;
   }
 
@@ -4922,8 +5189,12 @@ async function _startMssStreamAsync(payload) {
     }
   }
 
+  if (!isBrowserMssStreamPendingStartCurrent(handle, pendingStart)) {
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
+    return;
+  }
   if (!entry || (!archiveBytes && !opfsPayloadBytes)) {
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
     browserMssStreamPlaybackRuntime.lastError =
       `Stream file not found in any mounted archive: ${filename}`;
     return;
@@ -4936,7 +5207,11 @@ async function _startMssStreamAsync(payload) {
   try {
     decoded = await decodeMssStreamPayload(context, payloadBytes, entry);
   } catch (err) {
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+    if (!isBrowserMssStreamPendingStartCurrent(handle, pendingStart)) {
+      releaseBrowserMssStreamPendingStart(handle, pendingStart);
+      return;
+    }
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
     browserMssStreamPlaybackRuntime.lastError =
       `Failed to decode stream payload: ${err?.message ?? String(err)}`;
     return;
@@ -4944,11 +5219,11 @@ async function _startMssStreamAsync(payload) {
 
   // Race guard: stop was called while archive lookup / MP3 decode was in flight.
   const pendingAfterDecode = browserMssStreamPlaybackRuntime.pendingStarts.get(handle);
-  if (pendingAfterDecode?.cancelled) {
-    browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+  if (pendingAfterDecode !== pendingStart || pendingStart.cancelled === true) {
+    releaseBrowserMssStreamPendingStart(handle, pendingStart);
     return;
   }
-  browserMssStreamPlaybackRuntime.pendingStarts.delete(handle);
+  releaseBrowserMssStreamPendingStart(handle, pendingStart);
 
   browserMssStreamPlaybackRuntime.decoded += 1;
   browserMssStreamPlaybackRuntime.eventLog.push({
@@ -5042,9 +5317,9 @@ function cncPortMssStreamStop(payload) {
   browserMssStreamPlaybackRuntime.stopped += 1;
   browserMssStreamPlaybackRuntime.eventLog.push({ handle, phase: "AIL_close_stream" });
   // Cancel in-flight async start if this stop races ahead of it.
-  const entry = browserMssStreamPlaybackRuntime.pendingStarts?.get(handle);
-  if (entry) {
-    entry.cancelled = true;
+  const pendingStart = browserMssStreamPlaybackRuntime.pendingStarts?.get(handle);
+  if (pendingStart) {
+    pendingStart.cancelled = true;
   }
   try {
     const active = browserMssStreamPlaybackRuntime.activeSources.get(handle);
@@ -5079,10 +5354,7 @@ async function shutdownBrowserAudioRuntime() {
 
   stopSources(browserMssSamplePlaybackRuntime);
   stopSources(browserMss3DSamplePlaybackRuntime);
-  for (const pending of browserMssStreamPlaybackRuntime.pendingStarts.values()) {
-    pending.cancelled = true;
-  }
-  browserMssStreamPlaybackRuntime.pendingStarts.clear();
+  cancelBrowserMssStreamPendingStarts();
   stopSources(browserMssStreamPlaybackRuntime);
   browserMssStreamPlaybackRuntime.musicSourceActive = false;
 
@@ -7097,6 +7369,7 @@ function snapshotState() {
     runtime: harnessState.runtime,
     wasm: harnessState.wasm,
     mainLoop: harnessState.mainLoop,
+    webxr: harnessState.webxr,
     timing: harnessState.timing,
     win32Timing: harnessState.win32Timing,
     canvas: harnessState.canvas,
@@ -10577,6 +10850,97 @@ function wheelWParamFromSteps(steps) {
   return (delta & 0xffff) << 16;
 }
 
+function normalizeWebXrInputPickRay(ray) {
+  if (ray == null) return null;
+  const origin = Array.from(ray.origin ?? [], Number);
+  const end = Array.from(ray.end ?? [], Number);
+  if (origin.length !== 3 || end.length !== 3
+      || !origin.every(Number.isFinite) || !end.every(Number.isFinite)) {
+    throw new TypeError("WebXR input pick ray requires finite origin and end vectors");
+  }
+  return { origin, end };
+}
+
+function forwardWebXrInputAction(action) {
+  if (!action || !cncPortThreadedMode) return;
+  const point = action.point && Number.isFinite(action.point.x) && Number.isFinite(action.point.y)
+    ? { x: Math.round(action.point.x), y: Math.round(action.point.y) }
+    : null;
+  const webxrPickRay = normalizeWebXrInputPickRay(action.ray);
+  if (action.type === "pickRay") {
+    void pushBrowserInputToWasmLite({ webxrPickRay });
+    return;
+  }
+  if (action.type === "pointer" && point) {
+    void pushBrowserInputToWasmLite({
+      cursor: point,
+      webxrPickRay,
+      win32Message: {
+        message: win32Messages.mouseMove,
+        lParam: win32PointLParam(point),
+        point,
+      },
+    });
+    return;
+  }
+  if (action.type === "button" && point) {
+    const button = action.button === "secondary" ? 2 : 0;
+    const event = { button, timeStamp: performance.now() };
+    const message = mouseButtonMessage(event, action.down === true, point);
+    if (action.down !== true) rememberPointerUpForDoubleClick(event, point);
+    void pushBrowserInputToWasmLite({
+      cursor: point,
+      webxrPickRay,
+      win32Message: {
+        message,
+        lParam: win32PointLParam(point),
+        point,
+      },
+    });
+    if (button === 0 && action.down !== true
+        && harnessState.webxr?.systemKeyboardSupported === true) {
+      const inputMode = engineTextInputModeAtPoint(point);
+      if (inputMode) {
+        queueMicrotask(() => {
+          if (harnessState.webxr?.systemKeyboardSupported === true) {
+            touchControls.openTextKeyboard(inputMode);
+          }
+        });
+      }
+    }
+    return;
+  }
+  if (action.type === "wheel" && point) {
+    void pushBrowserInputToWasmLite({
+      cursor: point,
+      webxrPickRay,
+      win32Message: {
+        message: win32Messages.mouseWheel,
+        wParam: wheelWParamFromSteps(action.steps),
+        lParam: win32PointLParam(point),
+        point,
+      },
+    });
+    return;
+  }
+  if (action.type === "key") {
+    const event = { code: String(action.code ?? ""), key: String(action.code ?? "") };
+    const virtualKey = virtualKeyFromEvent(event);
+    if (virtualKey < 0) return;
+    const down = action.down === true;
+    void pushBrowserInputToWasmLite({
+      virtualKey,
+      keyDown: down,
+      directInputCode: directInputScanCodeFromEvent(event),
+      timestamp: performance.now(),
+      win32Message: {
+        message: down ? win32Messages.keyDown : win32Messages.keyUp,
+        wParam: virtualKey,
+      },
+    });
+  }
+}
+
 function win32CharCodeFromEvent(event) {
   if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
     return -1;
@@ -10661,6 +11025,7 @@ async function pushBrowserInputToWasm({
 // rpc("state") rebuilds fresh state on demand for anything that polls it.
 async function pushBrowserInputToWasmLite({
   cursor = null,
+  webxrPickRay = undefined,
   virtualKey = -1,
   keyDown = false,
   directInputCode = -1,
@@ -10683,6 +11048,9 @@ async function pushBrowserInputToWasmLite({
           py: win32Message.point?.y ?? cursor?.y ?? 0,
         } : null,
       };
+      if (webxrPickRay !== undefined) {
+        entry.webxrPickRay = webxrPickRay;
+      }
       if (virtualKey >= 0 || keyDown) {
         entry.virtualKey = virtualKey;
         entry.keyDown = keyDown;
@@ -24391,13 +24759,34 @@ async function rpc(command, payload = {}) {
         }
         resetBrowserMssStreamPlaybackRuntime();
         const handle = Number(payload.handle ?? 33001);
-        const started = cncPortMssStreamStart({
+        const startPayload = {
           handle,
           filename: entryPath,
           volume: Number(payload.volume ?? 96),
           loopCount: Number(payload.loopCount ?? 1),
           playbackRate: Number(payload.playbackRate ?? 44100),
-        });
+        };
+        if (payload.resetDuringStart === true) {
+          const pendingStart = _startMssStreamAsync(startPayload);
+          resetBrowserMssStreamPlaybackRuntime();
+          await pendingStart;
+          const afterReset = summarizeBrowserMssStreamPlaybackRuntime();
+          return {
+            ok: afterReset.pendingStarts === 0
+              && afterReset.activeSources === 0
+              && afterReset.decoded === 0
+              && afterReset.scheduled === 0
+              && afterReset.musicSourceActive === false
+              && afterReset.lastError === null,
+            command,
+            archive: archiveName,
+            path: entryPath,
+            resetDuringStart: true,
+            afterReset,
+            state: snapshotState(),
+          };
+        }
+        const started = cncPortMssStreamStart(startPayload);
         let startError = null;
         try {
           await waitForBrowserMssStreamStart(handle, Number(payload.timeoutMs ?? 8000));
@@ -24554,11 +24943,7 @@ async function rpc(command, payload = {}) {
   }
 }
 
-function touchInputModeForClientPoint(clientPoint) {
-  const point = canvasInputPointFromEvent({
-    clientX: clientPoint?.x ?? 0,
-    clientY: clientPoint?.y ?? 0,
-  });
+function engineTextInputModeAtPoint(point) {
   const entries = Array.isArray(harnessState.touchUi?.entries)
     ? harnessState.touchUi.entries : [];
   for (let index = entries.length - 1; index >= 0; --index) {
@@ -24571,6 +24956,13 @@ function touchInputModeForClientPoint(clientPoint) {
     }
   }
   return null;
+}
+
+function touchInputModeForClientPoint(clientPoint) {
+  return engineTextInputModeAtPoint(canvasInputPointFromEvent({
+    clientX: clientPoint?.x ?? 0,
+    clientY: clientPoint?.y ?? 0,
+  }));
 }
 
 function touchFocusedInputMode() {
@@ -24794,6 +25186,11 @@ const touchControls = createTouchControls({
   onViewportKeyboardChange: (open) => {
     harnessState.touchKeyboardOpen = open;
   },
+});
+window.addEventListener("cncport:webxr", (event) => {
+  if (event.detail?.phase !== "running" && touchControls.snapshot().keyboardOpen) {
+    touchControls.closeTextKeyboard();
+  }
 });
 
 paintBlackWindow();
@@ -25146,6 +25543,97 @@ function disconnectAgentBridge() {
   return finalState;
 }
 
+// WebXR is deliberately demand-loaded. Normal desktop launches do not import
+// the module, enumerate XR devices, create contexts, or install frame/input
+// work. probeWebXrSession() is the explicit pre-launch discovery step. The
+// eventual click handler must call startWebXrSession() only after probe has
+// completed: start is intentionally synchronous until requestSession() is
+// invoked so transient user activation is preserved.
+let webXrRuntimeController = null;
+let webXrRuntimeLoadPromise = null;
+
+function publishWebXrState(runtimeState) {
+  const renderer = threadedEngine?.webXrD3D8Renderer?.snapshot?.()
+    ?? harnessState.webxr.renderer;
+  harnessState.webxr = {
+    source: "window_webxr_runtime",
+    moduleLoaded: webXrRuntimeController !== null,
+    rendererTransport: harnessState.webxr.rendererTransport,
+    renderer,
+    ...runtimeState,
+  };
+  try {
+    window.dispatchEvent(new CustomEvent("cncport:webxr", {
+      detail: { ...harnessState.webxr },
+    }));
+  } catch (_error) {
+    // Harness state remains authoritative in DOM-limited test contexts.
+  }
+  return { ...harnessState.webxr };
+}
+
+async function loadWebXrRuntime() {
+  if (webXrRuntimeController) return webXrRuntimeController;
+  if (!webXrRuntimeLoadPromise) {
+    harnessState.webxr = {
+      ...harnessState.webxr,
+      phase: "loading",
+      error: null,
+    };
+    webXrRuntimeLoadPromise = import("./webxr-runtime.mjs")
+      .then(({ createWebXrRuntime }) => {
+        webXrRuntimeController = createWebXrRuntime({
+          onStateChange: publishWebXrState,
+        });
+        publishWebXrState(webXrRuntimeController.snapshot());
+        return webXrRuntimeController;
+      })
+      .catch((error) => {
+        publishWebXrState({
+          phase: "failed",
+          support: null,
+          referenceSpaceType: null,
+          frames: 0,
+          viewCount: 0,
+          inputSourceCount: 0,
+          framebuffer: null,
+          error: error?.message ?? String(error),
+        });
+        throw error;
+      })
+      .finally(() => {
+        webXrRuntimeLoadPromise = null;
+      });
+  }
+  return webXrRuntimeLoadPromise;
+}
+
+async function probeWebXrSession() {
+  const controller = await loadWebXrRuntime();
+  const result = await controller.probe();
+  if (result.support?.immersiveVrSupported === true && cncPortWebXrVrRequested) {
+    await threadedEngine?.ensureReady();
+    return publishWebXrState(controller.snapshot());
+  }
+  return result;
+}
+
+function startWebXrSession(renderer = null) {
+  if (!webXrRuntimeController) {
+    throw new Error("Probe WebXR before starting from the user gesture");
+  }
+  const nativeRenderer = renderer ?? threadedEngine?.webXrD3D8Renderer ?? null;
+  if (!nativeRenderer) {
+    throw new Error("Start the game with ?vr=1 before entering immersive VR");
+  }
+  return webXrRuntimeController.start(nativeRenderer);
+}
+
+function stopWebXrSession(reason = "requested") {
+  return webXrRuntimeController?.stop(reason)
+    ?? Promise.resolve({ ...harnessState.webxr });
+}
+
 window.CnCPort = {
   rpc,
   state: harnessState,
@@ -25157,6 +25645,10 @@ window.CnCPort = {
     connected: false,
   },
   getTouchControlsState: () => touchControls.snapshot(),
+  probeWebXrSession,
+  startWebXrSession,
+  stopWebXrSession,
+  getWebXrState: () => ({ ...harnessState.webxr }),
   d3d8BridgeCallbacks,
   persistSaves: persistSaveFilesystem,
   persistScheduledSaves: persistScheduledSaveFilesystem,
