@@ -1003,6 +1003,16 @@ function threadedWorkerPerfCounters() {
   return null;
 }
 
+function threadedWorkerGpuTiming() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("gpuTiming");
+    return value === "1" || value === "true";
+  } catch (_error) {
+    return false;
+  }
+}
+
 function threadedWorkerAdjacentBatching() {
   try {
     const value = new URLSearchParams(globalThis.location?.search || "")
@@ -1469,6 +1479,7 @@ function createThreadedEngineController() {
         options: {
           diagLevel: threadedWorkerDiagLevel(),
           perfCounters: threadedWorkerPerfCounters(),
+          gpuTiming: threadedWorkerGpuTiming(),
           adjacentBatching: threadedWorkerAdjacentBatching(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
@@ -1729,6 +1740,7 @@ function createThreadedEngineController() {
       clientFps: payload.clientFps,
       logicFps: payload.logicFps,
       catchup: payload.catchup,
+      maxClientFrames: payload.maxClientFrames,
     }, { timeoutMs: 60000 });
     return reply;
   }

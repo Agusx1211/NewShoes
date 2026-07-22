@@ -79,8 +79,17 @@ export function createD3D8Executor(env) {
     : (gl ? null : canvas.getContext("2d", { alpha: false }));
 
 const provokingVertex = gl ? gl.getExtension("WEBGL_provoking_vertex") : null;
+const d3d8GpuTimerExtension = gl
+  ? gl.getExtension("EXT_disjoint_timer_query_webgl2")
+  : null;
 const d3d8HasStencilBuffer = gl ? Boolean(gl.getContextAttributes()?.stencil) : false;
 let d3d8StencilValueMaskCache = null;
+let d3d8GpuFrameTimingEnabled = false;
+let d3d8GpuFrameActiveQuery = null;
+const d3d8GpuFramePendingQueries = [];
+const d3d8GpuFrameSamplesMs = [];
+let d3d8GpuFrameSampleTotalMs = 0;
+let d3d8GpuFrameDisjointSamples = 0;
 
 // WebGL context loss (Safari/iPadOS kills contexts on memory/GPU pressure or
 // long-blocked main threads; every GL call afterwards silently no-ops and the
@@ -132,6 +141,8 @@ canvas.addEventListener("webglcontextrestored", () => {
 
 let d3d8DrawProgram = null;
 let d3d8ParticleProgram = null;
+let d3d8UnlitTex2Program = null;
+const d3d8SimpleFFPrograms = new Map();
 // Fixed-function vertex/fragment GLSL sources, stashed when the FF draw
 // program is built; translated SM1 shaders link against them for mixed pairs
 // (FF vertex + translated pixel, translated vertex + FF pixel cascade — the
@@ -139,6 +150,8 @@ let d3d8ParticleProgram = null;
 // shader #if 0'd out in W3DTreeBuffer::drawTrees).
 let d3d8FFVertexSourceCache = null;
 let d3d8FFFragmentSourceCache = null;
+let d3d8UnlitTex2VertexSourceCache = null;
+let d3d8LitTex1VertexSourceCache = null;
 // Registered SM1 shader objects (from CreatePixelShader/CreateVertexShader in
 // the wasm shim) and the linked (vertexShader, pixelShader) pair programs.
 const d3d8SM1PixelShaders = new Map();
@@ -216,6 +229,7 @@ const d3d8DrawMatrixScratch = {
   xrEngineViewProjectionInverse: new Float32Array(16),
   xrViewProjection: new Float32Array(16),
   xrClipTransform: new Float32Array(16),
+  worldNormal: new Float32Array(9),
 };
 let d3d8CurrentVertexArray = null;
 let d3d8CurrentVertexArrayKey = null;
@@ -630,6 +644,12 @@ const d3d8PerfStats = {
   sm1TranslatedVsDraws: 0,
   sm1FallbackDraws: 0,
   particleProgramDraws: 0,
+  unlitTex2ProgramDraws: 0,
+  unlitTex2FixedFunctionDraws: 0,
+  unlitTex2SM1Draws: 0,
+  simpleFFProgramDraws: 0,
+  fastSimpleFFProgramDraws: 0,
+  staticSM1ProgramDraws: 0,
   drawMatrixNormalizations: 0,
   drawMatrixScratchCopies: 0,
   drawMatrixAllocatedCopies: 0,
@@ -1052,6 +1072,7 @@ function d3d8ViewportInputMatches(input, payload, bufferWidth, bufferHeight) {
 }
 
 function d3d8PerfSummary() {
+  const gpuFrameTimer = d3d8GpuFrameTimerSummary();
   let dynamicRangePoolSlots = 0;
   for (const pool of d3d8DynamicRangeSlotPools.values()) {
     dynamicRangePoolSlots += pool.length;
@@ -1074,8 +1095,13 @@ function d3d8PerfSummary() {
     }
   }
   return {
+    diagLevel: d3d8DiagLevel,
     countersEnabled: d3d8PerfCountersEnabled,
     timingEnabled: d3d8PerfTimingEnabled,
+    gpuFrameTimer,
+    gpuFrameTimerSampleCount: gpuFrameTimer.sampleCount,
+    gpuFrameTimerTotalMs: gpuFrameTimer.totalMs,
+    gpuFrameTimerDisjointSamples: gpuFrameTimer.disjointSamples,
     vertexArrayCacheEntries: d3d8VertexArrayCacheEntries,
     vertexArrayCachePeakEntries: d3d8VertexArrayCachePeakEntries,
     vertexArrayCacheEvictions: d3d8VertexArrayCacheEvictions,
@@ -1120,6 +1146,12 @@ function d3d8PerfSummary() {
     sm1TranslatedVsDraws: d3d8PerfStats.sm1TranslatedVsDraws,
     sm1FallbackDraws: d3d8PerfStats.sm1FallbackDraws,
     particleProgramDraws: d3d8PerfStats.particleProgramDraws,
+    unlitTex2ProgramDraws: d3d8PerfStats.unlitTex2ProgramDraws,
+    unlitTex2FixedFunctionDraws: d3d8PerfStats.unlitTex2FixedFunctionDraws,
+    unlitTex2SM1Draws: d3d8PerfStats.unlitTex2SM1Draws,
+    simpleFFProgramDraws: d3d8PerfStats.simpleFFProgramDraws,
+    fastSimpleFFProgramDraws: d3d8PerfStats.fastSimpleFFProgramDraws,
+    staticSM1ProgramDraws: d3d8PerfStats.staticSM1ProgramDraws,
     drawMatrixNormalizations: d3d8PerfStats.drawMatrixNormalizations,
     drawMatrixScratchCopies: d3d8PerfStats.drawMatrixScratchCopies,
     drawMatrixAllocatedCopies: d3d8PerfStats.drawMatrixAllocatedCopies,
@@ -8014,6 +8046,518 @@ function ensureD3D8DrawProgram() {
   return d3d8DrawProgram;
 }
 
+// Terrain's XYZD+TEX2 stream is deliberately unlit. The generic fixed-function
+// vertex shader must support every D3D8 FVF and therefore carries normal-matrix,
+// camera, point-sprite, material, and eight-light machinery. Keeping that
+// machinery live behind uniforms is especially expensive on tile GPUs even
+// though this stream has no normal and never enables lighting. This variant is
+// interface-compatible with both the fixed-function fragment cascade and the
+// translated ps.1.x terrain shaders, but computes only the position, diffuse
+// color, fog, clip-plane position, and texture coordinates those draws consume.
+function d3d8UnlitTex2VertexSource() {
+  if (d3d8UnlitTex2VertexSourceCache) {
+    return d3d8UnlitTex2VertexSourceCache;
+  }
+  d3d8UnlitTex2VertexSourceCache = `#version 300 es
+    in vec4 aPosition;
+    in vec4 aDiffuseBgra;
+    in vec2 aTexCoord0;
+    in vec2 aTexCoord1;
+    uniform mat4 uWorld;
+    uniform mat4 uView;
+    uniform mat4 uProjection;
+    uniform float uDepthBias;
+    uniform bool uFogEnabled;
+    uniform bool uFogRangeEnabled;
+    uniform int uTexture0CoordinateMode;
+    uniform bool uUseTexture0Transform;
+    uniform mat4 uTexture0Transform;
+    uniform int uTexture0TransformComponentCount;
+    uniform bool uTexture0TransformProjected;
+    uniform int uTexture1CoordinateMode;
+    uniform bool uUseTexture1Transform;
+    uniform mat4 uTexture1Transform;
+    uniform int uTexture1TransformComponentCount;
+    uniform bool uTexture1TransformProjected;
+    uniform int uTexture2CoordinateMode;
+    uniform int uTexture2CoordSet;
+    uniform bool uUseTexture2Transform;
+    uniform mat4 uTexture2Transform;
+    uniform int uTexture2TransformComponentCount;
+    uniform bool uTexture2TransformProjected;
+    uniform int uTexture3CoordinateMode;
+    uniform int uTexture3CoordSet;
+    uniform bool uUseTexture3Transform;
+    uniform mat4 uTexture3Transform;
+    uniform int uTexture3TransformComponentCount;
+    uniform bool uTexture3TransformProjected;
+    out vec4 vColor;
+    out vec4 vSpecularColor;
+    flat out vec4 vFlatColor;
+    out vec2 vTexCoord0;
+    out vec2 vTexCoord1;
+    out vec2 vTexCoord2;
+    out vec2 vTexCoord3;
+    out vec4 vClipPosition;
+    out float vFogDepth;
+    out float vFogRangeDistance;
+    vec4 d3dTextureCoordinateSource(
+      vec2 texCoord,
+      int coordinateMode,
+      vec3 cameraSpacePosition) {
+      if (coordinateMode == ${D3DTSS_TCI_CAMERASPACEPOSITION}) {
+        return vec4(cameraSpacePosition, 1.0);
+      }
+      return vec4(texCoord, 0.0, 1.0);
+    }
+    vec2 d3dApplyTextureTransform(
+      vec4 texCoord,
+      mat4 transformMatrix,
+      int componentCount,
+      bool projected) {
+      vec4 transformed = transformMatrix * texCoord;
+      if (projected) {
+        float divisor = componentCount == 4 ? transformed.w : transformed.z;
+        if (abs(divisor) > 0.000001) {
+          return transformed.xy / divisor;
+        }
+      }
+      return transformed.xy;
+    }
+    vec2 d3dStageCoordinate(
+      vec2 texCoord,
+      int coordinateMode,
+      vec3 cameraSpacePosition,
+      bool useTransform,
+      mat4 transformMatrix,
+      int componentCount,
+      bool projected) {
+      vec4 source = d3dTextureCoordinateSource(
+        texCoord,
+        coordinateMode,
+        cameraSpacePosition);
+      return useTransform
+        ? d3dApplyTextureTransform(source, transformMatrix, componentCount, projected)
+        : source.xy;
+    }
+    void main() {
+      vec4 worldPosition = uWorld * vec4(aPosition.xyz, 1.0);
+      vec4 viewPosition = uView * worldPosition;
+      vec4 d3dClip = uProjection * viewPosition;
+      gl_Position = vec4(
+        d3dClip.x,
+        d3dClip.y,
+        d3dClip.z * 2.0 - d3dClip.w,
+        d3dClip.w);
+      gl_Position.z -= uDepthBias * gl_Position.w;
+      gl_PointSize = 1.0;
+      vClipPosition = worldPosition;
+      vFogDepth = max(viewPosition.z, 0.0);
+      vFogRangeDistance = uFogEnabled && uFogRangeEnabled
+        ? length(viewPosition.xyz)
+        : vFogDepth;
+      vColor = vec4(
+        aDiffuseBgra.b,
+        aDiffuseBgra.g,
+        aDiffuseBgra.r,
+        aDiffuseBgra.a);
+      vSpecularColor = vec4(0.0, 0.0, 0.0, 1.0);
+      vFlatColor = vColor;
+      vTexCoord0 = d3dStageCoordinate(
+        aTexCoord0,
+        uTexture0CoordinateMode,
+        viewPosition.xyz,
+        uUseTexture0Transform,
+        uTexture0Transform,
+        uTexture0TransformComponentCount,
+        uTexture0TransformProjected);
+      vTexCoord1 = d3dStageCoordinate(
+        aTexCoord1,
+        uTexture1CoordinateMode,
+        viewPosition.xyz,
+        uUseTexture1Transform,
+        uTexture1Transform,
+        uTexture1TransformComponentCount,
+        uTexture1TransformProjected);
+      vec2 texCoord2 = uTexture2CoordSet == 1 ? aTexCoord1 : aTexCoord0;
+      vTexCoord2 = d3dStageCoordinate(
+        texCoord2,
+        uTexture2CoordinateMode,
+        viewPosition.xyz,
+        uUseTexture2Transform,
+        uTexture2Transform,
+        uTexture2TransformComponentCount,
+        uTexture2TransformProjected);
+      vec2 texCoord3 = uTexture3CoordSet == 1 ? aTexCoord1 : aTexCoord0;
+      vTexCoord3 = d3dStageCoordinate(
+        texCoord3,
+        uTexture3CoordinateMode,
+        viewPosition.xyz,
+        uUseTexture3Transform,
+        uTexture3Transform,
+        uTexture3TransformComponentCount,
+        uTexture3TransformProjected);
+    }
+  `;
+  return d3d8UnlitTex2VertexSourceCache;
+}
+
+function ensureD3D8UnlitTex2Program() {
+  if (!gl) {
+    return null;
+  }
+  if (d3d8UnlitTex2Program) {
+    return d3d8UnlitTex2Program;
+  }
+  ensureD3D8DrawProgram();
+  const vertexShader = compileShader(gl.VERTEX_SHADER, d3d8UnlitTex2VertexSource());
+  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, d3d8FFFragmentSourceCache);
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  gl.deleteShader(vertexShader);
+  gl.deleteShader(fragmentShader);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error(`D3D8 unlit TEX2 program link failed: ${info}`);
+  }
+  d3d8UnlitTex2Program = buildD3D8DrawProgramLocations(program);
+  d3d8UnlitTex2Program.unlitTex2 = true;
+  return d3d8UnlitTex2Program;
+}
+
+// The dominant object path in Generals is an XYZ+normal+TEX1 stream with
+// fixed-function lighting and a simple texture/diffuse fragment operation
+// (foliage, structures, and props). The generic vertex shader supports every
+// D3D8 mode in one program, so it retains per-vertex matrix inversion, view
+// reconstruction, point sprites, fog, four texgen stages, and specular work
+// even when all of those modes are disabled. This exact variant keeps the
+// complete D3D8 material and point/spot/directional light equations, but only
+// emits the position, lit diffuse color, and passthrough UV consumed by the
+// eligible draw.
+function d3d8LitTex1VertexSource() {
+  if (d3d8LitTex1VertexSourceCache) {
+    return d3d8LitTex1VertexSourceCache;
+  }
+  d3d8LitTex1VertexSourceCache = `#version 300 es
+    in vec4 aPosition;
+    in vec3 aNormal;
+    in vec4 aDiffuseBgra;
+    in vec4 aSpecularBgra;
+    in vec2 aTexCoord0;
+    uniform mat4 uWorld;
+    uniform mat4 uView;
+    uniform mat4 uProjection;
+    uniform mat3 uWorldNormalMatrix;
+    uniform float uDepthBias;
+    uniform bool uNormalizeNormals;
+    uniform bool uColorVertexEnabled;
+    uniform vec4 uSceneAmbient;
+    uniform vec4 uMaterialDiffuse;
+    uniform vec4 uMaterialAmbient;
+    uniform vec4 uMaterialEmissive;
+    uniform int uDiffuseMaterialSource;
+    uniform int uAmbientMaterialSource;
+    uniform int uEmissiveMaterialSource;
+    uniform int uFixedLightCount;
+    uniform int uFixedLightType[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
+    uniform vec4 uFixedLightDiffuse[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
+    uniform vec4 uFixedLightAmbient[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
+    uniform vec3 uFixedLightPosition[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
+    uniform vec3 uFixedLightDirection[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
+    uniform vec4 uFixedLightRangeAttenuation[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
+    uniform vec3 uFixedLightSpot[${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}];
+    out vec4 vColor;
+    flat out vec4 vFlatColor;
+    out vec2 vTexCoord0;
+    vec4 d3dMaterialSourceColor(int source, vec4 materialColor, vec4 color1, vec4 color2) {
+      if (!uColorVertexEnabled) return materialColor;
+      if (source == 1) return color1;
+      if (source == 2) return color2;
+      return materialColor;
+    }
+    float d3dLightAttenuation(int index, float distanceToLight) {
+      vec4 rangeAttenuation = uFixedLightRangeAttenuation[index];
+      if (rangeAttenuation.x > 0.0 && distanceToLight > rangeAttenuation.x) return 0.0;
+      float denominator = rangeAttenuation.y +
+        rangeAttenuation.z * distanceToLight +
+        rangeAttenuation.w * distanceToLight * distanceToLight;
+      return denominator <= 0.000001 ? 1.0 : 1.0 / denominator;
+    }
+    float d3dSpotEffect(int index, vec3 lightDirection) {
+      if (uFixedLightType[index] != ${D3DLIGHT_SPOT}) return 1.0;
+      vec3 directionSource = uFixedLightDirection[index];
+      vec3 spotDirection = length(directionSource) > 0.000001
+        ? normalize(directionSource) : vec3(0.0, 0.0, -1.0);
+      float rho = dot(spotDirection, -lightDirection);
+      vec3 spot = uFixedLightSpot[index];
+      float cosTheta = cos(max(spot.x, 0.0) * 0.5);
+      float cosPhi = cos(max(spot.y, spot.x) * 0.5);
+      if (rho <= cosPhi) return 0.0;
+      if (rho >= cosTheta || abs(cosTheta - cosPhi) < 0.000001) return 1.0;
+      float amount = clamp((rho - cosPhi) / (cosTheta - cosPhi), 0.0, 1.0);
+      return spot.z <= 0.0 ? 1.0 : pow(amount, spot.z);
+    }
+    vec4 d3dApplyLighting(vec4 color1, vec4 color2, vec3 worldPosition, vec3 normal) {
+      vec4 diffuseMaterial = d3dMaterialSourceColor(
+        uDiffuseMaterialSource, uMaterialDiffuse, color1, color2);
+      vec4 ambientMaterial = d3dMaterialSourceColor(
+        uAmbientMaterialSource, uMaterialAmbient, color1, color2);
+      vec4 emissiveMaterial = d3dMaterialSourceColor(
+        uEmissiveMaterialSource, uMaterialEmissive, color1, color2);
+      vec3 litRgb = emissiveMaterial.rgb + ambientMaterial.rgb * uSceneAmbient.rgb;
+      vec3 effectiveNormal = uNormalizeNormals
+        ? (length(normal) > 0.000001 ? normalize(normal) : vec3(0.0, 0.0, 1.0))
+        : normal;
+      if (length(effectiveNormal) <= 0.000001) effectiveNormal = vec3(0.0, 0.0, 1.0);
+      for (int index = 0; index < ${D3D8_FIXED_FUNCTION_LIGHT_UNIFORM_COUNT}; ++index) {
+        if (index >= uFixedLightCount) break;
+        vec3 lightVector = uFixedLightType[index] == ${D3DLIGHT_DIRECTIONAL}
+          ? -uFixedLightDirection[index]
+          : uFixedLightPosition[index] - worldPosition;
+        float distanceToLight = length(lightVector);
+        vec3 lightDirection = distanceToLight > 0.000001
+          ? normalize(lightVector) : effectiveNormal;
+        float attenuation = uFixedLightType[index] == ${D3DLIGHT_DIRECTIONAL}
+          ? 1.0
+          : d3dLightAttenuation(index, distanceToLight) * d3dSpotEffect(index, lightDirection);
+        float diffuseAmount = max(dot(effectiveNormal, lightDirection), 0.0);
+        litRgb += ambientMaterial.rgb * uFixedLightAmbient[index].rgb * attenuation;
+        litRgb += diffuseMaterial.rgb * uFixedLightDiffuse[index].rgb * diffuseAmount * attenuation;
+      }
+      return vec4(clamp(litRgb, 0.0, 1.0), diffuseMaterial.a);
+    }
+    void main() {
+      vec4 worldPosition = uWorld * vec4(aPosition.xyz, 1.0);
+      vec4 viewPosition = uView * worldPosition;
+      vec4 d3dClip = uProjection * viewPosition;
+      gl_Position = vec4(d3dClip.x, d3dClip.y,
+        d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
+      gl_Position.z -= uDepthBias * gl_Position.w;
+      vec4 color1 = vec4(aDiffuseBgra.b, aDiffuseBgra.g,
+        aDiffuseBgra.r, aDiffuseBgra.a);
+      vec4 color2 = vec4(aSpecularBgra.b, aSpecularBgra.g,
+        aSpecularBgra.r, aSpecularBgra.a);
+      vColor = d3dApplyLighting(
+        color1, color2, worldPosition.xyz, uWorldNormalMatrix * aNormal);
+      vFlatColor = vColor;
+      vTexCoord0 = aTexCoord0;
+    }
+  `;
+  return d3d8LitTex1VertexSourceCache;
+}
+
+function d3d8SimpleFFFragmentSource(fragmentKind, fastStaticState = null) {
+  const [colorMode, alphaMode] = String(fragmentKind).split("|");
+  const validModes = new Set(["diffuse", "texture", "modulate", "one"]);
+  if (!validModes.has(colorMode) || !validModes.has(alphaMode)) {
+    throw new Error(`unsupported simple fixed-function fragment kind: ${fragmentKind}`);
+  }
+  const needsTexture = colorMode === "texture" || colorMode === "modulate" ||
+    alphaMode === "texture" || alphaMode === "modulate";
+  const colorExpression = colorMode === "texture"
+    ? "textureColor.rgb"
+    : colorMode === "modulate"
+      ? "textureColor.rgb * diffuseColor.rgb"
+      : colorMode === "one"
+        ? "vec3(1.0)"
+      : "diffuseColor.rgb";
+  const alphaExpression = alphaMode === "texture"
+    ? "textureColor.a"
+    : alphaMode === "modulate"
+      ? "textureColor.a * diffuseColor.a"
+      : alphaMode === "one"
+        ? "1.0"
+      : "diffuseColor.a";
+  if (fastStaticState) {
+    const flipY = fastStaticState.includes("flip-y");
+    const cutout = fastStaticState.includes("cutout");
+    return `#version 300 es
+      // D3D8 fixed-function and ps.1.x color math has substantially less
+      // precision than GLES mediump. Keeping this at mediump preserves the
+      // source API's output while allowing mobile GPUs to use packed ALUs.
+      precision mediump float;
+      in vec4 vColor;
+      flat in vec4 vFlatColor;
+      ${needsTexture ? "in vec2 vTexCoord0;" : ""}
+      uniform bool uUseFlatShade;
+      ${needsTexture ? "uniform sampler2D uTexture0;" : ""}
+      out vec4 fragColor;
+      void main() {
+        vec4 diffuseColor = uUseFlatShade ? vFlatColor : vColor;
+        ${needsTexture
+          ? `vec2 textureCoordinate = ${flipY
+            ? "vec2(vTexCoord0.x, 1.0 - vTexCoord0.y)"
+            : "vTexCoord0"};
+        vec4 textureColor = texture(uTexture0, textureCoordinate);`
+          : "vec4 textureColor = vec4(1.0);"}
+        vec4 color = vec4(${colorExpression}, ${alphaExpression});
+        ${cutout ? "if (color.a <= 0.00392156862745098) { discard; }" : ""}
+        fragColor = color;
+      }
+    `;
+  }
+  return `#version 300 es
+    precision highp float;
+    in vec4 vColor;
+    flat in vec4 vFlatColor;
+    ${needsTexture ? "in vec2 vTexCoord0;" : ""}
+    in vec4 vClipPosition;
+    in float vFogDepth;
+    in float vFogRangeDistance;
+    uniform int uClipPlaneMask;
+    uniform vec4 uClipPlanes[6];
+    uniform bool uUseFlatShade;
+    ${needsTexture ? `
+    uniform sampler2D uTexture0;
+    uniform float uTexture0LodBias;
+    uniform int uTexture0Semantic;
+    uniform bool uTexture0FlipY;
+    uniform bool uDrawingPoints;
+    uniform bool uPointSpriteEnable;
+    ` : ""}
+    uniform bool uAlphaTestEnabled;
+    uniform int uAlphaFunc;
+    uniform float uAlphaRef;
+    uniform float uImplicitAlphaCutoutThreshold;
+    uniform bool uFogEnabled;
+    uniform bool uFogRangeEnabled;
+    uniform vec3 uFogColor;
+    uniform float uFogStart;
+    uniform float uFogEnd;
+    out vec4 fragColor;
+    bool d3dAlphaCompare(float value, float reference) {
+      if (uAlphaFunc == 1) return false;
+      if (uAlphaFunc == 2) return value < reference;
+      if (uAlphaFunc == 3) return value == reference;
+      if (uAlphaFunc == 4) return value <= reference;
+      if (uAlphaFunc == 5) return value > reference;
+      if (uAlphaFunc == 6) return value != reference;
+      if (uAlphaFunc == 7) return value >= reference;
+      return true;
+    }
+    ${needsTexture ? `
+    vec4 d3dTextureSample(vec4 rawSample, int semantic) {
+      if (semantic == 1) return vec4(0.0, 0.0, 0.0, rawSample.r);
+      if (semantic == 2) return vec4(rawSample.r, rawSample.r, rawSample.r, 1.0);
+      if (semantic == 3) return vec4(rawSample.r, rawSample.r, rawSample.r, rawSample.g);
+      if (semantic == 4) {
+        vec2 signedBump = clamp(
+          (rawSample.rg * 255.0 - 128.0) / 127.0,
+          -1.0,
+          1.0);
+        return vec4(signedBump, 0.0, 1.0);
+      }
+      return rawSample;
+    }
+    ` : ""}
+    void main() {
+      for (int index = 0; index < 6; ++index) {
+        if ((uClipPlaneMask & (1 << index)) != 0 &&
+            dot(uClipPlanes[index], vClipPosition) < 0.0) {
+          discard;
+        }
+      }
+      vec4 diffuseColor = uUseFlatShade ? vFlatColor : vColor;
+      ${needsTexture ? `
+      vec2 textureCoordinate = uDrawingPoints && uPointSpriteEnable
+        ? gl_PointCoord
+        : vTexCoord0;
+      if (uTexture0FlipY) {
+        textureCoordinate.y = 1.0 - textureCoordinate.y;
+      }
+      vec4 textureColor = d3dTextureSample(
+        texture(uTexture0, textureCoordinate, uTexture0LodBias),
+        uTexture0Semantic);
+      ` : "vec4 textureColor = vec4(1.0);"}
+      vec4 color = vec4(${colorExpression}, ${alphaExpression});
+      if (!uAlphaTestEnabled && uImplicitAlphaCutoutThreshold >= 0.0 &&
+          color.a <= uImplicitAlphaCutoutThreshold) {
+        discard;
+      }
+      if (uAlphaTestEnabled && !d3dAlphaCompare(color.a, uAlphaRef)) {
+        discard;
+      }
+      if (uFogEnabled) {
+        float fogDistance = uFogRangeEnabled ? vFogRangeDistance : vFogDepth;
+        float fogAmount = clamp(
+          (fogDistance - uFogStart) / max(uFogEnd - uFogStart, 0.000001),
+          0.0,
+          1.0);
+        color.rgb = mix(color.rgb, uFogColor, fogAmount);
+      }
+      fragColor = color;
+    }
+  `;
+}
+
+function ensureD3D8SimpleFFProgram(
+  fragmentKind,
+  vertexVariant = "generic",
+  fragmentVariant = "dynamic",
+) {
+  if (!gl) {
+    return null;
+  }
+  const normalizedVertexVariant = vertexVariant === "unlit-tex2"
+    ? "unlit-tex2"
+    : vertexVariant === "lit-tex1"
+      ? "lit-tex1"
+      : "generic";
+  const fastFragmentVariants = new Set([
+    "fast",
+    "fast-flip-y",
+    "fast-cutout",
+    "fast-cutout-flip-y",
+  ]);
+  const normalizedFragmentVariant = fastFragmentVariants.has(fragmentVariant)
+    ? fragmentVariant
+    : "dynamic";
+  const key = `${normalizedVertexVariant}|${normalizedFragmentVariant}|${fragmentKind}`;
+  const cached = d3d8SimpleFFPrograms.get(key);
+  if (cached) {
+    return cached;
+  }
+  let vertexSource;
+  if (normalizedVertexVariant === "unlit-tex2") {
+    vertexSource = d3d8UnlitTex2VertexSource();
+  } else if (normalizedVertexVariant === "lit-tex1") {
+    vertexSource = d3d8LitTex1VertexSource();
+  } else {
+    ensureD3D8DrawProgram();
+    vertexSource = d3d8FFVertexSourceCache;
+  }
+  const vertexShader = compileShader(gl.VERTEX_SHADER, vertexSource);
+  const fragmentShader = compileShader(
+    gl.FRAGMENT_SHADER,
+    d3d8SimpleFFFragmentSource(
+      fragmentKind,
+      normalizedFragmentVariant === "dynamic" ? null : normalizedFragmentVariant,
+    ),
+  );
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  gl.deleteShader(vertexShader);
+  gl.deleteShader(fragmentShader);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error(`D3D8 simple fixed-function program link failed (${key}): ${info}`);
+  }
+  const bridgeProgram = buildD3D8DrawProgramLocations(program);
+  bridgeProgram.simpleFF = true;
+  bridgeProgram.simpleFFFragmentKind = fragmentKind;
+  bridgeProgram.fastSimpleFF = normalizedFragmentVariant !== "dynamic";
+  bridgeProgram.fastSimpleFFVariant = normalizedFragmentVariant;
+  bridgeProgram.unlitTex2 = normalizedVertexVariant === "unlit-tex2";
+  d3d8SimpleFFPrograms.set(key, bridgeProgram);
+  return bridgeProgram;
+}
+
 function ensureD3D8ParticleProgram() {
   if (!gl) {
     return null;
@@ -8114,6 +8658,234 @@ function d3d8CanUseParticleProgram({
     stage1?.alphaOp === D3DTOP_DISABLE;
 }
 
+function d3d8CanUseUnlitTex2Program({
+  renderState,
+  primitiveType,
+  vertexShaderFvf,
+  vertexStride,
+  canSampleTexture0,
+  canSampleTexture1,
+  canSampleTexture2,
+  canSampleTexture3,
+  texture0Coordinates,
+  texture1Coordinates,
+  texture2Coordinates,
+  texture3Coordinates,
+  usePositionTransforms,
+  vertexPretransformed,
+}) {
+  if ((Number(primitiveType) >>> 0) !== D3DPT_TRIANGLELIST ||
+      (Number(vertexShaderFvf) >>> 0) !== (D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX2) ||
+      (Number(vertexStride) >>> 0) !== 32 ||
+      renderState?.lighting !== 0 ||
+      usePositionTransforms !== true ||
+      vertexPretransformed === true) {
+    return false;
+  }
+  const sampledCoordinates = [
+    [canSampleTexture0, texture0Coordinates],
+    [canSampleTexture1, texture1Coordinates],
+    [canSampleTexture2, texture2Coordinates],
+    [canSampleTexture3, texture3Coordinates],
+  ];
+  return sampledCoordinates.every(([canSample, coordinates]) =>
+    !canSample ||
+    (coordinates?.supported === true &&
+      (coordinates.mode === D3DTSS_TCI_PASSTHRU ||
+        coordinates.mode === D3DTSS_TCI_CAMERASPACEPOSITION)));
+}
+
+function d3d8CanUseLitTex1Program({
+  renderState,
+  primitiveType,
+  vertexShaderFvf,
+  vertexStride,
+  canSampleTexture0,
+  canSampleTexture1,
+  canSampleTexture2,
+  canSampleTexture3,
+  texture0Coordinates,
+  usePositionTransforms,
+  vertexPretransformed,
+  fastSimpleFFVariant,
+  world,
+}) {
+  return Boolean(
+    fastSimpleFFVariant &&
+    (Number(primitiveType) >>> 0) === D3DPT_TRIANGLELIST &&
+    (Number(vertexShaderFvf) >>> 0) === (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1) &&
+    (Number(vertexStride) >>> 0) === 32 &&
+    renderState?.lighting !== 0 &&
+    renderState?.specularEnable === 0 &&
+    usePositionTransforms === true &&
+    vertexPretransformed !== true &&
+    canSampleTexture0 && !canSampleTexture1 && !canSampleTexture2 && !canSampleTexture3 &&
+    texture0Coordinates?.supported === true &&
+    texture0Coordinates.mode === D3DTSS_TCI_PASSTHRU &&
+    texture0Coordinates.coordSet === 0 &&
+    texture0Coordinates.transformApplied !== true &&
+    d3d8WorldNormalMatrix(world) !== null
+  );
+}
+
+function d3d8CanUseStaticSM1Fragment({
+  renderState,
+  unlitTex2VertexDraw,
+  canSampleTexture0,
+  canSampleTexture1,
+  canSampleTexture2,
+  canSampleTexture3,
+  texture0SemanticMode,
+  texture1SemanticMode,
+  texture2SemanticMode,
+  texture3SemanticMode,
+  texture0FlipY,
+  texture1FlipY,
+  texture2FlipY,
+  texture3FlipY,
+}) {
+  if (!unlitTex2VertexDraw ||
+      renderState?.alphaTestEnable !== 0 ||
+      renderState?.fogEnable !== 0 ||
+      d3d8ClipPlaneMask(renderState) !== 0 ||
+      !canSampleTexture0 || !canSampleTexture1 ||
+      !canSampleTexture2 || !canSampleTexture3 ||
+      texture0SemanticMode !== 0 || texture1SemanticMode !== 0 ||
+      texture2SemanticMode !== 0 || texture3SemanticMode !== 0 ||
+      texture0FlipY || texture1FlipY || texture2FlipY || texture3FlipY) {
+    return false;
+  }
+  // This variant bakes only the fixed state shared by the enhanced terrain
+  // draws. Texture coordinates (including D3D texture transforms) and the
+  // original ps.1.x instruction body remain unchanged.
+  return renderState.textureStages.slice(0, 4)
+    .every((stage) => d3dDwordToFloat(stage.mipMapLodBias) === 0);
+}
+
+function d3d8SimpleFFSourceMode(argument, canSampleTexture0) {
+  const value = Number(argument ?? 0) >>> 0;
+  if ((value & D3DTA_SUPPORTED_MODIFIERS) !== 0) {
+    return null;
+  }
+  const source = value & D3DTA_SELECTMASK;
+  if (source === D3DTA_TEXTURE) {
+    // The generic bridge deliberately supplies vec4(1) for an unbound D3D
+    // texture. Preserve that behavior in the static path instead of either
+    // sampling an unbound WebGL texture or falling back to the giant dynamic
+    // combiner. The game's blended shroud overlay uses exactly this state.
+    return canSampleTexture0 ? "texture" : "one";
+  }
+  if (source === D3DTA_DIFFUSE || source === D3DTA_CURRENT) {
+    return "diffuse";
+  }
+  return null;
+}
+
+function d3d8SimpleFFOperationMode(
+  operation,
+  argument1,
+  argument2,
+  canSampleTexture0,
+) {
+  const op = Number(operation ?? D3DTOP_DISABLE) >>> 0;
+  if (op === D3DTOP_DISABLE) {
+    return "diffuse";
+  }
+  if (op === D3DTOP_SELECTARG1) {
+    return d3d8SimpleFFSourceMode(argument1, canSampleTexture0);
+  }
+  if (op === D3DTOP_SELECTARG2) {
+    return d3d8SimpleFFSourceMode(argument2, canSampleTexture0);
+  }
+  if (op === D3DTOP_MODULATE) {
+    const mode1 = d3d8SimpleFFSourceMode(argument1, canSampleTexture0);
+    const mode2 = d3d8SimpleFFSourceMode(argument2, canSampleTexture0);
+    if ((mode1 === "texture" && mode2 === "diffuse") ||
+        (mode1 === "diffuse" && mode2 === "texture")) {
+      return "modulate";
+    }
+    if (mode1 === "one") {
+      return mode2;
+    }
+    if (mode2 === "one") {
+      return mode1;
+    }
+  }
+  return null;
+}
+
+function d3d8SimpleFFFragmentKind({
+  renderState,
+  canSampleTexture0,
+  canSampleTexture1,
+  canSampleTexture2,
+  canSampleTexture3,
+}) {
+  const stage0 = renderState?.textureStages?.[0];
+  const stage1 = renderState?.textureStages?.[1];
+  if (!stage0 || !stage1 ||
+      stage0.resultArg !== D3DTA_CURRENT ||
+      stage1.colorOp !== D3DTOP_DISABLE ||
+      canSampleTexture1 || canSampleTexture2 || canSampleTexture3) {
+    return null;
+  }
+  const colorMode = d3d8SimpleFFOperationMode(
+    stage0.colorOp,
+    stage0.colorArg1,
+    stage0.colorArg2,
+    canSampleTexture0,
+  );
+  const alphaMode = d3d8SimpleFFOperationMode(
+    stage0.alphaOp,
+    stage0.alphaArg1,
+    stage0.alphaArg2,
+    canSampleTexture0,
+  );
+  if (!colorMode || !alphaMode) {
+    return null;
+  }
+  const needsTexture = colorMode === "texture" || colorMode === "modulate" ||
+    alphaMode === "texture" || alphaMode === "modulate";
+  if (needsTexture && !canSampleTexture0) {
+    return null;
+  }
+  return `${colorMode}|${alphaMode}`;
+}
+
+function d3d8SimpleFFKindUsesTexture(fragmentKind) {
+  return String(fragmentKind).split("|")
+    .some((mode) => mode === "texture" || mode === "modulate");
+}
+
+function d3d8FastSimpleFFVariant({
+  fragmentKind,
+  renderState,
+  primitiveType,
+  implicitAlphaCutoutThreshold,
+  texture0SemanticMode,
+  texture0FlipY,
+}) {
+  if (!fragmentKind ||
+      renderState?.alphaTestEnable !== 0 ||
+      renderState?.fogEnable !== 0 ||
+      d3d8ClipPlaneMask(renderState) !== 0 ||
+      ((Number(primitiveType) >>> 0) === D3DPT_POINTLIST &&
+        renderState?.pointSpriteEnable !== 0)) {
+    return null;
+  }
+  const cutout = implicitAlphaCutoutThreshold >= 0;
+  if (cutout && implicitAlphaCutoutThreshold !== (1 / 255)) {
+    return null;
+  }
+  const usesTexture = d3d8SimpleFFKindUsesTexture(fragmentKind);
+  if (usesTexture && (texture0SemanticMode !== 0 ||
+      d3dDwordToFloat(renderState.textureStages[0].mipMapLodBias) !== 0)) {
+    return null;
+  }
+  return `fast${cutout ? "-cutout" : ""}` +
+    `${usesTexture && texture0FlipY ? "-flip-y" : ""}`;
+}
+
 // Location table shared by the fixed-function draw program and the translated
 // SM1 shader-pair programs (absent uniforms resolve to null; every cached
 // uniform setter tolerates that).
@@ -8131,6 +8903,7 @@ function buildD3D8DrawProgramLocations(program) {
     pretransformedPosition: gl.getUniformLocation(program, "uPretransformedPosition"),
     d3dViewport: gl.getUniformLocation(program, "uD3DViewport"),
     world: gl.getUniformLocation(program, "uWorld"),
+    worldNormalMatrix: gl.getUniformLocation(program, "uWorldNormalMatrix"),
     view: gl.getUniformLocation(program, "uView"),
     projection: gl.getUniformLocation(program, "uProjection"),
     depthBias: gl.getUniformLocation(program, "uDepthBias"),
@@ -8711,7 +9484,10 @@ function d3d8SM1WriteStatement(dst, valueExpr, ctx) {
 
 // Stage texture sample honoring the same semantic/LOD-bias plumbing as the
 // fixed-function fragment stage. Unbound stages sample opaque black (D3D8).
-function d3d8SM1SampleExpr(stage, coordExpr) {
+function d3d8SM1SampleExpr(stage, coordExpr, ctx) {
+  if (ctx.staticFixedFunctionState) {
+    return `texture(uTexture${stage}, ${coordExpr})`;
+  }
   return `(uUseTexture${stage} ? d3dTextureSample(texture(uTexture${stage}, ` +
     `d3dTextureCoordinate(${coordExpr}, uTexture${stage}FlipY), ` +
     `uTexture${stage}LodBias), uTexture${stage}Semantic) : vec4(0.0, 0.0, 0.0, 1.0))`;
@@ -8734,7 +9510,7 @@ function d3d8SM1EmitPixelBody(ir, ctx) {
       case "tex":
         ctx.usedTexRegisters.add(stage);
         ctx.sampledStages.add(stage);
-        lines.push(`psT${stage} = ${d3d8SM1SampleExpr(stage, `vTexCoord${stage}`)};`);
+        lines.push(`psT${stage} = ${d3d8SM1SampleExpr(stage, `vTexCoord${stage}`, ctx)};`);
         continue;
       case "texcoord":
         ctx.usedTexRegisters.add(stage);
@@ -8755,7 +9531,7 @@ function d3d8SM1EmitPixelBody(ir, ctx) {
         const coord = `(vTexCoord${stage} + vec2(` +
           `dot(vec2(uBumpEnv[${stage}].x, uBumpEnv[${stage}].z), (${src}).xy), ` +
           `dot(vec2(uBumpEnv[${stage}].y, uBumpEnv[${stage}].w), (${src}).xy)))`;
-        let sample = d3d8SM1SampleExpr(stage, coord);
+        let sample = d3d8SM1SampleExpr(stage, coord, ctx);
         if (instruction.name === "texbeml") {
           ctx.usesBumpEnvL = true;
           sample = `((${sample}) * ((${src}).z * uBumpEnvL[${stage}].x + uBumpEnvL[${stage}].y))`;
@@ -8797,11 +9573,17 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
     defConstants: new Map(),
     usesBumpEnv: false,
     usesBumpEnvL: false,
+    staticFixedFunctionState: options.staticFixedFunctionState === true,
   };
   const body = d3d8SM1EmitPixelBody(psShader.ir, ctx);
   const lines = [];
   lines.push("#version 300 es");
-  lines.push("precision highp float;");
+  // ps.1.x was an 8-bit-era shader model. Static fixed-function pairings can
+  // use GLES mediump without losing any precision exposed by D3D8, and mobile
+  // GPUs can execute the packed arithmetic much more efficiently.
+  lines.push(ctx.staticFixedFunctionState
+    ? "precision mediump float;"
+    : "precision highp float;");
   lines.push("in vec4 vColor;");
   lines.push("in vec4 vSpecularColor;");
   lines.push("flat in vec4 vFlatColor;");
@@ -8821,11 +9603,13 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
   }
   lines.push("uniform bool uUseFlatShade;");
   for (let stage = 0; stage < 4; stage += 1) {
-    lines.push(`uniform bool uUseTexture${stage};`);
     lines.push(`uniform sampler2D uTexture${stage};`);
-    lines.push(`uniform float uTexture${stage}LodBias;`);
-    lines.push(`uniform int uTexture${stage}Semantic;`);
-    lines.push(`uniform bool uTexture${stage}FlipY;`);
+    if (!ctx.staticFixedFunctionState) {
+      lines.push(`uniform bool uUseTexture${stage};`);
+      lines.push(`uniform float uTexture${stage}LodBias;`);
+      lines.push(`uniform int uTexture${stage}Semantic;`);
+      lines.push(`uniform bool uTexture${stage}FlipY;`);
+    }
   }
   lines.push("uniform vec4 uPsConst[8];");
   if (ctx.usesBumpEnv) {
@@ -8834,25 +9618,29 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
   if (ctx.usesBumpEnvL) {
     lines.push("uniform vec2 uBumpEnvL[4];");
   }
-  lines.push("uniform bool uAlphaTestEnabled;");
-  lines.push("uniform int uAlphaFunc;");
-  lines.push("uniform float uAlphaRef;");
-  lines.push("uniform bool uFogEnabled;");
-  lines.push("uniform bool uFogRangeEnabled;");
-  lines.push("uniform vec3 uFogColor;");
-  lines.push("uniform float uFogStart;");
-  lines.push("uniform float uFogEnd;");
+  if (!ctx.staticFixedFunctionState) {
+    lines.push("uniform bool uAlphaTestEnabled;");
+    lines.push("uniform int uAlphaFunc;");
+    lines.push("uniform float uAlphaRef;");
+    lines.push("uniform bool uFogEnabled;");
+    lines.push("uniform bool uFogRangeEnabled;");
+    lines.push("uniform vec3 uFogColor;");
+    lines.push("uniform float uFogStart;");
+    lines.push("uniform float uFogEnd;");
+  }
   lines.push("out vec4 fragColor;");
-  lines.push("bool d3dAlphaCompare(float value, float reference) {");
-  lines.push("  if (uAlphaFunc == 1) { return false; }");
-  lines.push("  if (uAlphaFunc == 2) { return value < reference; }");
-  lines.push("  if (uAlphaFunc == 3) { return value == reference; }");
-  lines.push("  if (uAlphaFunc == 4) { return value <= reference; }");
-  lines.push("  if (uAlphaFunc == 5) { return value > reference; }");
-  lines.push("  if (uAlphaFunc == 6) { return value != reference; }");
-  lines.push("  if (uAlphaFunc == 7) { return value >= reference; }");
-  lines.push("  return true;");
-  lines.push("}");
+  if (!ctx.staticFixedFunctionState) {
+    lines.push("bool d3dAlphaCompare(float value, float reference) {");
+    lines.push("  if (uAlphaFunc == 1) { return false; }");
+    lines.push("  if (uAlphaFunc == 2) { return value < reference; }");
+    lines.push("  if (uAlphaFunc == 3) { return value == reference; }");
+    lines.push("  if (uAlphaFunc == 4) { return value <= reference; }");
+    lines.push("  if (uAlphaFunc == 5) { return value > reference; }");
+    lines.push("  if (uAlphaFunc == 6) { return value != reference; }");
+    lines.push("  if (uAlphaFunc == 7) { return value >= reference; }");
+    lines.push("  return true;");
+    lines.push("}");
+  }
   lines.push("vec4 d3dTextureSample(vec4 rawSample, int semantic) {");
   lines.push("  if (semantic == 1) { return vec4(0.0, 0.0, 0.0, rawSample.r); }");
   lines.push("  if (semantic == 2) { return vec4(rawSample.r, rawSample.r, rawSample.r, 1.0); }");
@@ -8867,7 +9655,7 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
   lines.push("  return flipY ? vec2(coordinate.x, 1.0 - coordinate.y) : coordinate;");
   lines.push("}");
   lines.push("void main() {");
-  if (!options.translatedVs) {
+  if (!options.translatedVs && !ctx.staticFixedFunctionState) {
     lines.push("  for (int index = 0; index < 6; ++index) {");
     lines.push("    if ((uClipPlaneMask & (1 << index)) != 0 && dot(uClipPlanes[index], vClipPosition) < 0.0) {");
     lines.push("      discard;");
@@ -8896,9 +9684,11 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
   if (Number.isInteger(visualizeStage) && visualizeStage >= 0 && visualizeStage <= 3) {
     lines.push(`  psOut = vec4(fract(vTexCoord${visualizeStage}), 0.0, 1.0);`);
   }
-  lines.push("  if (uAlphaTestEnabled && !d3dAlphaCompare(psOut.a, uAlphaRef)) {");
-  lines.push("    discard;");
-  lines.push("  }");
+  if (!ctx.staticFixedFunctionState) {
+    lines.push("  if (uAlphaTestEnabled && !d3dAlphaCompare(psOut.a, uAlphaRef)) {");
+    lines.push("    discard;");
+    lines.push("  }");
+  }
   if (options.translatedVs) {
     if (options.vsWritesFog) {
       // With a programmable vertex shader D3D8 fog blends by the oFog factor
@@ -8907,7 +9697,7 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
       lines.push("    psOut.rgb = mix(uFogColor, psOut.rgb, clamp(vVsFog, 0.0, 1.0));");
       lines.push("  }");
     }
-  } else {
+  } else if (!ctx.staticFixedFunctionState) {
     lines.push("  if (uFogEnabled) {");
     lines.push("    float fogDistance = uFogRangeEnabled ? vFogRangeDistance : vFogDepth;");
     lines.push("    float fogAmount = clamp((fogDistance - uFogStart) / max(uFogEnd - uFogStart, 0.000001), 0.0, 1.0);");
@@ -9139,16 +9929,35 @@ function deleteD3D8SM1Shader(isPixel, handle) {
 // cascade (the shipped tree path — Trees.vso with the tree pixel shader
 // #if 0'd out). Returns null when the pair cannot be built (the caller falls
 // back to the fixed-function program and counts it).
-function ensureD3D8ShaderPairProgram(vsHandle, psHandle) {
+function ensureD3D8ShaderPairProgram(
+  vsHandle,
+  psHandle,
+  ffVertexVariant = null,
+  fixedFunctionStateVariant = null,
+) {
   if (!gl || (psHandle === 0 && vsHandle === 0)) {
     return null;
   }
-  const key = `${vsHandle}|${psHandle}`;
+  const normalizedFFVertexVariant = vsHandle === 0 && ffVertexVariant === "unlit-tex2"
+    ? "unlit-tex2"
+    : "generic";
+  const normalizedFixedFunctionStateVariant = vsHandle === 0 &&
+      fixedFunctionStateVariant === "static"
+    ? "static"
+    : "dynamic";
+  const key = `${vsHandle}|${psHandle}|${normalizedFFVertexVariant}|` +
+    normalizedFixedFunctionStateVariant;
   const cached = d3d8SM1PairPrograms.get(key);
   if (cached !== undefined) {
     return cached.program;
   }
-  let entry = { vsHandle, psHandle, program: null };
+  let entry = {
+    vsHandle,
+    psHandle,
+    ffVertexVariant: normalizedFFVertexVariant,
+    fixedFunctionStateVariant: normalizedFixedFunctionStateVariant,
+    program: null,
+  };
   d3d8SM1PairPrograms.set(key, entry);
   const psShader = psHandle !== 0 ? d3d8SM1PixelShaders.get(psHandle) : null;
   if (psHandle !== 0 && !psShader) {
@@ -9157,8 +9966,12 @@ function ensureD3D8ShaderPairProgram(vsHandle, psHandle) {
   let vsSource = null;
   let vsShader = null;
   if (vsHandle === 0) {
-    ensureD3D8DrawProgram();
-    vsSource = d3d8FFVertexSourceCache;
+    if (normalizedFFVertexVariant === "unlit-tex2") {
+      vsSource = d3d8UnlitTex2VertexSource();
+    } else {
+      ensureD3D8DrawProgram();
+      vsSource = d3d8FFVertexSourceCache;
+    }
   } else {
     vsShader = d3d8SM1VertexShaders.get(vsHandle);
     if (!vsShader) {
@@ -9176,6 +9989,7 @@ function ensureD3D8ShaderPairProgram(vsHandle, psHandle) {
       fsBuild = d3d8SM1BuildFragmentSource(psShader, {
         translatedVs: Boolean(vsShader),
         vsWritesFog: Boolean(vsBuild?.writesFog),
+        staticFixedFunctionState: normalizedFixedFunctionStateVariant === "static",
       });
     } else {
       // Translated vertex + fixed-function pixel cascade: reuse the FF
@@ -9206,6 +10020,8 @@ function ensureD3D8ShaderPairProgram(vsHandle, psHandle) {
     bridgeProgram.sm1Pair = true;
     bridgeProgram.sm1PsHandle = psHandle;
     bridgeProgram.sm1VsHandle = vsHandle;
+    bridgeProgram.unlitTex2 = normalizedFFVertexVariant === "unlit-tex2";
+    bridgeProgram.staticSM1 = normalizedFixedFunctionStateVariant === "static";
     bridgeProgram.sm1SampledStages = fsBuild.sampledStages;
     if (vsShader) {
       bridgeProgram.declLayout = vsShader.decl.map((declEntry) => ({
@@ -9217,7 +10033,7 @@ function ensureD3D8ShaderPairProgram(vsHandle, psHandle) {
     if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1PairProgramsLinked += 1;
     return bridgeProgram;
   } catch (error) {
-    console.warn(`D3D8 SM1: pair program (vs=${vsHandle}, ps=${psHandle}) failed: ${error?.message ?? error}`);
+    console.warn(`D3D8 SM1: pair program (vs=${vsHandle}, ps=${psHandle}, ff=${normalizedFFVertexVariant}) failed: ${error?.message ?? error}`);
     if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1PairProgramFailures += 1;
     return null;
   }
@@ -10694,6 +11510,67 @@ function d3d8CachedUniformMatrix4fv(location, matrix) {
   gl.uniformMatrix4fv(location, false, matrix);
 }
 
+function d3d8CachedUniformMatrix3fv(location, matrix) {
+  if (!location) {
+    return;
+  }
+  const cached = location.__cncLastMat3;
+  if (cached && d3d8NumericArrayEquals(cached, matrix)) {
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlSkipped += 1;
+    return;
+  }
+  const snapshot = cached instanceof Float32Array && cached.length === 9
+    ? cached
+    : new Float32Array(9);
+  snapshot.set(matrix);
+  location.__cncLastMat3 = snapshot;
+  if (d3d8PerfCountersEnabled) d3d8PerfStats.uniformGlCalls += 1;
+  gl.uniformMatrix3fv(location, false, matrix);
+}
+
+// CPU-side equivalent of transpose(inverse(mat3(uWorld))). The generic D3D8
+// vertex shader has to calculate that expression per vertex because its state
+// is fully dynamic. Narrow fixed-function programs can instead upload the
+// exact matrix once per object, which is much cheaper on mobile tile GPUs.
+function d3d8WorldNormalMatrix(world, target = d3d8DrawMatrixScratch.worldNormal) {
+  if (!world || world.length !== 16 || !(target instanceof Float32Array) || target.length !== 9) {
+    return null;
+  }
+  const a = world[0];
+  const b = world[4];
+  const c = world[8];
+  const d = world[1];
+  const e = world[5];
+  const f = world[9];
+  const g = world[2];
+  const h = world[6];
+  const i = world[10];
+  const c00 = e * i - f * h;
+  const c01 = f * g - d * i;
+  const c02 = d * h - e * g;
+  const c10 = c * h - b * i;
+  const c11 = a * i - c * g;
+  const c12 = b * g - a * h;
+  const c20 = b * f - c * e;
+  const c21 = c * d - a * f;
+  const c22 = a * e - b * d;
+  const determinant = a * c00 + b * c01 + c * c02;
+  if (!Number.isFinite(determinant) || Math.abs(determinant) <= 1e-12) {
+    return null;
+  }
+  const inverseDeterminant = 1 / determinant;
+  target[0] = c00 * inverseDeterminant;
+  target[1] = c10 * inverseDeterminant;
+  target[2] = c20 * inverseDeterminant;
+  target[3] = c01 * inverseDeterminant;
+  target[4] = c11 * inverseDeterminant;
+  target[5] = c21 * inverseDeterminant;
+  target[6] = c02 * inverseDeterminant;
+  target[7] = c12 * inverseDeterminant;
+  target[8] = c22 * inverseDeterminant;
+  return target;
+}
+
 function setD3D8Uniform3FromArray(location, values) {
   if (!location) {
     return;
@@ -11912,6 +12789,8 @@ try {
   if (_perfCounters === "1" || _perfCounters === "true") d3d8PerfCountersOverride = true;
   else if (_perfCounters === "0" || _perfCounters === "false") d3d8PerfCountersOverride = false;
   syncD3D8PerfCountersEnabled();
+  const _gpuTiming = _params.get("gpuTiming");
+  d3d8GpuFrameTimingEnabled = _gpuTiming === "1" || _gpuTiming === "true";
   const _historyLimit = Number(_params.get("drawHistoryLimit"));
   if (Number.isFinite(_historyLimit) && _historyLimit > 0) {
     d3d8SceneDrawHistoryLimit = Math.min(8192, Math.max(1, Math.trunc(_historyLimit)));
@@ -11958,6 +12837,15 @@ if (typeof globalThis !== "undefined") {
     d3d8PerfCountersOverride = enabled == null ? null : Boolean(enabled);
     syncD3D8PerfCountersEnabled();
     return d3d8PerfCountersEnabled;
+  };
+  globalThis.__cncSetD3D8GpuFrameTiming = (enabled) => {
+    const nextEnabled = enabled === true || enabled === 1 || enabled === "1";
+    if (!nextEnabled) {
+      endD3D8GpuFrameTimer();
+      pollD3D8GpuFrameTimers();
+    }
+    d3d8GpuFrameTimingEnabled = nextEnabled && Boolean(d3d8GpuTimerExtension);
+    return d3d8GpuFrameTimingEnabled;
   };
   globalThis.__cncSetD3D8SceneDrawHistoryLimit = (limit) => {
     const numericLimit = Number(limit);
@@ -12627,6 +13515,74 @@ function materializeD3D8DrawPayload(payload = {}) {
   };
 }
 
+function pollD3D8GpuFrameTimers() {
+  if (!gl || !d3d8GpuTimerExtension) {
+    return;
+  }
+  while (d3d8GpuFramePendingQueries.length > 0) {
+    const query = d3d8GpuFramePendingQueries[0];
+    if (!gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) {
+      break;
+    }
+    d3d8GpuFramePendingQueries.shift();
+    const disjoint = Boolean(gl.getParameter(d3d8GpuTimerExtension.GPU_DISJOINT_EXT));
+    if (disjoint) {
+      d3d8GpuFrameDisjointSamples += 1;
+    } else {
+      const elapsedNs = Number(gl.getQueryParameter(query, gl.QUERY_RESULT));
+      if (Number.isFinite(elapsedNs) && elapsedNs >= 0) {
+        const elapsedMs = elapsedNs / 1_000_000;
+        d3d8GpuFrameSamplesMs.push(elapsedMs);
+        d3d8GpuFrameSampleTotalMs += elapsedMs;
+      }
+    }
+    gl.deleteQuery(query);
+  }
+}
+
+function beginD3D8GpuFrameTimer() {
+  if (!gl || !d3d8GpuTimerExtension || !d3d8GpuFrameTimingEnabled || d3d8GpuFrameActiveQuery) {
+    return;
+  }
+  const query = gl.createQuery();
+  if (!query) {
+    return;
+  }
+  gl.beginQuery(d3d8GpuTimerExtension.TIME_ELAPSED_EXT, query);
+  d3d8GpuFrameActiveQuery = query;
+}
+
+function endD3D8GpuFrameTimer() {
+  if (!gl || !d3d8GpuTimerExtension || !d3d8GpuFrameActiveQuery) {
+    return;
+  }
+  gl.endQuery(d3d8GpuTimerExtension.TIME_ELAPSED_EXT);
+  d3d8GpuFramePendingQueries.push(d3d8GpuFrameActiveQuery);
+  d3d8GpuFrameActiveQuery = null;
+}
+
+function d3d8GpuFrameTimerSummary() {
+  pollD3D8GpuFrameTimers();
+  const sorted = [...d3d8GpuFrameSamplesMs].sort((left, right) => left - right);
+  const percentile = (amount) => sorted.length > 0
+    ? sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * amount))]
+    : null;
+  return {
+    supported: Boolean(d3d8GpuTimerExtension),
+    enabled: d3d8GpuFrameTimingEnabled,
+    sampleCount: sorted.length,
+    pendingCount: d3d8GpuFramePendingQueries.length,
+    disjointSamples: d3d8GpuFrameDisjointSamples,
+    totalMs: d3d8GpuFrameSampleTotalMs,
+    minMs: sorted[0] ?? null,
+    avgMs: sorted.length > 0 ? d3d8GpuFrameSampleTotalMs / sorted.length : null,
+    p95Ms: percentile(0.95),
+    p99Ms: percentile(0.99),
+    maxMs: sorted[sorted.length - 1] ?? null,
+    latestMs: d3d8GpuFrameSamplesMs[d3d8GpuFrameSamplesMs.length - 1] ?? null,
+  };
+}
+
 function presentD3D8Frame() {
   flushD3D8PendingDrawBatch("present");
   drainD3D8BufferRetirements();
@@ -13140,6 +14096,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       appliedTexture0Combiner, appliedStage1Combiner,
       appliedStage2Combiner, appliedStage3Combiner,
       implicitAlphaCutoutThreshold,
+      worldRevision,
+      viewRevision,
+      projectionRevision,
       depthStencilOnlyFastDerived,
       texture0Transform, texture1Transform,
       texture2Transform, texture3Transform,
@@ -13344,11 +14303,90 @@ function paintD3D8DrawIndexed(payload = {}) {
     const depthStencilNeedsClipPlanes = depthStencilOnlyDraw &&
       !vertexPretransformed &&
       d3d8ClipPlaneMask(renderState) !== 0;
+    const unlitTex2VertexDraw = !depthStencilOnlyDraw && !sm1VertexDraw &&
+      d3d8CanUseUnlitTex2Program({
+        renderState,
+        primitiveType: payload.primitiveType,
+        vertexShaderFvf,
+        vertexStride,
+        canSampleTexture0,
+        canSampleTexture1,
+        canSampleTexture2,
+        canSampleTexture3,
+        texture0Coordinates,
+        texture1Coordinates,
+        texture2Coordinates,
+        texture3Coordinates,
+        usePositionTransforms,
+        vertexPretransformed,
+      });
+    const texture0FlipY = Boolean(canSampleTexture0 && texture0Resource?.renderTargetYFlipped);
+    const texture1FlipY = Boolean(canSampleTexture1 && texture1Resource?.renderTargetYFlipped);
+    const texture2FlipY = Boolean(canSampleTexture2 && texture2Resource?.renderTargetYFlipped);
+    const texture3FlipY = Boolean(canSampleTexture3 && texture3Resource?.renderTargetYFlipped);
+    const staticSM1FragmentDraw = pixelShaderHandle !== 0 && !sm1VertexDraw &&
+      d3d8CanUseStaticSM1Fragment({
+        renderState,
+        unlitTex2VertexDraw,
+        canSampleTexture0,
+        canSampleTexture1,
+        canSampleTexture2,
+        canSampleTexture3,
+        texture0SemanticMode,
+        texture1SemanticMode,
+        texture2SemanticMode,
+        texture3SemanticMode,
+        texture0FlipY,
+        texture1FlipY,
+        texture2FlipY,
+        texture3FlipY,
+      });
+    const simpleFFFragmentKind = !depthStencilOnlyDraw && pixelShaderHandle === 0 &&
+        !sm1VertexDraw
+      ? d3d8SimpleFFFragmentKind({
+          renderState,
+          canSampleTexture0,
+          canSampleTexture1,
+          canSampleTexture2,
+          canSampleTexture3,
+        })
+      : null;
+    const fastSimpleFFVariant = d3d8FastSimpleFFVariant({
+      fragmentKind: simpleFFFragmentKind,
+      renderState,
+      primitiveType: payload.primitiveType,
+      implicitAlphaCutoutThreshold,
+      texture0SemanticMode,
+      texture0FlipY,
+    });
+    const litTex1VertexDraw = d3d8CanUseLitTex1Program({
+      renderState,
+      primitiveType: payload.primitiveType,
+      vertexShaderFvf,
+      vertexStride,
+      canSampleTexture0,
+      canSampleTexture1,
+      canSampleTexture2,
+      canSampleTexture3,
+      texture0Coordinates,
+      usePositionTransforms,
+      vertexPretransformed,
+      fastSimpleFFVariant,
+      world,
+    });
     let bridgeProgram = depthStencilOnlyDraw
       ? (depthStencilNeedsClipPlanes
         ? ensureD3D8DepthStencilProgram()
         : ensureD3D8DepthStencilNoClipProgram())
-      : ensureD3D8DrawProgram();
+      : simpleFFFragmentKind
+        ? ensureD3D8SimpleFFProgram(
+            simpleFFFragmentKind,
+            unlitTex2VertexDraw ? "unlit-tex2" : litTex1VertexDraw ? "lit-tex1" : "generic",
+            fastSimpleFFVariant ?? "dynamic",
+          )
+        : pixelShaderHandle === 0 && unlitTex2VertexDraw
+          ? ensureD3D8UnlitTex2Program()
+          : ensureD3D8DrawProgram();
     const particleProgramDraw = !depthStencilOnlyDraw && pixelShaderHandle === 0 &&
       !sm1VertexDraw && d3d8CanUseParticleProgram({
         renderState,
@@ -13367,6 +14405,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       bridgeProgram = ensureD3D8ParticleProgram();
       if (d3d8PerfCountersEnabled) d3d8PerfStats.particleProgramDraws += 1;
     }
+    let usedSM1Program = false;
     if (pixelShaderHandle !== 0 || sm1VertexDraw) {
       // Programmable SM1 draw: use the translated (vertexShader, pixelShader)
       // pair program. A missing pair (translation failed, vs-only draw)
@@ -13381,9 +14420,12 @@ function paintD3D8DrawIndexed(payload = {}) {
       const sm1Program = sm1ForceFallback ? null : ensureD3D8ShaderPairProgram(
         sm1VertexDraw ? vertexShaderFvf : 0,
         pixelShaderHandle,
+        unlitTex2VertexDraw ? "unlit-tex2" : null,
+        staticSM1FragmentDraw ? "static" : null,
       );
       if (sm1Program) {
         bridgeProgram = sm1Program;
+        usedSM1Program = true;
         if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1ShaderDraws += 1;
         if (sm1VertexDraw) {
           if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1TranslatedVsDraws += 1;
@@ -13446,6 +14488,27 @@ function paintD3D8DrawIndexed(payload = {}) {
         }
       }
     }
+    const usedUnlitTex2Program = bridgeProgram?.unlitTex2 === true;
+    const usedSimpleFFProgram = bridgeProgram?.simpleFF === true;
+    const usedFastSimpleFFProgram = bridgeProgram?.fastSimpleFF === true;
+    const usedStaticSM1Program = bridgeProgram?.staticSM1 === true;
+    if (usedSimpleFFProgram && d3d8PerfCountersEnabled) {
+      d3d8PerfStats.simpleFFProgramDraws += 1;
+    }
+    if (usedFastSimpleFFProgram && d3d8PerfCountersEnabled) {
+      d3d8PerfStats.fastSimpleFFProgramDraws += 1;
+    }
+    if (usedStaticSM1Program && d3d8PerfCountersEnabled) {
+      d3d8PerfStats.staticSM1ProgramDraws += 1;
+    }
+    if (usedUnlitTex2Program && d3d8PerfCountersEnabled) {
+      d3d8PerfStats.unlitTex2ProgramDraws += 1;
+      if (usedSM1Program) {
+        d3d8PerfStats.unlitTex2SM1Draws += 1;
+      } else {
+        d3d8PerfStats.unlitTex2FixedFunctionDraws += 1;
+      }
+    }
     if (depthStencilOnlyDraw) {
       if (d3d8PerfCountersEnabled) d3d8PerfStats.drawDepthStencilOnlyProgramDraws += 1;
       if (!depthStencilNeedsClipPlanes) {
@@ -13457,10 +14520,6 @@ function paintD3D8DrawIndexed(payload = {}) {
     const drawCanSampleTexture1 = depthStencilOnlyDraw ? false : canSampleTexture1;
     const drawCanSampleTexture2 = depthStencilOnlyDraw ? false : canSampleTexture2;
     const drawCanSampleTexture3 = depthStencilOnlyDraw ? false : canSampleTexture3;
-    const texture0FlipY = Boolean(canSampleTexture0 && texture0Resource?.renderTargetYFlipped);
-    const texture1FlipY = Boolean(canSampleTexture1 && texture1Resource?.renderTargetYFlipped);
-    const texture2FlipY = Boolean(canSampleTexture2 && texture2Resource?.renderTargetYFlipped);
-    const texture3FlipY = Boolean(canSampleTexture3 && texture3Resource?.renderTargetYFlipped);
     let textureUniformKey = "depth-stencil-only";
     if (!depthStencilOnlyDraw) {
       textureUniformKey = d3d8CachedDerived.textureUniformKey;
@@ -14176,6 +15235,12 @@ function paintD3D8DrawIndexed(payload = {}) {
         world,
         worldRevision,
       );
+      if (bridgeProgram.worldNormalMatrix) {
+        const worldNormalMatrix = d3d8WorldNormalMatrix(world);
+        if (worldNormalMatrix) {
+          d3d8CachedUniformMatrix3fv(bridgeProgram.worldNormalMatrix, worldNormalMatrix);
+        }
+      }
       const viewTransformUnchanged = d3d8TransformUniformMatchesOrUpload(
         bridgeProgram.view,
         view,
@@ -14878,6 +15943,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     viewportArraysEqual,
     updateD3D8TextureSummary,
     d3d8PerfSummary,
+    beginD3D8GpuFrameTimer,
+    endD3D8GpuFrameTimer,
+    pollD3D8GpuFrameTimers,
     d3d8SM1ShaderAuditSummary,
     setD3D8SM1ShaderAuditEnabled,
     d3d8SceneDrawHistory: () =>
