@@ -3257,18 +3257,11 @@ async function main() {
     let enemyAiActivity = null;
     let musicTransition = null;
     let postActiveRenderDisabled = false;
-    const activeGraphics = await inspectGraphics(page);
-    const expectedRenderer = String(
-      process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
-    expect(activeGraphics.contextLost === false && activeGraphics.contextLossBanner === false,
-      "fresh skirmish lost its WebGL context", activeGraphics);
-    if (expectedRenderer) {
-      expect(String(activeGraphics.renderer ?? "").toLowerCase().includes(expectedRenderer),
-        "fresh skirmish used an unexpected GPU renderer", { activeGraphics, expectedRenderer });
-    }
     let workerSupplyExitProbe = null;
     if (expectWorkerSupplyExitProbe) {
       workerSupplyExitProbe = await rpc(page, "realEngineProbeWorkerSupplyExit");
+      console.error("[skirmish-start] workerSupplyExitProbe:",
+        JSON.stringify(workerSupplyExitProbe?.result ?? workerSupplyExitProbe));
       expect(workerSupplyExitProbe?.ok === true
           && workerSupplyExitProbe?.result?.activeBeforePrepare === false
           && workerSupplyExitProbe?.result?.preparedForExit === true
@@ -3278,9 +3271,29 @@ async function main() {
           && workerSupplyExitProbe?.result?.activeAfterExit === false
           && workerSupplyExitProbe?.result?.idleAfterExit === true
           && workerSupplyExitProbe?.result?.suppressedReentries === 1
-          && workerSupplyExitProbe?.result?.workerSurvived === true,
-        "worker supply-brain exit did not complete one bounded master-state transition",
-        workerSupplyExitProbe);
+          && workerSupplyExitProbe?.result?.automaticSupplyPrepared === true
+          && workerSupplyExitProbe?.result?.automaticActiveBeforeHandoff === true
+          && workerSupplyExitProbe?.result?.automaticBusyBeforeHandoff === true
+          && workerSupplyExitProbe?.result?.automaticForceBeforeHandoff === true
+          && workerSupplyExitProbe?.result?.automaticActiveAfterHandoff === true
+          && workerSupplyExitProbe?.result?.automaticWantingAfterHandoff === true
+          && workerSupplyExitProbe?.result?.automaticForceClearedAfterHandoff === true
+          && workerSupplyExitProbe?.result?.automaticActiveAfterAssignment === true
+          && workerSupplyExitProbe?.result?.automaticDockingStateAfterAssignment === true
+          && workerSupplyExitProbe?.result?.automaticDockingAfterAssignment === true
+          && workerSupplyExitProbe?.result?.workerSurvived === true
+          && workerSupplyExitProbe?.result?.warehouseSurvived === true,
+        "worker supply-brain exit and automatic assignment did not preserve master/substate ownership",
+        workerSupplyExitProbe?.result ?? workerSupplyExitProbe);
+    }
+    const activeGraphics = await inspectGraphics(page);
+    const expectedRenderer = String(
+      process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
+    expect(activeGraphics.contextLost === false && activeGraphics.contextLossBanner === false,
+      "fresh skirmish lost its WebGL context", activeGraphics);
+    if (expectedRenderer) {
+      expect(String(activeGraphics.renderer ?? "").toLowerCase().includes(expectedRenderer),
+        "fresh skirmish used an unexpected GPU renderer", { activeGraphics, expectedRenderer });
     }
     let partitionDistanceBenchmark = null;
     if (partitionDistanceBenchmarkIterations > 0) {

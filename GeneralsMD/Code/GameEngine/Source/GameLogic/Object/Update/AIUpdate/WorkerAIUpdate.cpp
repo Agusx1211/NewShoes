@@ -1153,6 +1153,28 @@ Bool WorkerAIUpdate::prepareSupplyTruckExitForDiagnostics()
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
+Bool WorkerAIUpdate::prepareAutomaticSupplyForDiagnostics()
+{
+	if( isSupplyTruckBrainActive() )
+		return FALSE;
+
+	// A newly produced Worker starts with its supply brain busy while it follows
+	// the production exit path.  Recreate the end of that path without replacing
+	// any of the real Worker or SupplyTruck state transitions.
+	privateBusy( CMD_FROM_AI );
+	m_supplyTruckStateMachine->setState( ST_BUSY );
+	setForceWantingState( TRUE );
+	m_workerMachine->setState( AS_SUPPLY_TRUCK );
+	privateIdle( CMD_FROM_AI );
+
+	return isSupplyTruckBrainActive()
+				&& m_supplyTruckStateMachine->getCurrentStateID() == ST_BUSY
+				&& isForcedIntoWantingState()
+				&& getAIStateType() == AI_IDLE;
+}
+
+// ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 StateID WorkerAIUpdate::getSupplyTruckBrainStateForDiagnostics() const
 {
 	return m_supplyTruckStateMachine->getCurrentStateID();
