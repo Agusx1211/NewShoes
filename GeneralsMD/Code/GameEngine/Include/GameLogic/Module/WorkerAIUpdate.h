@@ -202,6 +202,7 @@ public:
 	void resetSupplyTruckBrain();
 	void resetDozerBrain();
 	Bool prepareSupplyTruckExitForDiagnostics();
+	Bool prepareAutomaticSupplyForDiagnostics();
 	StateID getSupplyTruckBrainStateForDiagnostics() const;
 	UnsignedInt getSupplyTruckExitReentryCountForDiagnostics() const
 	{
