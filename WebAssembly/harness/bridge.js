@@ -1003,10 +1003,56 @@ function threadedWorkerPerfCounters() {
   return null;
 }
 
+function threadedWorkerGpuTiming() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("gpuTiming");
+    return value === "1" || value === "true";
+  } catch (_error) {
+    return false;
+  }
+}
+
 function threadedWorkerAdjacentBatching() {
   try {
     const value = new URLSearchParams(globalThis.location?.search || "")
       .get("d3d8Batch");
+    if (value === "1" || value === "true" || value === "on") return true;
+    if (value === "0" || value === "false" || value === "off") return false;
+  } catch (_error) {
+    // The worker keeps the executor default when no override is available.
+  }
+  return null;
+}
+
+function threadedWorkerNativeRepeatedAppend() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("d3d8NativeRepeat");
+    if (value === "1" || value === "true" || value === "on") return true;
+    if (value === "0" || value === "false" || value === "off") return false;
+  } catch (_error) {
+    // The worker keeps the executor default when no override is available.
+  }
+  return null;
+}
+
+function threadedWorkerFrameCommandQueue() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("d3d8FrameQueue");
+    if (value === "1" || value === "true" || value === "on") return true;
+    if (value === "0" || value === "false" || value === "off") return false;
+  } catch (_error) {
+    // The worker keeps the executor default when no override is available.
+  }
+  return null;
+}
+
+function threadedWorkerLiteVertexMirrors() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("d3d8LiteVertexMirrors");
     if (value === "1" || value === "true" || value === "on") return true;
     if (value === "0" || value === "false" || value === "off") return false;
   } catch (_error) {
@@ -1469,7 +1515,11 @@ function createThreadedEngineController() {
         options: {
           diagLevel: threadedWorkerDiagLevel(),
           perfCounters: threadedWorkerPerfCounters(),
+          gpuTiming: threadedWorkerGpuTiming(),
           adjacentBatching: threadedWorkerAdjacentBatching(),
+          nativeRepeatedAppend: threadedWorkerNativeRepeatedAppend(),
+          frameCommandQueue: threadedWorkerFrameCommandQueue(),
+          liteVertexMirrors: threadedWorkerLiteVertexMirrors(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
           udpBridge: threadedUdpBridge,
@@ -1729,6 +1779,7 @@ function createThreadedEngineController() {
       clientFps: payload.clientFps,
       logicFps: payload.logicFps,
       catchup: payload.catchup,
+      maxClientFrames: payload.maxClientFrames,
     }, { timeoutMs: 60000 });
     return reply;
   }
@@ -2269,6 +2320,8 @@ async function threadedRpc(command, payload = {}) {
             ? payload.bufferProducers : undefined,
           drawProducers: typeof payload.drawProducers === "boolean"
             ? payload.drawProducers : undefined,
+          skippedProgramKind: typeof payload.skippedProgramKind === "string"
+            ? payload.skippedProgramKind : undefined,
         }, { timeoutMs: 120000 });
         return {
           ok: reply?.ok === true,
@@ -2277,6 +2330,7 @@ async function threadedRpc(command, payload = {}) {
           counters: reply?.counters ?? null,
           bufferProducers: reply?.bufferProducers ?? null,
           drawProducers: reply?.drawProducers ?? null,
+          skippedProgramKind: reply?.skippedProgramKind ?? null,
           previousSummary: reply?.previousSummary ?? null,
           summary: reply?.summary ?? null,
           threaded: true,

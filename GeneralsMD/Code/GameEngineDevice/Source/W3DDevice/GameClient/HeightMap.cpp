@@ -2062,6 +2062,9 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 
 	Bool doMultiPassWireFrame=FALSE;
 	CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.setup.after");
+#ifdef __EMSCRIPTEN__
+	W3DShaderManager::setWebTerrainShroudFused(false);
+#endif
 
 	if (((RTS3DScene *)rinfo.Camera.Get_User_Data())->getCustomPassMode() == SCENE_PASS_ALPHA_MASK ||
 		((SceneClass *)rinfo.Camera.Get_User_Data())->Get_Extra_Pass_Polygon_Mode() == SceneClass::EXTRA_PASS_CLEAR_LINE)
@@ -2291,7 +2294,11 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.terrainTracks.after");
 		}
 
-		if (m_shroud && rinfo.Additional_Pass_Count())
+		if (m_shroud && rinfo.Additional_Pass_Count()
+#ifdef __EMSCRIPTEN__
+			&& !W3DShaderManager::isWebTerrainShroudFused()
+#endif
+			)
 		{
 			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.shroudPass.before");
 			BaseHeightMapRenderObjClass *oldTerrainRenderObject=TheTerrainRenderObject;

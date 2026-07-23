@@ -6480,22 +6480,38 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_client_paci
 	return json.c_str();
 }
 
-// One client frame at display rate; TheGameLogic only advances when
-// run_logic != 0 (see cnc_port_allow_logic_frame gate in GameEngine::update).
-extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int run_logic)
+// One client update for the paced loop. Catch-up updates suppress rendering:
+// they are never presented, and drawing each one turns a transient missed
+// deadline into a self-sustaining GPU backlog on slower devices. The final
+// update in a worker-loop tick uses render_frame=true and remains visually
+// identical to the ordinary paced path.
+static const char *run_real_engine_frame_paced(int run_logic, bool render_frame)
 {
 	// Measure the real inter-tick duration first: W3DDisplay::draw advances
 	// the W3D animation clock by this amount (see
 	// cnc_port_client_frame_elapsed_ms) so animation wall-speed stays 1.0
-	// even when the client cannot sustain the target display rate.
-	cnc_port_note_paced_tick_time();
+	// even when the client cannot sustain the target display rate. Invisible
+	// catch-up updates must not consume this elapsed presentation interval.
+	if (render_frame) {
+		cnc_port_note_paced_tick_time();
+	}
+	const bool render_was_disabled = TheWritableGlobalData != NULL
+		&& TheWritableGlobalData->m_disableRender;
+	if (!render_frame && TheWritableGlobalData != NULL) {
+		TheWritableGlobalData->m_disableRender = TRUE;
+	}
 	g_paced_allow_logic_frame = run_logic != 0 ? 1 : 0;
 	run_real_engine_frames(1);
 	g_paced_allow_logic_frame = 1;
+	if (!render_frame && TheWritableGlobalData != NULL) {
+		TheWritableGlobalData->m_disableRender = render_was_disabled;
+	}
 
 	std::string json = "{";
 	json += "\"tick\":true";
 	json += ",\"paced\":true";
+	json += ",\"presented\":";
+	json += render_frame ? "true" : "false";
 	json += ",\"ranLogicRequested\":";
 	json += run_logic != 0 ? "true" : "false";
 	json += ",\"initReturned\":";
@@ -6565,6 +6581,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int
 	json += "}";
 	g_frame_json = json;
 	return g_frame_json.c_str();
+}
+
+// One visible client frame at display rate; TheGameLogic only advances when
+// run_logic != 0 (see cnc_port_allow_logic_frame gate in GameEngine::update).
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int run_logic)
+{
+	return run_real_engine_frame_paced(run_logic, true);
+}
+
+// Advance a missed logic tick without drawing an intermediate frame that the
+// compositor will never present. The worker always follows catch-up calls with
+// one ordinary paced frame for the current display tick.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced_catchup(int run_logic)
+{
+	return run_real_engine_frame_paced(run_logic, false);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_spawn_laser(
