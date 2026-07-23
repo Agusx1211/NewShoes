@@ -516,7 +516,7 @@ EM_JS(int, wasm_d3d8_browser_fbo_bind, (
 		height: height >>> 0,
 	}) | 0;
 });
-EM_JS(void, wasm_d3d8_browser_draw_indexed, (
+EM_JS(int, wasm_d3d8_browser_draw_indexed, (
 	int primitive_type,
 	unsigned int base_vertex_index,
 	unsigned int min_vertex_index,
@@ -543,6 +543,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int texture1_transform_ptr,
 	unsigned int texture2_transform_ptr,
 	unsigned int texture3_transform_ptr,
+	unsigned int texture4_transform_ptr,
 	unsigned int render_state_ptr,
 	unsigned int clip_planes_ptr,
 	unsigned int lights_ptr,
@@ -559,7 +560,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
 	if (typeof bridge !== "function" || typeof Module === "undefined") {
-		return;
+		return 0;
 	}
 	const producerTracking =
 		typeof globalThis !== "undefined" && globalThis.__cncD3D8DrawProducerTrackingEnabled === true;
@@ -593,6 +594,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		transforms.texture1 = texture1_transform_ptr >>> 0;
 		transforms.texture2 = texture2_transform_ptr >>> 0;
 		transforms.texture3 = texture3_transform_ptr >>> 0;
+		transforms.texture4 = texture4_transform_ptr >>> 0;
 		const payload = Module.__cncPortD3D8DrawIndexedPointerPayload ||
 			(Module.__cncPortD3D8DrawIndexedPointerPayload = {
 				transforms,
@@ -636,9 +638,46 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		payload.sortedDrawSubmitProfile = sorted_draw_profile_scope !== 0;
 		payload.treeShroud = Module.__cncPortD3D8TreeShroud || null;
 		bridge(payload);
-		return;
+		const canAppend = Module.cncPortD3D8CanAppendRepeatedDraws;
+		if (typeof canAppend !== "function") {
+			return 0;
+		}
+		return canAppend() ? 1 : 0;
 	}
+	return 0;
 	});
+EM_JS(unsigned int, wasm_d3d8_browser_append_repeated_draws, (
+	const unsigned int *vertex_buffer_ids,
+	unsigned int count
+), {
+	if (typeof Module === "undefined" || !Module.HEAPU32 ||
+			!vertex_buffer_ids || count === 0) {
+		return 0;
+	}
+	const start = vertex_buffer_ids >>> 2;
+	const ids = Module.HEAPU32.subarray(start, start + (count >>> 0));
+	const append = Module.cncPortD3D8AppendRepeatedDraws;
+	if (typeof append === "function" && (append(ids) >>> 0) === (count >>> 0)) {
+		return count >>> 0;
+	}
+
+	// The JS batch may have been invalidated unexpectedly between the first
+	// draw and this append. Replay through the ordinary bridge while the first
+	// draw's native state pointers are still valid, preserving ordering and
+	// correctness instead of dropping geometry.
+	const bridge = Module.cncPortD3D8DrawIndexed;
+	const payload = Module.__cncPortD3D8DrawIndexedPointerPayload;
+	if (typeof bridge !== "function" || !payload) {
+		return 0;
+	}
+	const originalVertexBufferId = payload.vertexBufferId >>> 0;
+	for (let index = 0; index < (count >>> 0); index++) {
+		payload.vertexBufferId = ids[index] >>> 0;
+		bridge(payload);
+	}
+	payload.vertexBufferId = originalVertexBufferId;
+	return count >>> 0;
+});
 #else
 void wasm_d3d8_browser_backbuffer_resize(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_reset_state() {}
@@ -662,12 +701,13 @@ int wasm_d3d8_browser_shader_tier() { return 0; }
 int wasm_d3d8_browser_shader_create(int, unsigned int, const unsigned int *, unsigned int,
 	const unsigned int *, unsigned int) { return 0; }
 void wasm_d3d8_browser_shader_delete(int, unsigned int) {}
-void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
+int wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int, int,
-	unsigned int, int, unsigned int, unsigned int, unsigned int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int, int,
+	unsigned int, int, unsigned int, unsigned int, unsigned int) { return 0; }
+unsigned int wasm_d3d8_browser_append_repeated_draws(const unsigned int *, unsigned int) { return 0; }
 #endif
 
 // Defined by the port runtime (wasm_port_entry.cpp): resizes the Win32-shim
@@ -687,6 +727,70 @@ bool g_next_spatial_ui_draw = false;
 int g_d3d8_module = 0;
 UINT g_next_browser_buffer_id = 1;
 UINT g_next_browser_texture_id = 1;
+
+struct NativeRepeatedDrawSignature
+{
+	D3DPRIMITIVETYPE primitive_type = D3DPT_FORCE_DWORD;
+	UINT base_vertex_index = 0;
+	UINT min_vertex_index = 0;
+	UINT first_index = 0;
+	UINT vertex_byte_offset = 0;
+	UINT vertex_byte_size = 0;
+	UINT vertex_count = 0;
+	UINT vertex_stride = 0;
+	DWORD vertex_shader_fvf = 0;
+	UINT index_buffer_id = 0;
+	UINT index_byte_offset = 0;
+	UINT index_byte_size = 0;
+	UINT index_count = 0;
+	UINT index_size = 0;
+	UINT derived_payload_revision = 0;
+	UINT world_transform_revision = 0;
+	UINT view_transform_revision = 0;
+	UINT projection_transform_revision = 0;
+	DWORD pixel_shader = 0;
+
+	bool operator==(const NativeRepeatedDrawSignature &other) const
+	{
+		return primitive_type == other.primitive_type &&
+			base_vertex_index == other.base_vertex_index &&
+			min_vertex_index == other.min_vertex_index &&
+			first_index == other.first_index &&
+			vertex_byte_offset == other.vertex_byte_offset &&
+			vertex_byte_size == other.vertex_byte_size &&
+			vertex_count == other.vertex_count &&
+			vertex_stride == other.vertex_stride &&
+			vertex_shader_fvf == other.vertex_shader_fvf &&
+			index_buffer_id == other.index_buffer_id &&
+			index_byte_offset == other.index_byte_offset &&
+			index_byte_size == other.index_byte_size &&
+			index_count == other.index_count &&
+			index_size == other.index_size &&
+			derived_payload_revision == other.derived_payload_revision &&
+			world_transform_revision == other.world_transform_revision &&
+			view_transform_revision == other.view_transform_revision &&
+			projection_transform_revision == other.projection_transform_revision &&
+			pixel_shader == other.pixel_shader;
+	}
+};
+
+bool g_native_repeated_draw_active = false;
+NativeRepeatedDrawSignature g_native_repeated_draw_signature;
+std::vector<UINT> g_native_repeated_draw_vertex_buffer_ids;
+
+void flush_native_repeated_draws()
+{
+	if (!g_native_repeated_draw_active) {
+		return;
+	}
+	if (!g_native_repeated_draw_vertex_buffer_ids.empty()) {
+		wasm_d3d8_browser_append_repeated_draws(
+			g_native_repeated_draw_vertex_buffer_ids.data(),
+			static_cast<unsigned int>(g_native_repeated_draw_vertex_buffer_ids.size()));
+		g_native_repeated_draw_vertex_buffer_ids.clear();
+	}
+	g_native_repeated_draw_active = false;
+}
 
 HMODULE d3d8_module_handle()
 {
@@ -1843,6 +1947,7 @@ constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE0 = 1u << 0;
 constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE1 = 1u << 1;
 constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE2 = 1u << 2;
 constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE3 = 1u << 3;
+constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE4 = 1u << 4;
 constexpr UINT BROWSER_BUFFER_VERTEX = 1u;
 constexpr UINT BROWSER_BUFFER_INDEX = 2u;
 constexpr UINT BROWSER_RENDER_STATE_SLOTS = 256u;
@@ -1972,6 +2077,7 @@ UINT primitive_vertex_count(D3DPRIMITIVETYPE primitive_type, UINT primitive_coun
 
 void browser_clear_target(DWORD flags, D3DCOLOR color, float z, DWORD stencil)
 {
+	flush_native_repeated_draws();
 	wasm_d3d8_browser_clear_target(
 		static_cast<unsigned int>(flags),
 		static_cast<unsigned int>(color),
@@ -1984,6 +2090,7 @@ void browser_buffer_create(UINT kind, UINT buffer_id, UINT byte_size, DWORD usag
 	if (buffer_id == 0 || byte_size == 0) {
 		return;
 	}
+	flush_native_repeated_draws();
 	++g_state.browser_buffer_create_calls;
 	g_state.last_browser_buffer_kind = kind;
 	g_state.last_browser_buffer_id = buffer_id;
@@ -2000,6 +2107,7 @@ void browser_buffer_update(UINT kind, UINT buffer_id, const BYTE *data, UINT byt
 	if (buffer_id == 0 || data == nullptr || byte_size == 0) {
 		return;
 	}
+	flush_native_repeated_draws();
 	++g_state.browser_buffer_update_calls;
 	g_state.last_browser_buffer_kind = kind;
 	g_state.last_browser_buffer_id = buffer_id;
@@ -2028,6 +2136,7 @@ void browser_buffer_release(UINT kind, UINT buffer_id)
 	if (buffer_id == 0) {
 		return;
 	}
+	flush_native_repeated_draws();
 	++g_state.browser_buffer_release_calls;
 	g_state.last_browser_buffer_kind = kind;
 	g_state.last_browser_buffer_id = buffer_id;
@@ -2044,6 +2153,7 @@ void browser_texture_create(UINT texture_id, UINT width, UINT height, UINT level
 	if (texture_id == 0 || width == 0 || height == 0 || levels == 0) {
 		return;
 	}
+	flush_native_repeated_draws();
 	++g_state.browser_texture_create_calls;
 	g_state.last_browser_texture_id = texture_id;
 	g_state.last_browser_texture_level = 0;
@@ -2072,6 +2182,7 @@ void browser_volume_texture_create(UINT texture_id, UINT width, UINT height, UIN
 	if (texture_id == 0 || width == 0 || height == 0 || depth == 0 || levels == 0) {
 		return;
 	}
+	flush_native_repeated_draws();
 	++g_state.browser_texture_create_calls;
 	g_state.last_browser_texture_id = texture_id;
 	g_state.last_browser_texture_level = 0;
@@ -2101,6 +2212,7 @@ void browser_texture_update(UINT texture_id, UINT level, D3DFORMAT format, const
 		dirty.pitch == 0 || dirty.row_bytes == 0) {
 		return;
 	}
+	flush_native_repeated_draws();
 	++g_state.browser_texture_update_calls;
 	g_state.last_browser_texture_id = texture_id;
 	g_state.last_browser_texture_level = level;
@@ -2146,6 +2258,7 @@ void browser_volume_texture_update(UINT texture_id, UINT level, D3DFORMAT format
 		dirty.depth == 0 || dirty.row_pitch == 0 || dirty.slice_pitch == 0 || dirty.row_bytes == 0) {
 		return;
 	}
+	flush_native_repeated_draws();
 	++g_state.browser_texture_update_calls;
 	g_state.last_browser_texture_id = texture_id;
 	g_state.last_browser_texture_level = level;
@@ -2191,6 +2304,7 @@ void browser_texture_release(UINT texture_id)
 	if (texture_id == 0) {
 		return;
 	}
+	flush_native_repeated_draws();
 	++g_state.browser_texture_release_calls;
 	g_state.last_browser_texture_id = texture_id;
 	g_state.last_browser_texture_level = 0;
@@ -2215,6 +2329,7 @@ void browser_texture_release(UINT texture_id)
 
 void browser_fbo_bind(UINT color_texture_id, UINT depth_texture_id, UINT width, UINT height)
 {
+	flush_native_repeated_draws();
 	++g_state.browser_fbo_bind_calls;
 	g_state.last_browser_fbo_color_texture_id = color_texture_id;
 	g_state.last_browser_fbo_depth_texture_id = depth_texture_id;
@@ -2228,6 +2343,7 @@ void browser_fbo_bind(UINT color_texture_id, UINT depth_texture_id, UINT width, 
 
 void browser_texture_bind(UINT stage, UINT texture_id)
 {
+	flush_native_repeated_draws();
 	++g_state.browser_texture_bind_calls;
 	g_state.last_browser_texture_bind_stage = stage;
 	g_state.last_browser_texture_bind_id = texture_id;
@@ -2252,7 +2368,7 @@ UINT allocate_browser_texture_id()
 	return id;
 }
 
-void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_index, UINT min_vertex_index,
+bool browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_index, UINT min_vertex_index,
 	UINT first_index, UINT vertex_buffer_id, UINT vertex_byte_offset,
 	UINT vertex_byte_size, UINT vertex_count, UINT vertex_stride, DWORD vertex_shader_fvf,
 	UINT index_buffer_id, UINT index_byte_offset,
@@ -2262,6 +2378,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform,
 	const D3DMATRIX *texture0_transform, const D3DMATRIX *texture1_transform,
 	const D3DMATRIX *texture2_transform, const D3DMATRIX *texture3_transform,
+	const D3DMATRIX *texture4_transform,
 	const WasmD3D8DrawRenderState *render_state, const float *clip_planes,
 	const WasmD3D8DrawLight *lights, const WasmD3D8DrawMaterial *material, UINT state_hash,
 	UINT derived_state_hash, UINT derived_state_hash_secondary, DWORD pixel_shader,
@@ -2273,7 +2390,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
 		index_count == 0 || vertex_stride == 0) {
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.complete");
-		return;
+		return false;
 	}
 #ifdef __EMSCRIPTEN__
 	const char *producer = cnc_port_current_sorted_draw_submit_profile_marker
@@ -2286,7 +2403,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 	const char *producer = nullptr;
 #endif
 	WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.before");
-	wasm_d3d8_browser_draw_indexed(
+	const bool can_append_repeated_draws = wasm_d3d8_browser_draw_indexed(
 		static_cast<int>(primitive_type),
 		base_vertex_index,
 		min_vertex_index,
@@ -2313,6 +2430,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture1_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture2_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture3_transform)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture4_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(render_state)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(clip_planes)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(lights)),
@@ -2325,8 +2443,9 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_inde
 		profile_sorted_draw_submit ? 1 : 0,
 		pixel_shader,
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(ps_constants)),
-		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(vs_constants)));
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(vs_constants))) != 0;
 	WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.browserDrawIndexed.after");
+	return !spatial_ui_draw && !profile_sorted_draw_submit && can_append_repeated_draws;
 }
 
 struct BrowserD3DResource
@@ -3606,6 +3725,7 @@ public:
 			cnc_port_win32_resize_application_window(
 				(int)m_parameters.BackBufferWidth, (int)m_parameters.BackBufferHeight);
 		}
+		flush_native_repeated_draws();
 		wasm_d3d8_browser_backbuffer_resize(m_parameters.BackBufferWidth, m_parameters.BackBufferHeight);
 		wasm_d3d8_browser_set_viewport(
 			m_viewport.X,
@@ -3741,6 +3861,7 @@ public:
 			cnc_port_win32_resize_application_window(
 				(int)m_parameters.BackBufferWidth, (int)m_parameters.BackBufferHeight);
 		}
+		flush_native_repeated_draws();
 		wasm_d3d8_browser_backbuffer_resize(m_parameters.BackBufferWidth, m_parameters.BackBufferHeight);
 		wasm_d3d8_browser_set_viewport(
 			m_viewport.X,
@@ -3757,6 +3878,7 @@ public:
 	HRESULT Present(const RECT *, const RECT *, HWND, const void *) override
 	{
 		++g_state.present_calls;
+		flush_native_repeated_draws();
 		if (g_present_bridge_enabled) {
 			++g_state.present_bridge_calls;
 			if (wasm_d3d8_browser_present(
@@ -4481,6 +4603,7 @@ public:
 		if (token_count == 0) {
 			return D3DERR_INVALIDCALL;
 		}
+		flush_native_repeated_draws();
 		const DWORD new_handle = m_next_vertex_shader_handle;
 		if (!wasm_d3d8_browser_shader_create(0, new_handle,
 				reinterpret_cast<const unsigned int *>(function), token_count,
@@ -4510,6 +4633,7 @@ public:
 	HRESULT DeleteVertexShader(DWORD handle) override
 	{
 		if ((handle & 0x80000000u) != 0 && m_vertex_shader_handles.erase(handle) > 0) {
+			flush_native_repeated_draws();
 			wasm_d3d8_browser_shader_delete(0, handle);
 			if (m_vertex_shader == handle) {
 				m_vertex_shader = 0;
@@ -4556,6 +4680,7 @@ public:
 		if (token_count == 0) {
 			return D3DERR_INVALIDCALL;
 		}
+		flush_native_repeated_draws();
 		const DWORD new_handle = m_next_pixel_shader_handle;
 		if (!wasm_d3d8_browser_shader_create(1, new_handle,
 				reinterpret_cast<const unsigned int *>(function), token_count, nullptr, 0)) {
@@ -4578,6 +4703,7 @@ public:
 	HRESULT DeletePixelShader(DWORD handle) override
 	{
 		if (m_pixel_shader_handles.erase(handle) > 0) {
+			flush_native_repeated_draws();
 			wasm_d3d8_browser_shader_delete(1, handle);
 			if (m_pixel_shader == handle) {
 				m_pixel_shader = 0;
@@ -4860,6 +4986,7 @@ private:
 			identity_matrix(g_state.last_draw_texture1_transform);
 			identity_matrix(g_state.last_draw_texture2_transform);
 			identity_matrix(g_state.last_draw_texture3_transform);
+			identity_matrix(g_state.last_draw_texture4_transform);
 			g_state.last_draw_render_state = {};
 			g_state.last_draw_material = draw_material_from_d3d(m_material);
 		}
@@ -5203,6 +5330,50 @@ private:
 		const UINT index_offset = first_index * index_size;
 		const UINT requested_index_bytes = index_count * index_size;
 		const UINT index_bytes = checked_range_size(indices->length(), index_offset, requested_index_bytes);
+
+		if (vertex_bytes == 0 || index_bytes == 0) {
+			WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.complete");
+			return;
+		}
+
+		const NativeRepeatedDrawSignature native_repeat_signature = {
+			primitive_type,
+			base_vertex_index,
+			min_vertex_index,
+			first_index,
+			vertex_offset,
+			vertex_bytes,
+			uploaded_vertex_count,
+			m_stream_source_stride,
+			m_vertex_shader,
+			indices->browser_buffer_id(),
+			index_offset,
+			index_bytes,
+			index_count,
+			index_size,
+			m_draw_derived_payload_revision,
+			transform_revision(D3DTS_WORLD),
+			transform_revision(D3DTS_VIEW),
+			transform_revision(D3DTS_PROJECTION),
+			m_pixel_shader,
+		};
+		if (g_native_repeated_draw_active) {
+			constexpr size_t MAX_NATIVE_REPEATED_DRAWS = 1024;
+			if (!profile_sorted_draw_submit && !g_next_spatial_ui_draw &&
+					g_native_repeated_draw_signature == native_repeat_signature &&
+					g_native_repeated_draw_vertex_buffer_ids.size() < MAX_NATIVE_REPEATED_DRAWS) {
+				g_native_repeated_draw_vertex_buffer_ids.push_back(stream->browser_buffer_id());
+				WASM_D3D8_NOTE_SORTED_DRAW_STEP(
+					profile_sorted_draw_submit,"WasmD3D8.drawBound.nativeRepeat");
+				WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.complete");
+				return;
+			}
+			// Flush while g_state still contains the first draw's pointer-backed
+			// payload. The JS append bridge can therefore replay normally if its
+			// pending batch was invalidated unexpectedly.
+			flush_native_repeated_draws();
+		}
+
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.capture.before");
 		capture_draw_transform(D3DTS_WORLD, DRAW_TRANSFORM_WORLD, g_state.last_draw_world_transform);
 		capture_draw_transform(D3DTS_VIEW, DRAW_TRANSFORM_VIEW, g_state.last_draw_view_transform);
@@ -5234,13 +5405,8 @@ private:
 				g_state.draw_indexed_primitive_calls;
 		}
 
-		if (vertex_bytes == 0 || index_bytes == 0) {
-			WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.complete");
-			return;
-		}
-
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.bridge.before");
-		browser_draw_indexed(
+		const bool can_append_repeated_draws = browser_draw_indexed(
 			primitive_type,
 			base_vertex_index,
 			min_vertex_index,
@@ -5267,6 +5433,7 @@ private:
 			&g_state.last_draw_texture1_transform,
 			&g_state.last_draw_texture2_transform,
 			&g_state.last_draw_texture3_transform,
+			&g_state.last_draw_texture4_transform,
 			&g_state.last_draw_render_state,
 			&g_state.last_draw_clip_planes[0][0],
 			g_state.last_draw_lights,
@@ -5277,6 +5444,11 @@ private:
 			m_pixel_shader,
 			m_pixel_shader != 0 ? m_ps_constants : nullptr,
 			(m_vertex_shader & 0x80000000u) != 0 ? m_vs_constants : nullptr);
+		if (can_append_repeated_draws) {
+			g_native_repeated_draw_signature = native_repeat_signature;
+			g_native_repeated_draw_vertex_buffer_ids.clear();
+			g_native_repeated_draw_active = true;
+		}
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.bridge.after");
 		WASM_D3D8_NOTE_SORTED_DRAW_STEP(profile_sorted_draw_submit,"WasmD3D8.drawBound.complete");
 	}
@@ -5329,6 +5501,7 @@ private:
 		D3DMATRIX texture1_transform = {};
 		D3DMATRIX texture2_transform = {};
 		D3DMATRIX texture3_transform = {};
+		D3DMATRIX texture4_transform = {};
 		WasmD3D8DrawRenderState render_state = {};
 		float clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4] = {};
 		WasmD3D8DrawMaterial material = {};
@@ -5348,7 +5521,8 @@ private:
 	static bool is_cached_draw_texture_transform(D3DTRANSFORMSTATETYPE state)
 	{
 		return state == D3DTS_TEXTURE0 || state == D3DTS_TEXTURE1 ||
-			state == D3DTS_TEXTURE2 || state == D3DTS_TEXTURE3;
+			state == D3DTS_TEXTURE2 || state == D3DTS_TEXTURE3 ||
+			state == D3DTS_TEXTURE4;
 	}
 
 	static UINT hash_float(float value)
@@ -5379,6 +5553,7 @@ private:
 		const D3DMATRIX &texture1_transform,
 		const D3DMATRIX &texture2_transform,
 		const D3DMATRIX &texture3_transform,
+		const D3DMATRIX &texture4_transform,
 		const WasmD3D8DrawRenderState &render_state,
 		const float clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4],
 		const WasmD3D8DrawMaterial &material,
@@ -5388,6 +5563,7 @@ private:
 		hash_matrix(hash, texture1_transform);
 		hash_matrix(hash, texture2_transform);
 		hash_matrix(hash, texture3_transform);
+		hash_matrix(hash, texture4_transform);
 		#define HASH_RS_FIELD(field) hash = fnv1a_step(hash, static_cast<UINT>(render_state.field));
 		HASH_RS_FIELD(cull_mode); HASH_RS_FIELD(z_enable); HASH_RS_FIELD(z_write_enable);
 		HASH_RS_FIELD(z_func); HASH_RS_FIELD(alpha_blend_enable); HASH_RS_FIELD(src_blend);
@@ -5472,6 +5648,7 @@ private:
 			g_state.last_draw_texture1_transform = m_cached_draw_derived_payload.texture1_transform;
 			g_state.last_draw_texture2_transform = m_cached_draw_derived_payload.texture2_transform;
 			g_state.last_draw_texture3_transform = m_cached_draw_derived_payload.texture3_transform;
+			g_state.last_draw_texture4_transform = m_cached_draw_derived_payload.texture4_transform;
 			g_state.last_draw_render_state = m_cached_draw_derived_payload.render_state;
 			std::memcpy(g_state.last_draw_clip_planes, m_cached_draw_derived_payload.clip_planes,
 				sizeof(g_state.last_draw_clip_planes));
@@ -5491,6 +5668,8 @@ private:
 			g_state.last_draw_texture2_transform);
 		capture_draw_texture_transform(D3DTS_TEXTURE3, DRAW_TEXTURE_TRANSFORM_STAGE3,
 			g_state.last_draw_texture3_transform);
+		capture_draw_texture_transform(D3DTS_TEXTURE4, DRAW_TEXTURE_TRANSFORM_STAGE4,
+			g_state.last_draw_texture4_transform);
 		capture_draw_render_state();
 		capture_draw_material();
 
@@ -5501,6 +5680,7 @@ private:
 		m_cached_draw_derived_payload.texture1_transform = g_state.last_draw_texture1_transform;
 		m_cached_draw_derived_payload.texture2_transform = g_state.last_draw_texture2_transform;
 		m_cached_draw_derived_payload.texture3_transform = g_state.last_draw_texture3_transform;
+		m_cached_draw_derived_payload.texture4_transform = g_state.last_draw_texture4_transform;
 		m_cached_draw_derived_payload.render_state = g_state.last_draw_render_state;
 		std::memcpy(m_cached_draw_derived_payload.clip_planes, g_state.last_draw_clip_planes,
 			sizeof(m_cached_draw_derived_payload.clip_planes));
@@ -5515,6 +5695,7 @@ private:
 			m_cached_draw_derived_payload.texture1_transform,
 			m_cached_draw_derived_payload.texture2_transform,
 			m_cached_draw_derived_payload.texture3_transform,
+			m_cached_draw_derived_payload.texture4_transform,
 			m_cached_draw_derived_payload.render_state,
 			m_cached_draw_derived_payload.clip_planes,
 			m_cached_draw_derived_payload.material,
@@ -5525,6 +5706,7 @@ private:
 			m_cached_draw_derived_payload.texture1_transform,
 			m_cached_draw_derived_payload.texture2_transform,
 			m_cached_draw_derived_payload.texture3_transform,
+			m_cached_draw_derived_payload.texture4_transform,
 			m_cached_draw_derived_payload.render_state,
 			m_cached_draw_derived_payload.clip_planes,
 			m_cached_draw_derived_payload.material,
@@ -5583,6 +5765,7 @@ private:
 		UINT target_width = 0;
 		UINT target_height = 0;
 		get_render_target_size(target_width, target_height);
+		flush_native_repeated_draws();
 		wasm_d3d8_browser_set_viewport(
 			m_viewport.X,
 			m_viewport.Y,
@@ -5894,6 +6077,7 @@ private:
 
 extern "C" void wasm_d3d8_reset_state()
 {
+	flush_native_repeated_draws();
 	std::memset(&g_state, 0, sizeof(g_state));
 	g_present_bridge_enabled = false;
 	g_next_spatial_ui_draw = false;

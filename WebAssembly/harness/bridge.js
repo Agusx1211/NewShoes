@@ -1025,6 +1025,42 @@ function threadedWorkerAdjacentBatching() {
   return null;
 }
 
+function threadedWorkerNativeRepeatedAppend() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("d3d8NativeRepeat");
+    if (value === "1" || value === "true" || value === "on") return true;
+    if (value === "0" || value === "false" || value === "off") return false;
+  } catch (_error) {
+    // The worker keeps the executor default when no override is available.
+  }
+  return null;
+}
+
+function threadedWorkerFrameCommandQueue() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("d3d8FrameQueue");
+    if (value === "1" || value === "true" || value === "on") return true;
+    if (value === "0" || value === "false" || value === "off") return false;
+  } catch (_error) {
+    // The worker keeps the executor default when no override is available.
+  }
+  return null;
+}
+
+function threadedWorkerLiteVertexMirrors() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search || "")
+      .get("d3d8LiteVertexMirrors");
+    if (value === "1" || value === "true" || value === "on") return true;
+    if (value === "0" || value === "false" || value === "off") return false;
+  } catch (_error) {
+    // The worker keeps the executor default when no override is available.
+  }
+  return null;
+}
+
 function threadedWorkerShaderTier() {
   // The executor samples the shader tier once at device create via
   // d3d8ShaderTierQuery (URL ?shaderTier= param, then localStorage
@@ -1481,6 +1517,9 @@ function createThreadedEngineController() {
           perfCounters: threadedWorkerPerfCounters(),
           gpuTiming: threadedWorkerGpuTiming(),
           adjacentBatching: threadedWorkerAdjacentBatching(),
+          nativeRepeatedAppend: threadedWorkerNativeRepeatedAppend(),
+          frameCommandQueue: threadedWorkerFrameCommandQueue(),
+          liteVertexMirrors: threadedWorkerLiteVertexMirrors(),
           preserveDrawingBuffer: contextPreserveDrawingBuffer,
           shaderTier: threadedWorkerShaderTier(),
           udpBridge: threadedUdpBridge,
@@ -2281,6 +2320,8 @@ async function threadedRpc(command, payload = {}) {
             ? payload.bufferProducers : undefined,
           drawProducers: typeof payload.drawProducers === "boolean"
             ? payload.drawProducers : undefined,
+          skippedProgramKind: typeof payload.skippedProgramKind === "string"
+            ? payload.skippedProgramKind : undefined,
         }, { timeoutMs: 120000 });
         return {
           ok: reply?.ok === true,
@@ -2289,6 +2330,7 @@ async function threadedRpc(command, payload = {}) {
           counters: reply?.counters ?? null,
           bufferProducers: reply?.bufferProducers ?? null,
           drawProducers: reply?.drawProducers ?? null,
+          skippedProgramKind: reply?.skippedProgramKind ?? null,
           previousSummary: reply?.previousSummary ?? null,
           summary: reply?.summary ?? null,
           threaded: true,

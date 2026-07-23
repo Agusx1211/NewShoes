@@ -114,6 +114,9 @@ Int W3DShaderManager::m_currentShaderPass;
 ChipsetType W3DShaderManager::m_currentChipset;
 GraphicsVenderID W3DShaderManager::m_currentVendor;
 __int64 W3DShaderManager::m_driverVersion;
+#ifdef __EMSCRIPTEN__
+Bool W3DShaderManager::m_webTerrainShroudFused = false;
+#endif
 
 Bool W3DShaderManager::m_renderingToTexture = false;
 IDirect3DSurface8 *W3DShaderManager::m_oldRenderSurface=NULL;	///<previous render target
@@ -2134,6 +2137,20 @@ Int TerrainShaderPixelShader::set(Int pass)
 		DX8Wrapper::_Get_D3D_Device8()->SetPixelShader(m_dwBasePixelShader);
 	}
 
+#ifdef __EMSCRIPTEN__
+	// WebGL2 has enough texture units to fold the fog-of-war multiplication
+	// into the full four-texture terrain pixel shader.  Limit the contract to
+	// that exact shader: the reduced terrain variants do not sample every
+	// source stage and must retain the original separate shroud pass.
+	//
+	// The browser bridge recognizes this stage-4 contract and derives its UV
+	// from the already-interpolated stage-2 projection, avoiding both another
+	// terrain draw and another varying on mobile tile GPUs.
+	W3DShaderManager::setWebTerrainShroudFused(
+		W3DShaderManager::getCurrentShader() == W3DShaderManager::ST_TERRAIN_BASE_NOISE12 &&
+		W3DShaderManager::setShroudTex(4) != FALSE);
+#endif
+
 	return TRUE;
 }
 
@@ -2159,6 +2176,13 @@ void TerrainShaderPixelShader::reset(void)
 	DX8Wrapper::Set_DX8_Texture_Stage_State( 3, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
 	DX8Wrapper::Set_DX8_Texture_Stage_State( 3, D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_PASSTHRU|3);
 
+#ifdef __EMSCRIPTEN__
+	DX8Wrapper::Set_Texture(4,NULL);
+	DX8Wrapper::Set_DX8_Texture_Stage_State( 4, D3DTSS_COLOROP, D3DTOP_DISABLE);
+	DX8Wrapper::Set_DX8_Texture_Stage_State( 4, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+	DX8Wrapper::Set_DX8_Texture_Stage_State( 4, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
+	DX8Wrapper::Set_DX8_Texture_Stage_State( 4, D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_PASSTHRU|4);
+#endif
 
 	DX8Wrapper::Invalidate_Cached_Render_States();
 }

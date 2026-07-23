@@ -187,6 +187,15 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   if (typeof opts.adjacentBatching === "boolean") {
     globalThis.__cncSetD3D8AdjacentBatching?.(opts.adjacentBatching);
   }
+  if (typeof opts.nativeRepeatedAppend === "boolean") {
+    globalThis.__cncSetD3D8NativeRepeatedAppend?.(opts.nativeRepeatedAppend);
+  }
+  if (typeof opts.frameCommandQueue === "boolean") {
+    globalThis.__cncSetD3D8FrameCommandQueue?.(opts.frameCommandQueue);
+  }
+  if (typeof opts.liteVertexMirrors === "boolean") {
+    globalThis.__cncSetD3D8LiteVertexMirrors?.(opts.liteVertexMirrors);
+  }
 
   // ---- GDI text hooks (synchronous returns -> must live in this realm) ------
   const gdiHooks = createGdiHooks();
@@ -1433,6 +1442,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
           const drawProducers = typeof msg.drawProducers === "boolean"
             ? globalThis.__cncSetD3D8DrawProducerTracking?.(msg.drawProducers)
             : globalThis.__cncGetD3D8DrawProducerTracking?.();
+          const skippedProgramKind = typeof msg.skippedProgramKind === "string"
+            ? globalThis.__cncSetD3D8SkippedProgramKind?.(msg.skippedProgramKind)
+            : globalThis.__cncGetD3D8SkippedProgramKind?.();
           respond({
             cmd: "d3d8PerfConfigureResult",
             id: msg.id,
@@ -1441,6 +1453,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
             counters,
             bufferProducers,
             drawProducers,
+            skippedProgramKind,
             previousSummary,
             summary: globalThis.__cncD3D8PerfSummary?.() ?? null,
           });

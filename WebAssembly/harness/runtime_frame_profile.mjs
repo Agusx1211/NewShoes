@@ -100,6 +100,81 @@ function parseOptionalBoolean(name) {
   throw new Error(`Invalid ${name}: ${value}`);
 }
 
+async function startWorkerCpuProfile(browser, samplingIntervalUs) {
+  if (!browser) {
+    throw new Error("CPU profiling requires a Chromium browser session");
+  }
+  const rootSession = await browser.newBrowserCDPSession();
+  const { targetInfos = [] } = await rootSession.send("Target.getTargets");
+  const workerTarget = targetInfos.find((target) =>
+    target.type === "worker" && /engine[_-]realm/i.test(target.url))
+    ?? targetInfos.find((target) => target.type === "worker");
+  if (!workerTarget) {
+    await rootSession.detach();
+    throw new Error(`CPU profiling could not find the engine worker: ${JSON.stringify(
+      targetInfos.map(({ type, url }) => ({ type, url })),
+    )}`);
+  }
+
+  // Playwright exposes CDP sessions for pages/frames, but the threaded engine
+  // runs in a dedicated Worker. Attach through the browser Target domain and
+  // relay nested-protocol messages to profile the realm that owns Wasm/WebGL.
+  const { sessionId } = await rootSession.send("Target.attachToTarget", {
+    targetId: workerTarget.targetId,
+    flatten: false,
+  });
+  let nextCommandId = 0;
+  const pending = new Map();
+  const onMessage = ({ sessionId: incomingSessionId, message }) => {
+    if (incomingSessionId !== sessionId) {
+      return;
+    }
+    const response = JSON.parse(message);
+    const waiter = pending.get(response.id);
+    if (!waiter) {
+      return;
+    }
+    pending.delete(response.id);
+    if (response.error) {
+      waiter.reject(new Error(`Worker CDP command failed: ${JSON.stringify(response.error)}`));
+    } else {
+      waiter.resolve(response.result);
+    }
+  };
+  rootSession.on("Target.receivedMessageFromTarget", onMessage);
+  const send = async (method, params = {}) => {
+    const id = ++nextCommandId;
+    const response = new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+    await rootSession.send("Target.sendMessageToTarget", {
+      sessionId,
+      message: JSON.stringify({ id, method, params }),
+    });
+    return response;
+  };
+
+  await send("Profiler.enable");
+  await send("Profiler.setSamplingInterval", { interval: samplingIntervalUs });
+  await send("Profiler.start");
+  const startedAt = performance.now();
+  return {
+    targetUrl: workerTarget.url,
+    samplingIntervalUs,
+    async stop() {
+      const result = await send("Profiler.stop");
+      const elapsedMs = performance.now() - startedAt;
+      rootSession.off("Target.receivedMessageFromTarget", onMessage);
+      await rootSession.send("Target.detachFromTarget", { sessionId }).catch(() => {});
+      await rootSession.detach().catch(() => {});
+      return {
+        profile: result.profile,
+        elapsedMs,
+        targetUrl: workerTarget.url,
+        samplingIntervalUs,
+      };
+    },
+  };
+}
+
 async function runWithDeadline(label, timeoutMs, task) {
   let timeoutId = null;
   const timeout = new Promise((resolve) => {
@@ -280,6 +355,9 @@ function compactBrowserPerfSample(browserPerf) {
     drawMatrixAllocatedCopies: perFrame.drawMatrixAllocatedCopies,
     drawPayloadCalls: perFrame.drawPayloadCalls,
     drawPayloadReused: perFrame.drawPayloadReused,
+    drawMultiWorldBatches: perFrame.drawMultiWorldBatches,
+    drawMultiWorldCopies: perFrame.drawMultiWorldCopies,
+    drawMultiWorldFallbacks: perFrame.drawMultiWorldFallbacks,
     drawClipPlanePayloadCopies: perFrame.drawClipPlanePayloadCopies,
     drawClipPlanePayloadSkips: perFrame.drawClipPlanePayloadSkips,
     drawMaterialPayloadCopies: perFrame.drawMaterialPayloadCopies,
@@ -1114,6 +1192,32 @@ const browserPerfFields = [
   "drawBatchSavedDrawElements",
   "drawBatchMergedIndices",
   "drawBatchMaxRunLength",
+  "drawNativeRepeatedAppendBatches",
+  "drawNativeRepeatedAppends",
+  "drawNativeRepeatedAppendFailures",
+  "frameCommandSegments",
+  "frameCommandQueuedDraws",
+  "frameCommandReplayedDraws",
+  "frameCommandImmediateDraws",
+  "frameCommandMaxSegmentDraws",
+  "frameCommandDynamicSnapshots",
+  "frameCommandDynamicSnapshotBytes",
+  "frameCommandArenaUploads",
+  "frameCommandArenaUploadBytes",
+  "frameCommandCaptureMs",
+  "frameCommandArenaUploadMs",
+  "frameCommandReplayMs",
+  "drawRepeatedGeometryBatches",
+  "drawRepeatedGeometryCopies",
+  "drawRepeatedGeometryCopyBytes",
+  "drawRepeatedGeometryFallbacks",
+  "drawMultiWorldBatches",
+  "drawMultiWorldCopies",
+  "drawMultiWorldCopyBytes",
+  "drawMultiWorldFallbacks",
+  "drawMultiWorldSnapshots",
+  "drawMultiWorldQueueCandidates",
+  "drawLitTex1ProgramDraws",
   "drawDepthStencilOnlyProgramDraws",
   "drawDepthStencilNoDiscardDraws",
   "drawDepthStencilOnlyFastDerivedDraws",
@@ -1123,6 +1227,7 @@ const browserPerfFields = [
   "simpleFFProgramDraws",
   "fastSimpleFFProgramDraws",
   "staticSM1ProgramDraws",
+  "terrainShroudFusedDraws",
   "gpuFrameTimerSampleCount",
   "gpuFrameTimerTotalMs",
   "gpuFrameTimerDisjointSamples",
@@ -1463,6 +1568,54 @@ function browserPerfDelta(before, after, framesAdvanced) {
           drawBatchFlushes: Number(delta.drawBatchFlushes ?? 0) / framesAdvanced,
           drawBatchSavedDrawElements: Number(delta.drawBatchSavedDrawElements ?? 0) / framesAdvanced,
           drawBatchMergedIndices: Number(delta.drawBatchMergedIndices ?? 0) / framesAdvanced,
+          drawRepeatedGeometryBatches:
+            Number(delta.drawRepeatedGeometryBatches ?? 0) / framesAdvanced,
+          drawRepeatedGeometryCopies:
+            Number(delta.drawRepeatedGeometryCopies ?? 0) / framesAdvanced,
+          drawRepeatedGeometryCopyBytes:
+            Number(delta.drawRepeatedGeometryCopyBytes ?? 0) / framesAdvanced,
+          drawRepeatedGeometryFallbacks:
+            Number(delta.drawRepeatedGeometryFallbacks ?? 0) / framesAdvanced,
+          drawMultiWorldBatches: Number(delta.drawMultiWorldBatches ?? 0) / framesAdvanced,
+          drawMultiWorldCopies: Number(delta.drawMultiWorldCopies ?? 0) / framesAdvanced,
+          drawMultiWorldCopyBytes:
+            Number(delta.drawMultiWorldCopyBytes ?? 0) / framesAdvanced,
+          drawMultiWorldFallbacks:
+            Number(delta.drawMultiWorldFallbacks ?? 0) / framesAdvanced,
+          drawMultiWorldSnapshots:
+            Number(delta.drawMultiWorldSnapshots ?? 0) / framesAdvanced,
+          drawMultiWorldQueueCandidates:
+            Number(delta.drawMultiWorldQueueCandidates ?? 0) / framesAdvanced,
+          drawLitTex1ProgramDraws:
+            Number(delta.drawLitTex1ProgramDraws ?? 0) / framesAdvanced,
+          drawNativeRepeatedAppendBatches:
+            Number(delta.drawNativeRepeatedAppendBatches ?? 0) / framesAdvanced,
+          drawNativeRepeatedAppends:
+            Number(delta.drawNativeRepeatedAppends ?? 0) / framesAdvanced,
+          drawNativeRepeatedAppendFailures:
+            Number(delta.drawNativeRepeatedAppendFailures ?? 0) / framesAdvanced,
+          frameCommandSegments:
+            Number(delta.frameCommandSegments ?? 0) / framesAdvanced,
+          frameCommandQueuedDraws:
+            Number(delta.frameCommandQueuedDraws ?? 0) / framesAdvanced,
+          frameCommandReplayedDraws:
+            Number(delta.frameCommandReplayedDraws ?? 0) / framesAdvanced,
+          frameCommandImmediateDraws:
+            Number(delta.frameCommandImmediateDraws ?? 0) / framesAdvanced,
+          frameCommandDynamicSnapshots:
+            Number(delta.frameCommandDynamicSnapshots ?? 0) / framesAdvanced,
+          frameCommandDynamicSnapshotBytes:
+            Number(delta.frameCommandDynamicSnapshotBytes ?? 0) / framesAdvanced,
+          frameCommandArenaUploads:
+            Number(delta.frameCommandArenaUploads ?? 0) / framesAdvanced,
+          frameCommandArenaUploadBytes:
+            Number(delta.frameCommandArenaUploadBytes ?? 0) / framesAdvanced,
+          frameCommandCaptureMs:
+            Number(delta.frameCommandCaptureMs ?? 0) / framesAdvanced,
+          frameCommandArenaUploadMs:
+            Number(delta.frameCommandArenaUploadMs ?? 0) / framesAdvanced,
+          frameCommandReplayMs:
+            Number(delta.frameCommandReplayMs ?? 0) / framesAdvanced,
           drawDepthStencilOnlyProgramDraws:
             Number(delta.drawDepthStencilOnlyProgramDraws ?? 0) / framesAdvanced,
           drawDepthStencilOnlyFastDerivedDraws:
@@ -1475,6 +1628,8 @@ function browserPerfDelta(before, after, framesAdvanced) {
           fastSimpleFFProgramDraws:
             Number(delta.fastSimpleFFProgramDraws ?? 0) / framesAdvanced,
           staticSM1ProgramDraws: Number(delta.staticSM1ProgramDraws ?? 0) / framesAdvanced,
+          terrainShroudFusedDraws:
+            Number(delta.terrainShroudFusedDraws ?? 0) / framesAdvanced,
           gpuFrameTimerSamples: Number(delta.gpuFrameTimerSampleCount ?? 0),
           gpuFrameMs: Number(delta.gpuFrameTimerSampleCount ?? 0) > 0
             ? Number(delta.gpuFrameTimerTotalMs ?? 0) /
@@ -1996,9 +2151,24 @@ const skirmishPlayerDiagnosticsSetting = parseOptionalBoolean("PERF_PROFILE_SKIR
 const skirmishPlayerDiagnostics = profileScene === "skirmish" &&
   (skirmishPlayerDiagnosticsSetting ?? true);
 const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
+const d3d8NativeRepeatedAppend =
+  parseOptionalBoolean("PERF_PROFILE_D3D8_NATIVE_REPEAT") !== false;
+const d3d8FrameCommandQueue =
+  parseOptionalBoolean("PERF_PROFILE_D3D8_FRAME_QUEUE") !== false;
 const d3d8LiteVertexMirrors = process.env.PERF_PROFILE_D3D8_VERTEX_MIRRORS === "1";
 const d3d8BufferProducers = process.env.PERF_PROFILE_D3D8_BUFFER_PRODUCERS === "1";
 const d3d8DrawProducers = process.env.PERF_PROFILE_D3D8_DRAW_PRODUCERS === "1";
+const d3d8SkippedProgramKind = String(
+  process.env.PERF_PROFILE_D3D8_SKIP_PROGRAM_KIND ?? "",
+).trim().toLowerCase();
+const validD3D8ProgramKinds = new Set([
+  "", "generic", "simple", "terrain", "sm1", "lit", "depth", "particle", "other",
+]);
+if (!validD3D8ProgramKinds.has(d3d8SkippedProgramKind)) {
+  throw new Error(
+    `Invalid PERF_PROFILE_D3D8_SKIP_PROGRAM_KIND: ${d3d8SkippedProgramKind}`,
+  );
+}
 const d3d8PerfTimingSetting = parseOptionalBoolean("PERF_PROFILE_D3D8_TIMING");
 const d3d8PerfCountersSetting = parseOptionalBoolean("PERF_PROFILE_D3D8_COUNTERS");
 const d3d8BoundDrawDiagnostics = parseOptionalBoolean("PERF_PROFILE_D3D8_BOUND_DIAG");
@@ -2016,6 +2186,13 @@ const browserUserDataDir = String(
 const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1" ||
   d3d8BufferProducers ||
   d3d8DrawProducers;
+const cpuProfileOutputName = String(
+  process.env.PERF_PROFILE_CPU_PROFILE_OUTPUT ?? "",
+).trim();
+const cpuProfileSamplingIntervalUs = parsePositiveInt(
+  "PERF_PROFILE_CPU_PROFILE_INTERVAL_US",
+  100,
+);
 
 const serverPort = parseNonNegativeInt("PERF_PROFILE_SERVER_PORT", 0);
 const usePreparedArchives = parseOptionalBoolean("PERF_PROFILE_PREPARED_ARCHIVES") === true;
@@ -2074,6 +2251,27 @@ try {
   harnessUrl.searchParams.set("diag", diagLevel);
   harnessUrl.searchParams.set("preserveBuffer", preserveDrawingBuffer ? "1" : "0");
   harnessUrl.searchParams.set("gpuTiming", gpuTiming ? "1" : "0");
+  // Threaded play owns the shipping D3D8 executor in the worker realm. The
+  // worker is created while bridge.js loads, before the page-level setters
+  // below run, so A/B controls that affect renderer construction must also be
+  // present in the harness URL inherited by the worker setup.
+  harnessUrl.searchParams.set("d3d8Batch", d3d8AdjacentBatching ? "1" : "0");
+  harnessUrl.searchParams.set(
+    "d3d8NativeRepeat",
+    d3d8NativeRepeatedAppend ? "1" : "0",
+  );
+  harnessUrl.searchParams.set(
+    "d3d8FrameQueue",
+    d3d8FrameCommandQueue ? "1" : "0",
+  );
+  harnessUrl.searchParams.set(
+    "d3d8LiteVertexMirrors",
+    d3d8LiteVertexMirrors ? "1" : "0",
+  );
+  harnessUrl.searchParams.set(
+    "perfCounters",
+    (d3d8PerfCountersSetting ?? true) ? "1" : "0",
+  );
   if (pacedMode) {
     harnessUrl.searchParams.set("threads", "1");
   }
@@ -2091,6 +2289,10 @@ try {
     window.__cncSetD3D8PerfCounters?.(enabled) ?? null, d3d8PerfCountersSetting ?? true);
   const d3d8AdjacentBatchingActive = await page.evaluate((enabled) =>
     window.__cncSetD3D8AdjacentBatching?.(enabled) ?? null, d3d8AdjacentBatching);
+  const d3d8NativeRepeatedAppendActive = await page.evaluate((enabled) =>
+    window.__cncSetD3D8NativeRepeatedAppend?.(enabled) ?? null, d3d8NativeRepeatedAppend);
+  const d3d8FrameCommandQueueActive = await page.evaluate((enabled) =>
+    window.__cncSetD3D8FrameCommandQueue?.(enabled) ?? null, d3d8FrameCommandQueue);
   const d3d8LiteVertexMirrorsActive = await page.evaluate((enabled) =>
     window.__cncSetD3D8LiteVertexMirrors?.(enabled) ?? null, d3d8LiteVertexMirrors);
   const d3d8BufferProducersActive = await page.evaluate((enabled) =>
@@ -2130,6 +2332,7 @@ try {
         counters: d3d8PerfCountersSetting ?? true,
         bufferProducers: d3d8BufferProducers,
         drawProducers: d3d8DrawProducers,
+        skippedProgramKind: d3d8SkippedProgramKind,
       })
     : null;
   if (pacedMode) {
@@ -2183,22 +2386,46 @@ try {
         allowPartial: false,
       })
     : null;
-  const measured = pacedMode
-    ? await runPacedFramePass(page, measuredFrames, "measured", {
-        clientFps: pacedClientFps,
-        logicFps: pacedLogicFps,
-        catchup: pacedCatchup,
-        timeoutMs: pacedTimeoutMs,
-        allowPartial: allowPartialPacedPass,
-      })
-    : await runFramePass(
-        page,
-        measuredFrames,
-        batchSize,
-        "measured",
-        measuredFrameCommand,
-        engineFrameProfile,
-      );
+  const workerCpuProfiler = cpuProfileOutputName
+    ? await startWorkerCpuProfile(browser, cpuProfileSamplingIntervalUs)
+    : null;
+  let workerCpuProfile = null;
+  let measured;
+  try {
+    measured = pacedMode
+      ? await runPacedFramePass(page, measuredFrames, "measured", {
+          clientFps: pacedClientFps,
+          logicFps: pacedLogicFps,
+          catchup: pacedCatchup,
+          timeoutMs: pacedTimeoutMs,
+          allowPartial: allowPartialPacedPass,
+        })
+      : await runFramePass(
+          page,
+          measuredFrames,
+          batchSize,
+          "measured",
+          measuredFrameCommand,
+          engineFrameProfile,
+        );
+  } finally {
+    if (workerCpuProfiler) {
+      workerCpuProfile = await workerCpuProfiler.stop();
+    }
+  }
+  let workerCpuProfileSummary = null;
+  if (workerCpuProfile) {
+    const cpuProfilePath = resolve(artifactsRoot, cpuProfileOutputName);
+    await writeFile(cpuProfilePath, `${JSON.stringify(workerCpuProfile.profile)}\n`);
+    workerCpuProfileSummary = {
+      path: cpuProfilePath,
+      targetUrl: workerCpuProfile.targetUrl,
+      samplingIntervalUs: workerCpuProfile.samplingIntervalUs,
+      elapsedMs: workerCpuProfile.elapsedMs,
+      nodeCount: workerCpuProfile.profile?.nodes?.length ?? 0,
+      sampleCount: workerCpuProfile.profile?.samples?.length ?? 0,
+    };
+  }
   let leanPerfConfig = null;
   let leanMeasured = null;
   if (pacedMode && leanPassFrames > 0) {
@@ -2207,6 +2434,7 @@ try {
       counters: false,
       bufferProducers: false,
       drawProducers: false,
+      skippedProgramKind: d3d8SkippedProgramKind,
     });
     expect(leanPerfConfig?.ok === true,
       "runtime frame profile could not configure the lean production pass",
@@ -2239,9 +2467,15 @@ try {
     shaderTier,
     measurementMode: pacedMode ? "paced" : "stepped-rpc",
     d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
+    d3d8NativeRepeatedAppend: d3d8NativeRepeatedAppendActive,
+    d3d8FrameCommandQueue:
+      workerD3D8PerfConfig?.summary?.frameCommandQueueEnabled ??
+      d3d8FrameCommandQueueActive,
     d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
     d3d8BufferProducers: d3d8BufferProducersActive,
     d3d8DrawProducers: d3d8DrawProducersActive,
+    d3d8SkippedProgramKind:
+      workerD3D8PerfConfig?.skippedProgramKind ?? d3d8SkippedProgramKind,
     d3d8PerfTiming: workerD3D8PerfConfig?.timing ?? d3d8PerfTimingActive,
     d3d8PerfCounters: workerD3D8PerfConfig?.counters ?? d3d8PerfCountersActive,
     d3d8BoundDrawDiagnostics: d3d8BoundDrawDiagnosticsActive,
@@ -2264,6 +2498,7 @@ try {
     settle,
     pacedWarmup,
     measured,
+    workerCpuProfile: workerCpuProfileSummary,
     leanPerfConfig,
     leanMeasured,
     screenshot: screenshotPath,

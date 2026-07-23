@@ -29,6 +29,11 @@ try {
   }
   browser = await chromium.launch(launchOptions);
   const page = await browser.newPage();
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      console.error(`[d3d8-transform-smoke page] ${message.text()}`);
+    }
+  });
   const executorUrl = new URL("harness/d3d8_executor.mjs", server.url);
   await page.goto(executorUrl.href, { waitUntil: "load" });
 
@@ -100,6 +105,22 @@ try {
       }
       return bytes;
     };
+    const makeTex2Triangle = () => {
+      const bytes = new Uint8Array(3 * 32);
+      const view = new DataView(bytes.buffer);
+      const positions = [[-1, -1, 0.5], [3, -1, 0.5], [-1, 3, 0.5]];
+      for (let vertex = 0; vertex < positions.length; vertex += 1) {
+        const base = vertex * 32;
+        positions[vertex].forEach((value, component) =>
+          view.setFloat32(base + component * 4, value, true));
+        bytes.set([255, 255, 255, 255], base + 12);
+        view.setFloat32(base + 16, 0.5, true);
+        view.setFloat32(base + 20, 0.5, true);
+        view.setFloat32(base + 24, 0.5, true);
+        view.setFloat32(base + 28, 0.5, true);
+      }
+      return bytes;
+    };
     const indexBytes = new Uint8Array(new Uint16Array([0, 1, 2]).buffer);
     const createBuffer = (kind, id, bytes) => {
       expect(hooks.cncPortD3D8BufferCreate({ kind, id, byteSize: bytes.byteLength }) === 1,
@@ -111,6 +132,7 @@ try {
     createBuffer(1, 1, makeTriangle([255, 0, 0, 255]));
     createBuffer(1, 2, makeTriangle([0, 255, 0, 255]));
     createBuffer(1, 4, makeTexturedTriangle());
+    createBuffer(1, 5, makeTex2Triangle());
     createBuffer(2, 3, indexBytes);
 
     const pixelShaderHandle = 77;
@@ -125,6 +147,23 @@ try {
         0x0000ffff,       // end
       ]),
     }) === true, "pixel shader registration failed");
+    const terrainPixelShaderHandle = 78;
+    expect(hooks.cncPortD3D8ShaderCreate({
+      handle: terrainPixelShaderHandle,
+      isPixel: true,
+      tokens: new Uint32Array([
+        0xffff0101,
+        66, 0xb00f0000,
+        66, 0xb00f0001,
+        66, 0xb00f0002,
+        66, 0xb00f0003,
+        18, 0x800f0000, 0x90ff0000, 0xb0e40001, 0xb0e40000,
+        5, 0x800f0000, 0x80e40000, 0x90e40000,
+        5, 0x800f0000, 0x80e40000, 0xb0e40002,
+        5, 0x800f0000, 0x80e40000, 0xb0e40003,
+        0x0000ffff,
+      ]),
+    }) === true, "terrain pixel shader registration failed");
 
     hooks.cncPortD3D8SetViewport({
       x: 0, y: 0, width: 64, height: 64, minZ: 0, maxZ: 1,
@@ -256,6 +295,40 @@ try {
       stateHash: hash,
       derivedStateHash: hash,
     });
+
+    globalThis.__cncSetDiagLevel?.("lite");
+    globalThis.__cncSetD3D8PerfCounters?.(true);
+    while (gl.getError() !== gl.NO_ERROR) {
+      // Clear setup-time errors so this assertion scopes the new command path.
+    }
+    const beforeRepeatedGeometry = diag.d3d8PerfSummary();
+    expect(draw(1, 0, 303) === 1, "first repeated-geometry draw failed");
+    expect(draw(2, 0, 303) === 1, "second repeated-geometry draw failed");
+    diag.flushD3D8PendingDrawBatch("repeated-geometry-smoke");
+    const afterRepeatedGeometry = diag.d3d8PerfSummary();
+    expect(afterRepeatedGeometry.drawBatchSavedDrawElements ===
+        beforeRepeatedGeometry.drawBatchSavedDrawElements + 1,
+      "repeated geometry did not save one draw", {
+        beforeRepeatedGeometry,
+        afterRepeatedGeometry,
+      });
+    expect(afterRepeatedGeometry.drawRepeatedGeometryBatches ===
+        beforeRepeatedGeometry.drawRepeatedGeometryBatches + 1,
+      "repeated geometry did not use the aggregate draw", {
+        beforeRepeatedGeometry,
+        afterRepeatedGeometry,
+      });
+    expect(afterRepeatedGeometry.drawRepeatedGeometryFallbacks ===
+        beforeRepeatedGeometry.drawRepeatedGeometryFallbacks,
+      "repeated geometry unexpectedly fell back", {
+        beforeRepeatedGeometry,
+        afterRepeatedGeometry,
+    });
+    const repeatedGeometryError = gl.getError();
+    expect(repeatedGeometryError === gl.NO_ERROR, "repeated geometry produced a WebGL error", {
+      repeatedGeometryError,
+    });
+    globalThis.__cncSetDiagLevel?.("full");
 
     expect(draw(1, 0, 101) === 1, "fixed-function priming draw failed");
     const beforeContentUpdate = diag.d3d8PerfSummary();
@@ -520,20 +593,274 @@ try {
       heapU32[stageOffset + 27] = 1;
       heapU32[stageOffset + 28] = 1; // D3DTA_CURRENT result
     };
-    const readCenterPixel = () => {
+    const readPixel = (x, y) => {
       const value = new Uint8Array(4);
-      gl.readPixels(32, 32, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, value);
+      gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, value);
       return Array.from(value);
     };
+    const readCenterPixel = () => readPixel(32, 32);
+
+    heapF32.set(identity, worldPtr >>> 2);
+    worldTransformRevision += 1;
+    hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+    globalThis.__cncSetD3D8FrameCommandQueue?.(true);
+    const beforeFrameNativeRepeat = diag.d3d8PerfSummary();
+    expect(draw(1, 0, 800) === 1, "frame-command native-repeat seed draw failed");
+    expect(hooks.cncPortD3D8CanAppendRepeatedDraws() === true,
+      "frame-command native-repeat seed was not eligible");
+    expect(hooks.cncPortD3D8AppendRepeatedDraws(new Uint32Array([2])) === 1,
+      "frame-command native-repeat append failed");
+    diag.flushD3D8FrameCommandQueue("frame-command-native-repeat-smoke");
+    const afterFrameNativeRepeat = diag.d3d8PerfSummary();
+    expect(afterFrameNativeRepeat.drawNativeRepeatedAppends ===
+        beforeFrameNativeRepeat.drawNativeRepeatedAppends + 1,
+      "frame-command native-repeat append was not accounted", {
+        beforeFrameNativeRepeat,
+        afterFrameNativeRepeat,
+      });
+    expect(afterFrameNativeRepeat.frameCommandReplayedDraws ===
+        beforeFrameNativeRepeat.frameCommandReplayedDraws + 2,
+      "frame-command native-repeat replay lost a draw", {
+        beforeFrameNativeRepeat,
+        afterFrameNativeRepeat,
+      });
+    expect(afterFrameNativeRepeat.drawBatchMerged ===
+        beforeFrameNativeRepeat.drawBatchMerged + 1,
+      "frame-command native-repeat replay lost its repeated-geometry batch", {
+        beforeFrameNativeRepeat,
+        afterFrameNativeRepeat,
+      });
+    const frameNativeRepeatPixel = readCenterPixel();
+    expect(
+      frameNativeRepeatPixel[0] < 32 &&
+        frameNativeRepeatPixel[1] > 220 &&
+        frameNativeRepeatPixel[2] < 32,
+      "frame-command native-repeat replay changed ordering",
+      frameNativeRepeatPixel,
+    );
+    globalThis.__cncSetD3D8FrameCommandQueue?.(false);
+
+    // Deferred render segments must snapshot DISCARD-updated dynamic geometry
+    // before the engine reuses its ring offsets, upload one vertex/index arena,
+    // and replay both draws in order. The second full-screen triangle is green,
+    // proving that the first red snapshot was not aliased by the later update.
+    const frameVertexBufferId = 900;
+    const frameIndexBufferId = 901;
+    const dynamicUsage = 0x208; // D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY
+    const discardLock = 0x2000; // D3DLOCK_DISCARD
+    expect(hooks.cncPortD3D8BufferCreate({
+      kind: 1,
+      id: frameVertexBufferId,
+      byteSize: 48,
+      usage: dynamicUsage,
+    }) === 1, "frame-command vertex buffer creation failed");
+    expect(hooks.cncPortD3D8BufferCreate({
+      kind: 2,
+      id: frameIndexBufferId,
+      byteSize: indexBytes.byteLength,
+      usage: dynamicUsage,
+    }) === 1, "frame-command index buffer creation failed");
+    expect(hooks.cncPortD3D8BufferUpdate({
+      kind: 1,
+      id: frameVertexBufferId,
+      byteOffset: 0,
+      bytes: makeTriangle([255, 0, 0, 255]),
+      lockFlags: discardLock,
+    }) === 1, "frame-command red vertex upload failed");
+    expect(hooks.cncPortD3D8BufferUpdate({
+      kind: 2,
+      id: frameIndexBufferId,
+      byteOffset: 0,
+      bytes: indexBytes,
+      lockFlags: discardLock,
+    }) === 1, "frame-command index upload failed");
+    heapF32.set(identity, worldPtr >>> 2);
+    worldTransformRevision += 1;
+    const drawFrameCommand = (hash, spatialUi = false) => hooks.cncPortD3D8DrawIndexed({
+      vertexBufferId: frameVertexBufferId,
+      vertexByteOffset: 0,
+      vertexBytes: 48,
+      vertexCount: 3,
+      vertexStride: 16,
+      vertexShaderFvf: 0x42,
+      indexBufferId: frameIndexBufferId,
+      indexByteOffset: 0,
+      indexBytes: indexBytes.byteLength,
+      indexCount: 3,
+      indexSize: 2,
+      primitiveType: 4,
+      pixelShaderHandle: 0,
+      transformMask: 7,
+      worldTransformRevision,
+      viewTransformRevision,
+      projectionTransformRevision,
+      transforms: {
+        world: worldPtr,
+        view: viewPtr,
+        projection: projectionPtr,
+        texture0: 0,
+        texture1: 0,
+        texture2: 0,
+        texture3: 0,
+        texture4: 0,
+      },
+      statePayloadPointers: true,
+      renderStatePtr,
+      clipPlanesPtr,
+      lightsPtr,
+      materialPtr,
+      stateHash: hash,
+      derivedStateHash: hash,
+      spatialUi,
+    });
+    hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+    globalThis.__cncSetD3D8FrameCommandQueue?.(true);
+    hooks.cncPortD3D8SetViewport({
+      x: 0,
+      y: 0,
+      width: 32,
+      height: 64,
+      minZ: 0,
+      maxZ: 1,
+      targetWidth: 64,
+      targetHeight: 64,
+    });
+    const beforeFrameCommands = diag.d3d8PerfSummary();
+    expect(drawFrameCommand(801) === 1, "frame-command red draw queue failed");
+    expect(hooks.cncPortD3D8BufferUpdate({
+      kind: 1,
+      id: frameVertexBufferId,
+      byteOffset: 0,
+      bytes: makeTriangle([0, 255, 0, 255]),
+      lockFlags: discardLock,
+    }) === 1, "frame-command green vertex upload failed");
+    hooks.cncPortD3D8SetViewport({
+      x: 32,
+      y: 0,
+      width: 32,
+      height: 64,
+      minZ: 0,
+      maxZ: 1,
+      targetWidth: 64,
+      targetHeight: 64,
+    });
+    expect(drawFrameCommand(801, true) === 1,
+      "frame-command spatial-UI draw queue failed");
+    const queuedFrameCommands = diag.d3d8PerfSummary();
+    expect(queuedFrameCommands.frameCommandQueuedDraws ===
+        beforeFrameCommands.frameCommandQueuedDraws + 2,
+      "frame-command draws were not deferred", {
+        beforeFrameCommands,
+        queuedFrameCommands,
+      });
+    expect(queuedFrameCommands.frameCommandSegments === beforeFrameCommands.frameCommandSegments,
+      "dynamic buffer update flushed the deferred segment", {
+        beforeFrameCommands,
+        queuedFrameCommands,
+      });
+    diag.flushD3D8FrameCommandQueue("frame-command-smoke");
+    const afterFrameCommands = diag.d3d8PerfSummary();
+    expect(afterFrameCommands.frameCommandSegments ===
+        beforeFrameCommands.frameCommandSegments + 1,
+      "frame-command segment did not replay", {
+        beforeFrameCommands,
+        afterFrameCommands,
+      });
+    expect(afterFrameCommands.frameCommandReplayedDraws ===
+        beforeFrameCommands.frameCommandReplayedDraws + 2,
+      "frame-command segment lost a draw", {
+        beforeFrameCommands,
+        afterFrameCommands,
+      });
+    expect(afterFrameCommands.frameCommandArenaUploads ===
+        beforeFrameCommands.frameCommandArenaUploads + 2,
+      "frame-command segment did not collapse geometry into two arena uploads", {
+        beforeFrameCommands,
+        afterFrameCommands,
+      });
+    const frameCommandLeftPixel = readPixel(16, 32);
+    const frameCommandPixel = readPixel(48, 32);
+    expect(
+      frameCommandLeftPixel[0] > 220 &&
+        frameCommandLeftPixel[1] < 32 &&
+        frameCommandLeftPixel[2] < 32,
+      "frame-command replay lost the first viewport",
+      frameCommandLeftPixel,
+    );
+    expect(
+      frameCommandPixel[0] < 32 &&
+        frameCommandPixel[1] > 220 &&
+        frameCommandPixel[2] < 32,
+      "frame-command replay changed dynamic geometry ordering",
+      frameCommandPixel,
+    );
+    globalThis.__cncSetD3D8FrameCommandQueue?.(false);
+    hooks.cncPortD3D8SetViewport({
+      x: 0,
+      y: 0,
+      width: 64,
+      height: 64,
+      minZ: 0,
+      maxZ: 1,
+      targetWidth: 64,
+      targetHeight: 64,
+    });
+    hooks.cncPortD3D8BufferRelease({ kind: 1, id: frameVertexBufferId });
+    hooks.cncPortD3D8BufferRelease({ kind: 2, id: frameIndexBufferId });
+
+    const frameRedTextureId = 790;
+    const frameGreenTextureId = 791;
+    createSolidTexture(frameRedTextureId, [0, 0, 255, 255]);
+    createSolidTexture(frameGreenTextureId, [0, 255, 0, 255]);
+    configureStage(0, 2, 2, 2, 2); // SELECTARG1(TEXTURE)
+    configureStage(1, 1, 1, 1, 1); // DISABLE
+    hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+    globalThis.__cncSetD3D8FrameCommandQueue?.(true);
+    const beforeFrameTextureBinds = diag.d3d8PerfSummary();
+    expect(hooks.cncPortD3D8TextureBind({ stage: 0, id: frameRedTextureId }) === 1,
+      "frame-command red texture bind failed");
+    expect(drawTextured(802) === 1, "frame-command red textured draw failed");
+    expect(hooks.cncPortD3D8TextureBind({ stage: 0, id: frameGreenTextureId }) === 1,
+      "frame-command green texture bind failed");
+    expect(drawTextured(803) === 1, "frame-command green textured draw failed");
+    const queuedFrameTextureBinds = diag.d3d8PerfSummary();
+    expect(queuedFrameTextureBinds.frameCommandSegments ===
+        beforeFrameTextureBinds.frameCommandSegments,
+      "texture bind flushed the deferred segment", {
+        beforeFrameTextureBinds,
+        queuedFrameTextureBinds,
+      });
+    diag.flushD3D8FrameCommandQueue("frame-command-texture-bind-smoke");
+    const frameTextureBindPixel = readCenterPixel();
+    expect(
+      frameTextureBindPixel[0] < 32 &&
+        frameTextureBindPixel[1] > 220 &&
+        frameTextureBindPixel[2] < 32,
+      "frame-command replay lost per-draw texture bindings",
+      frameTextureBindPixel,
+    );
+    globalThis.__cncSetD3D8FrameCommandQueue?.(false);
+    hooks.cncPortD3D8TextureRelease({ id: frameRedTextureId });
+    hooks.cncPortD3D8TextureRelease({ id: frameGreenTextureId });
+    expect(hooks.cncPortD3D8TextureBind({ stage: 0, id: textureId }) === 1,
+      "frame-command smoke did not restore the primary texture");
 
     const stage2TextureId = 701;
     const stage3TextureId = 702;
+    const stage1TextureId = 703;
+    const stage4TextureId = 704;
     createSolidTexture(stage2TextureId, [0, 255, 0, 255]);
     createSolidTexture(stage3TextureId, [0, 0, 255, 255]);
+    createSolidTexture(stage1TextureId, [255, 255, 255, 255]);
+    createSolidTexture(stage4TextureId, [255, 128, 64, 255]);
+    expect(hooks.cncPortD3D8TextureBind({ stage: 1, id: stage1TextureId }) === 1,
+      "stage-1 texture bind failed");
     expect(hooks.cncPortD3D8TextureBind({ stage: 2, id: stage2TextureId }) === 1,
       "stage-2 texture bind failed");
     expect(hooks.cncPortD3D8TextureBind({ stage: 3, id: stage3TextureId }) === 1,
       "stage-3 texture bind failed");
+    expect(hooks.cncPortD3D8TextureBind({ stage: 4, id: stage4TextureId }) === 1,
+      "stage-4 texture bind failed");
 
     // Keep the cascade active through stages 0/1, then select the stage-2
     // texture. This exercises the cached stage-2 coordinate/sampler/semantic
@@ -559,6 +886,123 @@ try {
     const stage3Pixel = readCenterPixel();
     expect(stage3Pixel[0] > 220 && stage3Pixel[1] < 32 && stage3Pixel[2] < 32,
       "stage-3 texture uniforms produced the wrong pixel", stage3Pixel);
+
+    // The enhanced terrain shroud path derives stage-4 UVs from stage 2 and
+    // samples the shroud in the translated pixel shader without adding a
+    // fifth vertex varying.
+    configureStage(0, 2, 0, 2, 0);
+    configureStage(1, 2, 1, 2, 1);
+    configureStage(2, 2, 1, 2, 1);
+    configureStage(3, 2, 1, 2, 1);
+    configureStage(4, 4, 2, 3, 2); // MODULATE(TEXTURE,CURRENT), alpha=CURRENT
+    const stage2Offset = renderStateOffset + 50 + 2 * 29;
+    const stage1Offset = renderStateOffset + 50 + 1 * 29;
+    const stage3Offset = renderStateOffset + 50 + 3 * 29;
+    const stage4Offset = renderStateOffset + 50 + 4 * 29;
+    heapU32[stage1Offset + 11] = 1; // passthrough TEXCOORD1
+    heapU32[stage2Offset + 11] = 0x00020000; // camera-space position
+    heapU32[stage2Offset + 24] = 2; // D3DTTFF_COUNT2
+    heapU32[stage3Offset + 11] = 0x00020000;
+    heapU32[stage3Offset + 24] = 2;
+    heapU32[stage4Offset + 11] = 0x00020000;
+    heapU32[stage4Offset + 24] = 2;
+    const texture2TransformPtr = 4096;
+    const texture4TransformPtr = 4160;
+    const texture3TransformPtr = 4224;
+    heapF32.set(identity, texture2TransformPtr >>> 2);
+    heapF32.set(identity, texture3TransformPtr >>> 2);
+    heapF32.set([
+      0.5, 0, 0, 0,
+      0, 0.25, 0, 0,
+      0, 0, 1, 0,
+      0.25, 0.125, 0, 1,
+    ], texture4TransformPtr >>> 2);
+    const drawTerrainShroudFusion = (
+      shaderHandle = pixelShaderHandle,
+      hash = 606,
+    ) => hooks.cncPortD3D8DrawIndexed({
+      vertexBufferId: 5,
+      vertexByteOffset: 0,
+      vertexBytes: 96,
+      vertexCount: 3,
+      vertexStride: 32,
+      vertexShaderFvf: 0x242, // D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX2
+      indexBufferId: 3,
+      indexByteOffset: 0,
+      indexBytes: 6,
+      indexCount: 3,
+      indexSize: 2,
+      primitiveType: 4,
+      pixelShaderHandle: shaderHandle,
+      transformMask: 7,
+      worldTransformRevision,
+      viewTransformRevision,
+      projectionTransformRevision,
+      transforms: {
+        world: worldPtr,
+        view: viewPtr,
+        projection: projectionPtr,
+        texture0: 0,
+        texture1: 0,
+        texture2: texture2TransformPtr,
+        texture3: texture3TransformPtr,
+        texture4: texture4TransformPtr,
+      },
+      statePayloadPointers: true,
+      renderStatePtr,
+      clipPlanesPtr,
+      lightsPtr,
+      materialPtr,
+      stateHash: hash,
+      derivedStateHash: hash,
+    });
+    hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+    const beforeTerrainShroudFusion = diag.d3d8PerfSummary();
+    expect(drawTerrainShroudFusion() === 1, "terrain shroud fusion draw failed");
+    diag.flushD3D8PendingDrawBatch("terrain-shroud-fusion-smoke");
+    const afterTerrainShroudFusion = diag.d3d8PerfSummary();
+    expect(afterTerrainShroudFusion.terrainShroudFusedDraws ===
+        beforeTerrainShroudFusion.terrainShroudFusedDraws + 1,
+      "terrain shroud fusion path was not selected", {
+        beforeTerrainShroudFusion,
+        afterTerrainShroudFusion,
+      });
+    const terrainShroudPixel = readCenterPixel();
+    expect(
+      Math.abs(terrainShroudPixel[0] - 64) <= 2 &&
+        Math.abs(terrainShroudPixel[1] - 128) <= 2 &&
+        terrainShroudPixel[2] >= 253,
+      "terrain shroud fusion sampled the wrong color",
+      terrainShroudPixel,
+    );
+
+    // The exact retail terrain shader must select the same fused shroud path
+    // and remain pixel-identical to the generic translated-shader coverage.
+    expect(hooks.cncPortD3D8TextureBind({ stage: 2, id: stage1TextureId }) === 1,
+      "exact terrain stage-2 texture bind failed");
+    expect(hooks.cncPortD3D8TextureBind({ stage: 3, id: stage1TextureId }) === 1,
+      "exact terrain stage-3 texture bind failed");
+    heapU32[renderStateOffset + 11] = 0x7;
+    hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+    const beforeExactTerrainFusion = diag.d3d8PerfSummary();
+    expect(drawTerrainShroudFusion(terrainPixelShaderHandle, 607) === 1,
+      "exact terrain fusion draw failed");
+    diag.flushD3D8PendingDrawBatch("exact-terrain-fusion-smoke");
+    const afterExactTerrainFusion = diag.d3d8PerfSummary();
+    expect(afterExactTerrainFusion.terrainShroudFusedDraws ===
+        beforeExactTerrainFusion.terrainShroudFusedDraws + 1,
+      "exact terrain shader did not use the fused shroud path", {
+        beforeExactTerrainFusion,
+        afterExactTerrainFusion,
+      });
+    const exactTerrainFusionPixel = readCenterPixel();
+    expect(
+      Math.abs(exactTerrainFusionPixel[0] - terrainShroudPixel[0]) <= 2 &&
+        Math.abs(exactTerrainFusionPixel[1] - terrainShroudPixel[1]) <= 2 &&
+        Math.abs(exactTerrainFusionPixel[2] - terrainShroudPixel[2]) <= 2,
+      "exact terrain shader changed the fused result",
+      { terrainShroudPixel, exactTerrainFusionPixel },
+    );
 
     let benchmark = null;
     if (benchmarkIterations > 0) {
@@ -628,6 +1072,12 @@ try {
       centerPixel,
       stage2Pixel,
       stage3Pixel,
+      terrainShroudPixel,
+      exactTerrainFusionPixel,
+      frameCommandLeftPixel,
+      frameCommandPixel,
+      frameNativeRepeatPixel,
+      frameTextureBindPixel,
       pixelShaderHandle,
       benchmark,
     };
