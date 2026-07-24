@@ -120,6 +120,22 @@ try {
       }
       return bytes;
     };
+    const makeLitTexturedTriangle = () => {
+      const bytes = new Uint8Array(3 * 32);
+      const view = new DataView(bytes.buffer);
+      const positions = [[-1, -1, 0.5], [3, -1, 0.5], [-1, 3, 0.5]];
+      for (let vertex = 0; vertex < positions.length; vertex += 1) {
+        const base = vertex * 32;
+        positions[vertex].forEach((value, component) =>
+          view.setFloat32(base + component * 4, value, true));
+        view.setFloat32(base + 12, 0, true);
+        view.setFloat32(base + 16, 0, true);
+        view.setFloat32(base + 20, 1, true);
+        view.setFloat32(base + 24, 0.5, true);
+        view.setFloat32(base + 28, 0.5, true);
+      }
+      return bytes;
+    };
     const makeTex2Triangle = () => {
       const bytes = new Uint8Array(3 * 32);
       const view = new DataView(bytes.buffer);
@@ -149,6 +165,7 @@ try {
     createBuffer(1, 4, makeTexturedTriangle());
     createBuffer(1, 5, makeTex2Triangle());
     createBuffer(1, 6, makeLargeUvTexturedTriangle());
+    createBuffer(1, 7, makeLitTexturedTriangle());
     createBuffer(2, 3, indexBytes);
 
     const pixelShaderHandle = 77;
@@ -283,6 +300,41 @@ try {
       vertexCount: 3,
       vertexStride: 24,
       vertexShaderFvf: 0x142, // D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
+      indexBufferId: 3,
+      indexByteOffset: 0,
+      indexBytes: 6,
+      indexCount: 3,
+      indexSize: 2,
+      primitiveType: 4,
+      pixelShaderHandle: 0,
+      transformMask: 7,
+      worldTransformRevision,
+      viewTransformRevision,
+      projectionTransformRevision,
+      transforms: {
+        world: worldPtr,
+        view: viewPtr,
+        projection: projectionPtr,
+        texture0: 0,
+        texture1: 0,
+        texture2: 0,
+        texture3: 0,
+      },
+      statePayloadPointers: true,
+      renderStatePtr,
+      clipPlanesPtr,
+      lightsPtr,
+      materialPtr,
+      stateHash: hash,
+      derivedStateHash: hash,
+    });
+    const drawLitTextured = (hash) => hooks.cncPortD3D8DrawIndexed({
+      vertexBufferId: 7,
+      vertexByteOffset: 0,
+      vertexBytes: 96,
+      vertexCount: 3,
+      vertexStride: 32,
+      vertexShaderFvf: 0x112, // D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1
       indexBufferId: 3,
       indexByteOffset: 0,
       indexBytes: 6,
@@ -622,6 +674,13 @@ try {
           gl.getShaderParameter(candidate, gl.SHADER_TYPE) === gl.FRAGMENT_SHADER);
       return gl.getShaderSource(shader);
     };
+    const readCurrentVertexSource = () => {
+      const program = gl.getParameter(gl.CURRENT_PROGRAM);
+      const shader = gl.getAttachedShaders(program)
+        .find((candidate) =>
+          gl.getShaderParameter(candidate, gl.SHADER_TYPE) === gl.VERTEX_SHADER);
+      return gl.getShaderSource(shader);
+    };
 
     // Fast fixed-function programs may keep their low-precision color math,
     // but repeated world/model UVs must remain highp. At this magnitude a
@@ -680,6 +739,44 @@ try {
 
     heapF32.set(identity, worldPtr >>> 2);
     worldTransformRevision += 1;
+
+    // The optimized lit vertex program can follow a generated-coordinate
+    // environment pass over the same W3D mesh. Preserve the generic path's
+    // separate view and projection operations so both passes produce
+    // bit-compatible depth for D3DCMP_LESSEQUAL.
+    const lightsOffset = lightsPtr >>> 2;
+    heapU32[lightsOffset] = 3; // D3DLIGHT_DIRECTIONAL
+    heapU32[lightsOffset + 1] = 1; // enabled
+    heapF32.set([1, 1, 1, 1], lightsOffset + 2);
+    heapF32.set([0, 0, -1], lightsOffset + 17);
+    const materialOffset = materialPtr >>> 2;
+    heapF32.set([1, 1, 1, 1], materialOffset);
+    heapF32.set([1, 1, 1, 1], materialOffset + 4);
+    heapU32[renderStateOffset + 30] = 1; // lighting enabled
+    configureStage(0, 2, 2, 2, 2); // SELECTARG1(TEXTURE)
+    const beforeLitTex1 = diag.d3d8PerfSummary();
+    expect(drawLitTextured(701) === 1, "lit-texture fixed-function draw failed");
+    diag.flushD3D8PendingDrawBatch("lit-texture-depth-invariance-smoke");
+    const afterLitTex1 = diag.d3d8PerfSummary();
+    expect(afterLitTex1.drawLitTex1ProgramDraws ===
+        beforeLitTex1.drawLitTex1ProgramDraws + 1,
+      "lit-texture draw did not select the optimized vertex program", {
+        beforeLitTex1,
+        afterLitTex1,
+      });
+    const litTex1VertexSource = readCurrentVertexSource();
+    expect(
+      litTex1VertexSource.includes("uniform mat4 uView;") &&
+        litTex1VertexSource.includes("uniform mat4 uProjection;") &&
+        litTex1VertexSource.includes("uProjection * viewPosition") &&
+        !litTex1VertexSource.includes("uViewProjection"),
+      "optimized lit vertex program changed multipass depth operation order",
+      litTex1VertexSource,
+    );
+    heapU32[renderStateOffset + 30] = 0;
+    heapU32[lightsOffset + 1] = 0;
+    configureStage(0, 2, 0, 2, 0); // SELECTARG1(DIFFUSE)
+
     hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
     globalThis.__cncSetD3D8FrameCommandQueue?.(true);
     const beforeFrameNativeRepeat = diag.d3d8PerfSummary();

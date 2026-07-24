@@ -8390,7 +8390,8 @@ function d3d8LitTex1VertexSource() {
     in vec4 aSpecularBgra;
     in vec2 aTexCoord0;
     uniform mat4 uWorld;
-    uniform mat4 uViewProjection;
+    uniform mat4 uView;
+    uniform mat4 uProjection;
     uniform mat3 uWorldNormalMatrix;
     uniform float uDepthBias;
     uniform bool uNormalizeNormals;
@@ -8472,7 +8473,12 @@ function d3d8LitTex1VertexSource() {
     }
     void main() {
       vec4 worldPosition = uWorld * vec4(aPosition.xyz, 1.0);
-      vec4 d3dClip = uViewProjection * worldPosition;
+      // Keep the same operation sequence as the generic fixed-function path.
+      // W3D pairs this optimized base pass with generated-coordinate passes at
+      // the same depth; CPU-precombining view/projection changes float
+      // rounding and makes D3DCMP_LESSEQUAL reject parts of the later pass.
+      vec4 viewPosition = uView * worldPosition;
+      vec4 d3dClip = uProjection * viewPosition;
       gl_Position = vec4(d3dClip.x, d3dClip.y,
         d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
       gl_Position.z -= uDepthBias * gl_Position.w;
@@ -9130,7 +9136,6 @@ function buildD3D8DrawProgramLocations(program) {
     worldNormalMatrix: gl.getUniformLocation(program, "uWorldNormalMatrix"),
     view: gl.getUniformLocation(program, "uView"),
     projection: gl.getUniformLocation(program, "uProjection"),
-    viewProjection: gl.getUniformLocation(program, "uViewProjection"),
     worldViewProjection: gl.getUniformLocation(program, "uWorldViewProjection"),
     depthBias: gl.getUniformLocation(program, "uDepthBias"),
     clipPlaneMask: gl.getUniformLocation(program, "uClipPlaneMask"),
@@ -10828,7 +10833,6 @@ function ensureD3D8DepthStencilNoClipProgram() {
     world: gl.getUniformLocation(program, "uWorld"),
     view: gl.getUniformLocation(program, "uView"),
     projection: gl.getUniformLocation(program, "uProjection"),
-    viewProjection: null,
     worldViewProjection: null,
     depthBias: gl.getUniformLocation(program, "uDepthBias"),
     clipPlaneMask: null,
@@ -10897,7 +10901,6 @@ function ensureD3D8DepthStencilNoClipTransformedProgram() {
     world: null,
     view: null,
     projection: null,
-    viewProjection: null,
     worldViewProjection: gl.getUniformLocation(program, "uWorldViewProjection"),
     depthBias: gl.getUniformLocation(program, "uDepthBias"),
   };
@@ -17188,14 +17191,6 @@ function paintD3D8DrawIndexed(payload = {}) {
           d3d8CachedUniformMatrix4fv(
             bridgeProgram.worldViewProjection,
             worldViewProjection,
-          );
-        }
-      } else if (bridgeProgram.viewProjection) {
-        const viewProjection = d3d8ViewProjectionMatrix(view, projection);
-        if (viewProjection) {
-          d3d8CachedUniformMatrix4fv(
-            bridgeProgram.viewProjection,
-            viewProjection,
           );
         }
       }
