@@ -91,10 +91,6 @@ public:
 	static Int setShader(ShaderTypes shader, Int pass);	///<enable specific shader pass.
 	static Int setShroudTex(Int stage);	///<Set shroud in a texture stage.
 	static void resetShader(ShaderTypes shader);	///<make sure W3D2 gets restored to normal
-#ifdef __EMSCRIPTEN__
-	static void setWebTerrainShroudFused(Bool fused) {m_webTerrainShroudFused=fused;}
-	static Bool isWebTerrainShroudFused(void) {return m_webTerrainShroudFused;}
-#endif
 	///Specify all textures (up to 8) which can be accessed by the shaders.
 	static void setTexture(Int stage,TextureClass* texture) {m_Textures[stage]=texture;}
 	///Return current texture available to shaders.
@@ -129,9 +125,6 @@ protected:
 	static __int64 m_driverVersion;			///<driver version of last chipset.
 	static ShaderTypes m_currentShader;	///<last shader that was set.
 	static Int m_currentShaderPass;		///<pass of last shader that was set.
-#ifdef __EMSCRIPTEN__
-	static Bool m_webTerrainShroudFused;
-#endif
 
 	static FilterTypes m_currentFilter; ///< Last filter that was set.
 	// Info for a render to texture surface for special effects.

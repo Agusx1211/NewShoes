@@ -105,6 +105,21 @@ try {
       }
       return bytes;
     };
+    const makeLargeUvTexturedTriangle = () => {
+      const bytes = new Uint8Array(3 * 24);
+      const view = new DataView(bytes.buffer);
+      const positions = [[-1, -1, 0.5], [3, -1, 0.5], [-1, 3, 0.5]];
+      const coordinates = [[2048, 0.5], [2052, 0.5], [2048, 0.5]];
+      for (let vertex = 0; vertex < positions.length; vertex += 1) {
+        const base = vertex * 24;
+        positions[vertex].forEach((value, component) =>
+          view.setFloat32(base + component * 4, value, true));
+        bytes.set([255, 255, 255, 255], base + 12);
+        view.setFloat32(base + 16, coordinates[vertex][0], true);
+        view.setFloat32(base + 20, coordinates[vertex][1], true);
+      }
+      return bytes;
+    };
     const makeTex2Triangle = () => {
       const bytes = new Uint8Array(3 * 32);
       const view = new DataView(bytes.buffer);
@@ -133,6 +148,7 @@ try {
     createBuffer(1, 2, makeTriangle([0, 255, 0, 255]));
     createBuffer(1, 4, makeTexturedTriangle());
     createBuffer(1, 5, makeTex2Triangle());
+    createBuffer(1, 6, makeLargeUvTexturedTriangle());
     createBuffer(2, 3, indexBytes);
 
     const pixelShaderHandle = 77;
@@ -260,8 +276,8 @@ try {
         derivedStateHash: hash,
         sortedDrawSubmitProfile: profileSortedDraw,
       });
-    const drawTextured = (hash) => hooks.cncPortD3D8DrawIndexed({
-      vertexBufferId: 4,
+    const drawTextured = (hash, vertexBufferId = 4) => hooks.cncPortD3D8DrawIndexed({
+      vertexBufferId,
       vertexByteOffset: 0,
       vertexBytes: 72,
       vertexCount: 3,
@@ -599,6 +615,68 @@ try {
       return Array.from(value);
     };
     const readCenterPixel = () => readPixel(32, 32);
+    const readCurrentFragmentSource = () => {
+      const program = gl.getParameter(gl.CURRENT_PROGRAM);
+      const shader = gl.getAttachedShaders(program)
+        .find((candidate) =>
+          gl.getShaderParameter(candidate, gl.SHADER_TYPE) === gl.FRAGMENT_SHADER);
+      return gl.getShaderSource(shader);
+    };
+
+    // Fast fixed-function programs may keep their low-precision color math,
+    // but repeated world/model UVs must remain highp. At this magnitude a
+    // mediump varying collapses the fractional coordinate and stretches one
+    // texture column across the triangle, matching the visible wall/road
+    // corruption this smoke guards against.
+    const largeUvTextureId = 705;
+    const largeUvTextureBytes = new Uint8Array(4 * 4 * 4);
+    const largeUvColumnsBgra = [
+      [0, 0, 255, 255],
+      [0, 255, 0, 255],
+      [255, 0, 0, 255],
+      [255, 255, 255, 255],
+    ];
+    for (let y = 0; y < 4; y += 1) {
+      for (let x = 0; x < 4; x += 1) {
+        largeUvTextureBytes.set(largeUvColumnsBgra[x], (y * 4 + x) * 4);
+      }
+    }
+    expect(hooks.cncPortD3D8TextureCreate({
+      id: largeUvTextureId,
+      width: 4,
+      height: 4,
+      levels: 1,
+      format: 21,
+    }) === 1, "large-UV texture creation failed");
+    expect(hooks.cncPortD3D8TextureUpdate({
+      id: largeUvTextureId,
+      level: 0,
+      x: 0,
+      y: 0,
+      width: 4,
+      height: 4,
+      format: 21,
+      bytes: largeUvTextureBytes,
+    }) === 1, "large-UV texture upload failed");
+    configureStage(0, 2, 2, 2, 2); // SELECTARG1(TEXTURE)
+    configureStage(1, 1, 1, 1, 1); // DISABLE
+    expect(hooks.cncPortD3D8TextureBind({ stage: 0, id: largeUvTextureId }) === 1,
+      "large-UV texture bind failed");
+    hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+    expect(drawTextured(700, 6) === 1, "large-UV fixed-function draw failed");
+    diag.flushD3D8PendingDrawBatch("large-uv-smoke");
+    const largeUvFragmentSource = readCurrentFragmentSource();
+    expect(largeUvFragmentSource.includes("in highp vec2 vTexCoord0;"),
+      "fast fixed-function shader lowered repeated UV precision", largeUvFragmentSource);
+    const largeUvPixels = [8, 24, 40, 56].map((x) => readPixel(x, 32));
+    const largeUvColors = new Set(largeUvPixels.map((pixel) => pixel.slice(0, 3).join(",")));
+    expect(largeUvColors.size >= 2,
+      "fast fixed-function shader collapsed repeated UVs", largeUvPixels);
+    hooks.cncPortD3D8TextureRelease({ id: largeUvTextureId });
+    expect(hooks.cncPortD3D8TextureBind({ stage: 0, id: textureId }) === 1,
+      "large-UV smoke did not restore the primary texture");
+    configureStage(0, 2, 0, 2, 0); // SELECTARG1(DIFFUSE)
+    configureStage(1, 1, 1, 1, 1); // DISABLE
 
     heapF32.set(identity, worldPtr >>> 2);
     worldTransformRevision += 1;
@@ -967,6 +1045,10 @@ try {
         beforeTerrainShroudFusion,
         afterTerrainShroudFusion,
       });
+    const terrainFragmentSource = readCurrentFragmentSource();
+    expect([0, 1, 2, 3].every((stage) =>
+      terrainFragmentSource.includes(`in highp vec2 vTexCoord${stage};`)),
+    "static SM1 shader lowered projected UV precision", terrainFragmentSource);
     const terrainShroudPixel = readCenterPixel();
     expect(
       Math.abs(terrainShroudPixel[0] - 64) <= 2 &&
@@ -1074,6 +1156,7 @@ try {
       stage3Pixel,
       terrainShroudPixel,
       exactTerrainFusionPixel,
+      largeUvPixels,
       frameCommandLeftPixel,
       frameCommandPixel,
       frameNativeRepeatPixel,

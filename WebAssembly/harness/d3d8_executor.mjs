@@ -8515,13 +8515,13 @@ function d3d8SimpleFFFragmentSource(fragmentKind, fastStaticState = null) {
     const flipY = fastStaticState.includes("flip-y");
     const cutout = fastStaticState.includes("cutout");
     return `#version 300 es
-      // D3D8 fixed-function and ps.1.x color math has substantially less
-      // precision than GLES mediump. Keeping this at mediump preserves the
-      // source API's output while allowing mobile GPUs to use packed ALUs.
+      // Color math can stay mediump, but model UVs often contain large repeat
+      // coordinates. Keep the varying explicitly highp so half-float fragment
+      // interpolation cannot collapse adjacent texels into visible bands.
       precision mediump float;
       in vec4 vColor;
       flat in vec4 vFlatColor;
-      ${needsTexture ? "in vec2 vTexCoord0;" : ""}
+      ${needsTexture ? "in highp vec2 vTexCoord0;" : ""}
       uniform bool uUseFlatShade;
       ${needsTexture ? "uniform sampler2D uTexture0;" : ""}
       out vec4 fragColor;
@@ -9804,9 +9804,9 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
   const body = d3d8SM1EmitPixelBody(psShader.ir, ctx);
   const lines = [];
   lines.push("#version 300 es");
-  // ps.1.x was an 8-bit-era shader model. Static fixed-function pairings can
-  // use GLES mediump without losing any precision exposed by D3D8, and mobile
-  // GPUs can execute the packed arithmetic much more efficiently.
+  // ps.1.x color math is low precision, so static pairings can use mediump for
+  // arithmetic. Texture coordinates remain explicitly highp below: terrain
+  // projection and repeating world UVs exceed half-float fractional precision.
   lines.push(ctx.staticFixedFunctionState
     ? "precision mediump float;"
     : "precision highp float;");
@@ -9814,7 +9814,7 @@ function d3d8SM1BuildFragmentSource(psShader, options) {
   lines.push("in vec4 vSpecularColor;");
   lines.push("flat in vec4 vFlatColor;");
   for (let stage = 0; stage < 4; stage += 1) {
-    lines.push(`in vec2 vTexCoord${stage};`);
+    lines.push(`${ctx.staticFixedFunctionState ? "in highp" : "in"} vec2 vTexCoord${stage};`);
   }
   if (options.terrainShroudFusion) {
     lines.push("uniform sampler2D uTerrainShroud;");
