@@ -6,6 +6,24 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-25
+
+- Refresh the README and add deterministic agent codenames ([PR #300](https://github.com/Agusx1211/NewShoes/pull/300)).
+- Add native WebXR stereo rendering, spatial UI, tracked controls, comfort settings, and lifecycle coverage ([PR #261](https://github.com/Agusx1211/NewShoes/pull/261)).
+- Fix intermittent original game cursor rendering ([PR #301](https://github.com/Agusx1211/NewShoes/pull/301)).
+- Retain directional pathfinder cache results to reduce dense-battle stalls ([PR #303](https://github.com/Agusx1211/NewShoes/pull/303)).
+- Remember LLM commander selections across skirmish relaunches ([PR #306](https://github.com/Agusx1211/NewShoes/pull/306)).
+- Fix intermittent smoke and dust disappearance during sorted particle replay ([PR #307](https://github.com/Agusx1211/NewShoes/pull/307)).
+- Prevent black terrain during the post-load startup resize ([PR #305](https://github.com/Agusx1211/NewShoes/pull/305)).
+- Make touch map navigation natural with one-finger panning ([PR #302](https://github.com/Agusx1211/NewShoes/pull/302)).
+- Move experimental VR settings behind an explicit warning ([PR #309](https://github.com/Agusx1211/NewShoes/pull/309)).
+- Fix automatic GLA worker supply assignment ([PR #310](https://github.com/Agusx1211/NewShoes/pull/310)).
+- Redesign D3D8 draw submission for materially faster Raspberry Pi 4 rendering ([PR #314](https://github.com/Agusx1211/NewShoes/pull/314)).
+- Fix D3D8 texture-coordinate precision and terrain shroud fidelity ([PR #316](https://github.com/Agusx1211/NewShoes/pull/316)).
+- Preserve lit multipass depth across optimized vertex transforms ([PR #317](https://github.com/Agusx1211/NewShoes/pull/317)).
+- Make cross-program vertex positions invariant for exact-depth material passes ([PR #318](https://github.com/Agusx1211/NewShoes/pull/318)).
+- Set version 0.6.0 and complete its audited release inventory ([PR #320](https://github.com/Agusx1211/NewShoes/pull/320)).
+
 ## [0.5.0] - 2026-07-19
 
 - Cache D3D8 transform uniforms per program across shader switches ([PR #258](https://github.com/Agusx1211/NewShoes/pull/258)).
