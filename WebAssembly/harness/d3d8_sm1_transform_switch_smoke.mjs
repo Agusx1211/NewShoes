@@ -681,6 +681,11 @@ try {
           gl.getShaderParameter(candidate, gl.SHADER_TYPE) === gl.VERTEX_SHADER);
       return gl.getShaderSource(shader);
     };
+    const expectInvariantPosition = (source, label) => expect(
+      source.includes("invariant gl_Position;"),
+      `${label} vertex program does not guarantee multipass depth invariance`,
+      source,
+    );
 
     // Fast fixed-function programs may keep their low-precision color math,
     // but repeated world/model UVs must remain highp. At this magnitude a
@@ -765,6 +770,7 @@ try {
         afterLitTex1,
       });
     const litTex1VertexSource = readCurrentVertexSource();
+    expectInvariantPosition(litTex1VertexSource, "optimized lit");
     expect(
       litTex1VertexSource.includes("uniform mat4 uView;") &&
         litTex1VertexSource.includes("uniform mat4 uProjection;") &&
@@ -773,8 +779,50 @@ try {
       "optimized lit vertex program changed multipass depth operation order",
       litTex1VertexSource,
     );
+
+    // W3D draws the same geometry through independently linked programs and
+    // requires the later shroud/material pass to survive D3DCMP_EQUAL. Verify
+    // both the GLSL contract and its actual depth result across the generic and
+    // optimized lit fixed-function programs.
+    const redTextureBytes = textureBytes.slice();
+    const greenTextureBytes = textureBytes.slice();
+    for (let offset = 0; offset < redTextureBytes.length; offset += 4) {
+      redTextureBytes.set([0, 0, 255, 255], offset);
+      greenTextureBytes.set([0, 255, 0, 255], offset);
+    }
+    heapU32[renderStateOffset + 1] = 1; // D3DZB_TRUE
+    heapU32[renderStateOffset + 2] = 1; // depth writes enabled
+    heapU32[renderStateOffset + 3] = 4; // D3DCMP_LESSEQUAL
+    heapU32[renderStateOffset + 30] = 0; // generic unlit pass
+    expect(updateTexture(redTextureBytes) === 1,
+      "multipass depth red texture update failed");
+    hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+    expect(drawTextured(702) === 1, "multipass depth base draw failed");
+    diag.flushD3D8PendingDrawBatch("multipass-depth-base-smoke");
+    expectInvariantPosition(readCurrentVertexSource(), "generic fixed-function");
+
+    heapU32[renderStateOffset + 2] = 0; // preserve base depth
+    heapU32[renderStateOffset + 3] = 3; // D3DCMP_EQUAL
+    heapU32[renderStateOffset + 30] = 1; // optimized lit overlay
+    expect(updateTexture(greenTextureBytes) === 1,
+      "multipass depth green texture update failed");
+    expect(drawLitTextured(703) === 1, "multipass depth overlay draw failed");
+    diag.flushD3D8PendingDrawBatch("multipass-depth-overlay-smoke");
+    const multipassDepthPixel = readCenterPixel();
+    expect(
+      multipassDepthPixel[0] < 32 &&
+        multipassDepthPixel[1] > 220 &&
+        multipassDepthPixel[2] < 32,
+      "D3DCMP_EQUAL rejected an independently linked overlay program",
+      multipassDepthPixel,
+    );
+
+    heapU32[renderStateOffset + 1] = 0;
+    heapU32[renderStateOffset + 2] = 0;
+    heapU32[renderStateOffset + 3] = 0;
     heapU32[renderStateOffset + 30] = 0;
     heapU32[lightsOffset + 1] = 0;
+    expect(updateTexture() === 1, "multipass depth smoke did not restore texture");
     configureStage(0, 2, 0, 2, 0); // SELECTARG1(DIFFUSE)
 
     hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
@@ -1143,6 +1191,7 @@ try {
         afterTerrainShroudFusion,
       });
     const terrainFragmentSource = readCurrentFragmentSource();
+    expectInvariantPosition(readCurrentVertexSource(), "terrain");
     expect([0, 1, 2, 3].every((stage) =>
       terrainFragmentSource.includes(`in highp vec2 vTexCoord${stage};`)),
     "static SM1 shader lowered projected UV precision", terrainFragmentSource);
@@ -1253,6 +1302,7 @@ try {
       stage3Pixel,
       terrainShroudPixel,
       exactTerrainFusionPixel,
+      multipassDepthPixel,
       largeUvPixels,
       frameCommandLeftPixel,
       frameCommandPixel,
