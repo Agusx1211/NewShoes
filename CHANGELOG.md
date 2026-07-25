@@ -22,6 +22,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Fix D3D8 texture-coordinate precision and terrain shroud fidelity ([PR #316](https://github.com/Agusx1211/NewShoes/pull/316)).
 - Preserve lit multipass depth across optimized vertex transforms ([PR #317](https://github.com/Agusx1211/NewShoes/pull/317)).
 - Make cross-program vertex positions invariant for exact-depth material passes ([PR #318](https://github.com/Agusx1211/NewShoes/pull/318)).
+- Set version 0.6.0 and complete its audited release inventory ([PR #320](https://github.com/Agusx1211/NewShoes/pull/320)).
 
 ## [0.5.0] - 2026-07-19
 
