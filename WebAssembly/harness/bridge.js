@@ -9,6 +9,7 @@ import {
 import { createBinkDecoderSourceRegistry } from "./bink_decoder.mjs";
 import { createBinkDirectVideoRuntime } from "./bink_direct_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
+import { createCustomMapStore } from "./custom-map-store.mjs";
 import { createGameDataStore } from "./game-data-store.mjs";
 import { loadCursorStyle } from "./cursor-style-config.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
@@ -2018,6 +2019,9 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "importGameData",
   "copyGameDataOverride",
   "deleteGameData",
+  "listCustomMaps",
+  "installCustomMaps",
+  "deleteCustomMap",
   // WebRTC signaling and RTCDataChannels live in the window realm. Their
   // datagrams cross into the engine worker through threadedUdpBridge.
   "browserWebRtcEndpointConnect",
@@ -6494,6 +6498,13 @@ const replayFileStore = createReplayFileStore({
 });
 
 const gameDataStore = createGameDataStore({
+  ready: () => wasmModulePromise,
+  getModule: () => cncPortEmscriptenModule,
+  persist: (reason) => persistSaveFilesystem(reason),
+  storage: CNC_PORT_MOD_STORAGE,
+});
+
+const customMapStore = createCustomMapStore({
   ready: () => wasmModulePromise,
   getModule: () => cncPortEmscriptenModule,
   persist: (reason) => persistSaveFilesystem(reason),
@@ -13293,6 +13304,46 @@ async function rpc(command, payload = {}) {
             ...await gameDataStore.remove(payload.contextId, payload.kind, payload.name, {
               allowActiveLastReplay: payload.allowActiveLastReplay === true,
             }),
+          };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "listCustomMaps":
+      {
+        try {
+          return { command, ...await customMapStore.list(payload.contextId ?? null) };
+        } catch (error) {
+          return { ok: false, command, maps: [], error: error?.message ?? String(error) };
+        }
+      }
+    case "installCustomMaps":
+      {
+        try {
+          const maps = Array.from(payload.maps ?? [], (map) => ({
+            name: map.name,
+            files: Array.from(map.files ?? [], (file) => ({
+              path: file.path,
+              size: file.size,
+              bytes: base64ToBytes(file.bytesBase64),
+            })),
+          }));
+          return {
+            command,
+            ...await customMapStore.install(payload.contextId, maps, {
+              replace: payload.replace === true,
+            }),
+          };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "deleteCustomMap":
+      {
+        try {
+          return {
+            command,
+            ...await customMapStore.remove(payload.contextId, payload.name),
           };
         } catch (error) {
           return { ok: false, command, error: error?.message ?? String(error) };
@@ -25833,6 +25884,10 @@ window.CnCPort = {
   copyGameDataOverride: (options) => gameDataStore.copyWithCompatibilityOverride(options),
   deleteGameData: (contextId, kind, name, options) =>
     gameDataStore.remove(contextId, kind, name, options),
+  listCustomMaps: (contextId = null) => customMapStore.list(contextId),
+  installCustomMaps: (contextId, maps, options) =>
+    customMapStore.install(contextId, maps, options),
+  deleteCustomMap: (contextId, name) => customMapStore.remove(contextId, name),
   listTransferUserFiles: (options) => transferUserDataStore.list(options),
   readTransferUserFileChunk: (file, offset, length) =>
     transferUserDataStore.readChunk(file, offset, length),

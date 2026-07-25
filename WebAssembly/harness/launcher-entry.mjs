@@ -9,3 +9,4 @@ import "./launcher-desktop-apps.js";
 import "./launcher-hardware-info.js";
 import "./launcher-build-info.js";
 import "./mod-manager-ui.mjs";
+import "./custom-map-manager-ui.mjs";
