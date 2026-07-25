@@ -69,13 +69,13 @@
 //       reported as a fact (m_zoomVolume absent from the body), not an error.
 //
 //   MilesAudioManager.cpp:
-//     - adjustPlayingVolume @ 1243 — PAT_3DSample branch: computes
+//     - adjustPlayingVolume @ 1280 — PAT_3DSample branch: computes
 //       desiredVolume = getVolume() * getVolumeShift(), then
 //       AIL_set_3D_sample_volume(audio->m_3DSample, m_sound3DVolume *
 //       desiredVolume). This is the single point where the recomputed 3D
 //       volume (set by set3DVolumeAdjustment) reaches already-playing 3D
 //       samples.
-//     - processPlayingList @ 2266 — the per-frame volume-application path
+//     - processPlayingList @ 2325 — the per-frame volume-application path
 //       that fires on m_volumeHasChanged: each of the m_playingSounds /
 //       m_playing3DSounds / m_playingStreams loops guards
 //       adjustPlayingVolume(playing) on m_volumeHasChanged, and the function
@@ -438,7 +438,7 @@ function main() {
       miles,
       "adjustPlayingVolumeDefLine",
       /void\s+MilesAudioManager\s*::\s*adjustPlayingVolume\s*\(\s*PlayingAudio\s*\*\s*audio\s*\)/,
-      1243,
+      1280,
       errors,
       facts,
     );
@@ -466,7 +466,7 @@ function main() {
       miles,
       "processPlayingListDefLine",
       /void\s+MilesAudioManager\s*::\s*processPlayingList\s*\(\s*void\s*\)/,
-      2266,
+      2325,
       errors,
       facts,
     );

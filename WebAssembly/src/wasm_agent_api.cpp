@@ -78,6 +78,7 @@ namespace {
 constexpr const char *kProtocol = "cnc-agent/1";
 constexpr Int kMaxWindows = WIN_MAX_WINDOWS;
 constexpr Int kMaxTouchTextEntries = 64;
+constexpr Int kMaxTouchDragBlockers = 128;
 constexpr Int kMaxSnapshotRowsPerList = 64;
 constexpr Int kMaxListColumns = 16;
 constexpr Int kMaxListQueryRows = 128;
@@ -537,6 +538,54 @@ void append_touch_text_entries(
 		if (!hidden && current->winGetChild() != nullptr) {
 			append_touch_text_entries(json, current->winGetChild(), focus,
 				emitted, first, truncated);
+			if (truncated) return;
+		}
+	}
+}
+
+bool window_blocks_touch_map_drag(GameWindow *window)
+{
+	if (!window_is_interactive(window)) return false;
+	const UnsignedInt drag_gadget_styles = GWS_PUSH_BUTTON | GWS_RADIO_BUTTON
+		| GWS_CHECK_BOX | GWS_VERT_SLIDER | GWS_HORZ_SLIDER
+		| GWS_SCROLL_LISTBOX | GWS_ENTRY_FIELD | GWS_TAB_CONTROL | GWS_COMBO_BOX;
+	if ((window->winGetStyle() & drag_gadget_styles) != 0) return true;
+	GameWinInputFunc input = window->winGetInputFunc();
+	return input != nullptr && input != LeftHUDInput;
+}
+
+void append_touch_drag_blockers(
+	std::string &json,
+	GameWindow *window,
+	Int &emitted,
+	bool &first,
+	bool &truncated)
+{
+	for (GameWindow *current = window; current != nullptr; current = current->winGetNext()) {
+		const bool hidden = TheWindowManager->isHidden(current);
+		if (!hidden && window_blocks_touch_map_drag(current)) {
+			if (emitted >= kMaxTouchDragBlockers) {
+				truncated = true;
+				return;
+			}
+			Int x = 0;
+			Int y = 0;
+			Int width = 0;
+			Int height = 0;
+			current->winGetScreenPosition(&x, &y);
+			current->winGetSize(&width, &height);
+			if (width > 0 && height > 0) {
+				if (!first) json += ",";
+				first = false;
+				json += "{\"x\":" + std::to_string(x)
+					+ ",\"y\":" + std::to_string(y)
+					+ ",\"width\":" + std::to_string(width)
+					+ ",\"height\":" + std::to_string(height) + "}";
+				++emitted;
+			}
+		}
+		if (!hidden && current->winGetChild() != nullptr) {
+			append_touch_drag_blockers(json, current->winGetChild(), emitted, first, truncated);
 			if (truncated) return;
 		}
 	}
@@ -2642,7 +2691,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_touch_ui_state()
 {
 	static std::string json;
 	if (TheWindowManager == nullptr) {
-		json = "{\"ok\":false,\"focusedInputMode\":null,\"entries\":[]}";
+		json = "{\"ok\":false,\"mapGestures\":false,\"focusedInputMode\":null,"
+			"\"entries\":[],\"dragBlockers\":[]}";
 		return json.c_str();
 	}
 
@@ -2651,7 +2701,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_touch_ui_state()
 		&& window_is_interactive(focus)
 		&& (focus->winGetStyle() & GWS_ENTRY_FIELD) != 0
 		? static_cast<EntryData *>(focus->winGetUserData()) : nullptr;
-	json = "{\"ok\":true,\"focusedInputMode\":";
+	const bool map_gestures = TheGameLogic != nullptr && TheGameLogic->isInGame()
+		&& TheTacticalView != nullptr && TheInGameUI != nullptr;
+	json = "{\"ok\":true,\"mapGestures\":";
+	json += map_gestures ? "true" : "false";
+	json += ",\"focusedInputMode\":";
 	if (focus_entry == nullptr) {
 		json += "null";
 	} else {
@@ -2665,6 +2719,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_touch_ui_state()
 		emitted, first, truncated);
 	json += "],\"truncated\":";
 	json += truncated ? "true" : "false";
+	json += ",\"dragBlockers\":[";
+	Int blocker_count = 0;
+	bool first_blocker = true;
+	bool blockers_truncated = false;
+	if (map_gestures) {
+		append_touch_drag_blockers(json, TheWindowManager->winGetWindowList(),
+			blocker_count, first_blocker, blockers_truncated);
+	}
+	json += "],\"dragBlockersTruncated\":";
+	json += blockers_truncated ? "true" : "false";
 	json += "}";
 	return json.c_str();
 }

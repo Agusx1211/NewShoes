@@ -2159,7 +2159,6 @@ void TerrainShaderPixelShader::reset(void)
 	DX8Wrapper::Set_DX8_Texture_Stage_State( 3, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
 	DX8Wrapper::Set_DX8_Texture_Stage_State( 3, D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_PASSTHRU|3);
 
-
 	DX8Wrapper::Invalidate_Cached_Render_States();
 }
 

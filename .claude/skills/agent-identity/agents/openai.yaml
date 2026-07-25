@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Identity"
+  short_description: "Generate a stable game-style agent codename"
+  default_prompt: "Use $agent-identity to establish my codename before GitHub issue or pull-request work."

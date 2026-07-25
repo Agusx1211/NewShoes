@@ -116,7 +116,7 @@ function main() {
   // ========================================================================
   // FACT 1 - initSamplePools definition and ordered 2D then 3D allocation.
   // ------------------------------------------------------------------------
-  // initSamplePools is defined at 2907; its body allocates the 2D pool with
+  // initSamplePools is defined at 3006; its body allocates the 2D pool with
   // AIL_allocate_sample_handle / AIL_init_sample / AIL_set_sample_user_data,
   // then the 3D pool with AIL_allocate_3D_sample_handle /
   // AIL_set_3D_user_data, in that order.
@@ -126,12 +126,12 @@ function main() {
     /void\s+MilesAudioManager\s*::\s*initSamplePools\s*\(/,
   );
   facts.initSamplePoolsDef = {
-    expectedLine: 2907,
+    expectedLine: 3006,
     line: initSamplePoolsDefLine,
   };
-  if (initSamplePoolsDefLine !== 2907) {
+  if (initSamplePoolsDefLine !== 3006) {
     errors.push(
-      `MilesAudioManager::initSamplePools definition expected at line 2907 but found at ${initSamplePoolsDefLine}`,
+      `MilesAudioManager::initSamplePools definition expected at line 3006 but found at ${initSamplePoolsDefLine}`,
     );
   }
   const initSamplePoolsRange = initSamplePoolsDefLine > 0
@@ -142,11 +142,11 @@ function main() {
   }
 
   const initSamplePoolsSequence = [
-    { name: "AIL_allocate_sample_handle", line: 2915 },
-    { name: "AIL_init_sample", line: 2918 },
-    { name: "AIL_set_sample_user_data", line: 2919 },
-    { name: "AIL_allocate_3D_sample_handle", line: 2926 },
-    { name: "AIL_set_3D_user_data", line: 2929 },
+    { name: "AIL_allocate_sample_handle", line: 3014 },
+    { name: "AIL_init_sample", line: 3017 },
+    { name: "AIL_set_sample_user_data", line: 3018 },
+    { name: "AIL_allocate_3D_sample_handle", line: 3025 },
+    { name: "AIL_set_3D_user_data", line: 3028 },
   ];
   const initSamplePoolsFacts = {};
   let prevActual = -1;
@@ -174,7 +174,7 @@ function main() {
   // ========================================================================
   // FACT 2 - playSample definition and ordered 2D playback tail.
   // ------------------------------------------------------------------------
-  // playSample is defined at 2798; its body calls AIL_init_sample,
+  // playSample is defined at 2888; its body calls AIL_init_sample,
   // AIL_register_EOS_callback, initFilters, AIL_set_sample_file,
   // AIL_start_sample, in that order.
   // ========================================================================
@@ -182,10 +182,10 @@ function main() {
     miles.lines,
     /void\s*\*\s*MilesAudioManager\s*::\s*playSample\s*\(/,
   );
-  facts.playSampleDef = { expectedLine: 2798, line: playSampleDefLine };
-  if (playSampleDefLine !== 2798) {
+  facts.playSampleDef = { expectedLine: 2888, line: playSampleDefLine };
+  if (playSampleDefLine !== 2888) {
     errors.push(
-      `MilesAudioManager::playSample definition expected at line 2798 but found at ${playSampleDefLine}`,
+      `MilesAudioManager::playSample definition expected at line 2888 but found at ${playSampleDefLine}`,
     );
   }
   const playSampleRange = playSampleDefLine > 0
@@ -196,11 +196,11 @@ function main() {
   }
 
   const playSampleSequence = [
-    { name: "AIL_init_sample", line: 2800 },
-    { name: "AIL_register_EOS_callback", line: 2803 },
-    { name: "initFilters", line: 2804 },
-    { name: "AIL_set_sample_file", line: 2810 },
-    { name: "AIL_start_sample", line: 2813 },
+    { name: "AIL_init_sample", line: 2891 },
+    { name: "AIL_register_EOS_callback", line: 2894 },
+    { name: "initFilters", line: 2895 },
+    { name: "AIL_set_sample_file", line: 2901 },
+    { name: "AIL_start_sample", line: 2904 },
   ];
   const playSampleFacts = {};
   prevActual = -1;
@@ -229,8 +229,8 @@ function main() {
   // FACT 3 - release paths reach AIL_release_sample_handle and
   // AIL_release_3D_sample_handle.
   // ------------------------------------------------------------------------
-  // releaseMilesHandles is defined at 1076; freeAllMilesHandles is defined at
-  // 1190 and its body calls AIL_release_sample_handle (2D) and
+  // releaseMilesHandles is defined at 1109; freeAllMilesHandles is defined at
+  // 1227 and its body calls AIL_release_sample_handle (2D) and
   // AIL_release_3D_sample_handle (3D).
   // ========================================================================
   const releaseMilesHandlesDefLine = findDefLine(
@@ -238,12 +238,12 @@ function main() {
     /void\s+MilesAudioManager\s*::\s*releaseMilesHandles\s*\(/,
   );
   facts.releaseMilesHandlesDef = {
-    expectedLine: 1076,
+    expectedLine: 1109,
     line: releaseMilesHandlesDefLine,
   };
-  if (releaseMilesHandlesDefLine !== 1076) {
+  if (releaseMilesHandlesDefLine !== 1109) {
     errors.push(
-      `MilesAudioManager::releaseMilesHandles definition expected at line 1076 but found at ${releaseMilesHandlesDefLine}`,
+      `MilesAudioManager::releaseMilesHandles definition expected at line 1109 but found at ${releaseMilesHandlesDefLine}`,
     );
   }
 
@@ -252,12 +252,12 @@ function main() {
     /void\s+MilesAudioManager\s*::\s*freeAllMilesHandles\s*\(/,
   );
   facts.freeAllMilesHandlesDef = {
-    expectedLine: 1190,
+    expectedLine: 1227,
     line: freeAllMilesHandlesDefLine,
   };
-  if (freeAllMilesHandlesDefLine !== 1190) {
+  if (freeAllMilesHandlesDefLine !== 1227) {
     errors.push(
-      `MilesAudioManager::freeAllMilesHandles definition expected at line 1190 but found at ${freeAllMilesHandlesDefLine}`,
+      `MilesAudioManager::freeAllMilesHandles definition expected at line 1227 but found at ${freeAllMilesHandlesDefLine}`,
     );
   }
   const freeAllRange = freeAllMilesHandlesDefLine > 0
@@ -268,8 +268,8 @@ function main() {
   }
 
   const releaseSequence = [
-    { name: "AIL_release_sample_handle", line: 1200 },
-    { name: "AIL_release_3D_sample_handle", line: 1208 },
+    { name: "AIL_release_sample_handle", line: 1237 },
+    { name: "AIL_release_3D_sample_handle", line: 1245 },
   ];
   const releaseFacts = {};
   for (const { name, line } of releaseSequence) {
@@ -292,20 +292,20 @@ function main() {
   // misplaced definitions are hard errors.
   // ========================================================================
   const mssLifecycle = [
-    { name: "AIL_allocate_sample_handle", line: 531 },
-    { name: "AIL_release_sample_handle", line: 542 },
-    { name: "AIL_init_sample", line: 552 },
-    { name: "AIL_set_sample_user_data", line: 677 },
-    { name: "AIL_sample_user_data", line: 684 },
-    { name: "AIL_set_sample_file", line: 567 },
-    { name: "AIL_register_EOS_callback", line: 721 },
-    { name: "AIL_start_sample", line: 582 },
-    { name: "AIL_stop_sample", line: 592 },
-    { name: "AIL_resume_sample", line: 600 },
-    { name: "AIL_sample_status", line: 662 },
-    { name: "AIL_set_sample_volume_pan", line: 699 },
-    { name: "AIL_set_sample_playback_rate", line: 712 },
-    { name: "AIL_set_sample_loop_count", line: 643 },
+    { name: "AIL_allocate_sample_handle", line: 1243 },
+    { name: "AIL_release_sample_handle", line: 1254 },
+    { name: "AIL_init_sample", line: 1265 },
+    { name: "AIL_set_sample_user_data", line: 1398 },
+    { name: "AIL_sample_user_data", line: 1405 },
+    { name: "AIL_set_sample_file", line: 1284 },
+    { name: "AIL_register_EOS_callback", line: 1442 },
+    { name: "AIL_start_sample", line: 1299 },
+    { name: "AIL_stop_sample", line: 1310 },
+    { name: "AIL_resume_sample", line: 1319 },
+    { name: "AIL_sample_status", line: 1383 },
+    { name: "AIL_set_sample_volume_pan", line: 1420 },
+    { name: "AIL_set_sample_playback_rate", line: 1433 },
+    { name: "AIL_set_sample_loop_count", line: 1364 },
   ];
   const mssFacts = {};
   for (const { name, line } of mssLifecycle) {
@@ -348,14 +348,14 @@ function main() {
       probe.lines,
       /\bcnc_port_probe_mss_sample_lifecycle\s*\(/,
     );
-    probeFacts.entryFunction = { expectedLine: 31, line: fnLine };
+    probeFacts.entryFunction = { expectedLine: 104, line: fnLine };
     if (fnLine === -1) {
       errors.push(
         "wasm_mss_sample_lifecycle_probe missing cnc_port_probe_mss_sample_lifecycle definition",
       );
-    } else if (fnLine !== 31) {
+    } else if (fnLine !== 104) {
       errors.push(
-        `wasm_mss_sample_lifecycle_probe cnc_port_probe_mss_sample_lifecycle expected at line 31 but found at ${fnLine}`,
+        `wasm_mss_sample_lifecycle_probe cnc_port_probe_mss_sample_lifecycle expected at line 104 but found at ${fnLine}`,
       );
     }
 
@@ -363,14 +363,14 @@ function main() {
       ? functionBodyLineRange(probe.lines, fnLine)
       : null;
     const probeCalls = [
-      { name: "AIL_allocate_sample_handle", line: 43 },
-      { name: "AIL_init_sample", line: 46 },
-      { name: "AIL_set_sample_user_data", line: 47 },
-      { name: "AIL_set_sample_file", line: 50 },
-      { name: "AIL_register_EOS_callback", line: 51 },
-      { name: "AIL_start_sample", line: 73 },
-      { name: "AIL_stop_sample", line: 76 },
-      { name: "AIL_release_sample_handle", line: 96 },
+      { name: "AIL_allocate_sample_handle", line: 116 },
+      { name: "AIL_init_sample", line: 119 },
+      { name: "AIL_set_sample_user_data", line: 120 },
+      { name: "AIL_set_sample_file", line: 123 },
+      { name: "AIL_register_EOS_callback", line: 124 },
+      { name: "AIL_start_sample", line: 146 },
+      { name: "AIL_stop_sample", line: 149 },
+      { name: "AIL_release_sample_handle", line: 169 },
     ];
     const probeCallFacts = {};
     prevActual = -1;

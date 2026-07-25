@@ -381,7 +381,13 @@ TheInGameUI->DEBUG_addFloatingText("entering idle state", getMachineOwner()->get
  			// be in from its perspective.
  			WorkerAIInterface *workerAI = ownerAI->getWorkerAIInterface();
  			if (workerAI != NULL) {
- 				workerAI->exitingSupplyTruckState();
+				SupplyTruckAIInterface *supplyTruckAI = ownerAI->getSupplyTruckAIInterface();
+				// A produced Worker passes through idle after completing its exit path.
+				// Preserve its supply brain until the idle-state condition advances it
+				// to wanting, then select a warehouse on the next update.
+				if (supplyTruckAI == NULL || !supplyTruckAI->isForcedIntoWantingState()) {
+					workerAI->exitingSupplyTruckState();
+				}
  			}
  		}
  	}
@@ -835,4 +841,3 @@ TheInGameUI->DEBUG_addFloatingText(tmp, owner->getPosition(), GameMakeColor(255,
 
 	return false;
 }
-

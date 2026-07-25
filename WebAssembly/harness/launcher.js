@@ -1080,7 +1080,7 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
 
   document.querySelectorAll("[data-settings-tab]").forEach((button) => button.addEventListener("click", () => {
     const section = button.dataset.settingsTab;
-    if (["appearance", "game", "multiplayer", "hardware", "privacy"].includes(section)) {
+    if (["appearance", "game", "experimental", "multiplayer", "hardware", "privacy"].includes(section)) {
       track("settings_section_view", { section });
     }
   }));

@@ -50,6 +50,26 @@ function parsePositiveInt(name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function parseNonNegativeInt(name, fallback) {
+  const value = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function parseOptionalUint31(name) {
+  const text = String(process.env[name] ?? "").trim();
+  if (!text) {
+    return null;
+  }
+  if (!/^\d+$/.test(text)) {
+    throw new Error(`Invalid ${name}: ${text}`);
+  }
+  const value = Number.parseInt(text, 10);
+  if (!Number.isSafeInteger(value) || value > 0x7fffffff) {
+    throw new Error(`Invalid ${name}: ${text}`);
+  }
+  return value;
+}
+
 function parseDistDir() {
   const value = process.env.PERF_PROFILE_DIST ?? "dist";
   if (!/^dist(?:[-_][A-Za-z0-9_-]+)?$/.test(value)) {
@@ -78,6 +98,81 @@ function parseOptionalBoolean(name) {
     return false;
   }
   throw new Error(`Invalid ${name}: ${value}`);
+}
+
+async function startWorkerCpuProfile(browser, samplingIntervalUs) {
+  if (!browser) {
+    throw new Error("CPU profiling requires a Chromium browser session");
+  }
+  const rootSession = await browser.newBrowserCDPSession();
+  const { targetInfos = [] } = await rootSession.send("Target.getTargets");
+  const workerTarget = targetInfos.find((target) =>
+    target.type === "worker" && /engine[_-]realm/i.test(target.url))
+    ?? targetInfos.find((target) => target.type === "worker");
+  if (!workerTarget) {
+    await rootSession.detach();
+    throw new Error(`CPU profiling could not find the engine worker: ${JSON.stringify(
+      targetInfos.map(({ type, url }) => ({ type, url })),
+    )}`);
+  }
+
+  // Playwright exposes CDP sessions for pages/frames, but the threaded engine
+  // runs in a dedicated Worker. Attach through the browser Target domain and
+  // relay nested-protocol messages to profile the realm that owns Wasm/WebGL.
+  const { sessionId } = await rootSession.send("Target.attachToTarget", {
+    targetId: workerTarget.targetId,
+    flatten: false,
+  });
+  let nextCommandId = 0;
+  const pending = new Map();
+  const onMessage = ({ sessionId: incomingSessionId, message }) => {
+    if (incomingSessionId !== sessionId) {
+      return;
+    }
+    const response = JSON.parse(message);
+    const waiter = pending.get(response.id);
+    if (!waiter) {
+      return;
+    }
+    pending.delete(response.id);
+    if (response.error) {
+      waiter.reject(new Error(`Worker CDP command failed: ${JSON.stringify(response.error)}`));
+    } else {
+      waiter.resolve(response.result);
+    }
+  };
+  rootSession.on("Target.receivedMessageFromTarget", onMessage);
+  const send = async (method, params = {}) => {
+    const id = ++nextCommandId;
+    const response = new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+    await rootSession.send("Target.sendMessageToTarget", {
+      sessionId,
+      message: JSON.stringify({ id, method, params }),
+    });
+    return response;
+  };
+
+  await send("Profiler.enable");
+  await send("Profiler.setSamplingInterval", { interval: samplingIntervalUs });
+  await send("Profiler.start");
+  const startedAt = performance.now();
+  return {
+    targetUrl: workerTarget.url,
+    samplingIntervalUs,
+    async stop() {
+      const result = await send("Profiler.stop");
+      const elapsedMs = performance.now() - startedAt;
+      rootSession.off("Target.receivedMessageFromTarget", onMessage);
+      await rootSession.send("Target.detachFromTarget", { sessionId }).catch(() => {});
+      await rootSession.detach().catch(() => {});
+      return {
+        profile: result.profile,
+        elapsedMs,
+        targetUrl: workerTarget.url,
+        samplingIntervalUs,
+      };
+    },
+  };
 }
 
 async function runWithDeadline(label, timeoutMs, task) {
@@ -124,10 +219,20 @@ function pixelHasColor(pixel, threshold = 2) {
 }
 
 function screenshotHasVisibleSample(screenshot) {
+  if (typeof screenshot === "string") {
+    return screenshot.startsWith("data:image/png;base64,") && screenshot.length > 1024;
+  }
   return pixelHasColor(screenshot?.topLeftPixel) || pixelHasColor(screenshot?.centerPixel);
 }
 
 function summarizeScreenshot(screenshot) {
+  if (typeof screenshot?.screenshot === "string") {
+    return {
+      ok: screenshot?.ok,
+      format: screenshot.screenshot.startsWith("data:image/png;base64,") ? "png-data-url" : "unknown",
+      encodedBytes: screenshot.screenshot.length,
+    };
+  }
   return {
     ok: screenshot?.ok,
     width: screenshot?.screenshot?.width,
@@ -152,6 +257,43 @@ function stats(values) {
     p95: percentile(0.95),
     p99: percentile(0.99),
     max: finite[finite.length - 1],
+  };
+}
+
+function framePacingStats(values, budgetMs = 1000 / 30) {
+  const finite = values.filter((value) => Number.isFinite(value) && value >= 0);
+  const summary = stats(finite);
+  if (finite.length === 0) {
+    return {
+      ...summary,
+      standardDeviation: null,
+      coefficientOfVariation: null,
+      equivalentFps: null,
+      onePercentLowFps: null,
+      budgetMs,
+      overBudget: 0,
+      overBudgetRatio: null,
+      over50Ms: 0,
+      over100Ms: 0,
+    };
+  }
+  const variance = finite.reduce(
+    (total, value) => total + (value - summary.avg) ** 2,
+    0,
+  ) / finite.length;
+  const standardDeviation = Math.sqrt(variance);
+  const overBudget = finite.filter((value) => value > budgetMs).length;
+  return {
+    ...summary,
+    standardDeviation,
+    coefficientOfVariation: summary.avg > 0 ? standardDeviation / summary.avg : null,
+    equivalentFps: summary.avg > 0 ? 1000 / summary.avg : null,
+    onePercentLowFps: summary.p99 > 0 ? 1000 / summary.p99 : null,
+    budgetMs,
+    overBudget,
+    overBudgetRatio: overBudget / finite.length,
+    over50Ms: finite.filter((value) => value > 50).length,
+    over100Ms: finite.filter((value) => value > 100).length,
   };
 }
 
@@ -213,6 +355,9 @@ function compactBrowserPerfSample(browserPerf) {
     drawMatrixAllocatedCopies: perFrame.drawMatrixAllocatedCopies,
     drawPayloadCalls: perFrame.drawPayloadCalls,
     drawPayloadReused: perFrame.drawPayloadReused,
+    drawMultiWorldBatches: perFrame.drawMultiWorldBatches,
+    drawMultiWorldCopies: perFrame.drawMultiWorldCopies,
+    drawMultiWorldFallbacks: perFrame.drawMultiWorldFallbacks,
     drawClipPlanePayloadCopies: perFrame.drawClipPlanePayloadCopies,
     drawClipPlanePayloadSkips: perFrame.drawClipPlanePayloadSkips,
     drawMaterialPayloadCopies: perFrame.drawMaterialPayloadCopies,
@@ -536,6 +681,123 @@ async function buildArchives(serverUrl) {
   return archives;
 }
 
+async function findOrPromotePreparedArchives(page, archives) {
+  return page.evaluate(async (inputs) => {
+    const installName = "install-runtime-frame-profile";
+    const installRoot = `cnc-library/${installName}`;
+    const root = await navigator.storage.getDirectory();
+
+    const openDirectory = async (start, components, create = false) => {
+      let directory = start;
+      for (const component of components) {
+        directory = await directory.getDirectoryHandle(component, { create });
+      }
+      return directory;
+    };
+    const validateDirectory = async (directory) => {
+      const prepared = [];
+      for (const input of inputs) {
+        try {
+          const handle = await directory.getFileHandle(input.name);
+          const file = await handle.getFile();
+          if (file.size !== input.expectedBytes) {
+            return null;
+          }
+          prepared.push({
+            name: input.name,
+            sourceName: input.sourceName,
+            size: file.size,
+            bytes: file.size,
+            expectedBytes: input.expectedBytes,
+            opfsPath: `${installRoot}/${input.name}`,
+          });
+        } catch {
+          return null;
+        }
+      }
+      return prepared;
+    };
+
+    try {
+      const installed = await openDirectory(root, ["cnc-library", installName]);
+      const prepared = await validateDirectory(installed);
+      if (prepared) {
+        return { ok: true, source: "installed-cache", installRoot, archives: prepared };
+      }
+    } catch {
+      // A missing or incomplete cache is repaired from the prior benchmark
+      // namespace below when one is available.
+    }
+
+    let archiveRoot;
+    try {
+      archiveRoot = await root.getDirectoryHandle("cnc-archives");
+    } catch {
+      return { ok: false, source: "none", installRoot, archives: [] };
+    }
+
+    let sourceDirectory = null;
+    let sourceNamespace = null;
+    for await (const [name, handle] of archiveRoot.entries()) {
+      if (handle.kind !== "directory" || !name.startsWith("ns-")) {
+        continue;
+      }
+      try {
+        const candidate = await openDirectory(handle, ["assets", "runtime-frame-profile"]);
+        let complete = true;
+        for (const input of inputs) {
+          const file = await (await candidate.getFileHandle(input.name)).getFile();
+          if (file.size !== input.expectedBytes) {
+            complete = false;
+            break;
+          }
+        }
+        if (complete) {
+          sourceDirectory = candidate;
+          sourceNamespace = name;
+          break;
+        }
+      } catch {
+        // Continue looking for a complete namespace.
+      }
+    }
+    if (!sourceDirectory) {
+      return { ok: false, source: "none", installRoot, archives: [] };
+    }
+
+    const library = await root.getDirectoryHandle("cnc-library", { create: true });
+    const installed = await library.getDirectoryHandle(installName, { create: true });
+    for (const input of inputs) {
+      const source = await sourceDirectory.getFileHandle(input.name);
+      let moved = false;
+      if (typeof source.move === "function") {
+        try {
+          await source.move(installed, input.name);
+          moved = true;
+        } catch {
+          moved = false;
+        }
+      }
+      if (!moved) {
+        const sourceFile = await source.getFile();
+        const target = await installed.getFileHandle(input.name, { create: true });
+        const writable = await target.createWritable();
+        await sourceFile.stream().pipeTo(writable);
+      }
+    }
+    const prepared = await validateDirectory(installed);
+    return prepared
+      ? {
+          ok: true,
+          source: "promoted-namespace",
+          sourceNamespace,
+          installRoot,
+          archives: prepared,
+        }
+      : { ok: false, source: "promotion-failed", sourceNamespace, installRoot, archives: [] };
+  }, archives);
+}
+
 async function rpc(page, command, payload = {}) {
   return page.evaluate(([name, args]) => window.CnCPort.rpc(name, args), [command, payload]);
 }
@@ -571,8 +833,10 @@ async function runUiSummary(page, frames, label, payload = {}) {
 async function waitForUiCondition(page, label, predicate, maxFrames = 180) {
   const attempts = [];
   let last = null;
-  for (let frame = 0; frame < maxFrames; frame += 1) {
-    last = await runUiFrames(page, 1, label);
+  for (let frame = 0; frame < maxFrames;) {
+    const frames = Math.min(uiBatchSize, maxFrames - frame);
+    last = await runUiFrames(page, frames, label);
+    frame += frames;
     const clientState = last.frame?.clientState ?? {};
     attempts.push({
       framesCompleted: last.frame?.framesCompleted ?? null,
@@ -713,21 +977,43 @@ async function waitForSkirmishMatch(page, maxFrames, chunkSize, summaryPayload =
   const samples = [];
   let framesAdvanced = 0;
   while (framesAdvanced < maxFrames) {
+    if (setupRenderDisabled) {
+      const suppressed = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
+      expect(suppressed?.ok === true,
+        "runtime frame profile could not retain map-load render suppression", suppressed);
+    }
     const frames = Math.min(chunkSize, maxFrames - framesAdvanced);
-    const result = await runUiSummary(page, frames, "profile skirmish match wait", summaryPayload);
+    let result = await runUiSummary(page, frames, "profile skirmish match wait", summaryPayload);
     framesAdvanced += frames;
-    const gameplay = result.frame?.gameplay;
+    let gameplay = result.frame?.gameplay;
     samples.push({
       framesCompleted: result.frame?.framesCompleted ?? null,
       ...compactGameplay(gameplay),
     });
-    if (gameplay?.gameMode === GAME_SKIRMISH &&
+    const simulationReady = gameplay?.gameMode === GAME_SKIRMISH &&
         gameplay?.inGame === true &&
         gameplay?.loadingMap === false &&
         gameplay?.inputEnabled === true &&
         Number(gameplay?.objectCount ?? 0) > 0 &&
-        Number(gameplay?.drawableCount ?? 0) > 0 &&
-        Number(gameplay?.renderedObjectCount ?? 0) > 0) {
+        Number(gameplay?.drawableCount ?? 0) > 0;
+    if (simulationReady && setupRenderDisabled &&
+        Number(gameplay?.renderedObjectCount ?? 0) <= 0) {
+      const restored = await rpc(page, "realEngineSetRenderDisabled", { disabled: false });
+      expect(restored?.ok === true,
+        "runtime frame profile could not render the active match", restored);
+      for (let renderFrame = 0;
+        renderFrame < 8 && Number(gameplay?.renderedObjectCount ?? 0) <= 0;
+        renderFrame += 1) {
+        result = await runUiSummary(page, 1, "profile active match first rendered frame", summaryPayload);
+        framesAdvanced += 1;
+        gameplay = result.frame?.gameplay;
+        samples.push({
+          framesCompleted: result.frame?.framesCompleted ?? null,
+          ...compactGameplay(gameplay),
+        });
+      }
+    }
+    if (simulationReady && Number(gameplay?.renderedObjectCount ?? 0) > 0) {
       return { result, framesAdvanced, samples };
     }
   }
@@ -797,12 +1083,38 @@ async function enterSkirmishScene(page) {
     await runUiSummary(page, 1, "profile skirmish template apply settle");
   }
 
+  const requestedSeed = parseOptionalUint31("PERF_PROFILE_SKIRMISH_SEED");
+  let skirmishSeedSet = null;
+  if (requestedSeed != null) {
+    skirmishSeedSet = await rpc(page, "realEngineSetSkirmishSeed", {
+      seed: requestedSeed,
+    });
+    expect(skirmishSeedSet?.ok === true
+        && skirmishSeedSet.result?.applied === requestedSeed,
+      "profile requested skirmish seed was not applied", skirmishSeedSet);
+  }
+
   await clickButton(
     page,
     skirmishMenu.buttonStart,
     skirmishMenu.underButtonStartCenter,
     "profile skirmish start",
     null);
+  let loadRenderToggle = null;
+  let loadResetFrames = 0;
+  if (setupRenderDisabled) {
+    // startNewGame recreates GlobalData, which restores m_disableRender to
+    // its product default on a later update. Step the reset boundary one frame
+    // at a time and reapply suppression before every step; at most the reset
+    // frame itself can draw, while the measured match remains unaffected.
+    loadResetFrames = parsePositiveInt("PERF_PROFILE_SKIRMISH_RESET_FRAMES", 8);
+    for (let frame = 0; frame < loadResetFrames; frame += 1) {
+      loadRenderToggle = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
+      expect(loadRenderToggle?.ok === true,
+        "runtime frame profile could not suppress map-load rendering", loadRenderToggle);
+      await runUiSummary(page, 1, "profile skirmish start reset settle");
+    }
+  }
   const active = await waitForSkirmishMatch(
     page,
     parsePositiveInt("PERF_PROFILE_SKIRMISH_MAX_START_FRAMES", 4200),
@@ -825,6 +1137,10 @@ async function enterSkirmishScene(page) {
     skirmishMapSet: skirmishMapSet?.result ?? null,
     requestedTemplate: requestedTemplate || null,
     skirmishTemplateSet: skirmishTemplateSet?.result ?? null,
+    requestedSeed,
+    skirmishSeedSet: skirmishSeedSet?.result ?? null,
+    loadRenderToggle,
+    loadResetFrames,
     activeFramesAdvanced: active.framesAdvanced,
     activeSamples: active.samples.slice(-12),
     activeGameplay,
@@ -876,9 +1192,45 @@ const browserPerfFields = [
   "drawBatchSavedDrawElements",
   "drawBatchMergedIndices",
   "drawBatchMaxRunLength",
+  "drawNativeRepeatedAppendBatches",
+  "drawNativeRepeatedAppends",
+  "drawNativeRepeatedAppendFailures",
+  "frameCommandSegments",
+  "frameCommandQueuedDraws",
+  "frameCommandReplayedDraws",
+  "frameCommandImmediateDraws",
+  "frameCommandMaxSegmentDraws",
+  "frameCommandDynamicSnapshots",
+  "frameCommandDynamicSnapshotBytes",
+  "frameCommandArenaUploads",
+  "frameCommandArenaUploadBytes",
+  "frameCommandCaptureMs",
+  "frameCommandArenaUploadMs",
+  "frameCommandReplayMs",
+  "drawRepeatedGeometryBatches",
+  "drawRepeatedGeometryCopies",
+  "drawRepeatedGeometryCopyBytes",
+  "drawRepeatedGeometryFallbacks",
+  "drawMultiWorldBatches",
+  "drawMultiWorldCopies",
+  "drawMultiWorldCopyBytes",
+  "drawMultiWorldFallbacks",
+  "drawMultiWorldSnapshots",
+  "drawMultiWorldQueueCandidates",
+  "drawLitTex1ProgramDraws",
   "drawDepthStencilOnlyProgramDraws",
   "drawDepthStencilNoDiscardDraws",
   "drawDepthStencilOnlyFastDerivedDraws",
+  "unlitTex2ProgramDraws",
+  "unlitTex2FixedFunctionDraws",
+  "unlitTex2SM1Draws",
+  "simpleFFProgramDraws",
+  "fastSimpleFFProgramDraws",
+  "staticSM1ProgramDraws",
+  "terrainShroudFusedDraws",
+  "gpuFrameTimerSampleCount",
+  "gpuFrameTimerTotalMs",
+  "gpuFrameTimerDisjointSamples",
   "drawMatrixNormalizations",
   "drawMatrixScratchCopies",
   "drawMatrixAllocatedCopies",
@@ -1216,10 +1568,74 @@ function browserPerfDelta(before, after, framesAdvanced) {
           drawBatchFlushes: Number(delta.drawBatchFlushes ?? 0) / framesAdvanced,
           drawBatchSavedDrawElements: Number(delta.drawBatchSavedDrawElements ?? 0) / framesAdvanced,
           drawBatchMergedIndices: Number(delta.drawBatchMergedIndices ?? 0) / framesAdvanced,
+          drawRepeatedGeometryBatches:
+            Number(delta.drawRepeatedGeometryBatches ?? 0) / framesAdvanced,
+          drawRepeatedGeometryCopies:
+            Number(delta.drawRepeatedGeometryCopies ?? 0) / framesAdvanced,
+          drawRepeatedGeometryCopyBytes:
+            Number(delta.drawRepeatedGeometryCopyBytes ?? 0) / framesAdvanced,
+          drawRepeatedGeometryFallbacks:
+            Number(delta.drawRepeatedGeometryFallbacks ?? 0) / framesAdvanced,
+          drawMultiWorldBatches: Number(delta.drawMultiWorldBatches ?? 0) / framesAdvanced,
+          drawMultiWorldCopies: Number(delta.drawMultiWorldCopies ?? 0) / framesAdvanced,
+          drawMultiWorldCopyBytes:
+            Number(delta.drawMultiWorldCopyBytes ?? 0) / framesAdvanced,
+          drawMultiWorldFallbacks:
+            Number(delta.drawMultiWorldFallbacks ?? 0) / framesAdvanced,
+          drawMultiWorldSnapshots:
+            Number(delta.drawMultiWorldSnapshots ?? 0) / framesAdvanced,
+          drawMultiWorldQueueCandidates:
+            Number(delta.drawMultiWorldQueueCandidates ?? 0) / framesAdvanced,
+          drawLitTex1ProgramDraws:
+            Number(delta.drawLitTex1ProgramDraws ?? 0) / framesAdvanced,
+          drawNativeRepeatedAppendBatches:
+            Number(delta.drawNativeRepeatedAppendBatches ?? 0) / framesAdvanced,
+          drawNativeRepeatedAppends:
+            Number(delta.drawNativeRepeatedAppends ?? 0) / framesAdvanced,
+          drawNativeRepeatedAppendFailures:
+            Number(delta.drawNativeRepeatedAppendFailures ?? 0) / framesAdvanced,
+          frameCommandSegments:
+            Number(delta.frameCommandSegments ?? 0) / framesAdvanced,
+          frameCommandQueuedDraws:
+            Number(delta.frameCommandQueuedDraws ?? 0) / framesAdvanced,
+          frameCommandReplayedDraws:
+            Number(delta.frameCommandReplayedDraws ?? 0) / framesAdvanced,
+          frameCommandImmediateDraws:
+            Number(delta.frameCommandImmediateDraws ?? 0) / framesAdvanced,
+          frameCommandDynamicSnapshots:
+            Number(delta.frameCommandDynamicSnapshots ?? 0) / framesAdvanced,
+          frameCommandDynamicSnapshotBytes:
+            Number(delta.frameCommandDynamicSnapshotBytes ?? 0) / framesAdvanced,
+          frameCommandArenaUploads:
+            Number(delta.frameCommandArenaUploads ?? 0) / framesAdvanced,
+          frameCommandArenaUploadBytes:
+            Number(delta.frameCommandArenaUploadBytes ?? 0) / framesAdvanced,
+          frameCommandCaptureMs:
+            Number(delta.frameCommandCaptureMs ?? 0) / framesAdvanced,
+          frameCommandArenaUploadMs:
+            Number(delta.frameCommandArenaUploadMs ?? 0) / framesAdvanced,
+          frameCommandReplayMs:
+            Number(delta.frameCommandReplayMs ?? 0) / framesAdvanced,
           drawDepthStencilOnlyProgramDraws:
             Number(delta.drawDepthStencilOnlyProgramDraws ?? 0) / framesAdvanced,
           drawDepthStencilOnlyFastDerivedDraws:
             Number(delta.drawDepthStencilOnlyFastDerivedDraws ?? 0) / framesAdvanced,
+          unlitTex2ProgramDraws: Number(delta.unlitTex2ProgramDraws ?? 0) / framesAdvanced,
+          unlitTex2FixedFunctionDraws:
+            Number(delta.unlitTex2FixedFunctionDraws ?? 0) / framesAdvanced,
+          unlitTex2SM1Draws: Number(delta.unlitTex2SM1Draws ?? 0) / framesAdvanced,
+          simpleFFProgramDraws: Number(delta.simpleFFProgramDraws ?? 0) / framesAdvanced,
+          fastSimpleFFProgramDraws:
+            Number(delta.fastSimpleFFProgramDraws ?? 0) / framesAdvanced,
+          staticSM1ProgramDraws: Number(delta.staticSM1ProgramDraws ?? 0) / framesAdvanced,
+          terrainShroudFusedDraws:
+            Number(delta.terrainShroudFusedDraws ?? 0) / framesAdvanced,
+          gpuFrameTimerSamples: Number(delta.gpuFrameTimerSampleCount ?? 0),
+          gpuFrameMs: Number(delta.gpuFrameTimerSampleCount ?? 0) > 0
+            ? Number(delta.gpuFrameTimerTotalMs ?? 0) /
+              Number(delta.gpuFrameTimerSampleCount ?? 0)
+            : null,
+          gpuFrameDisjointSamples: Number(delta.gpuFrameTimerDisjointSamples ?? 0),
           drawMatrixNormalizations: Number(delta.drawMatrixNormalizations ?? 0) / framesAdvanced,
           drawMatrixScratchCopies: Number(delta.drawMatrixScratchCopies ?? 0) / framesAdvanced,
           drawMatrixAllocatedCopies: Number(delta.drawMatrixAllocatedCopies ?? 0) / framesAdvanced,
@@ -1458,6 +1874,185 @@ async function runFramePass(page, frameCount, batchSize, label, command = "realE
   return result;
 }
 
+async function queryThreadedStatus(page, label) {
+  const result = await rpc(page, "threadedStatus");
+  expect(result?.ok === true && result.status?.loop,
+    `${label} threaded status query failed`, result);
+  return result.status;
+}
+
+async function runPacedFramePass(page, frameCount, label, options) {
+  const {
+    clientFps,
+    logicFps,
+    catchup,
+    timeoutMs,
+    allowPartial,
+  } = options;
+  // One more client frame than requested is needed to produce frameCount
+  // presentation intervals.
+  const targetClientFrames = frameCount + 1;
+  const beforeStatus = await queryThreadedStatus(page, `${label} before`);
+  const browserPerfBefore = beforeStatus.graphics?.d3d8Perf ?? null;
+  const startedAt = performance.now();
+  const started = await rpc(page, "threadedStartLoop", {
+    clientFps,
+    logicFps,
+    catchup,
+    maxClientFrames: targetClientFrames,
+  });
+  expect(started?.ok === true, `${label} paced loop did not start`, started);
+  // The main-realm status mirror is updated asynchronously.  Immediately
+  // after restarting the loop it can still contain the preceding pass's
+  // completed frame count, which would make this pass appear finished before
+  // the worker has run a frame.  Query the worker once to identify this pass,
+  // then ignore mirrored status from an older loop generation.
+  const startedStatus = await queryThreadedStatus(page, `${label} started`);
+  const loopStartedAt = Number(startedStatus.loop.startedAt);
+  expect(Number.isFinite(loopStartedAt) &&
+      loopStartedAt !== Number(beforeStatus.loop.startedAt),
+    `${label} paced loop did not start a new generation`, {
+      before: beforeStatus.loop,
+      started: startedStatus.loop,
+    });
+
+  let waitError = null;
+  let stopped = null;
+  try {
+    const deadline = performance.now() + timeoutMs;
+    let nextProgressFrame = 0;
+    let lastProgressAt = -Infinity;
+    for (;;) {
+      const loop = await page.evaluate(() => {
+        const value = window.CnCPort?.state?.threadedEngine?.loop;
+        return value ? {
+          active: value.active,
+          error: value.error,
+          startedAt: Number(value.startedAt),
+          clientFrames: Number(value.clientFrames ?? 0),
+          logicFrames: Number(value.logicFrames ?? 0),
+          engineFrameSamples: Number(value.engineFrameSamples ?? 0),
+          suppressedRenderFrames: Number(value.suppressedRenderFrames ?? 0),
+        } : null;
+      });
+      const now = performance.now();
+      const currentGeneration = loop?.startedAt === loopStartedAt;
+      if ((currentGeneration && loop.clientFrames >= targetClientFrames) ||
+          (currentGeneration && loop.active === false && loop.error != null)) {
+        break;
+      }
+      if (currentGeneration &&
+          (loop.clientFrames >= nextProgressFrame || now - lastProgressAt >= 10000)) {
+        console.error(`[runtime-profile] ${label} progress ` +
+          `${loop.clientFrames}/${targetClientFrames} client frames, ` +
+          `${loop.logicFrames} logic frames, ${loop.engineFrameSamples} engine samples, ` +
+          `${loop.suppressedRenderFrames} catch-up renders suppressed`);
+        nextProgressFrame = loop.clientFrames + Math.max(10, Math.ceil(frameCount / 20));
+        lastProgressAt = now;
+      }
+      if (now >= deadline) {
+        throw new Error(`${label} timed out after ${timeoutMs}ms`);
+      }
+      await page.waitForTimeout(250);
+    }
+  } catch (error) {
+    waitError = error;
+  } finally {
+    stopped = await rpc(page, "threadedStopLoop", { timeoutMs: 120000 });
+  }
+  expect(stopped?.ok === true, `${label} paced loop did not stop`, stopped);
+  if (waitError && !allowPartial) {
+    throw waitError;
+  }
+
+  const wallMs = performance.now() - startedAt;
+  const status = await queryThreadedStatus(page, `${label} after`);
+  expect(status.loop.error == null &&
+      (allowPartial || status.loop.clientFrames >= targetClientFrames),
+    `${label} paced loop ended before its target`, status.loop);
+  const retainedPresentationSamples = (status.timing?.presentationFrameMs ?? [])
+    .filter(Number.isFinite);
+  const retainedFrames = Math.min(frameCount, retainedPresentationSamples.length);
+  const presentationSamples = retainedPresentationSamples.slice(-retainedFrames);
+  expect((allowPartial && presentationSamples.length > 0) ||
+      presentationSamples.length === frameCount,
+    `${label} did not retain every requested presentation interval`, {
+      requested: frameCount,
+      retained: presentationSamples.length,
+      loop: status.loop,
+    });
+  const engineSamples = (status.timing?.presentedEngineFrameMs ?? status.timing?.engineFrameMs ?? [])
+    .filter(Number.isFinite)
+    .slice(-retainedFrames);
+  const allEngineSamples = (status.timing?.engineFrameMs ?? [])
+    .filter(Number.isFinite);
+  const pacingResult = await rpc(page, "threadedPacingSamples");
+  expect(pacingResult?.ok === true, `${label} pacing sample query failed`, pacingResult);
+  const pacingSamples = (pacingResult.samples ?? []).slice(-retainedFrames);
+  const browserPerfAfter = status.graphics?.d3d8Perf ?? null;
+  const engineFrameSamples = Number(status.loop.engineFrameSamples ?? 0);
+  const presentedEngineFrameSamples = Number(
+    status.loop.presentedEngineFrameSamples ?? status.loop.clientFrames ?? 0,
+  );
+  const browserPerf = browserPerfDelta(
+    browserPerfBefore,
+    browserPerfAfter,
+    presentedEngineFrameSamples,
+  );
+  const final = await rpc(page, "realEngineFrameSummary", { frames: 1 });
+  expect(final?.ok === true && final.aborted === false,
+    `${label} final state query failed`, final);
+
+  const result = {
+    label,
+    mode: "paced",
+    requestedFrames: frameCount,
+    completedFrames: presentationSamples.length,
+    partial: Boolean(waitError),
+    timeoutError: waitError ? String(waitError?.message ?? waitError) : null,
+    targetClientFrames,
+    clientFps,
+    logicFps,
+    catchup,
+    wallMs,
+    wallMsPerFrame: status.loop.clientFrames > 0 ? wallMs / status.loop.clientFrames : null,
+    clientFrames: status.loop.clientFrames,
+    logicFrames: status.loop.logicFrames,
+    engineFrameSamples,
+    presentedEngineFrameSamples,
+    suppressedRenderFrames: Number(status.loop.suppressedRenderFrames ?? 0),
+    effectiveClientFps: wallMs > 0 ? status.loop.clientFrames * 1000 / wallMs : null,
+    presentationFrameMs: framePacingStats(presentationSamples),
+    engineLastFrameMs: framePacingStats(engineSamples),
+    allEngineFrameMs: framePacingStats(allEngineSamples),
+    pacing: {
+      sampleCount: pacingSamples.length,
+      zeroLogicFrames: pacingSamples.filter((sample) => Number(sample.logic) === 0).length,
+      catchupFrames: pacingSamples.filter((sample) => Number(sample.logic) > 1).length,
+      maxLogicFramesPerClientFrame: pacingSamples.reduce(
+        (maximum, sample) => Math.max(maximum, Number(sample.logic) || 0),
+        0,
+      ),
+    },
+    drawCalls: Number(browserPerf?.delta?.draws ?? 0),
+    drawCallsPerFrame: presentedEngineFrameSamples > 0
+      ? Number(browserPerf?.delta?.draws ?? 0) / presentedEngineFrameSamples
+      : null,
+    browserPerf,
+    finalState: compactFrameState(final.frame),
+  };
+  if (includeSamples) {
+    result.samples = {
+      presentationFrameMs: presentationSamples,
+      engineLastFrameMs: engineSamples,
+      allEngineFrameMs: allEngineSamples,
+      pacing: pacingSamples,
+    };
+  }
+  Object.defineProperty(result, "rawFinalFrame", { value: final.frame, enumerable: false });
+  return result;
+}
+
 async function runUntilSettled(page, maxFrames, shellMap) {
   const samples = [];
   let finalFrame = null;
@@ -1527,6 +2122,18 @@ const measuredFrames = parsePositiveInt("PERF_PROFILE_FRAMES", 60);
 const warmupFrames = parsePositiveInt("PERF_PROFILE_WARMUP_FRAMES", 10);
 const settleFrames = parsePositiveInt("PERF_PROFILE_SETTLE_FRAMES", 30);
 const batchSize = parsePositiveInt("PERF_PROFILE_BATCH", 1);
+const uiBatchSize = parsePositiveInt("PERF_PROFILE_UI_BATCH", 1);
+const pacedMode = parseOptionalBoolean("PERF_PROFILE_PACED") === true;
+const pacedClientFps = parsePositiveInt("PERF_PROFILE_CLIENT_FPS", 30);
+const pacedLogicFps = parsePositiveInt("PERF_PROFILE_LOGIC_FPS", 30);
+const pacedCatchup = parsePositiveInt("PERF_PROFILE_CATCHUP", 4);
+const pacedWarmupFrames = parsePositiveInt(
+  "PERF_PROFILE_PACED_WARMUP_FRAMES",
+  Math.min(60, warmupFrames),
+);
+const pacedTimeoutMs = parsePositiveInt("PERF_PROFILE_PACED_TIMEOUT_MS", 600000);
+const allowPartialPacedPass = parseOptionalBoolean("PERF_PROFILE_ALLOW_PARTIAL") === true;
+const leanPassFrames = parseNonNegativeInt("PERF_PROFILE_LEAN_PASS_FRAMES", 0);
 const diagLevel = process.env.PERF_PROFILE_DIAG ?? "lite";
 const measuredFrameCommand = process.env.PERF_PROFILE_FRAME_COMMAND ?? "realEngineFrameSummary";
 const distDir = parseDistDir();
@@ -1544,24 +2151,60 @@ const skirmishPlayerDiagnosticsSetting = parseOptionalBoolean("PERF_PROFILE_SKIR
 const skirmishPlayerDiagnostics = profileScene === "skirmish" &&
   (skirmishPlayerDiagnosticsSetting ?? true);
 const d3d8AdjacentBatching = process.env.PERF_PROFILE_D3D8_BATCH !== "0";
+const d3d8NativeRepeatedAppend =
+  parseOptionalBoolean("PERF_PROFILE_D3D8_NATIVE_REPEAT") !== false;
+const d3d8FrameCommandQueue =
+  parseOptionalBoolean("PERF_PROFILE_D3D8_FRAME_QUEUE") !== false;
 const d3d8LiteVertexMirrors = process.env.PERF_PROFILE_D3D8_VERTEX_MIRRORS === "1";
 const d3d8BufferProducers = process.env.PERF_PROFILE_D3D8_BUFFER_PRODUCERS === "1";
 const d3d8DrawProducers = process.env.PERF_PROFILE_D3D8_DRAW_PRODUCERS === "1";
+const d3d8SkippedProgramKind = String(
+  process.env.PERF_PROFILE_D3D8_SKIP_PROGRAM_KIND ?? "",
+).trim().toLowerCase();
+const validD3D8ProgramKinds = new Set([
+  "", "generic", "simple", "terrain", "sm1", "lit", "depth", "particle", "other",
+]);
+if (!validD3D8ProgramKinds.has(d3d8SkippedProgramKind)) {
+  throw new Error(
+    `Invalid PERF_PROFILE_D3D8_SKIP_PROGRAM_KIND: ${d3d8SkippedProgramKind}`,
+  );
+}
 const d3d8PerfTimingSetting = parseOptionalBoolean("PERF_PROFILE_D3D8_TIMING");
 const d3d8PerfCountersSetting = parseOptionalBoolean("PERF_PROFILE_D3D8_COUNTERS");
 const d3d8BoundDrawDiagnostics = parseOptionalBoolean("PERF_PROFILE_D3D8_BOUND_DIAG");
+const setupRenderDisabled = parseOptionalBoolean("PERF_PROFILE_SETUP_RENDER_DISABLED") === true;
+// Match play.html by default: preserving the drawing buffer forces an extra
+// full-frame copy on tile-based GPUs. Tests that specifically need retained
+// pixels can opt back in without contaminating performance measurements.
+const preserveDrawingBuffer =
+  parseOptionalBoolean("PERF_PROFILE_PRESERVE_BUFFER") === true;
+const gpuTiming = parseOptionalBoolean("PERF_PROFILE_GPU_TIMING") === true;
+const headless = parseOptionalBoolean("PERF_PROFILE_HEADLESS") !== false;
+const browserUserDataDir = String(
+  process.env.PERF_PROFILE_BROWSER_USER_DATA_DIR ?? "",
+).trim();
 const engineFrameProfile = process.env.PERF_PROFILE_ENGINE_PROFILE === "1" ||
   d3d8BufferProducers ||
   d3d8DrawProducers;
+const cpuProfileOutputName = String(
+  process.env.PERF_PROFILE_CPU_PROFILE_OUTPUT ?? "",
+).trim();
+const cpuProfileSamplingIntervalUs = parsePositiveInt(
+  "PERF_PROFILE_CPU_PROFILE_INTERVAL_US",
+  100,
+);
 
-const server = await startStaticServer({ root: wasmRoot });
+const serverPort = parseNonNegativeInt("PERF_PROFILE_SERVER_PORT", 0);
+const usePreparedArchives = parseOptionalBoolean("PERF_PROFILE_PREPARED_ARCHIVES") === true;
+const server = await startStaticServer({ root: wasmRoot, port: serverPort });
 let browser;
+let browserContext;
 let page;
 let renderer;
 let profileCompleted = false;
 
 try {
-  const launchOptions = { headless: true };
+  const launchOptions = { headless };
   const executablePath = process.env.PERF_PROFILE_BROWSER_EXECUTABLE ?? process.env.CHROME_PATH;
   if (executablePath) {
     launchOptions.executablePath = executablePath;
@@ -1570,14 +2213,24 @@ try {
     launchOptions.args = process.env.PERF_PROFILE_BROWSER_ARGS.split(/\s+/).filter(Boolean);
   }
 
-  browser = await chromium.launch(launchOptions);
+  if (browserUserDataDir) {
+    browserContext = await chromium.launchPersistentContext(browserUserDataDir, {
+      ...launchOptions,
+      viewport: { width: viewportWidth, height: viewportHeight },
+    });
+    browser = browserContext.browser();
+  } else {
+    browser = await chromium.launch(launchOptions);
+  }
   // SystemInfo may initialize the GPU process. Do that before the page creates
   // the game's sole WebGL context so the query cannot disturb a live renderer.
   renderer = await queryRenderer(browser);
   await mkdir(artifactsRoot, { recursive: true });
   await mkdir(screenshotsRoot, { recursive: true });
 
-  page = await browser.newPage({ viewport: { width: viewportWidth, height: viewportHeight } });
+  page = browserContext
+    ? (browserContext.pages()[0] ?? await browserContext.newPage())
+    : await browser.newPage({ viewport: { width: viewportWidth, height: viewportHeight } });
   page.setDefaultTimeout(300000);
   page.setDefaultNavigationTimeout(300000);
   page.on("pageerror", (error) => {
@@ -1591,6 +2244,37 @@ try {
 
   const harnessUrl = new URL("harness/index.html", server.url);
   harnessUrl.searchParams.set("dist", distDir);
+  // Threaded mode creates the engine realm while bridge.js loads. Put the
+  // diagnostics level in the URL so that worker starts in the requested mode;
+  // changing only the main realm after navigation leaves the worker on the
+  // harness page's expensive `full` default (including per-draw readPixels).
+  harnessUrl.searchParams.set("diag", diagLevel);
+  harnessUrl.searchParams.set("preserveBuffer", preserveDrawingBuffer ? "1" : "0");
+  harnessUrl.searchParams.set("gpuTiming", gpuTiming ? "1" : "0");
+  // Threaded play owns the shipping D3D8 executor in the worker realm. The
+  // worker is created while bridge.js loads, before the page-level setters
+  // below run, so A/B controls that affect renderer construction must also be
+  // present in the harness URL inherited by the worker setup.
+  harnessUrl.searchParams.set("d3d8Batch", d3d8AdjacentBatching ? "1" : "0");
+  harnessUrl.searchParams.set(
+    "d3d8NativeRepeat",
+    d3d8NativeRepeatedAppend ? "1" : "0",
+  );
+  harnessUrl.searchParams.set(
+    "d3d8FrameQueue",
+    d3d8FrameCommandQueue ? "1" : "0",
+  );
+  harnessUrl.searchParams.set(
+    "d3d8LiteVertexMirrors",
+    d3d8LiteVertexMirrors ? "1" : "0",
+  );
+  harnessUrl.searchParams.set(
+    "perfCounters",
+    (d3d8PerfCountersSetting ?? true) ? "1" : "0",
+  );
+  if (pacedMode) {
+    harnessUrl.searchParams.set("threads", "1");
+  }
   if (shaderTier) {
     harnessUrl.searchParams.set("shaderTier", shaderTier);
   }
@@ -1605,6 +2289,10 @@ try {
     window.__cncSetD3D8PerfCounters?.(enabled) ?? null, d3d8PerfCountersSetting ?? true);
   const d3d8AdjacentBatchingActive = await page.evaluate((enabled) =>
     window.__cncSetD3D8AdjacentBatching?.(enabled) ?? null, d3d8AdjacentBatching);
+  const d3d8NativeRepeatedAppendActive = await page.evaluate((enabled) =>
+    window.__cncSetD3D8NativeRepeatedAppend?.(enabled) ?? null, d3d8NativeRepeatedAppend);
+  const d3d8FrameCommandQueueActive = await page.evaluate((enabled) =>
+    window.__cncSetD3D8FrameCommandQueue?.(enabled) ?? null, d3d8FrameCommandQueue);
   const d3d8LiteVertexMirrorsActive = await page.evaluate((enabled) =>
     window.__cncSetD3D8LiteVertexMirrors?.(enabled) ?? null, d3d8LiteVertexMirrors);
   const d3d8BufferProducersActive = await page.evaluate((enabled) =>
@@ -1616,10 +2304,14 @@ try {
     : await page.evaluate((enabled) =>
       window.__cncSetD3D8BoundDrawDiagnostics?.(enabled) ?? null, d3d8BoundDrawDiagnostics);
 
-  const mount = await rpc(page, "mountArchives", {
+  const archiveInputs = await buildArchives(server.url);
+  const preparedArchiveCache = usePreparedArchives
+    ? await findOrPromotePreparedArchives(page, archiveInputs)
+    : null;
+  const mount = await rpc(page, preparedArchiveCache?.ok ? "mountPreparedArchives" : "mountArchives", {
     path: "/assets/runtime-frame-profile",
     verifyEach: false,
-    archives: await buildArchives(server.url),
+    archives: preparedArchiveCache?.ok ? preparedArchiveCache.archives : archiveInputs,
   });
   expect(mount?.archiveSet?.archiveCount === archiveSpecs.length,
     "runtime frame profile failed to mount archives", mount?.archiveSet ?? mount);
@@ -1628,15 +2320,42 @@ try {
   const init = await rpc(page, "realEngineInit", {
     runDirectory: "/assets/runtime-frame-profile",
     shellMap,
+    bootWidth: viewportWidth,
+    bootHeight: viewportHeight,
   });
   const initWallMs = performance.now() - initStartedAt;
   expect(init?.ok === true && init.aborted === false && init.frontier?.initReturned === true,
     "runtime frame profile failed real engine init", init);
+  const workerD3D8PerfConfig = pacedMode
+    ? await rpc(page, "d3d8PerfConfigure", {
+        timing: d3d8PerfTimingSetting ?? true,
+        counters: d3d8PerfCountersSetting ?? true,
+        bufferProducers: d3d8BufferProducers,
+        drawProducers: d3d8DrawProducers,
+        skippedProgramKind: d3d8SkippedProgramKind,
+      })
+    : null;
+  if (pacedMode) {
+    expect(workerD3D8PerfConfig?.ok === true,
+      "runtime frame profile could not configure worker D3D8 profiling",
+      workerD3D8PerfConfig);
+  }
+  let setupRenderToggle = null;
+  if (setupRenderDisabled) {
+    setupRenderToggle = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
+    expect(setupRenderToggle?.ok === true,
+      "runtime frame profile could not disable setup rendering", setupRenderToggle);
+  }
   let skirmishSetup = null;
   if (profileScene === "skirmish") {
     skirmishSetup = await enterSkirmishScene(page);
   } else {
     await revealShellMenu(page, shellMap);
+  }
+  if (setupRenderDisabled) {
+    const enabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: false });
+    expect(enabled?.ok === true,
+      "runtime frame profile could not restore setup rendering", enabled);
   }
 
   const warmup = await runFramePass(page, warmupFrames, batchSize, "warmup");
@@ -1652,14 +2371,82 @@ try {
       }
     : await runUntilSettled(page, settleFrames, settledSceneUsesShellMap);
   expect(settle.settled === true, "runtime frame profile scene did not settle", settle);
-  const measured = await runFramePass(
-    page,
-    measuredFrames,
-    batchSize,
-    "measured",
-    measuredFrameCommand,
-    engineFrameProfile,
-  );
+  const settledDisplay = settle.finalState?.display ?? warmup.finalState?.display;
+  expect(settledDisplay?.width === viewportWidth && settledDisplay?.height === viewportHeight,
+    "runtime frame profile engine display does not match the requested resolution", {
+      requested: { width: viewportWidth, height: viewportHeight },
+      applied: settledDisplay,
+    });
+  const pacedWarmup = pacedMode
+    ? await runPacedFramePass(page, pacedWarmupFrames, "paced-warmup", {
+        clientFps: pacedClientFps,
+        logicFps: pacedLogicFps,
+        catchup: pacedCatchup,
+        timeoutMs: pacedTimeoutMs,
+        allowPartial: false,
+      })
+    : null;
+  const workerCpuProfiler = cpuProfileOutputName
+    ? await startWorkerCpuProfile(browser, cpuProfileSamplingIntervalUs)
+    : null;
+  let workerCpuProfile = null;
+  let measured;
+  try {
+    measured = pacedMode
+      ? await runPacedFramePass(page, measuredFrames, "measured", {
+          clientFps: pacedClientFps,
+          logicFps: pacedLogicFps,
+          catchup: pacedCatchup,
+          timeoutMs: pacedTimeoutMs,
+          allowPartial: allowPartialPacedPass,
+        })
+      : await runFramePass(
+          page,
+          measuredFrames,
+          batchSize,
+          "measured",
+          measuredFrameCommand,
+          engineFrameProfile,
+        );
+  } finally {
+    if (workerCpuProfiler) {
+      workerCpuProfile = await workerCpuProfiler.stop();
+    }
+  }
+  let workerCpuProfileSummary = null;
+  if (workerCpuProfile) {
+    const cpuProfilePath = resolve(artifactsRoot, cpuProfileOutputName);
+    await writeFile(cpuProfilePath, `${JSON.stringify(workerCpuProfile.profile)}\n`);
+    workerCpuProfileSummary = {
+      path: cpuProfilePath,
+      targetUrl: workerCpuProfile.targetUrl,
+      samplingIntervalUs: workerCpuProfile.samplingIntervalUs,
+      elapsedMs: workerCpuProfile.elapsedMs,
+      nodeCount: workerCpuProfile.profile?.nodes?.length ?? 0,
+      sampleCount: workerCpuProfile.profile?.samples?.length ?? 0,
+    };
+  }
+  let leanPerfConfig = null;
+  let leanMeasured = null;
+  if (pacedMode && leanPassFrames > 0) {
+    leanPerfConfig = await rpc(page, "d3d8PerfConfigure", {
+      timing: false,
+      counters: false,
+      bufferProducers: false,
+      drawProducers: false,
+      skippedProgramKind: d3d8SkippedProgramKind,
+    });
+    expect(leanPerfConfig?.ok === true,
+      "runtime frame profile could not configure the lean production pass",
+      leanPerfConfig);
+    leanMeasured = await runPacedFramePass(page, leanPassFrames, "lean-measured", {
+      clientFps: pacedClientFps,
+      logicFps: pacedLogicFps,
+      catchup: pacedCatchup,
+      timeoutMs: pacedTimeoutMs,
+      allowPartial: allowPartialPacedPass,
+    });
+  }
   const screenshot = await rpc(page, "screenshot");
   expect(screenshot?.ok === true && screenshotHasVisibleSample(screenshot.screenshot),
     "runtime frame profile screenshot stayed blank", summarizeScreenshot(screenshot));
@@ -1678,25 +2465,42 @@ try {
     diagLevel,
     distDir,
     shaderTier,
+    measurementMode: pacedMode ? "paced" : "stepped-rpc",
     d3d8AdjacentBatching: d3d8AdjacentBatchingActive,
+    d3d8NativeRepeatedAppend: d3d8NativeRepeatedAppendActive,
+    d3d8FrameCommandQueue:
+      workerD3D8PerfConfig?.summary?.frameCommandQueueEnabled ??
+      d3d8FrameCommandQueueActive,
     d3d8LiteVertexMirrors: d3d8LiteVertexMirrorsActive,
     d3d8BufferProducers: d3d8BufferProducersActive,
     d3d8DrawProducers: d3d8DrawProducersActive,
-    d3d8PerfTiming: d3d8PerfTimingActive,
-    d3d8PerfCounters: d3d8PerfCountersActive,
+    d3d8SkippedProgramKind:
+      workerD3D8PerfConfig?.skippedProgramKind ?? d3d8SkippedProgramKind,
+    d3d8PerfTiming: workerD3D8PerfConfig?.timing ?? d3d8PerfTimingActive,
+    d3d8PerfCounters: workerD3D8PerfConfig?.counters ?? d3d8PerfCountersActive,
     d3d8BoundDrawDiagnostics: d3d8BoundDrawDiagnosticsActive,
     engineFrameProfile,
     sampleBrowserPerf,
     skirmishPlayerDiagnostics,
     measuredFrameCommand,
     shellMap,
+    setupRenderDisabled,
+    preserveDrawingBuffer,
+    gpuTiming,
+    headless,
+    setupRenderToggle,
     skirmishSetup,
     viewport: { width: viewportWidth, height: viewportHeight },
     initWallMs,
     archiveCount: archiveSpecs.length,
+    preparedArchiveCache,
     warmup,
     settle,
+    pacedWarmup,
     measured,
+    workerCpuProfile: workerCpuProfileSummary,
+    leanPerfConfig,
+    leanMeasured,
     screenshot: screenshotPath,
   };
   const outputPath = resolve(

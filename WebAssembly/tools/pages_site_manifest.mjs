@@ -107,6 +107,11 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "vendor/trystero-LICENSE.txt",
   "vendor/trystero-nostr.min.mjs",
   "webrtc-udp-endpoint.mjs",
+  "webxr-controls.mjs",
+  "webxr-d3d8-command-stream.mjs",
+  "webxr-d3d8-renderer.mjs",
+  "webxr-runtime.mjs",
+  "webxr-settings.mjs",
 ]);
 
 export const PAGES_DEPENDENCY_FILES = Object.freeze([

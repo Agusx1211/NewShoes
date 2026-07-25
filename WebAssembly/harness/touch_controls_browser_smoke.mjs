@@ -90,11 +90,69 @@ try {
   await page.waitForTimeout(100);
   assert.equal(await page.locator("#touchControls").isVisible(), true);
   await page.screenshot({ path: resolve(screenshotRoot, "ipad-landscape-touch-controls.png") });
+  const routedGestures = await page.evaluate(() => {
+    const state = window.CnCPort.state;
+    state.engineDisplaySize = { width: 844, height: 390 };
+    state.touchUi = {
+      ok: true,
+      mapGestures: true,
+      focusedInputMode: null,
+      entries: [],
+      dragBlockers: [{ x: 80, y: 80, width: 200, height: 100 }],
+      dragBlockersTruncated: false,
+    };
+    const canvas = document.querySelector("#viewport");
+    const rect = canvas.getBoundingClientRect();
+    const clientPoint = ({ x, y }) => ({
+      x: rect.left + x * rect.width / state.engineDisplaySize.width,
+      y: rect.top + y * rect.height / state.engineDisplaySize.height,
+    });
+    const dispatch = (type, pointerId, enginePoint, isPrimary = true) => {
+      const point = clientPoint(enginePoint);
+      canvas.dispatchEvent(new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        pointerId,
+        pointerType: "touch",
+        clientX: point.x,
+        clientY: point.y,
+        isPrimary,
+      }));
+    };
+
+    const navigationBefore = Number(state.touchNavigation?.count ?? 0);
+    dispatch("pointerdown", 71, { x: 400, y: 160 });
+    dispatch("pointermove", 71, { x: 460, y: 195 });
+    dispatch("pointerup", 71, { x: 460, y: 195 });
+    const mapNavigation = state.touchNavigation;
+
+    dispatch("pointerdown", 72, { x: 100, y: 100 });
+    dispatch("pointermove", 72, { x: 150, y: 125 });
+    const uiDuringDrag = window.CnCPort.getTouchControlsState();
+    dispatch("pointerup", 72, { x: 150, y: 125 });
+    return {
+      navigationBefore,
+      mapNavigation,
+      uiDuringDrag,
+      uiAfterDrag: window.CnCPort.getTouchControlsState(),
+    };
+  });
+  assert.ok(Number(routedGestures.mapNavigation?.count) > routedGestures.navigationBefore
+      && routedGestures.mapNavigation?.gesture === "pan"
+      && Number(routedGestures.mapNavigation?.scale) === 1
+      && Number(routedGestures.mapNavigation?.radians) === 0,
+  `an unobstructed one-finger drag was not routed as direct pan: ${JSON.stringify(routedGestures)}`);
+  assert.equal(routedGestures.uiDuringDrag.primaryButtonDown, true,
+    "an engine-reported UI blocker must retain primary drag routing");
+  assert.equal(routedGestures.uiAfterDrag.primaryButtonDown, false,
+    "lifting an engine UI drag must release the primary button");
+
   await page.evaluate(() => {
     const state = window.CnCPort.state;
     state.engineDisplaySize = { width: 844, height: 390 };
     state.touchUi = {
       ok: true,
+      mapGestures: false,
       focusedInputMode: "numeric",
       entries: [{
         rect: { x: 100, y: 100, width: 180, height: 54 },

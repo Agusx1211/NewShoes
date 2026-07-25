@@ -89,6 +89,18 @@ try {
       && playback.afterStop?.activeSources === 0,
     "MSS stream playback proof did not schedule and stop MP3 stream", playback);
 
+  const resetRace = await rpc(page, "mssStreamPlaybackProbe", {
+    archive: "Music.big",
+    path: musicTrack,
+    resetDuringStart: true,
+  });
+  expect(resetRace.ok === true
+      && resetRace.afterReset?.pendingStarts === 0
+      && resetRace.afterReset?.activeSources === 0
+      && resetRace.afterReset?.decoded === 0
+      && resetRace.afterReset?.scheduled === 0,
+    "reset must prevent an in-flight stream decode from scheduling", resetRace);
+
   console.log(JSON.stringify({
     ok: true,
     archive: "Music.big",
@@ -98,6 +110,7 @@ try {
     decodedFrames: playback.afterStart.lastEvent.payload.decodedFrames,
     durationSeconds: playback.afterStart.lastEvent.durationSeconds,
     stopped: playback.afterStop.stopped,
+    resetRaceScheduled: resetRace.afterReset.scheduled,
   }, null, 2));
 } finally {
   await browser?.close();

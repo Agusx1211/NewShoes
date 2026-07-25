@@ -1223,6 +1223,7 @@ void PathfindCell::reset( )
 	m_pathfindCacheFlags = 0;
 	m_pathfindCacheLayer = LAYER_INVALID;
 	m_clearDiameterCacheValue = 0;
+	m_pathfindLineCache = 0;
 	if (m_info) {
 		m_info->m_obstacleID = INVALID_ID;
 		PathfindCellInfo::releaseACellInfo(m_info);
@@ -1241,12 +1242,13 @@ enum
 	PATHFIND_CACHE_ALLY_GOAL = 0x04,
 	PATHFIND_CACHE_ENEMY_FIXED = 0x08,
 	PATHFIND_CACHE_ALLY_FIXED = 0x10,
-	PATHFIND_CACHE_LINE_VALID = 0x20,
-	PATHFIND_CACHE_LINE_PASSABLE = 0x40,
 	PATHFIND_CACHE_MOVEMENT_VALID = 0x80,
-	PATHFIND_CACHE_LINE_DIRECTION_MASK = 0x70,
-	PATHFIND_CACHE_LINE_DIRECTION_SHIFT = 4,
-	PATHFIND_CACHE_CLEAR_VALID = 0x80
+	PATHFIND_CACHE_CLEAR_VALID = 0x80,
+	PATHFIND_LINE_BITS_PER_DIRECTION = 2,
+	PATHFIND_LINE_RESULT_MASK = 0x03,
+	PATHFIND_LINE_UNKNOWN = 0,
+	PATHFIND_LINE_BLOCKED = 1,
+	PATHFIND_LINE_PASSABLE = 2
 };
 
 static UnsignedByte getPathfindLineDirection(Int fromX, Int fromY, Int toX, Int toY)
@@ -1286,14 +1288,14 @@ void PathfindCell::cacheMovementCheck(UnsignedInt generation, PathfindLayerEnum 
 		return;
 	}
 	const Bool sameGeneration = m_pathfindCacheGeneration == generation;
-	UnsignedByte lineFlags = sameGeneration
-		? m_pathfindCacheFlags & (PATHFIND_CACHE_LINE_VALID | PATHFIND_CACHE_LINE_PASSABLE) : 0;
 	UnsignedByte sharedLayerFlags = sameGeneration
-		? m_pathfindCacheLayer
-			& (PATHFIND_CACHE_CLEAR_VALID | PATHFIND_CACHE_LINE_DIRECTION_MASK) : 0;
+		? m_pathfindCacheLayer & PATHFIND_CACHE_CLEAR_VALID : 0;
+	if (!sameGeneration) {
+		m_pathfindLineCache = 0;
+	}
 	m_pathfindCacheGeneration = generation;
 	m_pathfindCacheLayer = sharedLayerFlags | (layer & PATHFIND_CACHE_LAYER_MASK);
-	m_pathfindCacheFlags = lineFlags | PATHFIND_CACHE_MOVEMENT_VALID
+	m_pathfindCacheFlags = PATHFIND_CACHE_MOVEMENT_VALID
 		| (passable ? PATHFIND_CACHE_MOVEMENT_PASSABLE : 0)
 		| (allyMoving ? PATHFIND_CACHE_ALLY_MOVING : 0)
 		| (allyGoal ? PATHFIND_CACHE_ALLY_GOAL : 0)
@@ -1304,14 +1306,17 @@ void PathfindCell::cacheMovementCheck(UnsignedInt generation, PathfindLayerEnum 
 Bool PathfindCell::getCachedLinePassability(UnsignedInt generation, Int fromX, Int fromY,
 	Int toX, Int toY, Bool &passable) const
 {
-	const UnsignedByte direction = getPathfindLineDirection(fromX, fromY, toX, toY);
-	if (generation == 0 || m_pathfindCacheGeneration != generation
-		|| (m_pathfindCacheFlags & PATHFIND_CACHE_LINE_VALID) == 0
-		|| (m_pathfindCacheLayer & PATHFIND_CACHE_LINE_DIRECTION_MASK)
-			!= direction << PATHFIND_CACHE_LINE_DIRECTION_SHIFT) {
+	if (generation == 0 || m_pathfindCacheGeneration != generation) {
 		return false;
 	}
-	passable = (m_pathfindCacheFlags & PATHFIND_CACHE_LINE_PASSABLE) != 0;
+	const UnsignedByte direction = getPathfindLineDirection(fromX, fromY, toX, toY);
+	const UnsignedInt shift = direction * PATHFIND_LINE_BITS_PER_DIRECTION;
+	const UnsignedInt cachedResult =
+		(m_pathfindLineCache >> shift) & PATHFIND_LINE_RESULT_MASK;
+	if (cachedResult == PATHFIND_LINE_UNKNOWN) {
+		return false;
+	}
+	passable = cachedResult == PATHFIND_LINE_PASSABLE;
 	return true;
 }
 
@@ -1323,15 +1328,18 @@ void PathfindCell::cacheLinePassability(UnsignedInt generation, Int fromX, Int f
 	}
 	if (m_pathfindCacheGeneration != generation) {
 		m_pathfindCacheFlags = 0;
-		m_pathfindCacheLayer = LAYER_INVALID;
+		m_pathfindCacheLayer = 0;
+		m_pathfindLineCache = 0;
 	}
 	const UnsignedByte direction = getPathfindLineDirection(fromX, fromY, toX, toY);
+	const UnsignedInt shift = direction * PATHFIND_LINE_BITS_PER_DIRECTION;
+	const UnsignedShort resultMask =
+		static_cast<UnsignedShort>(PATHFIND_LINE_RESULT_MASK << shift);
+	const UnsignedShort result = static_cast<UnsignedShort>(
+		(passable ? PATHFIND_LINE_PASSABLE : PATHFIND_LINE_BLOCKED) << shift);
 	m_pathfindCacheGeneration = generation;
-	m_pathfindCacheLayer = (m_pathfindCacheLayer & ~PATHFIND_CACHE_LINE_DIRECTION_MASK)
-		| direction << PATHFIND_CACHE_LINE_DIRECTION_SHIFT;
-	m_pathfindCacheFlags = (m_pathfindCacheFlags
-		& ~(PATHFIND_CACHE_LINE_VALID | PATHFIND_CACHE_LINE_PASSABLE))
-		| PATHFIND_CACHE_LINE_VALID | (passable ? PATHFIND_CACHE_LINE_PASSABLE : 0);
+	m_pathfindLineCache = static_cast<UnsignedShort>(
+		(m_pathfindLineCache & ~resultMask) | result);
 }
 
 Bool PathfindCell::getCachedClearDiameter(UnsignedInt generation, Int &clearDiameter) const
@@ -1352,6 +1360,7 @@ void PathfindCell::cacheClearDiameter(UnsignedInt generation, Int clearDiameter)
 	if (m_pathfindCacheGeneration != generation) {
 		m_pathfindCacheFlags = 0;
 		m_pathfindCacheLayer = LAYER_INVALID;
+		m_pathfindLineCache = 0;
 	}
 	DEBUG_ASSERTCRASH(clearDiameter >= 0 && clearDiameter <= 0xffff,
 		("Clear path diameter does not fit in the pathfind cache."));

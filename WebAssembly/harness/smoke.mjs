@@ -999,11 +999,11 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
       || milesAudio?.browserTarget !== "Web Audio"
       || milesAudio?.nextRequired !== expectedMilesNextRequired
       || milesAudio?.startupProbeCommand !== "mssStartupProbe"
-      || milesAudio?.initLine !== 444
-      || milesAudio?.audioManagerInitLine !== 446
-      || milesAudio?.openDeviceCallLine !== 454
-      || milesAudio?.fileCallbacksLine !== 458
-      || milesAudio?.openDeviceLine !== 1444
+      || milesAudio?.initLine !== 477
+      || milesAudio?.audioManagerInitLine !== 479
+      || milesAudio?.openDeviceCallLine !== 487
+      || milesAudio?.fileCallbacksLine !== 491
+      || milesAudio?.openDeviceLine !== 1482
       || milesAudio?.mssShim?.compileOnly !== false
       || milesAudio?.mssShim?.startupBoundaryReady !== true
       || milesAudio?.mssShim?.playbackReady !== false
@@ -1020,28 +1020,28 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
       || milesAudio?.mssShim?.AIL_enumerate_filters !== "stateful"
       || milesCalls.length !== 8
       || milesCalls[0]?.call !== "AIL_set_redist_directory"
-      || milesCalls[0]?.line !== 1450
+      || milesCalls[0]?.line !== 1488
       || milesCalls[0]?.ready !== true
       || milesCalls[1]?.call !== "AIL_startup"
-      || milesCalls[1]?.line !== 1451
+      || milesCalls[1]?.line !== 1489
       || milesCalls[1]?.ready !== true
       || milesCalls[2]?.call !== "AIL_quick_startup"
-      || milesCalls[2]?.line !== 1458
+      || milesCalls[2]?.line !== 1496
       || milesCalls[2]?.ready !== true
       || milesCalls[3]?.call !== "AIL_quick_handles"
-      || milesCalls[3]?.line !== 1461
+      || milesCalls[3]?.line !== 1499
       || milesCalls[3]?.ready !== true
       || milesCalls[4]?.call !== "buildProviderList"
-      || milesCalls[4]?.line !== 1464
+      || milesCalls[4]?.line !== 1502
       || milesCalls[4]?.ready !== true
       || milesCalls[5]?.call !== "selectProvider"
-      || milesCalls[5]?.line !== 1470
+      || milesCalls[5]?.line !== 1508
       || milesCalls[5]?.ready !== true
       || milesCalls[6]?.call !== "refreshCachedVariables"
-      || milesCalls[6]?.line !== 1473
+      || milesCalls[6]?.line !== 1511
       || milesCalls[6]?.ready !== false
       || milesCalls[7]?.call !== "initDelayFilter"
-      || milesCalls[7]?.line !== 1479
+      || milesCalls[7]?.line !== 1517
       || milesCalls[7]?.ready !== true
       || frontier.fileSystemReady !== false
       || frontier.startupFilesReady !== false

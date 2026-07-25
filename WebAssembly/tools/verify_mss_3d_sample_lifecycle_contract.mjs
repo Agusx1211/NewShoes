@@ -203,7 +203,7 @@ function main() {
     errors,
     miles.lines,
     /void\s+MilesAudioManager\s*::\s*initSamplePools\s*\(/,
-    2907,
+    3006,
     "MilesAudioManager::initSamplePools",
   );
   facts.initSamplePoolsDef = initSamplePools.fact;
@@ -212,8 +212,8 @@ function main() {
     miles.lines,
     initSamplePools.actual,
     [
-      { name: "AIL_allocate_3D_sample_handle", line: 2926 },
-      { name: "AIL_set_3D_user_data", line: 2929 },
+      { name: "AIL_allocate_3D_sample_handle", line: 3025 },
+      { name: "AIL_set_3D_user_data", line: 3028 },
     ],
     "initSamplePools3DCalls",
     "MilesAudioManager::initSamplePools",
@@ -226,7 +226,7 @@ function main() {
     errors,
     miles.lines,
     /void\s*\*\s*MilesAudioManager\s*::\s*playSample3D\s*\(/,
-    2820,
+    2914,
     "MilesAudioManager::playSample3D",
   );
   facts.playSample3DDef = playSample3D.fact;
@@ -235,11 +235,11 @@ function main() {
     miles.lines,
     playSample3D.actual,
     [
-      { name: "AIL_set_3D_sample_file", line: 2827 },
-      { name: "AIL_register_3D_EOS_callback", line: 2830 },
-      { name: "AIL_set_3D_sample_distances", line: 2834 },
-      { name: "AIL_set_3D_position", line: 2843 },
-      { name: "AIL_start_3D_sample", line: 2847 },
+      { name: "AIL_set_3D_sample_file", line: 2922 },
+      { name: "AIL_register_3D_EOS_callback", line: 2925 },
+      { name: "AIL_set_3D_sample_distances", line: 2929 },
+      { name: "AIL_set_3D_position", line: 2938 },
+      { name: "AIL_start_3D_sample", line: 2942 },
     ],
     "playSample3DCallSequence",
     "MilesAudioManager::playSample3D",
@@ -253,7 +253,7 @@ function main() {
     errors,
     miles.lines,
     /void\s+MilesAudioManager\s*::\s*releaseMilesHandles\s*\(/,
-    1076,
+    1109,
     "MilesAudioManager::releaseMilesHandles",
   );
   facts.releaseMilesHandlesDef = releaseMilesHandles.fact;
@@ -262,8 +262,8 @@ function main() {
     miles.lines,
     releaseMilesHandles.actual,
     [
-      { name: "AIL_register_3D_EOS_callback", line: 1092 },
-      { name: "AIL_stop_3D_sample", line: 1093 },
+      { name: "AIL_register_3D_EOS_callback", line: 1125 },
+      { name: "AIL_stop_3D_sample", line: 1126 },
     ],
     "releaseMilesHandles3DCalls",
     "MilesAudioManager::releaseMilesHandles",
@@ -273,7 +273,7 @@ function main() {
     errors,
     miles.lines,
     /void\s+MilesAudioManager\s*::\s*freeAllMilesHandles\s*\(/,
-    1190,
+    1227,
     "MilesAudioManager::freeAllMilesHandles",
   );
   facts.freeAllMilesHandlesDef = freeAllMilesHandles.fact;
@@ -282,7 +282,7 @@ function main() {
     miles.lines,
     freeAllMilesHandles.actual,
     [
-      { name: "AIL_release_3D_sample_handle", line: 1208 },
+      { name: "AIL_release_3D_sample_handle", line: 1245 },
     ],
     "freeAllMilesHandles3DCalls",
     "MilesAudioManager::freeAllMilesHandles",
@@ -296,7 +296,7 @@ function main() {
     errors,
     miles.lines,
     /void\s+MilesAudioManager\s*::\s*setDeviceListenerPosition\s*\(/,
-    2651,
+    2713,
     "MilesAudioManager::setDeviceListenerPosition",
   );
   facts.setDeviceListenerPositionDef = setDeviceListenerPosition.fact;
@@ -305,8 +305,8 @@ function main() {
     miles.lines,
     setDeviceListenerPosition.actual,
     [
-      { name: "AIL_set_3D_orientation", line: 2654 },
-      { name: "AIL_set_3D_position", line: 2659 },
+      { name: "AIL_set_3D_orientation", line: 2716 },
+      { name: "AIL_set_3D_position", line: 2721 },
     ],
     "setDeviceListenerPositionCalls",
     "MilesAudioManager::setDeviceListenerPosition",
@@ -316,7 +316,7 @@ function main() {
     errors,
     miles.lines,
     /void\s+MilesAudioManager\s*::\s*createListener\s*\(/,
-    2871,
+    2970,
     "MilesAudioManager::createListener",
   );
   facts.createListenerDef = createListener.fact;
@@ -324,7 +324,7 @@ function main() {
     errors,
     miles.lines,
     createListener.actual,
-    [{ name: "AIL_open_3D_listener", line: 2877 }],
+    [{ name: "AIL_open_3D_listener", line: 2976 }],
     "createListenerCalls",
     "MilesAudioManager::createListener",
   );
@@ -333,7 +333,7 @@ function main() {
     errors,
     miles.lines,
     /void\s+MilesAudioManager\s*::\s*selectProvider\s*\(/,
-    1661,
+    1699,
     "MilesAudioManager::selectProvider",
   );
   facts.selectProviderDef = selectProvider.fact;
@@ -341,7 +341,7 @@ function main() {
     errors,
     miles.lines,
     selectProvider.actual,
-    [{ name: "AIL_open_3D_provider", line: 1729 }],
+    [{ name: "AIL_open_3D_provider", line: 1784 }],
     "selectProviderCalls",
     "MilesAudioManager::selectProvider",
   );
@@ -350,7 +350,7 @@ function main() {
     errors,
     miles.lines,
     /void\s+MilesAudioManager\s*::\s*unselectProvider\s*\(/,
-    1762,
+    1821,
     "MilesAudioManager::unselectProvider",
   );
   facts.unselectProviderDef = unselectProvider.fact;
@@ -359,8 +359,8 @@ function main() {
     miles.lines,
     unselectProvider.actual,
     [
-      { name: "AIL_close_3D_listener", line: 1771 },
-      { name: "AIL_close_3D_provider", line: 1774 },
+      { name: "AIL_close_3D_listener", line: 1830 },
+      { name: "AIL_close_3D_provider", line: 1833 },
     ],
     "unselectProviderCalls",
     "MilesAudioManager::unselectProvider",
@@ -370,7 +370,7 @@ function main() {
     errors,
     miles.lines,
     /void\s+MilesAudioManager\s*::\s*setSpeakerType\s*\(/,
-    1787,
+    1846,
     "MilesAudioManager::setSpeakerType",
   );
   facts.setSpeakerTypeDef = setSpeakerType.fact;
@@ -378,7 +378,7 @@ function main() {
     errors,
     miles.lines,
     setSpeakerType.actual,
-    [{ name: "AIL_set_3D_speaker_type", line: 1793 }],
+    [{ name: "AIL_set_3D_speaker_type", line: 1852 }],
     "setSpeakerTypeCalls",
     "MilesAudioManager::setSpeakerType",
   );
@@ -390,53 +390,53 @@ function main() {
     { name: "MSSBrowserNormalizeVolume", line: 209 },
     { name: "MSSBrowserVolumeToMilesInteger", line: 223 },
     // Provider: enumerate/open/close/speaker.
-    { name: "AIL_enumerate_3D_providers", line: 1616 },
-    { name: "AIL_open_3D_provider", line: 1637 },
-    { name: "AIL_close_3D_provider", line: 1645 },
-    { name: "AIL_set_3D_speaker_type", line: 1651 },
+    { name: "AIL_enumerate_3D_providers", line: 1730 },
+    { name: "AIL_open_3D_provider", line: 1751 },
+    { name: "AIL_close_3D_provider", line: 1759 },
+    { name: "AIL_set_3D_speaker_type", line: 1765 },
     // Listener: open (and alias) / close.
-    { name: "AIL_3D_open_listener", line: 1593 },
-    { name: "AIL_open_3D_listener", line: 1607 },
-    { name: "AIL_close_3D_listener", line: 1608 },
+    { name: "AIL_3D_open_listener", line: 1707 },
+    { name: "AIL_open_3D_listener", line: 1721 },
+    { name: "AIL_close_3D_listener", line: 1722 },
     // 3D sample allocate/release/file/user-data/callback/distances/position/
     // orientation/velocity/volume/loop/offset/rate/occlusion/effects/
     // start/stop/resume/end/status.
-    { name: "AIL_allocate_3D_sample_handle", line: 1344 },
-    { name: "AIL_release_3D_sample_handle", line: 1358 },
-    { name: "AIL_set_3D_sample_file", line: 1369 },
-    { name: "AIL_set_3D_object_user_data", line: 1473 },
-    { name: "AIL_3D_object_user_data", line: 1488 },
-    { name: "AIL_set_3D_user_data", line: 1500 },
-    { name: "AIL_3D_user_data", line: 1504 },
-    { name: "AIL_register_3D_EOS_callback", line: 1581 },
-    { name: "AIL_set_3D_sample_distances", line: 1566 },
-    { name: "AIL_set_3D_position", line: 1527 },
-    { name: "AIL_set_3D_orientation", line: 1539 },
-    { name: "AIL_set_3D_velocity_vector", line: 1554 },
-    { name: "AIL_set_3D_sample_volume", line: 1426 },
-    { name: "AIL_3D_sample_volume", line: 1434 },
-    { name: "AIL_set_3D_sample_loop_count", line: 1439 },
-    { name: "AIL_3D_sample_loop_count", line: 1446 },
-    { name: "AIL_set_3D_sample_offset", line: 1451 },
-    { name: "AIL_3D_sample_offset", line: 1458 },
-    { name: "AIL_3D_sample_length", line: 1463 },
-    { name: "AIL_set_3D_sample_playback_rate", line: 1513 },
-    { name: "AIL_3D_sample_playback_rate", line: 1508 },
-    { name: "AIL_set_3D_sample_occlusion", line: 1520 },
-    { name: "AIL_set_3D_sample_effects_level", line: 1574 },
-    { name: "AIL_start_3D_sample", line: 1384 },
-    { name: "AIL_stop_3D_sample", line: 1396 },
-    { name: "AIL_resume_3D_sample", line: 1405 },
-    { name: "AIL_end_3D_sample", line: 1414 },
-    { name: "AIL_3D_sample_status", line: 1468 },
+    { name: "AIL_allocate_3D_sample_handle", line: 1452 },
+    { name: "AIL_release_3D_sample_handle", line: 1466 },
+    { name: "AIL_set_3D_sample_file", line: 1477 },
+    { name: "AIL_set_3D_object_user_data", line: 1581 },
+    { name: "AIL_3D_object_user_data", line: 1596 },
+    { name: "AIL_set_3D_user_data", line: 1608 },
+    { name: "AIL_3D_user_data", line: 1612 },
+    { name: "AIL_register_3D_EOS_callback", line: 1695 },
+    { name: "AIL_set_3D_sample_distances", line: 1680 },
+    { name: "AIL_set_3D_position", line: 1635 },
+    { name: "AIL_set_3D_orientation", line: 1651 },
+    { name: "AIL_set_3D_velocity_vector", line: 1667 },
+    { name: "AIL_set_3D_sample_volume", line: 1534 },
+    { name: "AIL_3D_sample_volume", line: 1542 },
+    { name: "AIL_set_3D_sample_loop_count", line: 1547 },
+    { name: "AIL_3D_sample_loop_count", line: 1554 },
+    { name: "AIL_set_3D_sample_offset", line: 1559 },
+    { name: "AIL_3D_sample_offset", line: 1566 },
+    { name: "AIL_3D_sample_length", line: 1571 },
+    { name: "AIL_set_3D_sample_playback_rate", line: 1621 },
+    { name: "AIL_3D_sample_playback_rate", line: 1616 },
+    { name: "AIL_set_3D_sample_occlusion", line: 1628 },
+    { name: "AIL_set_3D_sample_effects_level", line: 1688 },
+    { name: "AIL_start_3D_sample", line: 1492 },
+    { name: "AIL_stop_3D_sample", line: 1504 },
+    { name: "AIL_resume_3D_sample", line: 1513 },
+    { name: "AIL_end_3D_sample", line: 1522 },
+    { name: "AIL_3D_sample_status", line: 1576 },
     // Stateful storage structs and find/allocate helpers.
     { name: "MSSBrowser3DVector", line: 288 },
     { name: "MSSBrowser3DSampleState", line: 295 },
     { name: "MSSBrowser3DListenerState", line: 328 },
-    { name: "MSSBrowserFind3DSample", line: 717 },
-    { name: "MSSBrowserAllocate3DSample", line: 732 },
-    { name: "MSSBrowserFind3DListener", line: 750 },
-    { name: "MSSBrowserAllocate3DListener", line: 765 },
+    { name: "MSSBrowserFind3DSample", line: 825 },
+    { name: "MSSBrowserAllocate3DSample", line: 840 },
+    { name: "MSSBrowserFind3DListener", line: 858 },
+    { name: "MSSBrowserAllocate3DListener", line: 873 },
   ];
   const mssFacts = {};
   for (const { name, line } of mssSurface) {
@@ -599,14 +599,14 @@ function main() {
     source: requirePinnedLine(
       errors,
       cmake.lines,
-      4897,
+      4971,
       /src\/wasm_mss_3d_sample_lifecycle_probe\.cpp/,
       "CMake 3D sample lifecycle probe source",
     ),
     export: requirePinnedLine(
       errors,
       cmake.lines,
-      5121,
+      5232,
       /_cnc_port_probe_mss_3d_sample_lifecycle/,
       "CMake 3D sample lifecycle probe export",
     ),
@@ -616,14 +616,14 @@ function main() {
     cwrap: requirePinnedLine(
       errors,
       bridge.lines,
-      11562,
+      7032,
       /probeMss3DSampleLifecycle:\s*module\.cwrap\("cnc_port_probe_mss_3d_sample_lifecycle",\s*"string",\s*\[\]\)/,
       "bridge 3D sample lifecycle cwrap",
     ),
     rpc: requirePinnedLine(
       errors,
       bridge.lines,
-      27116,
+      24802,
       /case "mss3DSampleLifecycleProbe":/,
       "bridge mss3DSampleLifecycleProbe RPC",
     ),

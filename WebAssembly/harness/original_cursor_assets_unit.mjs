@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { inflateSync } from "node:zlib";
 import {
+  convertCurFrameToPng,
   createOriginalCursorManifest,
+  decodeCurFrame,
   parseAniCursor,
   parseBigEntries,
 } from "./original-cursor-assets.mjs";
@@ -26,13 +29,31 @@ function concat(...parts) {
 }
 
 function syntheticCur(seed) {
-  const bytes = new Uint8Array(22);
+  const width = 2;
+  const height = 2;
+  const bitmapBytes = 40 + 16 * 4 + 8 + 8;
+  const bytes = new Uint8Array(22 + bitmapBytes);
   const view = new DataView(bytes.buffer);
   view.setUint16(2, 2, true);
   view.setUint16(4, 1, true);
-  bytes[6] = 1;
-  bytes[7] = 1;
-  bytes[21] = seed;
+  bytes[6] = width;
+  bytes[7] = height;
+  view.setUint16(10, 1, true);
+  view.setUint16(12, 1, true);
+  view.setUint32(14, bitmapBytes, true);
+  view.setUint32(18, 22, true);
+  view.setUint32(22, 40, true);
+  view.setInt32(26, width, true);
+  view.setInt32(30, height * 2, true);
+  view.setUint16(34, 1, true);
+  view.setUint16(36, 4, true);
+  view.setUint32(42, 16, true);
+  view.setUint32(54, 16, true);
+  const palette = 22 + 40;
+  bytes.set([seed, seed + 1, seed + 2, 0], palette + 4);
+  const pixels = palette + 16 * 4;
+  bytes[pixels] = 0x10;
+  bytes[pixels + 4] = 0x01;
   return bytes;
 }
 
@@ -89,6 +110,23 @@ const parsed = parseAniCursor(attackAni, "SCCAttack.ani");
 assert.equal(parsed.frames.length, 2);
 assert.deepEqual(parsed.sequence, [0, 1, 0]);
 assert.deepEqual(parsed.rates, [2, 3, 4]);
+const decoded = decodeCurFrame(parsed.frames[0], "SCCAttack frame 0");
+assert.deepEqual({ width: decoded.width, height: decoded.height, hotspot: decoded.hotspot },
+  { width: 2, height: 2, hotspot: [1, 1] });
+assert.deepEqual([...decoded.rgba.subarray(0, 4)], [0, 0, 0, 255]);
+assert.deepEqual([...decoded.rgba.subarray(4, 8)], [13, 12, 11, 255]);
+const converted = convertCurFrameToPng(parsed.frames[0], "SCCAttack frame 0");
+assert.deepEqual([...converted.png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+const pngView = new DataView(converted.png.buffer, converted.png.byteOffset, converted.png.byteLength);
+assert.equal(pngView.getUint32(16, false), 2);
+assert.equal(pngView.getUint32(20, false), 2);
+const idatOffset = 33;
+assert.equal(new TextDecoder().decode(converted.png.subarray(idatOffset + 4, idatOffset + 8)), "IDAT");
+const idatLength = pngView.getUint32(idatOffset, false);
+const scanlines = inflateSync(converted.png.subarray(idatOffset + 8, idatOffset + 8 + idatLength));
+assert.equal(scanlines.byteLength, 2 * (1 + 2 * 4));
+assert.equal(scanlines[0], 0);
+assert.deepEqual([...scanlines.subarray(1, 9)], [...decoded.rgba.subarray(0, 8)]);
 
 const pack = syntheticBig([
   ["Data\\Cursors\\SCCPointer.ani", syntheticAni([7], [0])],
@@ -107,9 +145,15 @@ const library = createOriginalCursorManifest(pack, {
 assert.equal(library.manifest.source, "browser_library_cursor_pack");
 assert.equal(library.manifest.cursors.sccpointer.frames.length, 1);
 assert.match(library.manifest.cursors.sccpointer.frames[0], /^blob:cursor-/);
+assert.deepEqual(library.manifest.cursors.sccpointer.hotspot, [1, 1]);
+assert.equal(library.manifest.cursors.sccpointer.mimeType, "image/png");
 assert.deepEqual(library.manifest.cursors.sccattack.sequence, [0, 1, 0]);
 assert.equal(created.length, 3);
-assert.ok(created.every((blob) => blob.type === "image/x-icon"));
+assert.ok(created.every((blob) => blob.type === "image/png"));
+assert.ok((await Promise.all(created.map(async (blob) => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return bytes[0] === 0x89 && bytes[1] === 0x50;
+}))).every(Boolean));
 library.dispose();
 library.dispose();
 assert.deepEqual(new Set(revoked), new Set(["blob:cursor-1", "blob:cursor-2", "blob:cursor-3"]));

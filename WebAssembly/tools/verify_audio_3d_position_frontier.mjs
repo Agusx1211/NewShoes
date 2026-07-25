@@ -309,7 +309,7 @@ function main() {
       rts,
       "setPositionDefLine",
       /void\s+AudioEventRTS\s*::\s*setPosition\s*\(\s*const\s+Coord3D\s*\*\s*pos\s*\)/,
-      553,
+      555,
       errors,
       facts,
     );
@@ -328,7 +328,7 @@ function main() {
       rts,
       "getPositionDefLine",
       /const\s+Coord3D\s*\*\s*AudioEventRTS\s*::\s*getPosition\s*\(\s*void\s*\)/,
-      568,
+      570,
       errors,
       facts,
     );
@@ -343,7 +343,7 @@ function main() {
       rts,
       "isPositionalAudioDefLine",
       /Bool\s+AudioEventRTS\s*::\s*isPositionalAudio\s*\(\s*void\s*\)\s*const/,
-      670,
+      672,
       errors,
       facts,
     );
@@ -367,7 +367,7 @@ function main() {
       rts,
       "getCurrentPositionDefLine",
       /const\s+Coord3D\s*\*AudioEventRTS\s*::\s*getCurrentPosition\s*\(\s*void\s*\)/,
-      729,
+      731,
       errors,
       facts,
     );
@@ -399,7 +399,7 @@ function main() {
       sounds,
       "canPlayNowDefLine",
       /Bool\s+SoundManager\s*::\s*canPlayNow\s*\(\s*AudioEventRTS\s*\*\s*event\s*\)/,
-      206,
+      220,
       errors,
       facts,
     );
@@ -459,7 +459,7 @@ function main() {
       miles,
       "getCurrentPositionFromEventDefLine",
       /const\s+Coord3D\s*\*MilesAudioManager\s*::\s*getCurrentPositionFromEvent\s*\(\s*AudioEventRTS\s*\*\s*event\s*\)/,
-      2664,
+      2726,
       errors,
       facts,
     );
@@ -479,7 +479,7 @@ function main() {
       miles,
       "updateDefLine",
       /void\s+MilesAudioManager\s*::\s*update\s*\(\s*\)/,
-      484,
+      517,
       errors,
       facts,
     );
@@ -500,7 +500,7 @@ function main() {
       miles,
       "setDeviceListenerPositionDefLine",
       /void\s+MilesAudioManager\s*::\s*setDeviceListenerPosition\s*\(\s*void\s*\)/,
-      2651,
+      2713,
       errors,
       facts,
     );
@@ -523,7 +523,7 @@ function main() {
       miles,
       "createListenerDefLine",
       /void\s+MilesAudioManager\s*::\s*createListener\s*\(\s*void\s*\)/,
-      2871,
+      2970,
       errors,
       facts,
     );
@@ -545,7 +545,7 @@ function main() {
       miles,
       "processPlayingListDefLine",
       /void\s+MilesAudioManager\s*::\s*processPlayingList\s*\(\s*void\s*\)/,
-      2266,
+      2325,
       errors,
       facts,
     );
@@ -578,7 +578,7 @@ function main() {
       miles,
       "playSample3DDefLine",
       /void\s*\*\s*MilesAudioManager\s*::\s*playSample3D\s*\(\s*AudioEventRTS\s*\*\s*event\s*,\s*H3DSAMPLE\s+sample3D\s*\)/,
-      2820,
+      2914,
       errors,
       facts,
     );
@@ -606,7 +606,7 @@ function main() {
       miles,
       "adjustPlayingVolumeDefLine",
       /void\s+MilesAudioManager\s*::\s*adjustPlayingVolume\s*\(\s*PlayingAudio\s*\*\s*audio\s*\)/,
-      1243,
+      1280,
       errors,
       facts,
     );

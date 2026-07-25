@@ -1964,8 +1964,30 @@ int main()
 	line_cache_cell.cacheLinePassability(17, 9, 10, 10, 10, TRUE);
 	const Bool west_cache_hit = line_cache_cell.getCachedLinePassability(
 		17, 9, 10, 10, 10, west_result);
-	const Bool north_cache_replaced = !line_cache_cell.getCachedLinePassability(
+	const Bool north_cache_preserved = line_cache_cell.getCachedLinePassability(
 		17, 10, 9, 10, 10, north_result);
+	line_cache_cell.cacheMovementCheck(
+		17, LAYER_GROUND, TRUE, 1, TRUE, FALSE, FALSE);
+	Bool movement_passable = FALSE;
+	Int movement_ally_fixed = 0;
+	Bool movement_ally_moving = FALSE;
+	Bool movement_ally_goal = TRUE;
+	Bool movement_enemy_fixed = TRUE;
+	const Bool movement_cache_hit = line_cache_cell.getCachedMovementCheck(
+		17, LAYER_GROUND, movement_passable, movement_ally_fixed,
+		movement_ally_moving, movement_ally_goal, movement_enemy_fixed);
+	const Bool north_cache_survived_movement = line_cache_cell.getCachedLinePassability(
+		17, 10, 9, 10, 10, north_result);
+	Int clear_diameter = 0;
+	const Bool unset_clear_diameter_miss =
+		!line_cache_cell.getCachedClearDiameter(17, clear_diameter);
+	line_cache_cell.cacheClearDiameter(17, 23);
+	const Bool clear_diameter_hit = line_cache_cell.getCachedClearDiameter(17, clear_diameter);
+	const Bool west_cache_survived_clear = line_cache_cell.getCachedLinePassability(
+		17, 9, 10, 10, 10, west_result);
+	Bool stale_result = TRUE;
+	const Bool old_generation_miss = !line_cache_cell.getCachedLinePassability(
+		18, 10, 9, 10, 10, stale_result);
 	if (TheTerrainRenderObject == terrain_render_object) {
 		TheTerrainRenderObject = nullptr;
 	}
@@ -1976,8 +1998,15 @@ int main()
 		"original PlayerTemplateStore should parse shipped player templates before player population") && ok;
 	ok = expect(north_cache_hit && !north_result
 			&& west_cache_miss && west_cache_hit && west_result
-			&& north_cache_replaced,
-		"line passability cache must not reuse a result across different incoming directions") && ok;
+			&& north_cache_preserved && !north_result
+			&& movement_cache_hit && movement_passable && movement_ally_fixed == 1
+			&& movement_ally_moving && !movement_ally_goal && !movement_enemy_fixed
+			&& north_cache_survived_movement && !north_result
+			&& unset_clear_diameter_miss
+			&& clear_diameter_hit && clear_diameter == 23
+			&& west_cache_survived_clear && west_result
+			&& old_generation_miss,
+		"directional line results must coexist with movement and clearance caches within one search") && ok;
 	ok = expect(startup_multiplayer_color_count > 0,
 		"original MultiplayerSettings should parse shipped multiplayer colors before player population") && ok;
 	ok = expect(nearlyEqual(startup_partition_cell_size, 40.0f, 0.001f),
@@ -2304,7 +2333,10 @@ int main()
 		<< "\"westMiss\":" << jsonBool(west_cache_miss) << ","
 		<< "\"westHit\":" << jsonBool(west_cache_hit) << ","
 		<< "\"westPassable\":" << jsonBool(west_result) << ","
-		<< "\"northReplaced\":" << jsonBool(north_cache_replaced) << "},"
+		<< "\"northPreserved\":" << jsonBool(north_cache_preserved) << ","
+		<< "\"northSurvivedMovement\":" << jsonBool(north_cache_survived_movement) << ","
+		<< "\"westSurvivedClear\":" << jsonBool(west_cache_survived_clear) << ","
+		<< "\"oldGenerationMiss\":" << jsonBool(old_generation_miss) << "},"
 		<< "\"runtimeBoundaries\":["
 		<< "\"InGameUI client-quiet remains focused UI boundary\","
 		<< "\"OptionPreferences user preference getters remain focused non-network browser preference boundary\","

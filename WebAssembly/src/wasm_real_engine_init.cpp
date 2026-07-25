@@ -44,6 +44,7 @@
 #include "Common/PlayerTemplate.h"
 #include "Common/Radar.h"
 #include "Common/Recorder.h"
+#include "Common/ResourceGatheringManager.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/GameLOD.h"
 #include "GameClient/ControlBar.h"
@@ -6479,22 +6480,38 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_client_paci
 	return json.c_str();
 }
 
-// One client frame at display rate; TheGameLogic only advances when
-// run_logic != 0 (see cnc_port_allow_logic_frame gate in GameEngine::update).
-extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int run_logic)
+// One client update for the paced loop. Catch-up updates suppress rendering:
+// they are never presented, and drawing each one turns a transient missed
+// deadline into a self-sustaining GPU backlog on slower devices. The final
+// update in a worker-loop tick uses render_frame=true and remains visually
+// identical to the ordinary paced path.
+static const char *run_real_engine_frame_paced(int run_logic, bool render_frame)
 {
 	// Measure the real inter-tick duration first: W3DDisplay::draw advances
 	// the W3D animation clock by this amount (see
 	// cnc_port_client_frame_elapsed_ms) so animation wall-speed stays 1.0
-	// even when the client cannot sustain the target display rate.
-	cnc_port_note_paced_tick_time();
+	// even when the client cannot sustain the target display rate. Invisible
+	// catch-up updates must not consume this elapsed presentation interval.
+	if (render_frame) {
+		cnc_port_note_paced_tick_time();
+	}
+	const bool render_was_disabled = TheWritableGlobalData != NULL
+		&& TheWritableGlobalData->m_disableRender;
+	if (!render_frame && TheWritableGlobalData != NULL) {
+		TheWritableGlobalData->m_disableRender = TRUE;
+	}
 	g_paced_allow_logic_frame = run_logic != 0 ? 1 : 0;
 	run_real_engine_frames(1);
 	g_paced_allow_logic_frame = 1;
+	if (!render_frame && TheWritableGlobalData != NULL) {
+		TheWritableGlobalData->m_disableRender = render_was_disabled;
+	}
 
 	std::string json = "{";
 	json += "\"tick\":true";
 	json += ",\"paced\":true";
+	json += ",\"presented\":";
+	json += render_frame ? "true" : "false";
 	json += ",\"ranLogicRequested\":";
 	json += run_logic != 0 ? "true" : "false";
 	json += ",\"initReturned\":";
@@ -6509,6 +6526,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int
 	json += (TheGameLogic != NULL && TheGameLogic->isLoadSessionActive()) ? "true" : "false";
 	json += ",\"loadProgress\":" + std::to_string(
 		TheGameLogic != NULL ? (long long)TheGameLogic->getLoadSessionProgress() : -1);
+	const bool world_scene_active = TheGameLogic != NULL && TheGameLogic->isInGame()
+		&& !TheGameLogic->isLoadingMap() && !TheGameLogic->isLoadingSave()
+		&& !TheGameLogic->isClearingGameData();
+	json += ",\"worldScene\":{\"active\":";
+	json += world_scene_active ? "true" : "false";
+	json += ",\"newGameCount\":"
+		+ std::to_string(cnc_port_logic_dispatch_new_game_count());
+	json += ",\"clearGameDataCount\":"
+		+ std::to_string(cnc_port_logic_dispatch_clear_game_data_count());
+	json += "}";
 	json += ",\"browserCursor\":{\"cursorSet\":";
 	json += WasmWin32Input::current_cursor != NULL ? "true" : "false";
 	json += ",\"cursorFile\":";
@@ -6554,6 +6581,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int
 	json += "}";
 	g_frame_json = json;
 	return g_frame_json.c_str();
+}
+
+// One visible client frame at display rate; TheGameLogic only advances when
+// run_logic != 0 (see cnc_port_allow_logic_frame gate in GameEngine::update).
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced(int run_logic)
+{
+	return run_real_engine_frame_paced(run_logic, true);
+}
+
+// Advance a missed logic tick without drawing an intermediate frame that the
+// compositor will never present. The worker always follows catch-up calls with
+// one ordinary paced frame for the current display tick.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_frame_paced_catchup(int run_logic)
+{
+	return run_real_engine_frame_paced(run_logic, false);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_spawn_laser(
@@ -7940,6 +7982,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_query_selection()
 	json += TheInGameUI->isInForceAttackMode() ? "true" : "false";
 	json += ",\"preferSelection\":";
 	json += TheInGameUI->isInPreferSelectionMode() ? "true" : "false";
+	json += ",\"cameraRotateLeft\":";
+	json += TheInGameUI->isCameraRotatingLeft() ? "true" : "false";
+	json += ",\"cameraRotateRight\":";
+	json += TheInGameUI->isCameraRotatingRight() ? "true" : "false";
+	json += ",\"cameraZoomIn\":";
+	json += TheInGameUI->isCameraZoomingIn() ? "true" : "false";
+	json += ",\"cameraZoomOut\":";
+	json += TheInGameUI->isCameraZoomingOut() ? "true" : "false";
 	json += ",\"placementAnchored\":";
 	json += TheInGameUI->isPlacementAnchored() ? "true" : "false";
 	json += ",\"pendingPlaceType\":";
@@ -8915,17 +8965,24 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_su
 {
 	static std::string json;
 	Object *worker_object = NULL;
+	Object *supply_warehouse = NULL;
 	WorkerAIUpdate *worker_update = NULL;
 	if (TheGameLogic != NULL) {
 		for (Object *obj = TheGameLogic->getFirstObject(); obj != NULL; obj = obj->getNextObject()) {
 			AIUpdateInterface *ai = obj->getAIUpdateInterface();
 			if (ai != NULL && ai->getWorkerAIInterface() != NULL) {
 				WorkerAIUpdate *candidate = static_cast<WorkerAIUpdate *>(ai);
-				if (candidate->isSupplyTruckBrainActive()) {
+				Player *player = obj->getControllingPlayer();
+				ResourceGatheringManager *manager =
+					player != NULL ? player->getResourceGatheringManager() : NULL;
+				Object *candidate_warehouse = manager != NULL
+					? manager->findBestSupplyWarehouse(obj) : NULL;
+				if (candidate_warehouse == NULL) {
 					continue;
 				}
 				worker_object = obj;
 				worker_update = candidate;
+				supply_warehouse = candidate_warehouse;
 				break;
 			}
 		}
@@ -8933,12 +8990,17 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_su
 
 	json = "{";
 	json += "\"ok\":false";
-	if (worker_object == NULL || worker_update == NULL) {
-		json += ",\"error\":\"workerNotFound\"}";
+	if (worker_object == NULL || worker_update == NULL || supply_warehouse == NULL) {
+		json += ",\"error\":\"workerWithSupplyWarehouseNotFound\"}";
 		return json.c_str();
 	}
 
 	const ObjectID worker_id = worker_object->getID();
+	const ObjectID supply_warehouse_id = supply_warehouse->getID();
+	const Bool initially_active = worker_update->isSupplyTruckBrainActive();
+	if (initially_active) {
+		worker_update->exitingSupplyTruckState();
+	}
 	const Bool active_before_prepare = worker_update->isSupplyTruckBrainActive();
 	const UnsignedInt reentries_before =
 		worker_update->getSupplyTruckExitReentryCountForDiagnostics();
@@ -8956,19 +9018,55 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_su
 	const Bool active_after_exit = worker_update->isSupplyTruckBrainActive();
 	const StateID supply_state_after_exit =
 		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const Bool automatic_supply_prepared =
+		worker_update->prepareAutomaticSupplyForDiagnostics();
+	const Bool automatic_active_before_handoff =
+		worker_update->isSupplyTruckBrainActive();
+	const StateID automatic_state_before_handoff =
+		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const Bool automatic_force_before_handoff =
+		worker_update->isForcedIntoWantingState();
+	worker_update->update();
+	const Bool automatic_active_after_handoff =
+		worker_update->isSupplyTruckBrainActive();
+	const StateID automatic_state_after_handoff =
+		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const Bool automatic_force_after_handoff =
+		worker_update->isForcedIntoWantingState();
+	worker_update->update();
+	const Bool automatic_active_after_assignment =
+		worker_update->isSupplyTruckBrainActive();
+	const StateID automatic_state_after_assignment =
+		worker_update->getSupplyTruckBrainStateForDiagnostics();
+	const Bool automatic_docking_after_assignment =
+		worker_update->getAIStateType() == AI_DOCK;
 	const Bool worker_survived = TheGameLogic->findObjectByID(worker_id) == worker_object;
+	const Bool warehouse_survived =
+		TheGameLogic->findObjectByID(supply_warehouse_id) == supply_warehouse;
 	const Bool ok = !active_before_prepare && prepared_for_exit
 		&& active_before_exit && ferrying_before_exit && supply_state_before_exit == ST_WANTING
 		&& !active_after_exit && supply_state_after_exit == ST_IDLE
-		&& reentry_delta == 1 && worker_survived;
+		&& reentry_delta == 1
+		&& automatic_supply_prepared && automatic_active_before_handoff
+		&& automatic_state_before_handoff == ST_BUSY && automatic_force_before_handoff
+		&& automatic_active_after_handoff && automatic_state_after_handoff == ST_WANTING
+		&& !automatic_force_after_handoff
+		&& automatic_active_after_assignment
+		&& automatic_state_after_assignment == ST_DOCKING
+		&& automatic_docking_after_assignment
+		&& worker_survived && warehouse_survived;
 
 	json = "{";
 	json += "\"ok\":";
 	json += ok ? "true" : "false";
 	json += ",\"workerId\":" + std::to_string(static_cast<unsigned long long>(worker_id));
+	json += ",\"supplyWarehouseId\":"
+		+ std::to_string(static_cast<unsigned long long>(supply_warehouse_id));
 	const ThingTemplate *worker_template = worker_object->getTemplate();
 	json += ",\"template\":\"" + json_escape(
 		worker_template != NULL ? worker_template->getName().str() : "") + "\"";
+	json += ",\"initiallyActive\":";
+	json += initially_active ? "true" : "false";
 	json += ",\"activeBeforePrepare\":";
 	json += active_before_prepare ? "true" : "false";
 	json += ",\"preparedForExit\":";
@@ -8985,9 +9083,31 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_probe_worker_su
 	json += supply_state_after_exit == ST_IDLE ? "true" : "false";
 	json += ",\"suppressedReentries\":"
 		+ std::to_string(static_cast<unsigned long long>(reentry_delta));
+	json += ",\"automaticSupplyPrepared\":";
+	json += automatic_supply_prepared ? "true" : "false";
+	json += ",\"automaticActiveBeforeHandoff\":";
+	json += automatic_active_before_handoff ? "true" : "false";
+	json += ",\"automaticBusyBeforeHandoff\":";
+	json += automatic_state_before_handoff == ST_BUSY ? "true" : "false";
+	json += ",\"automaticForceBeforeHandoff\":";
+	json += automatic_force_before_handoff ? "true" : "false";
+	json += ",\"automaticActiveAfterHandoff\":";
+	json += automatic_active_after_handoff ? "true" : "false";
+	json += ",\"automaticWantingAfterHandoff\":";
+	json += automatic_state_after_handoff == ST_WANTING ? "true" : "false";
+	json += ",\"automaticForceClearedAfterHandoff\":";
+	json += !automatic_force_after_handoff ? "true" : "false";
+	json += ",\"automaticActiveAfterAssignment\":";
+	json += automatic_active_after_assignment ? "true" : "false";
+	json += ",\"automaticDockingStateAfterAssignment\":";
+	json += automatic_state_after_assignment == ST_DOCKING ? "true" : "false";
+	json += ",\"automaticDockingAfterAssignment\":";
+	json += automatic_docking_after_assignment ? "true" : "false";
 	json += ",\"elapsedMs\":" + std::to_string(static_cast<unsigned long long>(elapsed_ms));
 	json += ",\"workerSurvived\":";
 	json += worker_survived ? "true" : "false";
+	json += ",\"warehouseSurvived\":";
+	json += warehouse_survived ? "true" : "false";
 	json += "}";
 	return json.c_str();
 }

@@ -701,6 +701,10 @@ void SortingRendererClass::Flush_Sorting_Pool()
 	CNC_PORT_NOTE_SORTING_STEP("SortingRenderer.pool.draw.before");
 	DX8Wrapper::Set_Index_Buffer(dyn_ib_access,0); // Override with this buffer (do something to prevent need for this!)
 	DX8Wrapper::Set_Vertex_Buffer(dyn_vb_access); // Override with this buffer (do something to prevent need for this!)
+	// Shader passes can bind textures directly on D3D without updating the
+	// wrapper cache. Start replay from a known binding so a captured particle
+	// texture cannot be skipped as an apparently redundant state change.
+	DX8Wrapper::Invalidate_Cached_Textures();
 
 	unsigned count_to_render=1;
 	unsigned start_index=0;

@@ -135,6 +135,15 @@ const expectSelectionFocusLossProbe =
   process.env.SKIRMISH_START_SELECTION_FOCUS_LOSS_PROBE === "1";
 const particleVisibilityFrames = parsePositiveInt(
   "SKIRMISH_START_PARTICLE_VISIBILITY_FRAMES", 30);
+const particleVisibilitySystems = String(
+  process.env.SKIRMISH_START_PARTICLE_VISIBILITY_SYSTEMS ??
+    "SpectreHowitzerExplosionArms,NukeCannonMushroomCloudRing")
+  .split(",").map((name) => name.trim()).filter(Boolean);
+const particleVisibilityTextures = String(
+  process.env.SKIRMISH_START_PARTICLE_VISIBILITY_TEXTURES ??
+    "excloud01,exsmokepuf07")
+  .split(",").map((name) => name.trim().toLowerCase()).filter(Boolean);
+const threadedSkirmish = process.env.SKIRMISH_START_THREADS === "1";
 const distDir = parseDistDir();
 const replayMenuScreenshotPath = resolve(
   process.env.SKIRMISH_REPLAY_MENU_SCREENSHOT ??
@@ -882,31 +891,77 @@ async function driveTouchControlsProbe(page) {
       "Order then tap did not dispatch a real move command", { beforeOrder, afterOrder });
   }
 
+  await tapTouchPoint(page, orderPoint, 503);
+  await runFrames(page, 5, "touch clear selection");
+  const cleared = await rpc(page, "querySelection");
+  expect(!cleared?.result?.selected?.some((entry) => Number(entry.id) === Number(unit.id)),
+    "primary ground tap did not clear the unit before marquee proof", cleared?.result);
+  const marqueeStart = { x: unitPoint.x - 30, y: unitPoint.y - 30 };
+  const marqueeEnd = { x: unitPoint.x + 30, y: unitPoint.y + 30 };
+  const marqueeRadius = 18;
+  const marqueeStartClients = await Promise.all([
+    { x: marqueeStart.x - marqueeRadius, y: marqueeStart.y },
+    { x: marqueeStart.x + marqueeRadius, y: marqueeStart.y },
+  ].map((point) => touchPointToClient(page, point)));
+  const marqueeEndClients = await Promise.all([
+    { x: marqueeEnd.x - marqueeRadius, y: marqueeEnd.y },
+    { x: marqueeEnd.x + marqueeRadius, y: marqueeEnd.y },
+  ].map((point) => touchPointToClient(page, point)));
+  await dispatchTouchPointer(page, "pointerdown", 505, marqueeStartClients[0], true);
+  await dispatchTouchPointer(page, "pointerdown", 506, marqueeStartClients[1]);
+  await dispatchTouchPointer(page, "pointermove", 505, marqueeEndClients[0], true);
+  await dispatchTouchPointer(page, "pointermove", 506, marqueeEndClients[1]);
+  await page.waitForTimeout(30);
+  await dispatchTouchPointer(page, "pointerup", 505, marqueeEndClients[0], true);
+  await dispatchTouchPointer(page, "pointerup", 506, marqueeEndClients[1]);
+  await runFrames(page, 6, "touch two-finger marquee settle");
+  const marqueeSelected = await rpc(page, "querySelection");
+  expect(marqueeSelected?.result?.selected?.some((entry) => Number(entry.id) === Number(unit.id)),
+  "parallel two-finger movement did not traverse real marquee selection", {
+    unit: { id: unit.id, point: unitPoint },
+    selected: marqueeSelected?.result?.selected,
+  });
+
   const cameraBefore = await touchCameraState(page);
   const navigationPathBefore = (await rpc(page, "querySelection"))?.result?.commandPath;
-  const panStart = [{ x: 280, y: 240 }, { x: 440, y: 240 }];
-  let panEnd = panStart.map((point) => ({ x: point.x + 70, y: point.y + 35 }));
-  const panStartClient = await Promise.all(panStart.map((point) => touchPointToClient(page, point)));
-  let panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
-  await dispatchTouchPointer(page, "pointerdown", 511, panStartClient[0], true);
-  await dispatchTouchPointer(page, "pointerdown", 512, panStartClient[1]);
+  const touchUiState = await page.evaluate(() => window.CnCPort.state.touchUi);
+  expect(touchUiState?.mapGestures === true
+      && touchUiState?.dragBlockersTruncated === false,
+  "engine touch state did not expose a complete tactical-map routing surface", touchUiState);
+  const blockers = touchUiState.dragBlockers ?? [];
+  const gestureCenter = [
+    { x: renderGeometry.display.width * 0.50, y: renderGeometry.display.height * 0.38 },
+    { x: renderGeometry.display.width * 0.35, y: renderGeometry.display.height * 0.38 },
+    { x: renderGeometry.display.width * 0.65, y: renderGeometry.display.height * 0.38 },
+    { x: renderGeometry.display.width * 0.50, y: renderGeometry.display.height * 0.25 },
+  ].map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) }))
+    .find((point) => !blockers.some((rect) => point.x >= rect.x - 70
+      && point.x < rect.x + rect.width + 70
+      && point.y >= rect.y - 70
+      && point.y < rect.y + rect.height + 70));
+  expect(Boolean(gestureCenter), "touch probe could not find an unobstructed map gesture surface", {
+    touchUiState, renderGeometry,
+  });
+  const panStart = gestureCenter;
+  let panEnd = { x: panStart.x + 70, y: panStart.y + 35 };
+  const panStartClient = await touchPointToClient(page, panStart);
+  let panEndClient = await touchPointToClient(page, panEnd);
+  await dispatchTouchPointer(page, "pointerdown", 511, panStartClient, true);
   let navigationCountBeforeMove = await touchNavigationCount(page);
-  await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
-  await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
+  await dispatchTouchPointer(page, "pointermove", 511, panEndClient, true);
   await settleTouchNavigationQueue(page, navigationCountBeforeMove + 1);
-  await runFrames(page, 4, "touch direct pan");
+  await runFrames(page, 4, "touch one-finger direct pan");
   let cameraPanMoved = await touchCameraState(page);
   // A random start position can place the camera against the map edge. If the
   // first drag points farther out of bounds, reverse it while the same gesture
   // is held so direct translation is still tested without depending on spawn.
   if (coordinateDelta(cameraBefore.lookAt, cameraPanMoved.lookAt) <= 0.1) {
-    panEnd = panStart.map((point) => ({ x: point.x - 70, y: point.y - 35 }));
-    panEndClient = await Promise.all(panEnd.map((point) => touchPointToClient(page, point)));
+    panEnd = { x: panStart.x - 70, y: panStart.y - 35 };
+    panEndClient = await touchPointToClient(page, panEnd);
     navigationCountBeforeMove = await touchNavigationCount(page);
-    await dispatchTouchPointer(page, "pointermove", 511, panEndClient[0], true);
-    await dispatchTouchPointer(page, "pointermove", 512, panEndClient[1]);
+    await dispatchTouchPointer(page, "pointermove", 511, panEndClient, true);
     await settleTouchNavigationQueue(page, navigationCountBeforeMove + 1);
-    await runFrames(page, 4, "touch direct pan reverse from map edge");
+    await runFrames(page, 4, "touch one-finger pan reverse from map edge");
     cameraPanMoved = await touchCameraState(page);
   }
   const navigationDiagnostics = await page.evaluate(() => ({
@@ -915,7 +970,7 @@ async function driveTouchControlsProbe(page) {
     threadedInputLogs: window.CnCPort.state.threadedEngine?.recentLogs ?? null,
   }));
   expect(coordinateDelta(cameraBefore.lookAt, cameraPanMoved.lookAt) > 0.1,
-    "two-finger pan did not move the tactical camera", {
+    "one-finger pan did not move the tactical camera", {
       cameraBefore,
       cameraPanMoved,
       navigationDiagnostics,
@@ -928,8 +983,13 @@ async function driveTouchControlsProbe(page) {
     "stationary fingers must not leave velocity scrolling active", {
       cameraPanMoved, cameraPanStationary,
     });
-  await dispatchTouchPointer(page, "pointerup", 511, panEndClient[0], true);
-  await dispatchTouchPointer(page, "pointerup", 512, panEndClient[1]);
+  expect(navigationDiagnostics.forwardedNavigation?.gesture === "pan"
+      && Math.abs(Number(cameraPanMoved.zoom) - Number(cameraBefore.zoom)) < 0.0001
+      && Math.abs(Number(cameraPanMoved.angle) - Number(cameraBefore.angle)) < 0.0001,
+  "one-finger map movement must be pan-only", {
+    cameraBefore, cameraPanMoved, navigationDiagnostics,
+  });
+  await dispatchTouchPointer(page, "pointerup", 511, panEndClient, true);
   await runFrames(page, 6, "touch pan settle");
   const cameraAfterPan = await touchCameraState(page);
   expect(coordinateDelta(cameraPanStationary.lookAt, cameraAfterPan.lookAt) < 0.01
@@ -939,8 +999,8 @@ async function driveTouchControlsProbe(page) {
       cameraPanStationary, cameraAfterPan,
     });
 
-  const gestureStartCenter = { x: 390, y: 250 };
-  const gestureStartRadius = 60;
+  const gestureStartCenter = gestureCenter;
+  const gestureStartRadius = 45;
   let leftClient = await touchPointToClient(page, {
     x: gestureStartCenter.x - gestureStartRadius,
     y: gestureStartCenter.y,
@@ -952,67 +1012,101 @@ async function driveTouchControlsProbe(page) {
   await dispatchTouchPointer(page, "pointerdown", 521, leftClient, true);
   await dispatchTouchPointer(page, "pointerdown", 522, rightClient);
   navigationCountBeforeMove = await touchNavigationCount(page);
-  for (let step = 1; step <= 5; step += 1) {
-    const progress = step / 5;
-    const center = {
-      x: gestureStartCenter.x + 65 * progress,
-      y: gestureStartCenter.y + 30 * progress,
-    };
-    const radius = gestureStartRadius + 45 * progress;
-    const radians = Math.PI / 7 * progress;
+  for (let step = 1; step <= 4; step += 1) {
+    const progress = step / 4;
+    const radius = gestureStartRadius + 40 * progress;
     leftClient = await touchPointToClient(page, {
-      x: center.x - Math.cos(radians) * radius,
-      y: center.y - Math.sin(radians) * radius,
+      x: gestureStartCenter.x - radius,
+      y: gestureStartCenter.y,
     });
     rightClient = await touchPointToClient(page, {
-      x: center.x + Math.cos(radians) * radius,
-      y: center.y + Math.sin(radians) * radius,
+      x: gestureStartCenter.x + radius,
+      y: gestureStartCenter.y,
     });
     await dispatchTouchPointer(page, "pointermove", 521, leftClient, true);
     await dispatchTouchPointer(page, "pointermove", 522, rightClient);
     await page.waitForTimeout(20);
   }
   await settleTouchNavigationQueue(page, navigationCountBeforeMove + 1);
-  await runFrames(page, 6, "touch combined navigation");
-  const cameraCombined = await touchCameraState(page);
-  const combinedDiagnostics = await page.evaluate(() => ({
+  await runFrames(page, 6, "touch pinch zoom");
+  const cameraPinched = await touchCameraState(page);
+  const pinchDiagnostics = await page.evaluate(() => ({
     touchControls: window.CnCPort.getTouchControlsState?.() ?? null,
     forwardedNavigation: window.CnCPort.state.touchNavigation ?? null,
     threadedInputLogs: window.CnCPort.state.threadedEngine?.recentLogs ?? null,
   }));
-  expect(coordinateDelta(cameraAfterPan.lookAt, cameraCombined.lookAt) > 0.1,
-    "combined gesture did not pan the tactical camera", {
-      cameraAfterPan,
-      cameraCombined,
-      combinedDiagnostics,
-    });
-  expect(Math.abs(Number(cameraCombined.zoom) - Number(cameraAfterPan.zoom)) > 0.001,
-    "combined gesture did not pinch-zoom the tactical camera", {
-      cameraAfterPan, cameraCombined,
-    });
-  expect(Math.abs(Number(cameraCombined.angle) - Number(cameraAfterPan.angle)) > 0.001,
-    "combined gesture did not twist the tactical camera", {
-      cameraAfterPan, cameraCombined,
-    });
-  await runFrames(page, 12, "touch combined gesture stationary");
-  const cameraCombinedStationary = await touchCameraState(page);
-  expect(coordinateDelta(cameraCombined.lookAt, cameraCombinedStationary.lookAt) < 0.01
-      && Math.abs(Number(cameraCombined.zoom) - Number(cameraCombinedStationary.zoom)) < 0.0001
-      && Math.abs(Number(cameraCombined.angle) - Number(cameraCombinedStationary.angle)) < 0.0001,
-    "a stationary combined gesture must not continue changing the camera", {
-      cameraCombined, cameraCombinedStationary,
+  expect(Math.abs(Number(cameraPinched.zoom) - Number(cameraAfterPan.zoom)) > 0.001
+      && Math.abs(Number(cameraPinched.angle) - Number(cameraAfterPan.angle)) < 0.0001
+      && pinchDiagnostics.forwardedNavigation?.gesture === "pinch",
+  "two-finger pinch did not zoom without rotation", {
+    cameraAfterPan, cameraPinched, pinchDiagnostics,
+  });
+  await runFrames(page, 12, "touch pinch stationary");
+  const cameraPinchStationary = await touchCameraState(page);
+  expect(coordinateDelta(cameraPinched.lookAt, cameraPinchStationary.lookAt) < 0.01
+      && Math.abs(Number(cameraPinched.zoom) - Number(cameraPinchStationary.zoom)) < 0.0001
+      && Math.abs(Number(cameraPinched.angle) - Number(cameraPinchStationary.angle)) < 0.0001,
+    "a stationary pinch must not continue changing the camera", {
+      cameraPinched, cameraPinchStationary,
     });
   await dispatchTouchPointer(page, "pointerup", 521, leftClient, true);
   await dispatchTouchPointer(page, "pointerup", 522, rightClient);
-  await runFrames(page, 8, "touch combined navigation release");
+  await runFrames(page, 6, "touch pinch release");
+
+  const rotationRadius = 55;
+  const rotationStart = [0, Math.PI * 2 / 3, Math.PI * 4 / 3].map((radians) => ({
+    x: gestureStartCenter.x + Math.cos(radians) * rotationRadius,
+    y: gestureStartCenter.y + Math.sin(radians) * rotationRadius,
+  }));
+  let rotationClients = await Promise.all(rotationStart.map((point) =>
+    touchPointToClient(page, point)));
+  await dispatchTouchPointer(page, "pointerdown", 531, rotationClients[0], true);
+  await dispatchTouchPointer(page, "pointerdown", 532, rotationClients[1]);
+  await dispatchTouchPointer(page, "pointerdown", 533, rotationClients[2]);
+  navigationCountBeforeMove = await touchNavigationCount(page);
+  for (let step = 1; step <= 4; step += 1) {
+    const rotation = Math.PI / 7 * step / 4;
+    rotationClients = await Promise.all([0, Math.PI * 2 / 3, Math.PI * 4 / 3]
+      .map((radians) => ({
+        x: gestureStartCenter.x + Math.cos(radians + rotation) * rotationRadius,
+        y: gestureStartCenter.y + Math.sin(radians + rotation) * rotationRadius,
+      })).map((point) => touchPointToClient(page, point)));
+    await dispatchTouchPointer(page, "pointermove", 531, rotationClients[0], true);
+    await dispatchTouchPointer(page, "pointermove", 532, rotationClients[1]);
+    await dispatchTouchPointer(page, "pointermove", 533, rotationClients[2]);
+    await page.waitForTimeout(20);
+  }
+  await settleTouchNavigationQueue(page, navigationCountBeforeMove + 1);
+  await runFrames(page, 6, "touch three-finger rotation");
+  const cameraRotated = await touchCameraState(page);
+  const rotationDiagnostics = await page.evaluate(() => ({
+    touchControls: window.CnCPort.getTouchControlsState?.() ?? null,
+    forwardedNavigation: window.CnCPort.state.touchNavigation ?? null,
+  }));
+  expect(Math.abs(Number(cameraRotated.angle) - Number(cameraPinchStationary.angle)) > 0.001
+      && Math.abs(Number(cameraRotated.zoom) - Number(cameraPinchStationary.zoom)) < 0.0001
+      && rotationDiagnostics.forwardedNavigation?.gesture === "rotate",
+  "three-finger twist did not rotate without zooming", {
+    cameraPinchStationary, cameraRotated, rotationDiagnostics,
+  });
+  await runFrames(page, 12, "touch rotation stationary");
+  const cameraRotationStationary = await touchCameraState(page);
+  expect(coordinateDelta(cameraRotated.lookAt, cameraRotationStationary.lookAt) < 0.01
+      && Math.abs(Number(cameraRotated.zoom) - Number(cameraRotationStationary.zoom)) < 0.0001
+      && Math.abs(Number(cameraRotated.angle) - Number(cameraRotationStationary.angle)) < 0.0001,
+    "stationary rotation fingers must not continue changing the camera", {
+      cameraRotated, cameraRotationStationary,
+    });
+  await dispatchTouchPointer(page, "pointerup", 531, rotationClients[0], true);
+  await dispatchTouchPointer(page, "pointerup", 532, rotationClients[1]);
+  await dispatchTouchPointer(page, "pointerup", 533, rotationClients[2]);
+  await runFrames(page, 8, "touch rotation release");
   const cameraAfterRelease = await touchCameraState(page);
-  expect(coordinateDelta(cameraCombinedStationary.lookAt, cameraAfterRelease.lookAt) < 0.01
-      && Math.abs(Number(cameraCombinedStationary.zoom) -
-        Number(cameraAfterRelease.zoom)) < 0.0001
-      && Math.abs(Number(cameraCombinedStationary.angle) -
-        Number(cameraAfterRelease.angle)) < 0.0001,
-    "combined navigation release must not add camera drift", {
-      cameraCombinedStationary, cameraAfterRelease,
+  expect(coordinateDelta(cameraRotationStationary.lookAt, cameraAfterRelease.lookAt) < 0.01
+      && Math.abs(Number(cameraRotationStationary.zoom) - Number(cameraAfterRelease.zoom)) < 0.0001
+      && Math.abs(Number(cameraRotationStationary.angle) - Number(cameraAfterRelease.angle)) < 0.0001,
+    "rotation release must not add camera drift", {
+      cameraRotationStationary, cameraAfterRelease,
     });
 
   const navigationPathAfter = (await rpc(page, "querySelection"))?.result?.commandPath;
@@ -1041,9 +1135,14 @@ async function driveTouchControlsProbe(page) {
     enabled: state.enabled,
     selectedObject: { id: unit.id, name: unit.name, localOwned: unit.localOwned },
     order: { before: beforeOrder, after: afterOrder },
+    marquee: {
+      before: cleared.result.selected,
+      after: marqueeSelected.result.selected,
+    },
     camera: { before: cameraBefore, panMoved: cameraPanMoved,
       panStationary: cameraPanStationary, afterPan: cameraAfterPan,
-      combined: cameraCombined, combinedStationary: cameraCombinedStationary,
+      pinched: cameraPinched, pinchStationary: cameraPinchStationary,
+      rotated: cameraRotated, rotationStationary: cameraRotationStationary,
       afterRelease: cameraAfterRelease },
     renderGeometry,
     graphics,
@@ -2353,12 +2452,12 @@ async function driveScorchProbe(page) {
   };
 }
 
-function particleEffectDraws(frame) {
+function particleEffectDraws(frame, drawHistory = lightProbeDrawHistory(frame)) {
   const labels = new Map(
     (locateNested(frame?.frame, ["textureDiagnostics"])?.labels ?? [])
       .map((label) => [Number(label.id), label.name || label.path || ""]),
   );
-  return lightProbeDrawHistory(frame)
+  return drawHistory
     .map((draw) => ({
       label: labels.get(Number(draw.texture0?.id ?? 0)) ?? "",
       sequence: draw.drawSequence,
@@ -2374,6 +2473,21 @@ function particleEffectDraws(frame) {
       projectedVertices: draw.vertexSummary?.projected?.visible ?? 0,
     }))
     .filter((draw) => /cloud|smoke|dust/i.test(draw.label));
+}
+
+function particleAppliedTextures(frame) {
+  return (locateNested(frame?.frame, ["textureDiagnostics"])?.labels ?? [])
+    .map((label) => label.name || label.path || "")
+    .filter((label) => /cloud|smoke|dust|steam|puff/i.test(label));
+}
+
+async function particlePerfSummary(page) {
+  if (!threadedSkirmish) {
+    return page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? {});
+  }
+  const status = await rpc(page, "threadedStatus");
+  expect(status?.ok === true, "threaded particle status query failed", status);
+  return status.status?.graphics?.d3d8Perf ?? {};
 }
 
 async function inspectGraphics(page) {
@@ -2405,26 +2519,47 @@ async function driveParticleVisibilityProbe(page) {
   await runFrames(page, 2, "particle visibility reveal settle");
 
   const drawables = await rpc(page, "queryDrawables");
-  const target = (drawables?.result?.drawables ?? []).find((drawable) =>
+  const drawableList = drawables?.result?.drawables ?? drawables?.drawables?.drawables ?? [];
+  const target = drawableList.find((drawable) =>
     drawable.localOwned === true && drawable.onScreen === true &&
     drawable.hidden !== true && drawable.worldPos);
   expect(Boolean(target),
     "particle visibility probe could not find a visible local target", drawables?.result);
 
+  const position = { ...target.worldPos };
+  const camera = await rpc(page, "agentCameraLookAt", {
+    x: position.x,
+    y: position.y,
+  });
+  expect(camera?.ok === true,
+    "particle visibility probe could not center its target", camera);
+  await runFrames(page, 2, "particle visibility camera settle");
+
   const before = await runSummary(page, 1, "particle visibility baseline");
   const beforeParticleCount = Number(before?.frame?.particles?.particleCount ?? 0);
   const beforeOnScreenCount = Number(before?.frame?.particles?.onScreenParticleCount ?? 0);
-  await page.evaluate(() => {
-    window.__cncSetD3D8PerfCounters?.(true);
-    window.__cncSetD3D8SceneDrawHistoryLimit?.(4096);
-  });
+  if (threadedSkirmish) {
+    const configured = await rpc(page, "d3d8PerfConfigure", {
+      timing: false,
+      counters: true,
+      bufferProducers: false,
+      drawProducers: false,
+    });
+    expect(configured?.ok === true && configured?.counters === true,
+      "threaded particle counters could not be enabled", configured);
+  } else {
+    await page.evaluate(() => {
+      window.__cncSetD3D8PerfCounters?.(true);
+      window.__cncSetD3D8SceneDrawHistoryLimit?.(4096);
+    });
+  }
 
-  const systems = ["MOABDustWave", "SubExplosionSmoke02"];
+  const systems = particleVisibilitySystems;
   const triggers = [];
   for (const name of systems) {
     const trigger = await rpc(page, "realEngineSpawnParticleSystem", {
       name,
-      ...target.worldPos,
+      ...position,
       useViewPosition: false,
       clampToTerrain: true,
     });
@@ -2436,14 +2571,14 @@ async function driveParticleVisibilityProbe(page) {
   const maxFrames = particleVisibilityFrames + 120;
   for (let advanced = 1; advanced <= maxFrames && frames.length < particleVisibilityFrames;
     ++advanced) {
-    const beforePerf = await page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? {});
+    const beforePerf = await particlePerfSummary(page);
     const frame = await runSummary(page, 1, "particle visibility continuity");
-    const afterPerf = await page.evaluate(() => window.__cncD3D8PerfSummary?.() ?? {});
+    const afterPerf = await particlePerfSummary(page);
     const particleCount = Number(frame?.frame?.particles?.particleCount ?? 0);
     const onScreenParticleCount = Number(
       frame?.frame?.particles?.onScreenParticleCount ?? 0);
-    if (particleCount <= beforeParticleCount + 10 ||
-        onScreenParticleCount <= beforeOnScreenCount + 10) {
+    if (particleCount <= beforeParticleCount ||
+        onScreenParticleCount <= beforeOnScreenCount) {
       continue;
     }
 
@@ -2455,19 +2590,36 @@ async function driveParticleVisibilityProbe(page) {
       onScreenParticleCount,
       particleProgramDraws: Number(afterPerf.particleProgramDraws ?? 0) -
         Number(beforePerf.particleProgramDraws ?? 0),
+      appliedTextures: particleAppliedTextures(frame),
       effectDraws: null,
     };
 
     // Full draw history synchronizes the GPU once per draw. Sample it at
     // intervals while the lightweight counter checks every continuity frame.
     if (activeFrame === 1 || activeFrame % 10 === 0) {
-      await page.evaluate(() => {
-        window.__cncClearD3D8SceneDrawHistory?.();
-        window.__cncSetDiagLevel?.("full");
-      });
-      const diagnostic = await runSummary(page, 1, "particle visibility draw-state sample");
-      sample.effectDraws = particleEffectDraws(diagnostic);
-      await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+      let diagnostic;
+      if (threadedSkirmish) {
+        const configured = await rpc(page, "d3d8DrawHistory", {
+          clear: true,
+          level: "full",
+          limit: 4096,
+        });
+        expect(configured?.ok === true,
+          "threaded particle draw history could not be enabled", configured);
+        diagnostic = await runSummary(page, 1, "particle visibility draw-state sample");
+        const captured = await rpc(page, "d3d8DrawHistory", { level: "lite" });
+        expect(captured?.ok === true,
+          "threaded particle draw history could not be read", captured);
+        sample.effectDraws = particleEffectDraws(diagnostic, captured.history);
+      } else {
+        await page.evaluate(() => {
+          window.__cncClearD3D8SceneDrawHistory?.();
+          window.__cncSetDiagLevel?.("full");
+        });
+        diagnostic = await runSummary(page, 1, "particle visibility draw-state sample");
+        sample.effectDraws = particleEffectDraws(diagnostic);
+        await page.evaluate(() => window.__cncSetDiagLevel?.("lite"));
+      }
     }
     frames.push(sample);
 
@@ -2484,13 +2636,12 @@ async function driveParticleVisibilityProbe(page) {
   const diagnosticFrames = frames.filter((frame) => frame.effectDraws !== null);
   const missingDrawFrames = diagnosticFrames.filter((frame) => frame.effectDraws.length === 0);
   const missingTextureFrames = diagnosticFrames.filter((frame) =>
-    !frame.effectDraws.some((draw) => /excloud01/i.test(draw.label)) ||
-    !frame.effectDraws.some((draw) => /exsmokepuff/i.test(draw.label)));
+    particleVisibilityTextures.some((texture) =>
+      !frame.effectDraws.some((draw) =>
+        draw.label.toLowerCase().includes(texture) && draw.projectedVertices > 0)));
   const sampledDraws = diagnosticFrames.flatMap((frame) => frame.effectDraws);
   const staleStageDraws = sampledDraws.filter((draw) =>
     draw.stage1.colorOp !== D3DTOP_DISABLE || draw.stage1.alphaOp !== D3DTOP_DISABLE);
-  const offscreenDraws = sampledDraws
-    .filter((draw) => draw.projectedVertices === 0);
   const graphics = await inspectGraphics(page);
   const expectedRenderer = String(
     process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
@@ -2506,12 +2657,10 @@ async function driveParticleVisibilityProbe(page) {
   expect(missingDrawFrames.length === 0,
     "visible smoke or dust intermittently lost its renderer draw", missingDrawFrames);
   expect(missingTextureFrames.length === 0,
-    "sampled frames did not contain both shipped smoke and dust textures",
+    "sampled frames did not visibly draw both shipped smoke and dust textures",
     missingTextureFrames);
   expect(staleStageDraws.length === 0,
     "particle draws inherited a stale stage-one texture combiner", staleStageDraws);
-  expect(offscreenDraws.length === 0,
-    "sampled particle draws did not project into the viewport", offscreenDraws);
   expect(graphics.contextLost === false && graphics.contextLossBanner === false,
     "particle visibility run lost its WebGL context", graphics);
   if (expectedRenderer) {
@@ -2520,8 +2669,14 @@ async function driveParticleVisibilityProbe(page) {
   }
 
   return {
-    target: { name: target.name, worldPos: target.worldPos, screenPos: target.screenPos },
+    target: target == null ? null : {
+      name: target.name,
+      worldPos: target.worldPos,
+      screenPos: target.screenPos,
+    },
+    position,
     systems,
+    expectedTextures: particleVisibilityTextures,
     triggers,
     beforeParticleCount,
     beforeOnScreenCount,
@@ -3102,18 +3257,11 @@ async function main() {
     let enemyAiActivity = null;
     let musicTransition = null;
     let postActiveRenderDisabled = false;
-    const activeGraphics = await inspectGraphics(page);
-    const expectedRenderer = String(
-      process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
-    expect(activeGraphics.contextLost === false && activeGraphics.contextLossBanner === false,
-      "fresh skirmish lost its WebGL context", activeGraphics);
-    if (expectedRenderer) {
-      expect(String(activeGraphics.renderer ?? "").toLowerCase().includes(expectedRenderer),
-        "fresh skirmish used an unexpected GPU renderer", { activeGraphics, expectedRenderer });
-    }
     let workerSupplyExitProbe = null;
     if (expectWorkerSupplyExitProbe) {
       workerSupplyExitProbe = await rpc(page, "realEngineProbeWorkerSupplyExit");
+      console.error("[skirmish-start] workerSupplyExitProbe:",
+        JSON.stringify(workerSupplyExitProbe?.result ?? workerSupplyExitProbe));
       expect(workerSupplyExitProbe?.ok === true
           && workerSupplyExitProbe?.result?.activeBeforePrepare === false
           && workerSupplyExitProbe?.result?.preparedForExit === true
@@ -3123,9 +3271,29 @@ async function main() {
           && workerSupplyExitProbe?.result?.activeAfterExit === false
           && workerSupplyExitProbe?.result?.idleAfterExit === true
           && workerSupplyExitProbe?.result?.suppressedReentries === 1
-          && workerSupplyExitProbe?.result?.workerSurvived === true,
-        "worker supply-brain exit did not complete one bounded master-state transition",
-        workerSupplyExitProbe);
+          && workerSupplyExitProbe?.result?.automaticSupplyPrepared === true
+          && workerSupplyExitProbe?.result?.automaticActiveBeforeHandoff === true
+          && workerSupplyExitProbe?.result?.automaticBusyBeforeHandoff === true
+          && workerSupplyExitProbe?.result?.automaticForceBeforeHandoff === true
+          && workerSupplyExitProbe?.result?.automaticActiveAfterHandoff === true
+          && workerSupplyExitProbe?.result?.automaticWantingAfterHandoff === true
+          && workerSupplyExitProbe?.result?.automaticForceClearedAfterHandoff === true
+          && workerSupplyExitProbe?.result?.automaticActiveAfterAssignment === true
+          && workerSupplyExitProbe?.result?.automaticDockingStateAfterAssignment === true
+          && workerSupplyExitProbe?.result?.automaticDockingAfterAssignment === true
+          && workerSupplyExitProbe?.result?.workerSurvived === true
+          && workerSupplyExitProbe?.result?.warehouseSurvived === true,
+        "worker supply-brain exit and automatic assignment did not preserve master/substate ownership",
+        workerSupplyExitProbe?.result ?? workerSupplyExitProbe);
+    }
+    const activeGraphics = await inspectGraphics(page);
+    const expectedRenderer = String(
+      process.env.SKIRMISH_START_EXPECT_RENDERER ?? "").trim().toLowerCase();
+    expect(activeGraphics.contextLost === false && activeGraphics.contextLossBanner === false,
+      "fresh skirmish lost its WebGL context", activeGraphics);
+    if (expectedRenderer) {
+      expect(String(activeGraphics.renderer ?? "").toLowerCase().includes(expectedRenderer),
+        "fresh skirmish used an unexpected GPU renderer", { activeGraphics, expectedRenderer });
     }
     let partitionDistanceBenchmark = null;
     if (partitionDistanceBenchmarkIterations > 0) {

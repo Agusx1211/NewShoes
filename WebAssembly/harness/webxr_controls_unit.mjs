@@ -1,0 +1,494 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import {
+  createWebXrControls,
+  intersectWebXrRayWithPanel,
+} from "./webxr-controls.mjs";
+
+function transform({ x = 0, y = 0, z = 0 } = {}) {
+  return [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    x, y, z, 1,
+  ];
+}
+
+const worldRay = {
+  origin: [10, 20, 30],
+  end: [10, 20, 130],
+};
+
+const panel = {
+  anchorTransform: transform({ x: 2, y: 1, z: 3 }),
+  panelWidthMeters: 1.6,
+  panelHeightMeters: 0.9,
+  panelDistanceMeters: 1.5,
+  backbufferWidth: 1600,
+  backbufferHeight: 900,
+  resolveWorldRay: () => worldRay,
+};
+const center = intersectWebXrRayWithPanel({
+  ...panel,
+  targetRayMatrix: transform({ x: 2, y: 1, z: 3 }),
+});
+assert.ok(center);
+assert.deepEqual(center.point, { x: 800, y: 450 });
+assert.ok(Math.abs(center.distanceMeters - 1.5) < 1e-6);
+
+const rightEdge = intersectWebXrRayWithPanel({
+  ...panel,
+  targetRayMatrix: transform({ x: 2.8, y: 1, z: 3 }),
+});
+assert.deepEqual(rightEdge.point, { x: 1599, y: 450 });
+assert.equal(intersectWebXrRayWithPanel({
+  ...panel,
+  targetRayMatrix: transform({ x: 2.81, y: 1, z: 3 }),
+}), null, "rays outside the floating panel must not click the game");
+
+function button(value = false) {
+  return { pressed: value, value: value ? 1 : 0 };
+}
+
+function buttons() {
+  return Array.from({ length: 6 }, () => button());
+}
+
+function findAction(actions, expected, start = 0) {
+  return actions.findIndex((action, index) => index >= start
+    && Object.entries(expected).every(([key, value]) => action[key] === value));
+}
+
+const actions = [];
+const haptics = [];
+const controls = createWebXrControls({ onAction: (action) => actions.push(action) });
+const rightButtons = buttons();
+const right = {
+  handedness: "right",
+  profiles: ["generic-trigger-squeeze-thumbstick"],
+  targetRayPose: { matrix: transform({ x: 2, y: 1, z: 3 }) },
+  gamepad: {
+    mapping: "xr-standard",
+    axes: [0, 0],
+    buttons: rightButtons,
+    hapticActuators: [{ pulse: (intensity, duration) => {
+      haptics.push({ intensity, duration });
+      return Promise.resolve(true);
+    } }],
+  },
+};
+const leftButtons = buttons();
+const left = {
+  handedness: "left",
+  profiles: ["generic-trigger-squeeze-thumbstick"],
+  targetRayPose: { matrix: transform({ x: 2.1, y: 1, z: 3 }) },
+  gamepad: { mapping: "xr-standard", axes: [0, 0], buttons: leftButtons },
+};
+
+controls.update({ ...panel, time: 0, inputSources: [left, right] });
+assert.deepEqual(actions.at(-1), {
+  type: "pointer",
+  target: "ui",
+  point: { x: 800, y: 450 },
+  ray: worldRay,
+  handedness: "right",
+});
+assert.equal(controls.snapshot().paired, true);
+assert.deepEqual(controls.snapshot().pointer.spatialRay, {
+  origin: [2, 1, 3],
+  end: [2, 1, 1.5],
+}, "the compositor pointer must preserve the tracked reference-space ray");
+assert.deepEqual(controls.snapshot().sources.map(({ handedness, role }) => ({ handedness, role })), [
+  { handedness: "left", role: "offhand" },
+  { handedness: "right", role: "dominant" },
+]);
+
+const edgeActions = [];
+const edgeControls = createWebXrControls({ onAction: (action) => edgeActions.push(action) });
+const edgeSource = {
+  ...right,
+  id: 17,
+  gamepad: { mapping: "xr-standard", axes: [0, 0], buttons: buttons() },
+};
+edgeControls.update({
+  ...panel,
+  time: 5,
+  inputSources: [edgeSource],
+  inputEvents: [
+    { type: "squeezestart", sourceId: 17, time: 1 },
+    { type: "squeezeend", sourceId: 17, time: 2 },
+  ],
+});
+const edgeDown = findAction(edgeActions,
+  { type: "button", button: "secondary", down: true });
+const edgeUp = findAction(edgeActions,
+  { type: "button", button: "secondary", down: false });
+assert.ok(edgeDown >= 0 && edgeDown < edgeUp,
+  "event-driven squeeze edges must preserve a quick click that occurs between XR frames");
+assert.equal(edgeControls.snapshot().pointer.pressed, false);
+
+const chordActions = [];
+const chordControls = createWebXrControls({ onAction: (action) => chordActions.push(action) });
+const chordLeft = {
+  ...left,
+  id: 18,
+  gamepad: { mapping: "xr-standard", axes: [0, 0], buttons: buttons() },
+};
+chordControls.update({
+  ...panel,
+  time: 6,
+  inputSources: [chordLeft, edgeSource],
+  inputEvents: [
+    { type: "squeezestart", sourceId: 18, time: 1 },
+    { type: "selectstart", sourceId: 17, time: 2 },
+    { type: "selectend", sourceId: 17, time: 3 },
+    { type: "squeezeend", sourceId: 18, time: 4 },
+  ],
+});
+const chordControlDown = findAction(chordActions,
+  { type: "key", code: "ControlLeft", down: true });
+const chordClickDown = findAction(chordActions,
+  { type: "button", button: "primary", down: true });
+const chordControlUp = findAction(chordActions,
+  { type: "key", code: "ControlLeft", down: false });
+assert.ok(chordControlDown >= 0 && chordControlDown < chordClickDown
+  && chordClickDown < chordControlUp,
+  "event-driven offhand modifiers must retain their order around a between-frame click");
+
+rightButtons[0] = button(true);
+controls.update({ ...panel, time: 10, inputSources: [left, right] });
+assert.equal(controls.snapshot().pointer.pressed, true);
+assert.ok(actions.some((action) => action.type === "button"
+  && action.button === "primary" && action.down === true));
+assert.deepEqual(haptics, [{ intensity: 0.22, duration: 24 }]);
+
+rightButtons[0] = button();
+controls.update({ ...panel, time: 15, inputSources: [right, left] });
+let start = actions.length;
+leftButtons[0] = button(true);
+rightButtons[1] = button(true);
+controls.update({ ...panel, time: 20, inputSources: [right, left] });
+assert.ok(findAction(actions, { type: "key", code: "AltLeft", down: true }, start)
+  < findAction(actions, { type: "button", button: "secondary", down: true }, start),
+"waypoint modifier must enter the original input stream before the contextual click");
+
+leftButtons[0] = button();
+rightButtons[1] = button();
+controls.update({ ...panel, time: 25, inputSources: [right, left] });
+start = actions.length;
+leftButtons[1] = button(true);
+rightButtons[0] = button(true);
+controls.update({ ...panel, time: 30, inputSources: [right, left] });
+assert.ok(findAction(actions, { type: "key", code: "ControlLeft", down: true }, start)
+  < findAction(actions, { type: "button", button: "primary", down: true }, start),
+"force-fire modifier must enter the original input stream before the primary click");
+
+rightButtons[0] = button();
+leftButtons[1] = button();
+leftButtons[4] = button(true);
+controls.update({ ...panel, time: 35, inputSources: [right, left] });
+assert.ok(actions.some((action) => action.type === "key"
+  && action.code === "ShiftLeft" && action.down === true));
+
+leftButtons[4] = button();
+left.gamepad.axes = [-0.8, 0.8];
+controls.update({ ...panel, time: 40, inputSources: [right, left] });
+assert.ok(actions.some((action) => action.type === "key"
+  && action.code === "ArrowLeft" && action.down === true));
+assert.ok(actions.some((action) => action.type === "key"
+  && action.code === "ArrowDown" && action.down === true));
+
+left.gamepad.axes = [0, -0.9];
+leftButtons[3] = button(true);
+leftButtons[1] = button(true);
+start = actions.length;
+controls.update({ ...panel, time: 45, inputSources: [right, left] });
+assert.ok(findAction(actions,
+  { type: "key", code: "ControlLeft", down: true }, start)
+  < findAction(actions, { type: "key", code: "Digit1", down: true }, start),
+"offhand stick-click radial must reach the original control-group digit path");
+
+right.gamepad.axes = [0.8, -0.8];
+controls.update({ ...panel, time: 50, inputSources: [left, right] });
+assert.ok(actions.some((action) => action.type === "key"
+  && action.code === "Numpad6" && action.down === true));
+assert.ok(actions.some((action) => action.type === "key"
+  && action.code === "Numpad8" && action.down === true));
+assert.deepEqual(controls.snapshot().cameraMotion,
+  { active: true, turning: true, panning: false, zooming: true });
+
+right.gamepad.axes = [0, 0];
+rightButtons[4] = button(true);
+rightButtons[5] = button(true);
+rightButtons[3] = button(true);
+controls.update({ ...panel, time: 55, inputSources: [left, right] });
+assert.ok(actions.some((action) => action.type === "key"
+  && action.code === "KeyA" && action.down === true));
+assert.ok(actions.some((action) => action.type === "key"
+  && action.code === "Escape" && action.down === true));
+rightButtons[3] = button();
+controls.update({ ...panel, time: 56, inputSources: [left, right] });
+assert.ok(actions.some((action) => action.type === "recenter"));
+
+left.gamepad.axes = [0, 0];
+right.gamepad.axes = [0, 0];
+leftButtons[1] = button();
+controls.update({ ...panel, time: 60, inputSources: [right, left] });
+assert.ok(actions.some((action) => action.type === "key"
+  && action.code === "ArrowLeft" && action.down === false));
+assert.ok(actions.some((action) => action.type === "key"
+  && action.code === "Numpad6" && action.down === false));
+
+controls.update({ ...panel, time: 65, inputSources: [] });
+assert.ok(actions.some((action) => action.type === "button"
+  && action.button === "primary" && action.down === false),
+"disconnecting a controller must release held engine buttons");
+assert.ok(actions.some((action) => action.type === "key"
+  && action.code === "ShiftLeft" && action.down === false),
+"disconnecting the offhand must release held original-engine modifiers");
+assert.ok(actions.some((action) => action.type === "pickRay" && action.ray === null),
+  "losing all tracked targets must clear the native engine-world ray");
+assert.equal(controls.snapshot().sourceCount, 0);
+
+for (let index = 0; index < rightButtons.length; index += 1) rightButtons[index] = button();
+right.gamepad.axes = [0, 0];
+right.targetRayPose.matrix = transform({ x: 2.81, y: 1, z: 3 });
+controls.update({ ...panel, time: 70, inputSources: [right] });
+assert.deepEqual(actions.at(-1), {
+  type: "pointer",
+  target: "world",
+  point: { x: 800, y: 450 },
+  ray: worldRay,
+  handedness: "right",
+}, "a ray outside the UI panel must retain an engine-world target");
+assert.deepEqual(controls.snapshot().pointer.spatialRay, {
+  origin: [2.81, 1, 3],
+  end: [2.81, 1, -1.5],
+}, "battlefield feedback must retain the tracked ray without fabricating an engine hit");
+
+const fallbackActions = [];
+const fallback = createWebXrControls({ onAction: (action) => fallbackActions.push(action) });
+right.targetRayPose.matrix = transform({ x: 2, y: 1, z: 3 });
+const fallbackUpdate = (time) => fallback.update({ ...panel, time, inputSources: [right] });
+fallbackUpdate(0);
+assert.equal(fallback.snapshot().paired, false);
+
+rightButtons[4] = button(true);
+fallbackUpdate(10);
+rightButtons[4] = button();
+fallbackUpdate(20);
+assert.ok(findAction(fallbackActions, { type: "key", code: "ShiftLeft", down: false })
+  < findAction(fallbackActions, { type: "key", code: "KeyA", down: true }),
+"a one-controller A/X tap must release its Shift layer before attack-move");
+
+let fallbackStart = fallbackActions.length;
+rightButtons[5] = button(true);
+fallbackUpdate(30);
+rightButtons[5] = button();
+fallbackUpdate(40);
+assert.notEqual(findAction(fallbackActions,
+  { type: "key", code: "Escape", down: true }, fallbackStart), -1);
+
+fallbackStart = fallbackActions.length;
+rightButtons[4] = button(true);
+rightButtons[5] = button(true);
+fallbackUpdate(50);
+rightButtons[4] = button();
+rightButtons[5] = button();
+fallbackUpdate(60);
+assert.notEqual(findAction(fallbackActions, { type: "recenter" }, fallbackStart), -1);
+assert.equal(findAction(fallbackActions,
+  { type: "key", code: "KeyA", down: true }, fallbackStart), -1);
+assert.equal(findAction(fallbackActions,
+  { type: "key", code: "Escape", down: true }, fallbackStart), -1);
+
+fallbackStart = fallbackActions.length;
+rightButtons[2] = button(true);
+rightButtons[0] = button(true);
+fallbackUpdate(70);
+assert.ok(findAction(fallbackActions,
+  { type: "key", code: "ControlLeft", down: true }, fallbackStart)
+  < findAction(fallbackActions,
+    { type: "button", button: "primary", down: true }, fallbackStart));
+rightButtons[0] = button();
+rightButtons[2] = button();
+fallbackUpdate(80);
+
+fallbackStart = fallbackActions.length;
+rightButtons[3] = button(true);
+rightButtons[1] = button(true);
+fallbackUpdate(90);
+assert.ok(findAction(fallbackActions,
+  { type: "key", code: "AltLeft", down: true }, fallbackStart)
+  < findAction(fallbackActions,
+    { type: "button", button: "secondary", down: true }, fallbackStart));
+rightButtons[1] = button();
+rightButtons[3] = button();
+fallbackUpdate(100);
+
+fallbackStart = fallbackActions.length;
+rightButtons[3] = button(true);
+right.gamepad.axes = [0, -0.9];
+fallbackUpdate(110);
+assert.notEqual(findAction(fallbackActions,
+  { type: "key", code: "Digit1", down: true }, fallbackStart), -1);
+assert.equal(findAction(fallbackActions,
+  { type: "key", code: "AltLeft", down: true }, fallbackStart), -1,
+"the one-controller group radial must not accidentally request Alt/view mode");
+rightButtons[3] = button();
+right.gamepad.axes = [0, 0];
+fallbackUpdate(120);
+
+fallbackStart = fallbackActions.length;
+rightButtons[5] = button(true);
+right.gamepad.axes = [0.8, -0.8];
+fallbackUpdate(130);
+assert.notEqual(findAction(fallbackActions,
+  { type: "key", code: "Numpad6", down: true }, fallbackStart), -1);
+assert.notEqual(findAction(fallbackActions,
+  { type: "wheel", steps: 1 }, fallbackStart), -1);
+assert.equal(findAction(fallbackActions,
+  { type: "key", code: "Numpad8", down: true }, fallbackStart), -1,
+"one-controller vertical camera input must not double-apply key and wheel zoom");
+rightButtons[5] = button();
+right.gamepad.axes = [0, 0];
+fallbackUpdate(140);
+assert.equal(findAction(fallbackActions,
+  { type: "key", code: "Escape", down: true }, fallbackStart), -1,
+"using the one-controller camera layer must suppress its cancel tap");
+
+const scrollActions = [];
+const scrollControls = createWebXrControls({ onAction: (action) => scrollActions.push(action) });
+const scrollLeft = {
+  handedness: "left",
+  targetRayPose: { matrix: transform({ x: 2.1, y: 1, z: 3 }) },
+  gamepad: { axes: [0, 0], buttons: buttons() },
+};
+const scrollRightButtons = buttons();
+const scrollRight = {
+  handedness: "right",
+  targetRayPose: { matrix: transform({ x: 2, y: 1, z: 3 }) },
+  gamepad: { axes: [0, -0.8], buttons: scrollRightButtons },
+};
+scrollRightButtons[3] = button(true);
+scrollControls.update({ ...panel, time: 0, inputSources: [scrollLeft, scrollRight] });
+assert.notEqual(findAction(scrollActions, { type: "wheel", steps: 1 }), -1,
+  "dominant stick-click plus vertical stick must scroll through the original wheel path");
+assert.equal(scrollControls.snapshot().cameraMotion.active, false,
+  "scrolling the floating UI must not enable the camera-motion vignette");
+const firstScrollCount = scrollActions.filter((action) => action.type === "wheel").length;
+scrollControls.update({ ...panel, time: 200, inputSources: [scrollLeft, scrollRight] });
+assert.equal(scrollActions.filter((action) => action.type === "wheel").length, firstScrollCount,
+  "held UI scroll must respect its initial repeat delay");
+scrollControls.update({ ...panel, time: 350, inputSources: [scrollLeft, scrollRight] });
+assert.equal(scrollActions.filter((action) => action.type === "wheel").length,
+  firstScrollCount + 1, "held UI scroll must repeat after its initial delay");
+scrollRight.gamepad.axes = [0, 0];
+scrollRightButtons[3] = button();
+scrollControls.update({ ...panel, time: 360, inputSources: [scrollLeft, scrollRight] });
+assert.equal(scrollActions.some((action) => action.type === "recenter"), false,
+  "using stick-click to scroll must suppress the recenter tap");
+scrollRightButtons[3] = button(true);
+scrollControls.update({ ...panel, time: 400, inputSources: [scrollLeft, scrollRight] });
+scrollRightButtons[3] = button();
+scrollControls.update({ ...panel, time: 410, inputSources: [scrollLeft, scrollRight] });
+assert.equal(scrollActions.some((action) => action.type === "recenter"), true,
+  "a neutral dominant stick-click must still recenter on release");
+
+const steppedActions = [];
+const stepped = createWebXrControls({
+  rotationMode: "stepped",
+  onAction: (action) => steppedActions.push(action),
+});
+const steppedLeft = {
+  handedness: "left",
+  targetRayPose: { matrix: transform({ x: 2.1, y: 1, z: 3 }) },
+  gamepad: { axes: [0, 0], buttons: buttons() },
+};
+const steppedRight = {
+  handedness: "right",
+  targetRayPose: { matrix: transform({ x: 2, y: 1, z: 3 }) },
+  gamepad: { axes: [0, 0], buttons: buttons() },
+};
+stepped.update({ ...panel, time: 0, inputSources: [steppedLeft, steppedRight] });
+steppedRight.gamepad.axes = [0.8, 0];
+stepped.update({ ...panel, time: 10, inputSources: [steppedLeft, steppedRight] });
+assert.equal(stepped.snapshot().rotationMode, "stepped");
+assert.equal(stepped.snapshot().cameraMotion.turning, true);
+stepped.update({ ...panel, time: 331, inputSources: [steppedLeft, steppedRight] });
+assert.equal(stepped.snapshot().cameraMotion.active, false,
+  "a stepped turn must release its original camera key after the bounded hold");
+stepped.update({ ...panel, time: 450, inputSources: [steppedLeft, steppedRight] });
+assert.equal(steppedActions.filter((action) => action.type === "key"
+  && action.code === "Numpad6" && action.down).length, 1,
+  "a held stick must not repeat a stepped turn before returning to neutral");
+steppedRight.gamepad.axes = [-0.8, 0];
+stepped.update({ ...panel, time: 455, inputSources: [steppedLeft, steppedRight] });
+assert.equal(steppedActions.some((action) => action.type === "key"
+  && action.code === "Numpad4" && action.down), false,
+  "reversing a deflected stick must not bypass stepped-turn neutral rearming");
+steppedRight.gamepad.axes = [0, 0];
+stepped.update({ ...panel, time: 460, inputSources: [steppedLeft, steppedRight] });
+steppedRight.gamepad.axes = [0.8, 0];
+stepped.update({ ...panel, time: 470, inputSources: [steppedLeft, steppedRight] });
+assert.equal(steppedActions.filter((action) => action.type === "key"
+  && action.code === "Numpad6" && action.down).length, 2,
+  "returning the stick to neutral must re-arm one stepped turn");
+
+const customActions = [];
+const custom = createWebXrControls({
+  bindings: { dominantHand: "left", buttons: { primaryAction: 2 } },
+  pressThreshold: 0.7,
+  releaseThreshold: 0.4,
+  onAction: (action) => customActions.push(action),
+});
+leftButtons[2] = button(true);
+left.gamepad.axes = [0.6, 0];
+custom.update({ ...panel, inputSources: [right, left] });
+assert.equal(custom.snapshot().dominantHand, "left");
+assert.equal(findAction(customActions,
+  { type: "key", code: "Numpad6", down: true }), -1,
+"configured dead zones must apply to camera axes");
+assert.notEqual(findAction(customActions,
+  { type: "key", code: "KeyA", down: true }), -1,
+"button bindings must be remappable without changing the engine bridge");
+
+assert.throws(() => createWebXrControls({ pressThreshold: 0.3, releaseThreshold: 0.4 }),
+  /release threshold/);
+assert.throws(() => createWebXrControls({ rotationMode: "teleport" }), /rotation mode/);
+
+const anonymous = createWebXrControls();
+anonymous.update({ ...panel, inputSources: [
+  { handedness: "none", gamepad: { axes: [], buttons: [] } },
+  { handedness: "none", gamepad: { axes: [], buttons: [] } },
+] });
+assert.equal(anonymous.snapshot().sourceCount, 2,
+  "controllers without handedness or browser IDs must retain separate state");
+
+const resumeActions = [];
+const resumeControls = createWebXrControls({ onAction: (action) => resumeActions.push(action) });
+const resumeButtons = buttons();
+const resumeSource = {
+  handedness: "right",
+  targetRayPose: { matrix: transform({ x: 2, y: 1, z: 3 }) },
+  gamepad: { axes: [0, 0], buttons: resumeButtons },
+};
+resumeButtons[0] = button(true);
+resumeControls.update({ ...panel, inputSources: [resumeSource] });
+resumeControls.suspend();
+const resumeStart = resumeActions.length;
+resumeControls.update({ ...panel, inputSources: [resumeSource] });
+assert.equal(resumeControls.snapshot().waitingForNeutral, true);
+assert.equal(findAction(resumeActions,
+  { type: "button", button: "primary", down: true }, resumeStart), -1,
+  "a held trigger must not click again when XR visibility resumes");
+resumeButtons[0] = { pressed: false, touched: true, value: 0.45 };
+resumeControls.update({ ...panel, inputSources: [resumeSource] });
+assert.equal(resumeControls.snapshot().waitingForNeutral, true,
+  "a partially released analog trigger must remain blocked");
+resumeButtons[0] = button();
+resumeControls.update({ ...panel, inputSources: [resumeSource] });
+assert.equal(resumeControls.snapshot().waitingForNeutral, false);
+assert.equal(resumeControls.snapshot().sourceCount, 1);
+
+console.log("WebXR controls unit: PASS");

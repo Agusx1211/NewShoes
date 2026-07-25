@@ -1,6 +1,6 @@
 {
   "schema": "project-new-shoes/public-project/v1",
-  "reviewedAt": "2026-07-19",
+  "reviewedAt": "2026-07-20",
   "maxReviewAgeDays": 90,
   "site": {
     "name": "Project New Shoes",
@@ -47,11 +47,12 @@
       "name": "Play Zero Hour",
       "status": "supported",
       "summary": "The original Zero Hour shell boots and playable skirmishes run against the original AI through the engine's real simulation and input paths.",
-      "reviewedAt": "2026-07-19",
+      "reviewedAt": "2026-07-20",
       "details": [
         "Players use the original menus, mouse, keyboard, touch controls, selection, building, production, movement, camera, and combat behavior. This is the actual C++ engine compiled for WebAssembly rather than reimplemented gameplay.",
         "Mouse camera scrolling preserves the original right-drag default speed across supported render resolutions. The original Options menu Scroll Speed control adjusts right-drag, keyboard, and edge-scrolling sensitivity, and moving the cursor to the game canvas edge scrolls the tactical view.",
         "All official multiplayer maps have been exercised to rendered skirmish state. Campaign and Generals Challenge use the real engine and are in active validation; mission breadth, cutscenes, win and loss flows, and edge cases continue to receive coverage.",
+        "The browser persists the original engine's last skirmish map, faction, slots, teams, starting cash, superweapon restriction, and game speed. Local LLM commander profile selections are remembered separately from the legacy LAN-compatible slot string; if a selected profile is later deleted, its classic AI fallback remains usable.",
         "This is a playable development product, not a claim that every original flow and every browser combination is already perfect. Current issues and deployed build metadata should be consulted for narrower compatibility claims."
       ],
       "evidence": [
@@ -59,6 +60,8 @@
         "WebAssembly/harness/bridge.js",
         "WebAssembly/harness/camera_scroll_runtime_smoke.mjs",
         "WebAssembly/harness/skirmish_start_smoke.mjs",
+        "GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/SkirmishGameOptionsMenu.cpp",
+        "WebAssembly/harness/skirmish_preferences_persistence_smoke.mjs",
         "WebAssembly/harness/threaded_play_gate.mjs",
         "WebAssembly/harness/shellmap_real_init_gate.mjs"
       ]
@@ -68,9 +71,9 @@
       "name": "Play on a touch screen",
       "status": "in_testing",
       "summary": "Phone and tablet layouts map selection, contextual orders, direct map-like camera navigation, hotkeys, and text entry onto touch controls that feed the engine's original input paths.",
-      "reviewedAt": "2026-07-17",
+      "reviewedAt": "2026-07-20",
       "details": [
-        "One-finger taps and drags provide left-click selection and UI operation. A hold, two-finger tap, or armed Order button provides a right click. A moving two-finger gesture directly grabs the terrain under its centroid while translation, pinch zoom, and twist rotation work together; stopping the fingers stops the camera instead of leaving mouse-drag velocity active. Explicit Cancel, text, help, camera, modifier, control-group, function, navigation, punctuation, and numeric-keypad controls make keyboard-only actions reachable.",
+        "A one-finger tap selects or activates, while a one-finger drag directly grabs and moves an unobstructed tactical-map surface without rotating it. The engine reports live UI drag blockers so sliders, lists, minimaps, command controls, and shell screens retain their original left-drag behavior. Moving two fingers together provides marquee selection, pinching two fingers zooms, and twisting three fingers rotates; stationary or released fingers do not leave camera velocity active. A hold, stationary two-finger tap, or armed Order button provides a right click. Explicit Cancel, text, help, camera, modifier, control-group, function, navigation, punctuation, and numeric-keypad controls make keyboard-only actions reachable.",
         "Visible original-engine text-entry rectangles are relayed to the browser so tapping one can open the device keyboard during the touch event. Browsers with the Virtual Keyboard API use overlay mode; other mobile browsers keep the game canvas at its pre-keyboard geometry and move only the text proxy above the visible keyboard.",
         "The controls are designed for phone and tablet play, including iPhone- and iPad-class portrait and landscape layouts. Automatic rendering preserves the live device aspect ratio and reduces both dimensions uniformly when DPR, GPU pixel budgets, or engine limits require a lower resolution. Touch recognition and mobile Chromium layouts have focused automated coverage; physical-device and Safari breadth remain in active validation. Landscape is recommended because the original Zero Hour interface was designed for a wide screen."
       ],
@@ -246,9 +249,9 @@
       "name": "Configure and diagnose the runtime",
       "status": "supported",
       "summary": "The launcher exposes display, shader, camera, cursor, performance, multiplayer, storage, hardware, and issue-capture interfaces.",
-      "reviewedAt": "2026-07-15",
+      "reviewedAt": "2026-07-20",
       "details": [
-        "The desktop exposes resolution, windowed or fullscreen presentation, enhanced or classic shaders, camera zoom, original game cursors, performance overlay options, graphics diagnostics, multiplayer diagnostics, browser storage, and a live browser and hardware capability report.",
+        "The desktop exposes resolution, windowed or fullscreen presentation, enhanced or classic shaders, camera zoom, original game cursors, performance overlay options, graphics diagnostics, multiplayer diagnostics, browser storage, and a live browser and hardware capability report. Original cursor frames are decoded locally from the user-owned game files into browser-standard images, retain their original hotspots and animation timing, and are preloaded before presentation.",
         "The issue recorder can capture a screenshot, annotations, browser and runtime logs, input and state evidence, and an optional short video into a .cncdump.json package. Long captures are serialized in bounded chunks instead of one giant JavaScript string. Diagnostics remain local until the user explicitly saves or uploads a dump.",
         "Detailed multiplayer capture is opt-in because it can be large. Credentials and discovery secrets are excluded from dumps. Reports should never include retail archives, disc images, product keys, or private credentials."
       ],
@@ -256,7 +259,11 @@
         "WebAssembly/harness/issue-recorder.mjs",
         "WebAssembly/harness/issue_recorder_unit.mjs",
         "WebAssembly/harness/issue_recorder_ui_smoke.mjs",
-        "WebAssembly/harness/launcher-hardware-info.js"
+        "WebAssembly/harness/launcher-hardware-info.js",
+        "WebAssembly/harness/original-cursor-assets.mjs",
+        "WebAssembly/harness/original_cursor_assets_unit.mjs",
+        "WebAssembly/harness/launcher_polish_browser_smoke.mjs",
+        "WebAssembly/harness/threaded_play_gate.mjs"
       ]
     }
   ],
@@ -310,6 +317,7 @@
     "Retail game data is required and not bundled.",
     "Zero Hour is the current target; standalone vanilla Generals is not exposed.",
     "Chrome and Chromium have the strongest validation.",
+    "Immersive VR is experimental and currently does not work well. Real-headset rendering, controls, comfort, performance, and compatibility remain incomplete.",
     "Campaign, Challenge, save/load, replay, movies, long multiplayer sessions, reconnects, difficult NAT environments, performance, and remaining rendering fidelity continue to receive testing and fixes.",
     "Browser storage is scoped to the current browser profile, device, and site origin unless the user exports or transfers data.",
     "Native Windows mod DLLs and executables cannot run in WebAssembly.",

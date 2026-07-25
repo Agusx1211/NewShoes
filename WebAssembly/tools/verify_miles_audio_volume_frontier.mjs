@@ -26,14 +26,14 @@
 //       fields m_scriptMusicVolume..m_systemSpeechVolume @ 344..352;
 //       m_zoomVolume @ 353; m_volumeHasChanged @ 366.
 //   MilesAudioManager.cpp:
-//     - adjustPlayingVolume @ 1243: AIL_set_sample_volume_pan,
+//     - adjustPlayingVolume @ 1280: AIL_set_sample_volume_pan,
 //       AIL_set_3D_sample_volume, AIL_set_stream_volume_pan.
-//     - initFilters @ 1288: AIL_set_sample_volume_pan,
+//     - initFilters @ 1326: AIL_set_sample_volume_pan,
 //       AIL_set_sample_playback_rate.
-//     - initFilters3D @ 1316: AIL_set_3D_sample_volume,
+//     - initFilters3D @ 1354: AIL_set_3D_sample_volume,
 //       AIL_set_3D_sample_playback_rate.
-//     - playStream @ 2783, playSample @ 2798, playSample3D @ 2820,
-//       processPlayingList @ 2266, setDeviceListenerPosition @ 2651.
+//     - playStream @ 2845, playSample @ 2888, playSample3D @ 2914,
+//       processPlayingList @ 2325, setDeviceListenerPosition @ 2713.
 //     - Miles volume/pan/pitch/3D-position/orientation calls present:
 //       AIL_set_sample_volume_pan, AIL_set_3D_sample_volume,
 //       AIL_set_stream_volume_pan, AIL_set_sample_playback_rate,
@@ -346,15 +346,15 @@ function main() {
   // -------------------------------------------------------------------
   facts.miles = facts.miles || {};
 
-  // adjustPlayingVolume @ 1243: sample/3D/stream volume + pan.
+  // adjustPlayingVolume @ 1280: sample/3D/stream volume + pan.
   const adjustPlayingVolumeLine = findMemberDef(
     milesCpp.lines,
     /void\s+MilesAudioManager\s*::\s*adjustPlayingVolume\s*\(/,
   );
   facts.miles.adjustPlayingVolumeDefLine = adjustPlayingVolumeLine;
-  if (adjustPlayingVolumeLine !== 1243) {
+  if (adjustPlayingVolumeLine !== 1280) {
     errors.push(
-      `MilesAudioManager::adjustPlayingVolume expected at line 1243 but found at ${adjustPlayingVolumeLine}`,
+      `MilesAudioManager::adjustPlayingVolume expected at line 1280 but found at ${adjustPlayingVolumeLine}`,
     );
   }
   if (adjustPlayingVolumeLine > 0) {
@@ -377,15 +377,15 @@ function main() {
     facts.miles.adjustPlayingVolumeBody = positions;
   }
 
-  // initFilters @ 1288: 2D volume + playback rate.
+  // initFilters @ 1326: 2D volume + playback rate.
   const initFiltersLine = findMemberDef(
     milesCpp.lines,
     /void\s+MilesAudioManager\s*::\s*initFilters\s*\(/,
   );
   facts.miles.initFiltersDefLine = initFiltersLine;
-  if (initFiltersLine !== 1288) {
+  if (initFiltersLine !== 1326) {
     errors.push(
-      `MilesAudioManager::initFilters expected at line 1288 but found at ${initFiltersLine}`,
+      `MilesAudioManager::initFilters expected at line 1326 but found at ${initFiltersLine}`,
     );
   }
   if (initFiltersLine > 0) {
@@ -410,15 +410,15 @@ function main() {
     facts.miles.initFiltersBody = positions;
   }
 
-  // initFilters3D @ 1316: 3D volume + playback rate.
+  // initFilters3D @ 1354: 3D volume + playback rate.
   const initFilters3DLine = findMemberDef(
     milesCpp.lines,
     /void\s+MilesAudioManager\s*::\s*initFilters3D\s*\(/,
   );
   facts.miles.initFilters3DDefLine = initFilters3DLine;
-  if (initFilters3DLine !== 1316) {
+  if (initFilters3DLine !== 1354) {
     errors.push(
-      `MilesAudioManager::initFilters3D expected at line 1316 but found at ${initFilters3DLine}`,
+      `MilesAudioManager::initFilters3D expected at line 1354 but found at ${initFilters3DLine}`,
     );
   }
   if (initFilters3DLine > 0) {
@@ -443,27 +443,27 @@ function main() {
     facts.miles.initFilters3DBody = positions;
   }
 
-  // playStream @ 2783.
+  // playStream @ 2845.
   const playStreamLine = findMemberDef(
     milesCpp.lines,
     /void\s+MilesAudioManager\s*::\s*playStream\s*\(/,
   );
   facts.miles.playStreamDefLine = playStreamLine;
-  if (playStreamLine !== 2783) {
+  if (playStreamLine !== 2845) {
     errors.push(
-      `MilesAudioManager::playStream expected at line 2783 but found at ${playStreamLine}`,
+      `MilesAudioManager::playStream expected at line 2845 but found at ${playStreamLine}`,
     );
   }
 
-  // playSample @ 2798: calls initFilters.
+  // playSample @ 2888: calls initFilters.
   const playSampleLine = findMemberDef(
     milesCpp.lines,
     /void\s*\*\s*MilesAudioManager\s*::\s*playSample\s*\(/,
   );
   facts.miles.playSampleDefLine = playSampleLine;
-  if (playSampleLine !== 2798) {
+  if (playSampleLine !== 2888) {
     errors.push(
-      `MilesAudioManager::playSample expected at line 2798 but found at ${playSampleLine}`,
+      `MilesAudioManager::playSample expected at line 2888 but found at ${playSampleLine}`,
     );
   }
   if (playSampleLine > 0) {
@@ -477,15 +477,15 @@ function main() {
     }
   }
 
-  // playSample3D @ 2820: sets 3D position then calls initFilters3D.
+  // playSample3D @ 2914: sets 3D position then calls initFilters3D.
   const playSample3DLine = findMemberDef(
     milesCpp.lines,
     /void\s*\*\s*MilesAudioManager\s*::\s*playSample3D\s*\(/,
   );
   facts.miles.playSample3DDefLine = playSample3DLine;
-  if (playSample3DLine !== 2820) {
+  if (playSample3DLine !== 2914) {
     errors.push(
-      `MilesAudioManager::playSample3D expected at line 2820 but found at ${playSample3DLine}`,
+      `MilesAudioManager::playSample3D expected at line 2914 but found at ${playSample3DLine}`,
     );
   }
   if (playSample3DLine > 0) {
@@ -513,15 +513,15 @@ function main() {
     }
   }
 
-  // processPlayingList @ 2266.
+  // processPlayingList @ 2325.
   const processPlayingListLine = findMemberDef(
     milesCpp.lines,
     /void\s+MilesAudioManager\s*::\s*processPlayingList\s*\(/,
   );
   facts.miles.processPlayingListDefLine = processPlayingListLine;
-  if (processPlayingListLine !== 2266) {
+  if (processPlayingListLine !== 2325) {
     errors.push(
-      `MilesAudioManager::processPlayingList expected at line 2266 but found at ${processPlayingListLine}`,
+      `MilesAudioManager::processPlayingList expected at line 2325 but found at ${processPlayingListLine}`,
     );
   }
   if (processPlayingListLine > 0) {
@@ -565,15 +565,15 @@ function main() {
     }
   }
 
-  // setDeviceListenerPosition @ 2651: listener orientation + position.
+  // setDeviceListenerPosition @ 2713: listener orientation + position.
   const setDeviceListenerPositionLine = findMemberDef(
     milesCpp.lines,
     /void\s+MilesAudioManager\s*::\s*setDeviceListenerPosition\s*\(/,
   );
   facts.miles.setDeviceListenerPositionDefLine = setDeviceListenerPositionLine;
-  if (setDeviceListenerPositionLine !== 2651) {
+  if (setDeviceListenerPositionLine !== 2713) {
     errors.push(
-      `MilesAudioManager::setDeviceListenerPosition expected at line 2651 but found at ${setDeviceListenerPositionLine}`,
+      `MilesAudioManager::setDeviceListenerPosition expected at line 2713 but found at ${setDeviceListenerPositionLine}`,
     );
   }
   if (setDeviceListenerPositionLine > 0) {

@@ -38,6 +38,8 @@
 //-----------------------------------------------------------------------------
 #include "Common/UserPreferences.h"
 
+class GameInfo;
+
 //-----------------------------------------------------------------------------
 // SkirmishPreferences class 
 //-----------------------------------------------------------------------------
@@ -54,12 +56,16 @@ public:
 	Int getPreferredColor(void);				// convenience function
 	AsciiString getPreferredMap(void);	// convenience function
 	Bool usesSystemMapDir(void);		// convenience function
+	void restoreLlmAiProfiles(GameInfo *game) const;
   
   Bool getSuperweaponRestricted(void) const;
   void setSuperweaponRestricted( Bool superweaponRestricted);
   
   Money getStartingCash(void) const;
   void setStartingCash( const Money &startingCash );
+
+private:
+	void setLlmAiProfiles(void);
 };
 
 #endif // __SKIRMISHPREFERENCES_H__

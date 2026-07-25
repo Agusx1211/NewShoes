@@ -657,15 +657,18 @@ body {
   user-select: none;
 }
 .touchControls[hidden],
-.touchControls [hidden] {
+.touchControls [hidden],
+.touchTextBar[hidden] {
   display: none !important;
 }
 .touchControls button,
-.touchControls textarea {
+.touchTextBar button,
+.touchTextBar textarea {
   font: inherit;
   touch-action: manipulation;
 }
-.touchControls button {
+.touchControls button,
+.touchTextBar button {
   min-width: 48px;
   min-height: 48px;
   padding: 6px 10px;
@@ -677,7 +680,8 @@ body {
   pointer-events: auto;
 }
 .touchControls button:active,
-.touchControls button[aria-pressed="true"] {
+.touchControls button[aria-pressed="true"],
+.touchTextBar button:active {
   color: #17201c;
   border-color: #ffe29a;
   background: #e5bf62;
@@ -810,6 +814,7 @@ body {
 .touchNumpadKeys { grid-template-columns: repeat(4, minmax(56px, 1fr)); }
 .touchTextBar {
   position: absolute;
+  z-index: 41;
   right: max(8px, env(safe-area-inset-right));
   bottom: max(var(--touch-keyboard-inset, 0px), env(keyboard-inset-height, 0px), env(safe-area-inset-bottom));
   left: max(8px, env(safe-area-inset-left));

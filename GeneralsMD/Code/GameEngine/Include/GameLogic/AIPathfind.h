@@ -391,6 +391,7 @@ private:
 	// data depends on them.
 	UnsignedInt m_pathfindCacheGeneration;
 	UnsignedShort m_clearDiameterCacheValue;
+	UnsignedShort m_pathfindLineCache;	///< Two-bit passability result for each incoming direction.
 	UnsignedByte m_pathfindCacheFlags;
 	UnsignedByte m_pathfindCacheLayer;
 };

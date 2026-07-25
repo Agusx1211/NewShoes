@@ -198,6 +198,55 @@ void SkirmishPreferences::setSlotList(void)
 	setAsciiString("SlotList", GameInfoToAsciiString(TheSkirmishGameInfo));
 }
 
+static AsciiString llmAiProfilePreferenceKey(Int slot)
+{
+	AsciiString key;
+	key.format("LlmAiProfile%d", slot);
+	return key;
+}
+
+void SkirmishPreferences::setLlmAiProfiles(void)
+{
+	for (Int slotIndex = 1; slotIndex < MAX_SLOTS; ++slotIndex)
+	{
+		const AsciiString key = llmAiProfilePreferenceKey(slotIndex);
+		const GameSlot *slot = TheSkirmishGameInfo->getConstSlot(slotIndex);
+		if (slot != NULL && slot->isLlmAi())
+		{
+			(*this)[key] = slot->getLlmAiProfileId();
+		}
+		else
+		{
+			erase(key);
+		}
+	}
+}
+
+void SkirmishPreferences::restoreLlmAiProfiles(GameInfo *game) const
+{
+	if (game == NULL)
+		return;
+
+	for (Int slotIndex = 1; slotIndex < MAX_SLOTS; ++slotIndex)
+	{
+		const AsciiString profileId = getAsciiString(
+			llmAiProfilePreferenceKey(slotIndex), AsciiString::TheEmptyString);
+		if (profileId.isEmpty())
+			continue;
+
+		const Int profileIndex = FindLlmAiProfile(profileId);
+		const LlmAiProfileInfo *profile = GetLlmAiProfile(profileIndex);
+		if (profile == NULL)
+			continue;
+
+		GameSlot *slot = game->getSlot(slotIndex);
+		if (slot != NULL && slot->isAI())
+		{
+			slot->setLlmAi(profile->m_id, profile->m_name, slot->getState());
+		}
+	}
+}
+
 UnicodeString SkirmishPreferences::getUserName(void)
 {
 	UnicodeString ret;
@@ -360,6 +409,7 @@ Bool SkirmishPreferences::write(void)
   setSuperweaponRestricted( TheSkirmishGameInfo->getSuperweaponRestriction() != 0 );
 
 	setSlotList();
+	setLlmAiProfiles();
 
 //	NameKeyType sliderGameSpeedID = TheNameKeyGenerator->nameToKey( AsciiString( "SkirmishGameOptionsMenu.wnd:SliderGameSpeed" ) );
 	GameWindow *sliderGameSpeed = TheWindowManager->winGetWindowFromId( parentSkirmishGameOptions, sliderGameSpeedID );
@@ -1377,7 +1427,8 @@ void SkirmishGameOptionsMenuInit( WindowLayout *layout, void *userData )
 		gSlot.setState(SLOT_EASY_AI);
 	TheSkirmishGameInfo->setSlot(1, gSlot);
 
-	ParseAsciiStringToGameInfo(TheSkirmishGameInfo, prefs.getSlotList());
+	if (ParseAsciiStringToGameInfo(TheSkirmishGameInfo, prefs.getSlotList()))
+		prefs.restoreLlmAiProfiles(TheSkirmishGameInfo);
 	TheSkirmishGameInfo->setSeed(GetTickCount());
 
 	UnsignedInt isPreorder = 0;

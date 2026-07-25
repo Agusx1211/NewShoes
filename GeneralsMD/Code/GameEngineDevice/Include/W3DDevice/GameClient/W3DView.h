@@ -287,6 +287,7 @@ private:
 	void calcCameraConstraints() ;			///< recalc m_cameraConstraint
 	void moveAlongWaypointPath(Int milliseconds); ///< Move camera along path.
 	void getPickRay(const ICoord2D *screen, Vector3 *rayStart, Vector3 *rayEnd);	///<returns a line segment (ray) originating at the given screen position
+	void getInputPickRay(const ICoord2D *screen, Vector3 *rayStart, Vector3 *rayEnd); ///< uses the active VR controller ray only for input-owned casts
 	void setupWaypointPath(Bool orient);					///< Calculates distances & angles for moving along a waypoint path.
 	void rotateCameraOneFrame(void);							///< Do one frame of a rotate camera movement.
 	void zoomCameraOneFrame(void);							///< Do one frame of a zoom camera movement.

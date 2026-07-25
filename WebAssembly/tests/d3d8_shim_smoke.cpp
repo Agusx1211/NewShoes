@@ -3,6 +3,10 @@
 
 #include "wasm_d3d8_shim.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
+
 namespace {
 
 bool expect(bool condition, const char *message)
@@ -114,6 +118,44 @@ int main()
 		d3d->Release();
 		return 1;
 	}
+
+	UINT expected_present_calls = 1;
+	UINT expected_present_bridge_calls = 0;
+	UINT expected_present_bridge_failures = 0;
+#ifdef __EMSCRIPTEN__
+	// The VR presentation boundary is dormant by default. Once explicitly
+	// enabled it must fail closed without a consumer, then forward the exact
+	// Present sequence and backbuffer size when the command recorder is present.
+	cnc_port_d3d8_set_present_bridge(1);
+	if (!expect(device->Present(nullptr, nullptr, nullptr, nullptr) == D3DERR_NOTAVAILABLE,
+			"enabled present bridge accepted a missing consumer")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	EM_ASM({
+		Module.__d3d8PresentBridgeSmoke = null;
+		Module.cncPortD3D8Present = (payload) => {
+			Module.__d3d8PresentBridgeSmoke = { ...payload };
+			return true;
+		};
+	}, 0);
+	if (!expect(SUCCEEDED(device->Present(nullptr, nullptr, nullptr, nullptr)),
+			"enabled present bridge rejected its consumer") ||
+		!expect(EM_ASM_INT({
+			const payload = Module.__d3d8PresentBridgeSmoke;
+			return payload?.presentCalls === 3 &&
+				payload?.backBufferWidth === 640 && payload?.backBufferHeight === 360;
+		}, 0) != 0, "present bridge payload mismatch")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	cnc_port_d3d8_set_present_bridge(0);
+	expected_present_calls = 3;
+	expected_present_bridge_calls = 2;
+	expected_present_bridge_failures = 1;
+#endif
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 
@@ -1180,7 +1222,11 @@ int main()
 		expect(state->begin_scene_calls == 1, "BeginScene call count mismatch") &&
 		expect(state->clear_calls == 1, "Clear call count mismatch") &&
 		expect(state->end_scene_calls == 1, "EndScene call count mismatch") &&
-		expect(state->present_calls == 1, "Present call count mismatch") &&
+		expect(state->present_calls == expected_present_calls, "Present call count mismatch") &&
+		expect(state->present_bridge_calls == expected_present_bridge_calls,
+			"Present bridge call count mismatch") &&
+		expect(state->present_bridge_failures == expected_present_bridge_failures,
+			"Present bridge failure count mismatch") &&
 		expect(state->last_clear_flags == (D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL),
 			"clear flags mismatch") &&
 		expect(state->last_clear_color == clear_color, "clear color mismatch") &&

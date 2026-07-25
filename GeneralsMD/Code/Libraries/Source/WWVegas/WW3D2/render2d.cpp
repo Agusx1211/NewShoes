@@ -61,6 +61,7 @@
 #ifdef __EMSCRIPTEN__
 extern "C" int cnc_port_is_engine_frame_profile_enabled() __attribute__((weak));
 extern "C" void cnc_port_flush_w3d_display_2d_batch(const void *renderer) __attribute__((weak));
+extern "C" void cnc_port_mark_next_d3d8_spatial_ui_draw() __attribute__((weak));
 extern "C" void cnc_port_note_render2d_render(
 	int vertex_count,
 	int index_count,
@@ -86,9 +87,17 @@ extern "C" void cnc_port_note_render2d_render(
 			cnc_port_flush_w3d_display_2d_batch((renderer)); \
 		} \
 	} while (0)
+#define CNC_PORT_MARK_NEXT_SPATIAL_UI_DRAW() \
+	do { \
+		if (cnc_port_mark_next_d3d8_spatial_ui_draw) \
+		{ \
+			cnc_port_mark_next_d3d8_spatial_ui_draw(); \
+		} \
+	} while (0)
 #else
 #define CNC_PORT_NOTE_RENDER2D_RENDER(vertex_count, index_count, textured, grayscale, hidden) do { } while (0)
 #define CNC_PORT_FLUSH_W3D_DISPLAY_2D_BATCH(renderer) do { } while (0)
+#define CNC_PORT_MARK_NEXT_SPATIAL_UI_DRAW() do { } while (0)
 #endif
 
 //#pragma optimize("", off)
@@ -777,6 +786,7 @@ void Render2DClass::Render_Current_Buffers(const Matrix4x4 &view, const Matrix4x
 	}
 	else
 		DX8Wrapper::Set_Shader(Shader);
+	CNC_PORT_MARK_NEXT_SPATIAL_UI_DRAW();
 	DX8Wrapper::Draw_Triangles(0,Indices.Count()/3,0,Vertices.Count());
 
 	DX8Wrapper::Set_Transform(D3DTS_VIEW,view);

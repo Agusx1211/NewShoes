@@ -15,6 +15,7 @@ function createFakeGl() {
   const calls = {
     bufferData: [],
     bufferSubData: [],
+    copyBufferSubData: [],
     deletedBuffers: [],
     deletedVertexArrays: [],
     drawElements: [],
@@ -24,6 +25,8 @@ function createFakeGl() {
   const gl = {
     ARRAY_BUFFER: 0x8892,
     ELEMENT_ARRAY_BUFFER: 0x8893,
+    COPY_READ_BUFFER: 0x8f36,
+    COPY_WRITE_BUFFER: 0x8f37,
     STREAM_DRAW: 0x88e0,
     STATIC_DRAW: 0x88e4,
     DYNAMIC_DRAW: 0x88e8,
@@ -55,6 +58,15 @@ function createFakeGl() {
         buffer: bindings.get(target),
         byteOffset,
         byteLength: bytes.byteLength,
+      });
+    },
+    copyBufferSubData(readTarget, writeTarget, readOffset, writeOffset, byteLength) {
+      calls.copyBufferSubData.push({
+        readBuffer: bindings.get(readTarget),
+        writeBuffer: bindings.get(writeTarget),
+        readOffset,
+        writeOffset,
+        byteLength,
       });
     },
     deleteBuffer(buffer) {
@@ -97,6 +109,34 @@ const { hooks, diag } = createD3D8Executor({
   log() {},
   state: { canvas: {}, graphics: {} },
 });
+
+const terrainUvSource = new Float32Array([
+  2, 7, 0, 0,
+  3, 11, 0, 0,
+  4, 13, 1, 0,
+  5, 17, 0, 1,
+]);
+const terrainUvTarget = new Float32Array([
+  0.25, 0.4375, 0, 0,
+  0.375, 0.6875, 0, 0,
+  0.5, 0.8125, 1, 0,
+  0.925, 0.8625, 0, 1,
+]);
+const terrainUvScaleBias = diag.d3d8TerrainShroudUvScaleBias(
+  terrainUvSource,
+  terrainUvTarget,
+);
+assert.ok(terrainUvScaleBias);
+assert.ok(Math.abs(terrainUvScaleBias[0] - 0.125) < 1e-6);
+assert.ok(Math.abs(terrainUvScaleBias[1] - 0.0625) < 1e-6);
+assert.ok(Math.abs(terrainUvScaleBias[2] - 0.3) < 1e-6);
+assert.ok(Math.abs(terrainUvScaleBias[3] + 0.2) < 1e-6);
+const nonAffineTerrainUvTarget = terrainUvTarget.slice();
+nonAffineTerrainUvTarget[4] += 0.1;
+assert.equal(
+  diag.d3d8TerrainShroudUvScaleBias(terrainUvSource, nonAffineTerrainUvTarget),
+  null,
+);
 
 function vertexArrayKey(vertexBufferId) {
   return {
@@ -354,6 +394,185 @@ assert.equal(cappedSummary.dynamicRangePoolSlots, poolLimit);
 assert.equal(cappedSummary.dynamicRangeSlotsDeleted, 2);
 assert.equal(calls.deletedBuffers.length, deletedBeforePoolTrim + 2);
 
+for (const id of [101, 102]) {
+  assert.equal(hooks.cncPortD3D8BufferCreate({
+    kind: 1,
+    id,
+    byteSize: 128,
+    usage: D3DUSAGE_WRITEONLY,
+  }), 1);
+  assert.equal(hooks.cncPortD3D8BufferUpdate({
+    kind: 1,
+    id,
+    byteOffset: 0,
+    bytes: new Uint8Array(128).fill(id),
+  }), 1);
+}
+assert.equal(hooks.cncPortD3D8BufferCreate({
+  kind: 2,
+  id: 103,
+  byteSize: 12,
+  usage: D3DUSAGE_WRITEONLY,
+}), 1);
+assert.equal(hooks.cncPortD3D8BufferUpdate({
+  kind: 2,
+  id: 103,
+  byteOffset: 0,
+  bytes: new Uint8Array(new Uint16Array([0, 1, 2, 0, 2, 3]).buffer),
+}), 1);
+const repeatedBatch = {
+  vertexResources: [
+    diag.d3d8Buffers.get("vertex:101"),
+    diag.d3d8Buffers.get("vertex:102"),
+  ],
+  indexResource: diag.d3d8Buffers.get("index:103"),
+  vertexByteOffset: 0,
+  vertexByteSize: 64,
+  vertexCount: 4,
+  vertexStride: 16,
+  indexByteOffset: 0,
+  unitIndexCount: 6,
+  indexSize: 2,
+};
+const repeatedGeometry = diag.ensureD3D8RepeatedGeometry(repeatedBatch);
+assert.ok(repeatedGeometry);
+assert.equal(repeatedGeometry.indexCount, 12);
+assert.equal(calls.copyBufferSubData.length, 2);
+assert.equal(diag.ensureD3D8RepeatedGeometry(repeatedBatch), repeatedGeometry);
+assert.equal(calls.copyBufferSubData.length, 2);
+assert.equal(hooks.cncPortD3D8BufferUpdate({
+  kind: 1,
+  id: 101,
+  byteOffset: 0,
+  bytes: new Uint8Array(64).fill(42),
+}), 1);
+const refreshedRepeatedGeometry = diag.ensureD3D8RepeatedGeometry(repeatedBatch);
+assert.ok(refreshedRepeatedGeometry);
+assert.notEqual(refreshedRepeatedGeometry, repeatedGeometry);
+assert.equal(calls.copyBufferSubData.length, 4);
+
+const copyCallsBeforeMultiWorld = calls.copyBufferSubData.length;
+
+const multiWorldBatch = {
+  geometries: [
+    {
+      vertexResource: diag.d3d8Buffers.get("vertex:101"),
+      vertexByteOffset: 0,
+      vertexByteSize: 128,
+      vertexCount: 4,
+      vertexStride: 32,
+      indexResource: diag.d3d8Buffers.get("index:103"),
+      indexByteOffset: 0,
+      indexCount: 6,
+      indexSize: 2,
+      baseVertexIndex: 0,
+      minVertexIndex: 0,
+    },
+    {
+      vertexResource: diag.d3d8Buffers.get("vertex:102"),
+      vertexByteOffset: 0,
+      vertexByteSize: 128,
+      vertexCount: 4,
+      vertexStride: 32,
+      indexResource: diag.d3d8Buffers.get("index:103"),
+      indexByteOffset: 0,
+      indexCount: 6,
+      indexSize: 2,
+      baseVertexIndex: 0,
+      minVertexIndex: 0,
+    },
+  ],
+  worldTransforms: [
+    new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1,
+    ]),
+    new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      10, 20, 30, 1,
+    ]),
+  ],
+};
+assert.equal(diag.ensureD3D8MultiWorldGeometry(multiWorldBatch), null);
+const multiWorldGeometry = diag.ensureD3D8MultiWorldGeometry(multiWorldBatch);
+assert.ok(multiWorldGeometry);
+assert.equal(multiWorldGeometry.indexCount, 12);
+assert.equal(calls.copyBufferSubData.length, copyCallsBeforeMultiWorld);
+assert.equal(diag.ensureD3D8MultiWorldGeometry(multiWorldBatch), multiWorldGeometry);
+assert.equal(calls.copyBufferSubData.length, copyCallsBeforeMultiWorld);
+multiWorldBatch.worldTransforms[1][12] = 11;
+assert.equal(diag.ensureD3D8MultiWorldGeometry(multiWorldBatch), null);
+const movedMultiWorldGeometry = diag.ensureD3D8MultiWorldGeometry(multiWorldBatch);
+assert.ok(movedMultiWorldGeometry);
+assert.notEqual(movedMultiWorldGeometry, multiWorldGeometry);
+multiWorldBatch.worldTransforms[1][12] = 10;
+assert.equal(diag.ensureD3D8MultiWorldGeometry(multiWorldBatch), multiWorldGeometry);
+assert.equal(hooks.cncPortD3D8BufferUpdate({
+  kind: 1,
+  id: 102,
+  byteOffset: 0,
+  bytes: new Uint8Array(128).fill(24),
+}), 1);
+const refreshedMultiWorldGeometry = diag.ensureD3D8MultiWorldGeometry(multiWorldBatch);
+assert.ok(refreshedMultiWorldGeometry);
+assert.notEqual(refreshedMultiWorldGeometry, multiWorldGeometry);
+assert.equal(calls.copyBufferSubData.length, copyCallsBeforeMultiWorld);
+
+let flushedNativeRepeatedBatch = null;
+globalThis.__cncSetDiagLevel("lite");
+diag.queueD3D8PendingDrawBatch({
+  stateHash: 11,
+  derivedStateHash: 22,
+  primitiveType: 4,
+  vertexBufferId: 101,
+  vertexResource: diag.d3d8Buffers.get("vertex:101"),
+  indexBufferId: 103,
+  indexResource: diag.d3d8Buffers.get("index:103"),
+  vertexByteOffset: 0,
+  vertexByteSize: 128,
+  vertexCount: 4,
+  vertexStride: 32,
+  vertexShaderFvf: 0x112,
+  baseVertexIndex: 0,
+  minVertexIndex: 0,
+  transformMask: 7,
+  worldTransformRevision: 31,
+  viewTransformRevision: 32,
+  projectionTransformRevision: 33,
+  pixelShaderHandle: 0,
+  texture0Id: 0,
+  texture1Id: 0,
+  texture2Id: 0,
+  texture3Id: 0,
+  texture4Id: 0,
+  glPrimitive: 4,
+  indexType: 0x1403,
+  indexSize: 2,
+  indexByteOffset: 0,
+  indexCount: 6,
+  nextIndexByteOffset: 12,
+  flushRepeatedGeometry(batch) {
+    flushedNativeRepeatedBatch = batch;
+    return 1;
+  },
+});
+assert.equal(hooks.cncPortD3D8CanAppendRepeatedDraws(), true);
+assert.equal(hooks.cncPortD3D8AppendRepeatedDraws(new Uint32Array([9999])), 0);
+assert.equal(hooks.cncPortD3D8AppendRepeatedDraws(new Uint32Array([102])), 1);
+diag.flushD3D8PendingDrawBatch("nativeRepeatedUnit");
+assert.ok(flushedNativeRepeatedBatch);
+assert.equal(flushedNativeRepeatedBatch.logicalDraws, 2);
+assert.equal(flushedNativeRepeatedBatch.indexCount, 12);
+assert.deepEqual(
+  flushedNativeRepeatedBatch.vertexResources.map((resource) => resource.id),
+  [101, 102],
+);
+globalThis.__cncSetDiagLevel("full");
+
 diag.d3d8Textures.set(700, {
   width: 4,
   height: 4,
@@ -389,6 +608,7 @@ console.log(JSON.stringify({
   renamedPlainDynamicBuffer: plainDynamicResource.bindingId,
   bufferDataCalls: calls.bufferData.length,
   bufferSubDataCalls: calls.bufferSubData.length,
+  copyBufferSubDataCalls: calls.copyBufferSubData.length,
   fenceCount: calls.fences.length,
   flushCount: calls.flushes,
   drawElements: calls.drawElements.length,

@@ -625,13 +625,27 @@ async function main() {
       const cursor = window.CnCPort?.state?.browserCursor ?? null;
       const response = cursor?.frameUrl ? await fetch(cursor.frameUrl, { cache: "no-store" }) : null;
       const bytes = response?.ok ? new Uint8Array(await response.arrayBuffer()) : null;
+      const image = cursor?.frameUrl ? new Image() : null;
+      if (image) {
+        image.src = cursor.frameUrl;
+        await image.decode();
+      }
+      const probe = document.createElement("canvas");
+      probe.width = image?.naturalWidth ?? 1;
+      probe.height = image?.naturalHeight ?? 1;
+      const context = probe.getContext("2d", { willReadFrequently: true });
+      if (image) context.drawImage(image, 0, 0);
+      const pixels = context.getImageData(0, 0, probe.width, probe.height).data;
       return {
         cursor,
         computedCss: getComputedStyle(document.querySelector("#viewport")).cursor,
         frameFetched: response?.ok === true,
-        frameIsCur: bytes?.length >= 6
-          && bytes[0] === 0 && bytes[1] === 0
-          && bytes[2] === 2 && bytes[3] === 0,
+        frameIsPng: bytes?.length >= 8
+          && bytes[0] === 0x89 && bytes[1] === 0x50
+          && bytes[2] === 0x4e && bytes[3] === 0x47,
+        decodedSize: image ? [image.naturalWidth, image.naturalHeight] : null,
+        opaquePixels: [...pixels].filter((_value, index) =>
+          index % 4 === 3 && pixels[index] > 0).length,
       };
     });
     summary.cursorPresentation = cursorPresentation;
@@ -639,10 +653,16 @@ async function main() {
       "original SCCPointer ANI cursor is presented on the canvas",
       cursorPresentation.cursor?.cursorFile?.toLowerCase().endsWith("sccpointer.ani")
         && cursorPresentation.cursor?.frameCount === 1
-        && cursorPresentation.cursor?.frameUrl?.endsWith(".cur")
-        && cursorPresentation.computedCss.includes("sccpointer/frame-000.cur")
+        && cursorPresentation.cursor?.frameUrl?.endsWith(".png")
+        && cursorPresentation.cursor?.preloadedFrames === 1
+        && cursorPresentation.cursor?.hotspot?.[0] === 13
+        && cursorPresentation.cursor?.hotspot?.[1] === 13
+        && cursorPresentation.computedCss.includes("sccpointer/frame-000.png")
         && cursorPresentation.frameFetched === true
-        && cursorPresentation.frameIsCur === true,
+        && cursorPresentation.frameIsPng === true
+        && cursorPresentation.decodedSize?.[0] === 32
+        && cursorPresentation.decodedSize?.[1] === 32
+        && cursorPresentation.opaquePixels > 0,
     ]);
 
     const attackCursorResult = await page.evaluate(() => window.CnCPort.rpc(
@@ -681,6 +701,9 @@ async function main() {
         && attackCursorPresentation?.cursorFile?.toLowerCase().endsWith("sccattack.ani")
         && attackCursorPresentation?.frameCount === 8
         && attackCursorPresentation?.stepCount === 10
+        && attackCursorPresentation?.preloadedFrames === 8
+        && attackCursorPresentation?.hotspot?.[0] === 15
+        && attackCursorPresentation?.hotspot?.[1] === 15
         && attackFrames.length >= 2
         && restoreCursorResult.ok === true,
     ]);

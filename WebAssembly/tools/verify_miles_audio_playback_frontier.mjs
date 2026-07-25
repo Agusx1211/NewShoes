@@ -13,24 +13,24 @@
 // handles with Web Audio handles.
 //
 // Verified facts (all source-only, bounded function-body scans):
-//   - releaseMilesHandles defined at line 1076; body registers NULL EOS/stream
+//   - releaseMilesHandles defined at line 1109; body registers NULL EOS/stream
 //     callbacks, stops samples, closes streams, and resets m_type = PAT_INVALID.
 //   - freeAllMilesHandles (the handle-release path) calls AIL_release_sample_handle
 //     and AIL_release_3D_sample_handle.
-//   - getFirst2DSample defined at line 1216 and draws from the m_availableSamples pool.
-//   - getFirst3DSample defined at line 1230 and draws from the m_available3DSamples pool.
+//   - getFirst2DSample defined at line 1253 and draws from the m_availableSamples pool.
+//   - getFirst3DSample defined at line 1267 and draws from the m_available3DSamples pool.
 //   - initSamplePools (the allocation path) calls AIL_allocate_sample_handle and
 //     AIL_allocate_3D_sample_handle.
-//   - playStream defined at line 2783; body calls AIL_set_stream_loop_count,
+//   - playStream defined at line 2845; body calls AIL_set_stream_loop_count,
 //     AIL_register_stream_callback, then AIL_start_stream.
-//   - playSample defined at line 2798; body calls AIL_init_sample,
+//   - playSample defined at line 2888; body calls AIL_init_sample,
 //     AIL_register_EOS_callback, then AIL_start_sample.
-//   - playSample3D defined at line 2820; body calls AIL_register_3D_EOS_callback
+//   - playSample3D defined at line 2914; body calls AIL_register_3D_EOS_callback
 //     and AIL_start_3D_sample.
-//   - notifyOfAudioCompletion defined at line 1531 and calls findPlayingAudioFrom.
-//   - findPlayingAudioFrom defined at line 1593.
-//   - getHandleForBink defined at line 2963; body calls AIL_get_DirectSound_info.
-//   - releaseHandleForBink defined at line 2986; body resets m_binkHandle = NULL.
+//   - notifyOfAudioCompletion defined at line 1569 and calls findPlayingAudioFrom.
+//   - findPlayingAudioFrom defined at line 1631.
+//   - getHandleForBink defined at line 3062; body calls AIL_get_DirectSound_info.
+//   - releaseHandleForBink defined at line 3085; body resets m_binkHandle = NULL.
 //   - MilesAudioManager.h declares the playback/Bink/helper methods at the
 //     current line anchors.
 //   - WebAssembly/shims/Mss.H exposes every Miles call above; some are now
@@ -121,15 +121,15 @@ function main() {
 
   // ---- Function anchor + body-call checks -----------------------------
 
-  // releaseMilesHandles @ 1076.
+  // releaseMilesHandles @ 1109.
   const releaseMilesHandlesLine = findMemberDef(
     cpp.lines,
     /void\s+MilesAudioManager\s*::\s*releaseMilesHandles\s*\(/,
   );
   facts.releaseMilesHandlesDefLine = releaseMilesHandlesLine;
-  if (releaseMilesHandlesLine !== 1076) {
+  if (releaseMilesHandlesLine !== 1109) {
     errors.push(
-      `MilesAudioManager::releaseMilesHandles expected at line 1076 but found at ${releaseMilesHandlesLine}`,
+      `MilesAudioManager::releaseMilesHandles expected at line 1109 but found at ${releaseMilesHandlesLine}`,
     );
   }
   if (releaseMilesHandlesLine > 0) {
@@ -212,15 +212,15 @@ function main() {
     }
   }
 
-  // getFirst2DSample @ 1216 - pulls from the 2D sample pool.
+  // getFirst2DSample @ 1253 - pulls from the 2D sample pool.
   const getFirst2DSampleLine = findMemberDef(
     cpp.lines,
     /HSAMPLE\s+MilesAudioManager\s*::\s*getFirst2DSample\s*\(/,
   );
   facts.getFirst2DSampleDefLine = getFirst2DSampleLine;
-  if (getFirst2DSampleLine !== 1216) {
+  if (getFirst2DSampleLine !== 1253) {
     errors.push(
-      `MilesAudioManager::getFirst2DSample expected at line 1216 but found at ${getFirst2DSampleLine}`,
+      `MilesAudioManager::getFirst2DSample expected at line 1253 but found at ${getFirst2DSampleLine}`,
     );
   }
   if (getFirst2DSampleLine > 0) {
@@ -244,15 +244,15 @@ function main() {
     }
   }
 
-  // getFirst3DSample @ 1230 - pulls from the 3D sample pool.
+  // getFirst3DSample @ 1267 - pulls from the 3D sample pool.
   const getFirst3DSampleLine = findMemberDef(
     cpp.lines,
     /H3DSAMPLE\s+MilesAudioManager\s*::\s*getFirst3DSample\s*\(/,
   );
   facts.getFirst3DSampleDefLine = getFirst3DSampleLine;
-  if (getFirst3DSampleLine !== 1230) {
+  if (getFirst3DSampleLine !== 1267) {
     errors.push(
-      `MilesAudioManager::getFirst3DSample expected at line 1230 but found at ${getFirst3DSampleLine}`,
+      `MilesAudioManager::getFirst3DSample expected at line 1267 but found at ${getFirst3DSampleLine}`,
     );
   }
   if (getFirst3DSampleLine > 0) {
@@ -323,16 +323,16 @@ function main() {
     }
   }
 
-  // playStream @ 2783 - AIL_set_stream_loop_count, AIL_register_stream_callback,
+  // playStream @ 2845 - AIL_set_stream_loop_count, AIL_register_stream_callback,
   // then AIL_start_stream.
   const playStreamLine = findMemberDef(
     cpp.lines,
     /void\s+MilesAudioManager\s*::\s*playStream\s*\(/,
   );
   facts.playStreamDefLine = playStreamLine;
-  if (playStreamLine !== 2783) {
+  if (playStreamLine !== 2845) {
     errors.push(
-      `MilesAudioManager::playStream expected at line 2783 but found at ${playStreamLine}`,
+      `MilesAudioManager::playStream expected at line 2845 but found at ${playStreamLine}`,
     );
   }
   if (playStreamLine > 0) {
@@ -369,15 +369,15 @@ function main() {
     facts.playStreamBody = positions;
   }
 
-  // playSample @ 2798 - AIL_init_sample, AIL_register_EOS_callback, AIL_start_sample.
+  // playSample @ 2888 - AIL_init_sample, AIL_register_EOS_callback, AIL_start_sample.
   const playSampleLine = findMemberDef(
     cpp.lines,
     /void\s*\*\s*MilesAudioManager\s*::\s*playSample\s*\(/,
   );
   facts.playSampleDefLine = playSampleLine;
-  if (playSampleLine !== 2798) {
+  if (playSampleLine !== 2888) {
     errors.push(
-      `MilesAudioManager::playSample expected at line 2798 but found at ${playSampleLine}`,
+      `MilesAudioManager::playSample expected at line 2888 but found at ${playSampleLine}`,
     );
   }
   if (playSampleLine > 0) {
@@ -411,15 +411,15 @@ function main() {
     facts.playSampleBody = positions;
   }
 
-  // playSample3D @ 2820 - AIL_register_3D_EOS_callback then AIL_start_3D_sample.
+  // playSample3D @ 2914 - AIL_register_3D_EOS_callback then AIL_start_3D_sample.
   const playSample3DLine = findMemberDef(
     cpp.lines,
     /void\s*\*\s*MilesAudioManager\s*::\s*playSample3D\s*\(/,
   );
   facts.playSample3DDefLine = playSample3DLine;
-  if (playSample3DLine !== 2820) {
+  if (playSample3DLine !== 2914) {
     errors.push(
-      `MilesAudioManager::playSample3D expected at line 2820 but found at ${playSample3DLine}`,
+      `MilesAudioManager::playSample3D expected at line 2914 but found at ${playSample3DLine}`,
     );
   }
   if (playSample3DLine > 0) {
@@ -455,15 +455,15 @@ function main() {
     facts.playSample3DBody = positions;
   }
 
-  // notifyOfAudioCompletion @ 1531 - calls findPlayingAudioFrom.
+  // notifyOfAudioCompletion @ 1569 - calls findPlayingAudioFrom.
   const notifyLine = findMemberDef(
     cpp.lines,
     /void\s+MilesAudioManager\s*::\s*notifyOfAudioCompletion\s*\(/,
   );
   facts.notifyOfAudioCompletionDefLine = notifyLine;
-  if (notifyLine !== 1531) {
+  if (notifyLine !== 1569) {
     errors.push(
-      `MilesAudioManager::notifyOfAudioCompletion expected at line 1531 but found at ${notifyLine}`,
+      `MilesAudioManager::notifyOfAudioCompletion expected at line 1569 but found at ${notifyLine}`,
     );
   }
   if (notifyLine > 0) {
@@ -487,27 +487,27 @@ function main() {
     }
   }
 
-  // findPlayingAudioFrom @ 1593.
+  // findPlayingAudioFrom @ 1631.
   const findPlayingLine = findMemberDef(
     cpp.lines,
     /PlayingAudio\s*\*\s*MilesAudioManager\s*::\s*findPlayingAudioFrom\s*\(/,
   );
   facts.findPlayingAudioFromDefLine = findPlayingLine;
-  if (findPlayingLine !== 1593) {
+  if (findPlayingLine !== 1631) {
     errors.push(
-      `MilesAudioManager::findPlayingAudioFrom expected at line 1593 but found at ${findPlayingLine}`,
+      `MilesAudioManager::findPlayingAudioFrom expected at line 1631 but found at ${findPlayingLine}`,
     );
   }
 
-  // getHandleForBink @ 2963 - calls AIL_get_DirectSound_info.
+  // getHandleForBink @ 3062 - calls AIL_get_DirectSound_info.
   const getHandleForBinkLine = findMemberDef(
     cpp.lines,
     /void\s*\*\s*MilesAudioManager\s*::\s*getHandleForBink\s*\(/,
   );
   facts.getHandleForBinkDefLine = getHandleForBinkLine;
-  if (getHandleForBinkLine !== 2963) {
+  if (getHandleForBinkLine !== 3062) {
     errors.push(
-      `MilesAudioManager::getHandleForBink expected at line 2963 but found at ${getHandleForBinkLine}`,
+      `MilesAudioManager::getHandleForBink expected at line 3062 but found at ${getHandleForBinkLine}`,
     );
   }
   if (getHandleForBinkLine > 0) {
@@ -531,15 +531,15 @@ function main() {
     }
   }
 
-  // releaseHandleForBink @ 2986 - resets m_binkHandle = NULL.
+  // releaseHandleForBink @ 3085 - resets m_binkHandle = NULL.
   const releaseHandleForBinkLine = findMemberDef(
     cpp.lines,
     /void\s+MilesAudioManager\s*::\s*releaseHandleForBink\s*\(/,
   );
   facts.releaseHandleForBinkDefLine = releaseHandleForBinkLine;
-  if (releaseHandleForBinkLine !== 2986) {
+  if (releaseHandleForBinkLine !== 3085) {
     errors.push(
-      `MilesAudioManager::releaseHandleForBink expected at line 2986 but found at ${releaseHandleForBinkLine}`,
+      `MilesAudioManager::releaseHandleForBink expected at line 3085 but found at ${releaseHandleForBinkLine}`,
     );
   }
   if (releaseHandleForBinkLine > 0) {

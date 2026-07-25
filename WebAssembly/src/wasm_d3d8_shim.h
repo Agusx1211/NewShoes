@@ -208,6 +208,7 @@ struct WasmD3D8ShimState
 	D3DMATRIX last_draw_texture1_transform;
 	D3DMATRIX last_draw_texture2_transform;
 	D3DMATRIX last_draw_texture3_transform;
+	D3DMATRIX last_draw_texture4_transform;
 	WasmD3D8DrawRenderState last_draw_render_state;
 	float last_draw_clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4];
 	WasmD3D8DrawMaterial last_draw_material;
@@ -221,6 +222,8 @@ struct WasmD3D8ShimState
 	UINT end_scene_calls;
 	UINT clear_calls;
 	UINT present_calls;
+	UINT present_bridge_calls;
+	UINT present_bridge_failures;
 	DWORD last_clear_flags;
 	D3DCOLOR last_clear_color;
 	float last_clear_z;
@@ -260,3 +263,4 @@ struct WasmD3D8ShimState
 
 extern "C" void wasm_d3d8_reset_state();
 extern "C" const WasmD3D8ShimState *wasm_d3d8_get_state();
+extern "C" void cnc_port_d3d8_set_present_bridge(int enabled);

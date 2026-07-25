@@ -118,7 +118,42 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     getHeapF64: () => Module.HEAPF64 ?? null,
     preserveDrawingBuffer: opts.preserveDrawingBuffer === true,
   });
-  for (const [name, hook] of Object.entries(d3d8Hooks)) {
+  let installedD3D8Hooks = d3d8Hooks;
+  let webXrD3D8Recorder = null;
+  const webXrBridgeOptions = opts.webxrD3D8Bridge;
+  if (webXrBridgeOptions) {
+    const acknowledgement = webXrBridgeOptions.acknowledgement;
+    if (!(acknowledgement instanceof SharedArrayBuffer)) {
+      throw new Error("engine_realm_boot: native VR bridge requires shared acknowledgement");
+    }
+    const acknowledgementState = new Int32Array(acknowledgement);
+    if (acknowledgementState.length < 2) {
+      throw new Error("engine_realm_boot: native VR acknowledgement is undersized");
+    }
+    const timeoutMs = Math.max(100, Math.min(30000,
+      Number(webXrBridgeOptions.timeoutMs ?? 5000)));
+    const {
+      createWebXrD3D8CommandRecorder,
+      submitWebXrD3D8CommandFrame,
+    } = await import(
+      "./webxr-d3d8-command-stream.mjs"
+    );
+    webXrD3D8Recorder = createWebXrD3D8CommandRecorder({
+      delegateHooks: d3d8Hooks,
+      materializeDrawPayload: d3d8Diag.materializeD3D8DrawPayload,
+      onError: (error) => recordLog("native VR D3D8 recorder failed", {
+        error: error?.message ?? String(error),
+      }),
+      onFrame: (packet) => submitWebXrD3D8CommandFrame({
+        acknowledgement: acknowledgementState,
+        packet,
+        postFrame: (ownedPacket) => postToMain({ cmd: "webxrD3D8Frame", packet: ownedPacket }),
+        timeoutMs,
+      }),
+    });
+    installedD3D8Hooks = webXrD3D8Recorder.hooks;
+  }
+  for (const [name, hook] of Object.entries(installedD3D8Hooks)) {
     Module[name] = hook;
   }
   // Record the worker context's real renderer string once (GATE D evidence:
@@ -146,8 +181,20 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   if (typeof opts.perfCounters === "boolean") {
     globalThis.__cncSetD3D8PerfCounters?.(opts.perfCounters);
   }
+  if (typeof opts.gpuTiming === "boolean") {
+    globalThis.__cncSetD3D8GpuFrameTiming?.(opts.gpuTiming);
+  }
   if (typeof opts.adjacentBatching === "boolean") {
     globalThis.__cncSetD3D8AdjacentBatching?.(opts.adjacentBatching);
+  }
+  if (typeof opts.nativeRepeatedAppend === "boolean") {
+    globalThis.__cncSetD3D8NativeRepeatedAppend?.(opts.nativeRepeatedAppend);
+  }
+  if (typeof opts.frameCommandQueue === "boolean") {
+    globalThis.__cncSetD3D8FrameCommandQueue?.(opts.frameCommandQueue);
+  }
+  if (typeof opts.liteVertexMirrors === "boolean") {
+    globalThis.__cncSetD3D8LiteVertexMirrors?.(opts.liteVertexMirrors);
   }
 
   // ---- GDI text hooks (synchronous returns -> must live in this realm) ------
@@ -558,7 +605,23 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     }
     if (entry.reset === true) {
       Module._cnc_port_reset_browser_input();
+      Module._cnc_port_webxr_set_pick_ray?.(0, 0, 0, 0, 0, 0, 0);
       return;
+    }
+    if (Object.prototype.hasOwnProperty.call(entry, "webxrPickRay")) {
+      const setPickRay = Module._cnc_port_webxr_set_pick_ray;
+      if (typeof setPickRay !== "function") {
+        throw new Error("native WebXR pick-ray export is unavailable");
+      }
+      const ray = entry.webxrPickRay;
+      const origin = Array.isArray(ray?.origin) ? ray.origin : null;
+      const end = Array.isArray(ray?.end) ? ray.end : null;
+      const accepted = ray == null
+        ? setPickRay(0, 0, 0, 0, 0, 0, 0)
+        : origin?.length === 3 && end?.length === 3
+          ? setPickRay(1, origin[0], origin[1], origin[2], end[0], end[1], end[2])
+          : 0;
+      if (accepted !== 1) throw new Error("native WebXR pick ray was rejected");
     }
     const cursor = entry.cursor ?? null;
     Module._cnc_port_set_browser_input_lite(
@@ -747,6 +810,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     clientFps: 60,
     logicFps: 30,
     catchup: DEFAULT_CATCHUP_FRAMES,
+    maxClientFrames: 0,
     clientPeriod: 1000 / 60,
     logicPeriod: 1000 / 30,
     rafDeltas: [],
@@ -757,12 +821,15 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     clientFrames: 0, // cumulative paced client frames run
     logicFrames: 0, // cumulative logic frames run
     engineFrameSamples: 0, // cumulative timed engine frames run
+    presentedEngineFrameSamples: 0, // timed engine frames that produced a presentation
+    suppressedRenderFrames: 0, // catch-up updates advanced without an invisible draw
     replayPlaybackSeen: false,
     crcMismatch: false,
     startedAt: null,
     lastResult: null,
     lastClientFrameStamp: null,
     engineFrameTimes: [], // rolling real-engine update durations (ms)
+    presentedEngineFrameTimes: [], // rolling durations for updates that actually rendered
     engineLogicFrames: [], // logic frame aligned with each engineFrameTimes sample
     slowFrameProfiles: [], // slowest profiled frames since the loop started
     presentationFrameTimes: [], // rolling intervals between presented client frames (ms)
@@ -770,17 +837,26 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     quitRequested: false,
   };
   let framePacedFn = null;
+  let framePacedCatchupFn = null;
   let lastBrowserCursorKey = null;
 
-  function runPacedFrame(runLogic) {
+  function runPacedFrame(runLogic, renderFrame = true) {
+    if (renderFrame) {
+      d3d8Diag.beginD3D8GpuFrameTimer?.();
+    }
     try {
-      return parseMaybeJson(framePacedFn(runLogic ? 1 : 0));
+      const frameFn = renderFrame ? framePacedFn : framePacedCatchupFn;
+      return parseMaybeJson(frameFn(runLogic ? 1 : 0));
     } finally {
       // Lite rendering may defer the final indexed draw so it can be merged
       // with an adjacent range.  The main-realm frame RPCs flush that draw
       // after every engine frame; the autonomous worker loop must preserve
       // the same frame boundary or the next frame's clear discards it.
-      d3d8Diag.flushD3D8PendingDrawBatch("threadedFramePaced");
+      if (renderFrame) {
+        d3d8Diag.flushD3D8PendingDrawBatch("threadedFramePaced");
+        d3d8Diag.endD3D8GpuFrameTimer?.();
+        d3d8Diag.pollD3D8GpuFrameTimers?.();
+      }
     }
   }
 
@@ -797,11 +873,14 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       return;
     }
     framePacedFn = cwrapFor("cnc_port_real_engine_frame_paced", "string", ["number"]);
+    framePacedCatchupFn = cwrapFor(
+      "cnc_port_real_engine_frame_paced_catchup", "string", ["number"]);
     loop.active = true;
     loop.error = null;
     loop.clientFps = clientFps;
     loop.logicFps = logicFps;
     loop.catchup = Math.max(1, Math.min(8, Number(msg.catchup ?? DEFAULT_CATCHUP_FRAMES)));
+    loop.maxClientFrames = Math.max(0, Math.trunc(Number(msg.maxClientFrames) || 0));
     loop.clientPeriod = 1000 / clientFps;
     loop.logicPeriod = 1000 / logicFps;
     loop.rafDeltas.length = 0;
@@ -811,11 +890,14 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     loop.clientFrames = 0;
     loop.logicFrames = 0;
     loop.engineFrameSamples = 0;
+    loop.presentedEngineFrameSamples = 0;
+    loop.suppressedRenderFrames = 0;
     loop.replayPlaybackSeen = false;
     loop.crcMismatch = false;
     loop.startedAt = performance.now();
     loop.lastClientFrameStamp = null;
     loop.engineFrameTimes.length = 0;
+    loop.presentedEngineFrameTimes.length = 0;
     loop.engineLogicFrames.length = 0;
     loop.slowFrameProfiles.length = 0;
     loop.presentationFrameTimes.length = 0;
@@ -832,6 +914,10 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     loop.engineFrameSamples += 1;
     const engineFrameSample = loop.engineFrameSamples;
     loop.engineFrameTimes.push(engineFrameMs);
+    if (result?.presented !== false) {
+      loop.presentedEngineFrameSamples += 1;
+      loop.presentedEngineFrameTimes.push(engineFrameMs);
+    }
     loop.engineLogicFrames.push(Number(result?.logicFrame));
     if (result?.recorder?.playback === true) {
       loop.replayPlaybackSeen = true;
@@ -842,6 +928,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     if (loop.engineFrameTimes.length > 600) {
       loop.engineFrameTimes.shift();
       loop.engineLogicFrames.shift();
+    }
+    if (loop.presentedEngineFrameTimes.length > 600) {
+      loop.presentedEngineFrameTimes.shift();
     }
     loop.slowFrameProfiles.push({
       engineFrameSample,
@@ -900,7 +989,11 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         recordEngineFrame(result);
       } else {
         for (let i = 0; i < logicToRun; i += 1) {
-          result = runPacedFrame(true);
+          const renderFrame = i === logicToRun - 1;
+          result = runPacedFrame(true, renderFrame);
+          if (!renderFrame) {
+            loop.suppressedRenderFrames += 1;
+          }
           recordEngineFrame(result);
           loop.logicFrames += 1;
           if (result?.quitting === true) {
@@ -930,6 +1023,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     }
     loop.lastClientFrameStamp = stamp;
     loop.clientFrames += 1;
+    if (loop.maxClientFrames > 0 && loop.clientFrames >= loop.maxClientFrames) {
+      loop.active = false;
+    }
     loop.lastResult = result;
     const browserCursor = result.browserCursor;
     if (browserCursor && typeof browserCursor === "object") {
@@ -1001,12 +1097,15 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         clientFrames: loop.clientFrames,
         logicFrames: loop.logicFrames,
         engineFrameSamples: loop.engineFrameSamples,
+        presentedEngineFrameSamples: loop.presentedEngineFrameSamples,
+        suppressedRenderFrames: loop.suppressedRenderFrames,
         replayPlaybackSeen: loop.replayPlaybackSeen,
         crcMismatch: loop.crcMismatch,
         quitRequested: loop.quitRequested,
       },
       timing: {
         engineFrameMs: loop.engineFrameTimes.slice(),
+        presentedEngineFrameMs: loop.presentedEngineFrameTimes.slice(),
         engineLogicFrames: loop.engineLogicFrames.slice(),
         presentationFrameMs: loop.presentationFrameTimes.slice(),
         slowFrameProfiles: loop.slowFrameProfiles.slice(),
@@ -1017,6 +1116,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         framesCompleted: result.framesCompleted,
         loadSessionActive: result.loadSessionActive,
         loadProgress: result.loadProgress,
+        worldScene: result.worldScene ?? null,
         lastFrameMs: result.lastFrameMs,
         quitting: result.quitting,
         recorder: result.recorder ?? null,
@@ -1038,6 +1138,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         d3d8Perf: typeof d3d8Diag?.d3d8PerfSummary === "function"
           ? d3d8Diag.d3d8PerfSummary()
           : null,
+        webXrD3D8Recorder: webXrD3D8Recorder?.snapshot() ?? null,
       },
       mssForward: { ...mssForwardStats },
       bink: {
@@ -1071,6 +1172,10 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       if (!live) {
         live = true;
         recordLog("engine thread live (first main-loop tick)");
+        if (webXrD3D8Recorder) {
+          cwrapFor("cnc_port_d3d8_set_present_bridge", null, ["number"])(1);
+          recordLog("native VR D3D8 Present bridge enabled");
+        }
         // Bound-draw diagnostics cwrap is a wasm call — wire it only now.
         try {
           if (typeof d3d8Diag.setBoundDrawDiagnosticsSetter === "function"
@@ -1337,6 +1442,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
           const drawProducers = typeof msg.drawProducers === "boolean"
             ? globalThis.__cncSetD3D8DrawProducerTracking?.(msg.drawProducers)
             : globalThis.__cncGetD3D8DrawProducerTracking?.();
+          const skippedProgramKind = typeof msg.skippedProgramKind === "string"
+            ? globalThis.__cncSetD3D8SkippedProgramKind?.(msg.skippedProgramKind)
+            : globalThis.__cncGetD3D8SkippedProgramKind?.();
           respond({
             cmd: "d3d8PerfConfigureResult",
             id: msg.id,
@@ -1345,12 +1453,40 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
             counters,
             bufferProducers,
             drawProducers,
+            skippedProgramKind,
             previousSummary,
             summary: globalThis.__cncD3D8PerfSummary?.() ?? null,
           });
         } catch (error) {
           respond({
             cmd: "d3d8PerfConfigureResult",
+            id: msg.id,
+            ok: false,
+            error: String((error && error.stack) || error),
+          });
+        }
+        return;
+      }
+      case "d3d8DrawHistory": {
+        try {
+          if (msg.level === "lite" || msg.level === "full") {
+            globalThis.__cncSetDiagLevel?.(msg.level);
+          }
+          if (Number.isFinite(Number(msg.limit)) && Number(msg.limit) > 0) {
+            globalThis.__cncSetD3D8SceneDrawHistoryLimit?.(Number(msg.limit));
+          }
+          if (msg.clear === true) {
+            globalThis.__cncClearD3D8SceneDrawHistory?.();
+          }
+          respond({
+            cmd: "d3d8DrawHistoryResult",
+            id: msg.id,
+            ok: true,
+            history: d3d8Diag.d3d8SceneDrawHistory(),
+          });
+        } catch (error) {
+          respond({
+            cmd: "d3d8DrawHistoryResult",
             id: msg.id,
             ok: false,
             error: String((error && error.stack) || error),
@@ -1430,12 +1566,14 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   recordLog("engine realm boot module installed", {
     realm,
     diagLevel: opts.diagLevel ?? null,
+    gpuTiming: opts.gpuTiming === true,
     preserveDrawingBuffer: opts.preserveDrawingBuffer === true,
+    webxrD3D8Bridge: webXrD3D8Recorder !== null,
   });
 
   return {
     hooksInstalled: [
-      ...Object.keys(d3d8Hooks),
+      ...Object.keys(installedD3D8Hooks),
       "cncGdiMeasure",
       "cncGdiRasterizeGlyph",
       ...MSS_HOOKS,
@@ -1453,6 +1591,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       "cncPortBrowserNetworkReconnect",
       "cncPortEngineThreadTick",
     ],
+    webxrD3D8Bridge: webXrD3D8Recorder !== null,
     handleCommand,
   };
 }
