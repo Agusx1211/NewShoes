@@ -7296,7 +7296,13 @@ function ensureD3D8DrawProgram() {
     return d3d8DrawProgram;
   }
 
+  // D3D8/W3D redraws geometry with D3DCMP_EQUAL for shroud and material
+  // passes. ESSL permits independently linked programs to produce different
+  // gl_Position values from identical expressions unless the output is
+  // invariant, so every vertex source reused across those material programs
+  // carries this contract.
   const vertexSource = `#version 300 es
+    invariant gl_Position;
     in vec4 aPosition;
     in vec3 aNormal;
     in vec4 aDiffuseBgra;
@@ -8200,6 +8206,7 @@ function d3d8UnlitTex2VertexSource() {
     return d3d8UnlitTex2VertexSourceCache;
   }
   d3d8UnlitTex2VertexSourceCache = `#version 300 es
+    invariant gl_Position;
     in vec4 aPosition;
     in vec4 aDiffuseBgra;
     in vec2 aTexCoord0;
@@ -8384,6 +8391,7 @@ function d3d8LitTex1VertexSource() {
     return d3d8LitTex1VertexSourceCache;
   }
   d3d8LitTex1VertexSourceCache = `#version 300 es
+    invariant gl_Position;
     in vec4 aPosition;
     in vec3 aNormal;
     in vec4 aDiffuseBgra;
@@ -9994,6 +10002,7 @@ function d3d8SM1BuildVertexSource(vsShader) {
   }
   const lines = [];
   lines.push("#version 300 es");
+  lines.push("invariant gl_Position;");
   for (const entry of vsShader.decl) {
     lines.push(`in vec4 aVs${entry.register};`);
   }
