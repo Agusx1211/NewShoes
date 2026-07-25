@@ -1,6 +1,6 @@
 {
   "schema": "project-new-shoes/public-project/v1",
-  "reviewedAt": "2026-07-20",
+  "reviewedAt": "2026-07-25",
   "maxReviewAgeDays": 90,
   "site": {
     "name": "Project New Shoes",
@@ -30,7 +30,7 @@
       "details": [
         "The browser launcher can inspect either a complete English Generals and Zero Hour installation or the complete original Generals and Zero Hour disc-image or media set. Folder and media selection always require an explicit action by the person using the browser.",
         "The launcher reads and validates required files locally. It can parse supported ISO and disc-image layouts, extract required Cabinet members, and install the needed BIG archives into the browser's Origin Private File System (OPFS). The installed game remains associated with that browser profile and site origin.",
-        "After installation, the browser desktop exposes the Zero Hour launcher, game library, settings, files, mods, save and replay management, device transfer, diagnostics, project information, and a small collection of auxiliary browser games.",
+        "After installation, the browser desktop exposes the Zero Hour launcher, World Builder, game library, settings, files, mods, save and replay management, device transfer, diagnostics, project information, and a small collection of auxiliary browser games.",
         "On phones, the launcher uses portrait- and short-landscape layouts with touch-sized window controls, a readable Start app drawer, reachable desktop shortcuts, scrollable task switching, dynamic viewport sizing, and safe-area-aware edges. Larger screens retain the desktop window-management layout."
       ],
       "evidence": [
@@ -40,6 +40,30 @@
         "WebAssembly/harness/game-data-store.mjs",
         "WebAssembly/harness/startup_vertical_smoke.mjs",
         "WebAssembly/harness/launcher_mobile_browser_smoke.mjs"
+      ]
+    },
+    {
+      "id": "world-builder",
+      "name": "Build and play custom maps",
+      "status": "supported",
+      "summary": "The browser desktop includes a native Zero Hour map editor with local map-library storage, lossless retail-map import, and one-action playtesting through the original engine.",
+      "reviewedAt": "2026-07-25",
+      "details": [
+        "World Builder creates, opens, imports, edits, validates, saves, autosaves, exports, and deletes native Zero Hour CkMp maps. Saved maps and their sidecars are installed into the active vanilla or mod user-data profile so the original engine sees the same files through its normal user-map cache.",
+        "The editor covers terrain elevation, smoothing and flattening, playable borders, passability, material tiles, objects and native properties, transforms and layers, roads, scorches, water and area polygons, waypoints and links, player starts, players, teams, build lists, script groups and generic native condition or action parameters, world settings, lighting, and preview generation. Undo and redo group pointer strokes into single authoring transactions, dirty-state prompts protect unsaved work, and validation catches malformed or unplayable map state.",
+        "Imported maps retain unsupported or unrecognized native chunks byte-for-byte, including RefPack-compressed retail maps and companion sidecars. An unedited imported map exports exactly as supplied. The retail corpus gate opens every map in MapsZH.big, verifies lossless compressed output, edits and reparses each map, and checks native scripted child data after metadata edits.",
+        "The authoring canvas is a responsive two-dimensional editing view. Playtest saves the current package, starts the original Zero Hour C++ engine and W3D/WebGL2 renderer, enters the original skirmish setup, verifies discovery through the real map cache, and selects the exact saved map before returning army and Start control to the player."
+      ],
+      "evidence": [
+        "WebAssembly/harness/world-builder-app.mjs",
+        "WebAssembly/harness/world-builder-map.mjs",
+        "WebAssembly/harness/world-builder-store.mjs",
+        "WebAssembly/harness/world-builder-catalog.mjs",
+        "WebAssembly/harness/world_builder_map_unit.mjs",
+        "WebAssembly/harness/world_builder_browser_smoke.mjs",
+        "WebAssembly/harness/world_builder_retail_maps_smoke.mjs",
+        "WebAssembly/harness/world_builder_playtest_smoke.mjs",
+        "WebAssembly/src/wasm_real_engine_init.cpp"
       ]
     },
     {
@@ -291,6 +315,7 @@
     "Review the detected source. Choose whether to retain source permission when the browser supports it and whether to install the validated runtime into browser storage.",
     "Keep the tab open while local extraction, hashing, validation, and OPFS installation finish. The first import can take several minutes.",
     "When Zero Hour appears in the game library, review Game & Display settings if desired and launch it.",
+    "To create or edit a custom map, open World Builder from the desktop or Start menu. Save installs the map into the active game or mod profile; Playtest opens the original skirmish setup with that map selected.",
     "Use the original game menus after the canvas opens. On a touch screen, open Touch help for the gesture map and Keys for hotkeys and control groups; landscape is recommended. All picker operations require a person at the browser; a remote text agent cannot grant file permissions or provide the user's retail media.",
     "For optional remote play, start the external AgentBridge in Global or Camera mode. Before launch, open Remote Agent, enable it, enter the bridge's printed WebRTC URL and browser credential, choose a session ID and the same fixed mode, test the authenticated peer connection, and select Apply for next launch. Non-secret settings are remembered; browser-token storage is an explicit device-local choice.",
     "Give the bridge's separate REST address and API credential only to the trusted controller. Treat both credentials as secrets, and disable Remote Agent or close the bridge when the session is over."

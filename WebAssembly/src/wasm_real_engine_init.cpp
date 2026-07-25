@@ -8361,6 +8361,23 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_probe()
 			++emitted;
 		}
 		json += "]";
+		json += ",\"userMultiplayerMaps\":[";
+		emitted = 0;
+		for (MapCache::const_iterator it = TheMapCache->begin(); it != TheMapCache->end(); ++it) {
+			if (it->second.m_isOfficial || !it->second.m_isMultiplayer) {
+				continue;
+			}
+			if (emitted > 0) {
+				json += ",";
+			}
+			json += "{\"key\":\"" + json_escape(it->first.str()) + "\"";
+			json += ",\"players\":" + std::to_string(static_cast<long long>(it->second.m_numPlayers));
+			json += ",\"fileSize\":" + std::to_string(static_cast<unsigned long long>(it->second.m_filesize));
+			json += ",\"crc\":" + std::to_string(static_cast<unsigned long long>(it->second.m_CRC));
+			json += "}";
+			++emitted;
+		}
+		json += "]";
 		append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
 		append_game_info_json(json, "gameInfo", TheGameInfo);
 		append_map_preview_diagnostic_json(json, "mapPreviewDiagnostic");
@@ -8402,6 +8419,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_probe()
 		}
 		json += "]";
 	}
+	json += "}";
+	return json.c_str();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_map_cache_refresh()
+{
+	static std::string json;
+	if (TheMapCache == NULL) {
+		json = "{\"ok\":false,\"error\":\"mapCacheNotReady\"}";
+		return json.c_str();
+	}
+	const std::size_t before = TheMapCache->size();
+	TheMapCache->updateCache();
+	json = "{\"ok\":true,\"before\":" + std::to_string(static_cast<unsigned long long>(before));
+	json += ",\"after\":" + std::to_string(static_cast<unsigned long long>(TheMapCache->size()));
 	json += "}";
 	return json.c_str();
 }
@@ -8920,14 +8952,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_set_skirmish_ma
 		return json.c_str();
 	}
 
-	TheSkirmishGameInfo->setMap(it->first);
+	const AsciiString selected_map =
+		it->second.m_fileName.isEmpty() ? it->first : it->second.m_fileName;
+	TheSkirmishGameInfo->setMap(selected_map);
 	TheSkirmishGameInfo->setMapCRC(it->second.m_CRC);
 	TheSkirmishGameInfo->setMapSize(it->second.m_filesize);
 
 	json = "{";
 	json += "\"ok\":true";
 	json += ",\"requested\":\"" + json_escape(requested.str()) + "\"";
-	json += ",\"applied\":\"" + json_escape(it->first.str()) + "\"";
+	json += ",\"applied\":\"" + json_escape(selected_map.str()) + "\"";
 	append_map_metadata_json(json, "metadata", &it->second);
 	append_game_info_json(json, "skirmishGameInfo", TheSkirmishGameInfo);
 	json += "}";

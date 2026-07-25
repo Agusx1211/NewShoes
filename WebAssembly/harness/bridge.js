@@ -3012,6 +3012,15 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "mapCacheRefresh": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_map_cache_refresh", "string", [], []);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "realEngineSetNetworkTimeouts": {
       try {
         const result = await threadedEngine.engineCall(
@@ -6823,6 +6832,7 @@ async function loadWasmModule() {
         ["string"],
       ),
       mapCacheProbe: module.cwrap("cnc_port_map_cache_probe", "string", []),
+      mapCacheRefresh: module.cwrap("cnc_port_map_cache_refresh", "string", []),
       realEngineSetSkirmishMap: module.cwrap(
         "cnc_port_real_engine_set_skirmish_map",
         "string",
@@ -13308,6 +13318,19 @@ async function rpc(command, payload = {}) {
           ok: true,
           command: "mapCacheProbe",
           probe: JSON.parse(moduleResult.wasmModule.mapCacheProbe()),
+        };
+      }
+    case "mapCacheRefresh":
+      {
+        const moduleResult = await getWasmModuleForArchives("mapCacheRefresh");
+        if (moduleResult.error) {
+          return { ok: false, command: "mapCacheRefresh", error: moduleResult.error };
+        }
+        const result = JSON.parse(moduleResult.wasmModule.mapCacheRefresh());
+        return {
+          ok: result?.ok === true,
+          command: "mapCacheRefresh",
+          result,
         };
       }
     case "setD3D8GammaRamp":

@@ -112,6 +112,11 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "webxr-d3d8-renderer.mjs",
   "webxr-runtime.mjs",
   "webxr-settings.mjs",
+  "world-builder-app.mjs",
+  "world-builder-catalog.mjs",
+  "world-builder-map.mjs",
+  "world-builder-store.mjs",
+  "world-builder.css",
 ]);
 
 export const PAGES_DEPENDENCY_FILES = Object.freeze([

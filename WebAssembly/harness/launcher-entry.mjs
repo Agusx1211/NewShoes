@@ -1,6 +1,7 @@
 import "./analytics.mjs";
 import "./launcher-asset-manager.mjs";
 import "./launcher-games.mjs";
+import "./world-builder-app.mjs";
 import "./launcher.js";
 import "./llm-ai-manager-ui.mjs";
 import "./llm-ai-game-runtime.mjs";

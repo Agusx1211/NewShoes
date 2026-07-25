@@ -52,6 +52,7 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
     setup: { title: "Project New Shoes Game Launcher", launcherLogo: true },
     explorer: { title: "My Files", icon: "#i-folder" },
     mods: { title: "Mod Manager", icon: "#i-mod" },
+    worldBuilder: { title: "World Builder", icon: "#i-world-builder" },
     llmAi: { title: "LLM AI Manager", icon: "#i-llm-ai" },
     gameData: { title: "Save & Replay Manager", icon: "#i-save" },
     agentBridge: { title: "Remote Agent", icon: "#i-agent" },

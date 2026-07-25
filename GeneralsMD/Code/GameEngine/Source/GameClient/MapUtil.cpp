@@ -688,7 +688,11 @@ Bool MapCache::loadUserMaps()
 				}
 				else
 				{
-					if (TheFileSystem->getFileInfo(tempfilename, &fileInfo)) {
+					// Keep the discovered path's original spelling for local
+					// filesystems. Windows tolerates the lower-cased lookup
+					// above, but the browser's Emscripten filesystem is
+					// case-sensitive and user map folders may contain capitals.
+					if (TheFileSystem->getFileInfo(*iter, &fileInfo)) {
 						char funk[_MAX_PATH];
 						strcpy(funk, tempfilename.str());
 						char *filenameptr = funk;
@@ -702,6 +706,11 @@ Bool MapCache::loadUserMaps()
 
 						m_seen[tempfilename] = TRUE;
 						parsedAMap |= addMap(mapDir, *iter, &fileInfo, TheGlobalData->m_buildMapCache);
+						// MapCache keys are intentionally case-folded, but the
+						// source filename must retain the spelling returned by
+						// the filesystem. This is observable on case-sensitive
+						// ports when the selected map is opened for gameplay.
+						(*this)[tempfilename].m_fileName = *iter;
 					} else {
 						DEBUG_CRASH(("Could not get file info for map %s", (*iter).str()));
 					}
@@ -783,7 +792,7 @@ Bool MapCache::addMap( AsciiString dirName, AsciiString fname, FileInfo *fileInf
 	loadMap(fname); // Just load for querying the data, since we aren't playing this map.
 
 	// The map is now loaded.  Pick out what we need.
-	md.m_fileName = lowerFname;
+	md.m_fileName = fname;
 	md.m_filesize = filesize;
 	md.m_isOfficial = isOfficial;
 	md.m_waypoints.update();
