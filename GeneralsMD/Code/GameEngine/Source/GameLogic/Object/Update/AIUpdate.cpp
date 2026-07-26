@@ -518,8 +518,23 @@ void AIUpdateInterface::requestPath( Coord3D *destination, Bool isFinalGoal )
 		}
 		return;
 	}
-	TheAI->pathfinder()->queueForPath(getObject()->getID());
+	queuePathfindRequest();
 
+}
+
+//-------------------------------------------------------------------------------------------------
+void AIUpdateInterface::queuePathfindRequest()
+{
+	if (TheAI != NULL
+			&& TheAI->pathfinder() != NULL
+			&& TheAI->pathfinder()->queueForPath(getObject()->getID())) {
+		setQueueForPathTime(0);
+		return;
+	}
+
+	// The pathfinder queue is intentionally bounded. Keep the outstanding
+	// request live and retry instead of leaving this unit waiting forever.
+	setQueueForPathTime(1);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -542,7 +557,7 @@ void AIUpdateInterface::requestAttackPath( ObjectID victimID, const Coord3D* vic
 		setLocomotorGoalNone();
 		return;
 	}
-	TheAI->pathfinder()->queueForPath(getObject()->getID());
+	queuePathfindRequest();
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -565,7 +580,7 @@ void AIUpdateInterface::requestApproachPath( Coord3D *destination )
 		setQueueForPathTime(2*LOGICFRAMES_PER_SECOND);
 		return;
 	}
-	TheAI->pathfinder()->queueForPath(getObject()->getID());
+	queuePathfindRequest();
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -589,7 +604,7 @@ void AIUpdateInterface::requestSafePath( ObjectID repulsor )
 		setQueueForPathTime(2*LOGICFRAMES_PER_SECOND);
 		return;
 	}
-	TheAI->pathfinder()->queueForPath(getObject()->getID());
+	queuePathfindRequest();
 }
 
 enum {WAYPOINT_PATH_LIMIT=1024};
@@ -1073,10 +1088,9 @@ UpdateSleepTime AIUpdateInterface::update( void )
 	{
 		if (now >= m_queueForPathFrame) 
 		{
-			TheAI->pathfinder()->queueForPath(getObject()->getID());
-			setQueueForPathTime(0);
+			queuePathfindRequest();
 		}
-		else
+		if (m_queueForPathFrame > now)
 		{
 			UnsignedInt sleepForPathDelta = m_queueForPathFrame - now;
 			if (sleepForPathDelta < subMachineSleep)

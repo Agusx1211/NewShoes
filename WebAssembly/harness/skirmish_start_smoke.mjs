@@ -75,11 +75,14 @@ const expectEscMenuResume = process.env.SKIRMISH_START_EXPECT_ESC_MENU_RESUME ==
 const expectEnemyStartAssets = process.env.SKIRMISH_START_EXPECT_ENEMY_START_ASSETS === "1";
 const expectEnemyAiActivity = process.env.SKIRMISH_START_EXPECT_ENEMY_AI_ACTIVITY === "1";
 const expectHard4v4 = process.env.SKIRMISH_START_HARD_4V4 === "1";
+const requestPlayerDiagnostics =
+  process.env.SKIRMISH_START_PLAYER_DIAGNOSTICS === "1";
 const expectWorkerSupplyExitProbe =
   process.env.SKIRMISH_START_WORKER_SUPPLY_EXIT_PROBE === "1";
 const partitionDistanceBenchmarkIterations = parsePositiveInt(
   "SKIRMISH_START_PARTITION_DISTANCE_BENCHMARK_ITERATIONS", 0);
-const collectPlayerDiagnostics = expectEnemyStartAssets || expectEnemyAiActivity || expectHard4v4;
+const collectPlayerDiagnostics = requestPlayerDiagnostics
+  || expectEnemyStartAssets || expectEnemyAiActivity || expectHard4v4;
 const disablePostActiveRender =
   process.env.SKIRMISH_START_POST_ACTIVE_DISABLE_RENDER === "1";
 const logPostActiveTiming = process.env.SKIRMISH_START_LOG_POST_ACTIVE === "1";
@@ -265,8 +268,22 @@ function pixelHasVisibleColor(pixel, threshold = 8) {
     && pixel.slice(0, 3).some((component) => component > threshold);
 }
 
+async function captureViewport(page, path) {
+  const result = await rpc(page, "screenshot");
+  const dataUrl = typeof result?.screenshot === "string"
+    ? result.screenshot
+    : result?.screenshot?.dataUrl;
+  if (result?.ok === true && typeof dataUrl === "string"
+      && dataUrl.startsWith("data:image/png;base64,")) {
+    await writeFile(path, Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64"));
+    return path;
+  }
+  await page.locator("#viewport").screenshot({ path });
+  return path;
+}
+
 async function sampleViewportGrid(page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const canvas = document.querySelector("#viewport");
     if (!(canvas instanceof HTMLCanvasElement)) {
       return { ok: false, error: "viewport canvas is missing" };
@@ -279,12 +296,29 @@ async function sampleViewportGrid(page) {
       // placeholder remains drawable, but requesting its context is invalid.
     }
     let snapshot = null;
+    let source = "webgl";
     if (gl == null) {
       const scratch = document.createElement("canvas");
       scratch.width = canvas.width;
       scratch.height = canvas.height;
       snapshot = scratch.getContext("2d", { willReadFrequently: true });
-      snapshot?.drawImage(canvas, 0, 0);
+      const result = await window.CnCPort?.rpc?.("screenshot");
+      const dataUrl = typeof result?.screenshot === "string"
+        ? result.screenshot
+        : result?.screenshot?.dataUrl;
+      if (result?.ok === true && typeof dataUrl === "string") {
+        const image = new Image();
+        image.src = dataUrl;
+        await image.decode();
+        scratch.width = image.naturalWidth;
+        scratch.height = image.naturalHeight;
+        snapshot = scratch.getContext("2d", { willReadFrequently: true });
+        snapshot?.drawImage(image, 0, 0);
+        source = "threaded-worker-snapshot";
+      } else {
+        snapshot?.drawImage(canvas, 0, 0);
+        source = "threaded-placeholder";
+      }
     }
     if (gl == null && snapshot == null) {
       return { ok: false, error: "viewport pixels are unavailable" };
@@ -306,11 +340,13 @@ async function sampleViewportGrid(page) {
     ];
     const pixels = {};
     const pixel = new Uint8Array(4);
+    const width = gl != null ? canvas.width : snapshot.canvas.width;
+    const height = gl != null ? canvas.height : snapshot.canvas.height;
     for (const point of samplePoints) {
-      const x = Math.max(0, Math.min(canvas.width - 1, Math.floor(point.x * canvas.width)));
-      const y = Math.max(0, Math.min(canvas.height - 1, Math.floor(point.y * canvas.height)));
+      const x = Math.max(0, Math.min(width - 1, Math.floor(point.x * width)));
+      const y = Math.max(0, Math.min(height - 1, Math.floor(point.y * height)));
       if (gl != null) {
-        gl.readPixels(x, canvas.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        gl.readPixels(x, height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
       } else {
         pixel.set(snapshot.getImageData(x, y, 1, 1).data);
       }
@@ -324,9 +360,9 @@ async function sampleViewportGrid(page) {
       (value[0] > 8 || value[1] > 8 || value[2] > 8));
     return {
       ok: true,
-      width: canvas.width,
-      height: canvas.height,
-      source: gl != null ? "webgl" : "threaded-placeholder",
+      width,
+      height,
+      source,
       sampleCount: samplePoints.length,
       visibleSampleCount: visible.length,
       uniqueColorCount: new Set(colors).size,
@@ -1790,7 +1826,7 @@ async function driveReplayPerformance(page, performanceReplay) {
     });
   if (requireReplayPerformanceVisible) {
     await runFrames(page, 2, "performance replay menu visual settle");
-    await page.locator("#viewport").screenshot({ path: replayMenuScreenshotPath });
+    await captureViewport(page, replayMenuScreenshotPath);
   }
   let renderDisabled = false;
   if (disableReplayPerformanceRender && !requireReplayPerformanceVisible) {
@@ -1816,7 +1852,7 @@ async function driveReplayPerformance(page, performanceReplay) {
     maxStartFrames);
   if (requireReplayPerformanceVisible) {
     await runFrames(page, 30, "performance replay visible playback settle");
-    await page.locator("#viewport").screenshot({ path: replayPlaybackScreenshotPath });
+    await captureViewport(page, replayPlaybackScreenshotPath);
   }
   const startRenderProbe = requireReplayPerformanceVisible
     ? await sampleViewportGrid(page)
@@ -1905,8 +1941,11 @@ async function driveReplayPerformance(page, performanceReplay) {
         status.timing?.presentationFrameMs, addedClientFrames);
       capture.lastClientFrames = loop.clientFrames;
       capture.lastEngineFrameSamples = Number(loop.engineFrameSamples ?? 0);
+      const gameplay = status.frame?.gameplay
+        ?? status.frame?.clientState?.gameplay
+        ?? null;
       capture.maxLogicFrame = Math.max(capture.maxLogicFrame,
-        Number(status.frame?.logicFrame ?? 0));
+        Number(gameplay?.logicFrame ?? status.frame?.logicFrame ?? 0));
       const recorder = status.frame?.recorder;
       if (loop.replayPlaybackSeen === true) {
         capture.replayPlaybackSeen = true;
@@ -1922,9 +1961,13 @@ async function driveReplayPerformance(page, performanceReplay) {
         clientFrames: loop.clientFrames,
         engineFrameSamples: loop.engineFrameSamples ?? null,
         logicFrames: loop.logicFrames,
-        logicFrame: status.frame?.logicFrame ?? null,
+        logicFrame: gameplay?.logicFrame ?? status.frame?.logicFrame ?? null,
         lastFrameMs: status.frame?.lastFrameMs ?? null,
-        recorder: recorder ?? null,
+        recorder: gameplay?.recorder ?? recorder ?? null,
+        ai: gameplay?.ai ?? status.frame?.ai ?? null,
+        playerDiagnostics: gameplay?.playerDiagnostics
+          ?? status.frame?.playerDiagnostics
+          ?? null,
         active: loop.active,
         contextLost: status.contextLost,
         renderer: status.graphics?.renderer ?? null,
@@ -1940,6 +1983,7 @@ async function driveReplayPerformance(page, performanceReplay) {
     logicFps: replayPerformanceLogicFps,
     catchup: replayPerformanceCatchup,
     profilingEnabled: profileReplayPerformance,
+    playerDiagnostics: collectPlayerDiagnostics,
   });
   expect(started?.ok === true, "performance replay paced loop did not start", started);
   const targetLogicFrame = Math.min(expectedLogicFrames, replayPerformanceEndFrame);
@@ -2000,7 +2044,7 @@ async function driveReplayPerformance(page, performanceReplay) {
     : null;
   const finalScreenshotPath = requireReplayPerformanceVisible ? screenshotPath : null;
   if (finalScreenshotPath) {
-    await page.locator("#viewport").screenshot({ path: finalScreenshotPath });
+    await captureViewport(page, finalScreenshotPath);
   }
   const contextLosses = capture.statuses.filter((status) => status.contextLost === true).length;
   expect(contextLosses === 0, "performance replay lost the WebGL context", { contextLosses });
