@@ -6,6 +6,13 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-26
+
+- Refresh road vertex buffers after terrain lighting changes to prevent camera-dependent bright roads ([PR #329](https://github.com/Agusx1211/NewShoes/pull/329)).
+- Add a first-class custom map manager with configuration-isolated browser storage ([PR #330](https://github.com/Agusx1211/NewShoes/pull/330)).
+- Prevent late-game pathfinding freezes by separating persistent obstacle state from A* scratch records ([PR #328](https://github.com/Agusx1211/NewShoes/pull/328)).
+- Remove ShockWave battle stalls from D3D8 staging copies and terrain-flatten scans ([PR #332](https://github.com/Agusx1211/NewShoes/pull/332)).
+
 ## [0.6.0] - 2026-07-25
 
 - Refresh the README and add deterministic agent codenames ([PR #300](https://github.com/Agusx1211/NewShoes/pull/300)).
