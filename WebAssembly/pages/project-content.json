@@ -1,6 +1,6 @@
 {
   "schema": "project-new-shoes/public-project/v1",
-  "reviewedAt": "2026-07-20",
+  "reviewedAt": "2026-07-25",
   "maxReviewAgeDays": 90,
   "site": {
     "name": "Project New Shoes",
@@ -190,6 +190,29 @@
       ]
     },
     {
+      "id": "custom-maps",
+      "name": "Install and manage custom maps",
+      "status": "supported",
+      "summary": "The Map Manager installs standard community map archives and folders into the original engine's configuration-isolated User Maps library.",
+      "reviewedAt": "2026-07-25",
+      "details": [
+        "The browser desktop accepts ZIP, 7z, RAR, standalone MAP files, and selected folders using the standard MapName/MapName.map layout. Archives are inspected and extracted locally; map files are not uploaded.",
+        "Imported maps are written as loose files under the active launch configuration's real Zero Hour user-data Maps directory. The manager lists and removes those folders and invalidates the original engine's generated MapCache.ini after changes, so the original User Maps discovery and loading path remains the owner of gameplay behavior.",
+        "Map data is isolated with the exact vanilla or ordered-mod launch configuration. A map can still depend on a particular mod, contain invalid game data, or use native Windows code that cannot run in WebAssembly; package recognition does not guarantee that every community map is compatible."
+      ],
+      "evidence": [
+        "WebAssembly/harness/custom-map-manager-ui.mjs",
+        "WebAssembly/harness/custom-map-package-worker.mjs",
+        "WebAssembly/harness/custom-map-store.mjs",
+        "WebAssembly/harness/custom-map-store_unit.mjs",
+        "WebAssembly/harness/custom_map_manager_browser_smoke.mjs",
+        "WebAssembly/harness/skirmish_start_smoke.mjs",
+        "WebAssembly/shims/windows.h",
+        "WebAssembly/tests/win32_find_file_smoke.cpp",
+        "GeneralsMD/Code/GameEngine/Source/GameClient/MapUtil.cpp"
+      ]
+    },
+    {
       "id": "saves-and-replays",
       "name": "Manage saves and replays",
       "status": "in_testing",
@@ -297,7 +320,7 @@
   ],
   "privacy": {
     "paragraphs": [
-      "Retail assets selected in the launcher are read locally and stored locally in the browser profile. They are not uploaded to Project New Shoes. Installed archives, mods, saves, replays, preferences, and generated movie cache files live under browser-managed origin storage.",
+      "Retail assets selected in the launcher are read locally and stored locally in the browser profile. They are not uploaded to Project New Shoes. Installed archives, mods, custom maps, saves, replays, preferences, and generated movie cache files live under browser-managed origin storage.",
       "The settings UI provides an anonymous analytics preference. Documented analytics are limited to broad feature, reliability, setting-category, and performance-bucket events. They exclude filenames, paths, disc labels, game data, save content, free text, issue dumps, and precise hardware or storage values. Global Privacy Control or Do Not Track disables analytics automatically, and advertising features are disabled.",
       "Imported mod installers are parsed, not executed. Native code found in a mod is not compatible with the WebAssembly engine. Browser origin data can be removed through the launcher or browser site-data controls, but deleting it can remove the installed game, mods, saves, and settings.",
       "Remote Agent is explicitly opt-in and uses separate browser and REST credentials. The browser credential stays in page memory by default and is stored in origin-local browser storage only when the operator explicitly enables device-local remembering. Turning that option off erases the saved token. The credential is never put in a URL and is excluded from public status and issue dumps. WebRTC signaling uses a one-way token-derived room and separately derived end-to-end encryption key; the project signaling relay cannot read SDP/ICE or agent traffic. Operators are responsible for securing the browser profile, external bridge, and trusted controller.",
@@ -510,6 +533,10 @@
     {
       "question": "Can I use mods?",
       "answer": "Yes, for data compatible with the original engine and browser runtime. The launcher supports ordered archives and several package formats. Native Windows DLLs and executables cannot run."
+    },
+    {
+      "question": "Can I install custom maps?",
+      "answer": "Yes. Open the Map Manager and choose a standard map archive or MapName/MapName.map folder. Maps stay in the browser and appear under the original game's User Maps list for the active vanilla or mod configuration."
     },
     {
       "question": "Can I play multiplayer?",

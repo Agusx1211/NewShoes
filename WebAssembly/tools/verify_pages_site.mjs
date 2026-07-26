@@ -153,13 +153,18 @@ const [
   readFile(resolve(root, "robots.txt"), "utf8").catch(() => ""),
   readFile(resolve(root, "sitemap.xml"), "utf8").catch(() => ""),
 ]);
-const [analytics, modPackageWorker] = await Promise.all([
+const [analytics, modPackageWorker, customMapPackageWorker] = await Promise.all([
   readFile(resolve(root, "harness/analytics.mjs"), "utf8").catch(() => ""),
   readFile(resolve(root, "harness/mod-package-worker.mjs"), "utf8").catch(() => ""),
+  readFile(resolve(root, "harness/custom-map-package-worker.mjs"), "utf8").catch(() => ""),
 ]);
 if (modPackageWorker.includes("../node_modules/7z-wasm/")
     || !modPackageWorker.includes("./vendor/7z-wasm/")) {
   findings.push("harness/mod-package-worker.mjs: production 7z-wasm paths are unresolved");
+}
+if (customMapPackageWorker.includes("../node_modules/7z-wasm/")
+    || !customMapPackageWorker.includes("./vendor/7z-wasm/")) {
+  findings.push("harness/custom-map-package-worker.mjs: production 7z-wasm paths are unresolved");
 }
 if (analytics.includes("__GA_MEASUREMENT_ID__")) findings.push("harness/analytics.mjs: unresolved analytics configuration marker");
 for (const match of analytics.matchAll(/\bG-[A-Z0-9]+\b/g)) {

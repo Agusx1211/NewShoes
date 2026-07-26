@@ -90,7 +90,24 @@ const postActiveFrames = expectEnemyAiActivity
   : requestedPostActiveFrames;
 const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK", frameChunk);
 const musicStopMaxFrames = parsePositiveInt("SKIRMISH_START_MUSIC_STOP_MAX_FRAMES", 360);
-const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
+let requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
+let importedCustomMapName = null;
+const requestedCustomMapLocalPath =
+  String(process.env.SKIRMISH_START_CUSTOM_MAP_PATH ?? "").trim();
+const requestedCustomMapLocalDir =
+  String(process.env.SKIRMISH_START_CUSTOM_MAP_DIR ?? "").trim();
+const requestedCustomMapName =
+  String(process.env.SKIRMISH_START_CUSTOM_MAP_NAME ?? "").trim();
+const requestedCustomMapScreenshot =
+  String(process.env.SKIRMISH_START_CUSTOM_MAP_SCREENSHOT ?? "").trim();
+const requestedCustomMapPickerScreenshot =
+  String(process.env.SKIRMISH_START_CUSTOM_MAP_PICKER_SCREENSHOT ?? "").trim();
+if (requestedCustomMapLocalPath && requestedCustomMapLocalDir) {
+  throw new Error("Choose either SKIRMISH_START_CUSTOM_MAP_PATH or SKIRMISH_START_CUSTOM_MAP_DIR");
+}
+if ((requestedCustomMapLocalPath || requestedCustomMapLocalDir) && requestedSkirmishMap) {
+  throw new Error("A custom-map import supplies SKIRMISH_START_MAP automatically");
+}
 const requestedSkirmishSeedText = String(process.env.SKIRMISH_START_SEED ?? "").trim();
 const requestedSkirmishSeed = requestedSkirmishSeedText
   ? Number.parseInt(requestedSkirmishSeedText, 10)
@@ -663,6 +680,50 @@ async function selectSemanticUiRow(page, name, index) {
     cells: row.cells,
     notificationHandled: selected.result.notificationHandled,
   };
+}
+
+async function activateSemanticUiWindow(page, name) {
+  const snapshot = await rpc(page, "agentUiSnapshot");
+  expect(snapshot?.ok === true && snapshot?.result?.ok === true,
+    `semantic UI snapshot failed before activating ${name}`, snapshot);
+  const window = snapshot.result.windows.find((candidate) =>
+    candidate.name === name && candidate.visible && candidate.interactive);
+  expect(Boolean(window), `semantic UI window is unavailable: ${name}`, snapshot.result);
+  const activated = await rpc(page, "agentUiActivate", {
+    windowId: window.id,
+    name: window.name,
+  });
+  expect(activated?.ok === true && activated?.result?.ok === true,
+    `semantic UI activation failed: ${name}`, activated);
+  return activated.result;
+}
+
+async function selectSemanticUiRowMatching(page, name, predicate) {
+  const snapshot = await rpc(page, "agentUiSnapshot");
+  expect(snapshot?.ok === true && snapshot?.result?.ok === true,
+    `semantic UI snapshot failed before selecting ${name}`, snapshot);
+  const window = snapshot.result.windows.find((candidate) =>
+    candidate.name === name && candidate.visible && candidate.interactive);
+  expect(Boolean(window), `semantic UI window is unavailable: ${name}`, snapshot.result);
+  const items = await rpc(page, "agentUiListItems", {
+    windowId: window.id,
+    name: window.name,
+    offset: 0,
+    limit: 128,
+  });
+  expect(items?.ok === true && items?.result?.ok === true,
+    `semantic UI rows are unavailable: ${name}`, items);
+  const row = items.result.rows.find((candidate) => predicate(candidate.cells.join(" ")));
+  expect(Boolean(row), `semantic UI has no matching row: ${name}`, items.result);
+  const selected = await rpc(page, "agentUiSelectIndex", {
+    windowId: window.id,
+    name: window.name,
+    index: row.index,
+  });
+  expect(selected?.ok === true && selected?.result?.ok === true
+      && selected.result.notificationHandled > 0,
+    `semantic UI selection did not reach the real callback: ${name}`, selected);
+  return { row, result: selected.result };
 }
 
 async function configureHard4v4(page) {
@@ -2761,6 +2822,12 @@ async function main() {
   if (menuScreenshotPath) {
     await mkdir(dirname(menuScreenshotPath), { recursive: true });
   }
+  if (requestedCustomMapScreenshot) {
+    await mkdir(dirname(resolve(requestedCustomMapScreenshot)), { recursive: true });
+  }
+  if (requestedCustomMapPickerScreenshot) {
+    await mkdir(dirname(resolve(requestedCustomMapPickerScreenshot)), { recursive: true });
+  }
   if (browserProfileDir) {
     await rm(browserProfileDir, { recursive: true, force: true });
     await mkdir(browserProfileDir, { recursive: true });
@@ -2856,6 +2923,59 @@ async function main() {
       console.error(`[skirmish-start] imported ${activeMod.name}: ${activeMod.archiveCount} enabled archives`);
     }
 
+    if (requestedCustomMapLocalPath || requestedCustomMapLocalDir) {
+      const customMapInput = resolve(requestedCustomMapLocalDir || requestedCustomMapLocalPath);
+      console.error(`[skirmish-start] import custom map ${customMapInput}`);
+      await page.goto(new URL("harness/play.html", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => Boolean(
+        window.ZeroHMapManager && window.CnCPort?.listCustomMaps,
+      ));
+      const before = await page.evaluate(() => window.CnCPort.listCustomMaps());
+      await page.locator('.desktop-icon[data-open="maps"]').click();
+      await page.waitForSelector("#mapsWindow.is-open");
+      await page.locator(requestedCustomMapLocalDir
+        ? "#customMapImportFolderInput"
+        : "#customMapImportPackageInput").setInputFiles(customMapInput);
+      const importDeadline = Date.now() + 30 * 60_000;
+      let progress = "";
+      let inventory = before;
+      while (Date.now() < importDeadline) {
+        [progress, inventory] = await Promise.all([
+          page.locator("#customMapImportProgress").textContent(),
+          page.evaluate(() => window.CnCPort.listCustomMaps()),
+        ]);
+        if (progress.startsWith("Import failed:")
+            || (requestedCustomMapName
+              ? inventory.maps.some((map) => map.name === requestedCustomMapName)
+              : inventory.maps.length > before.maps.length)) {
+          break;
+        }
+        await page.waitForTimeout(250);
+      }
+      if (progress.startsWith("Import failed:")) {
+        throw new Error(`Custom-map import failed: ${progress}`);
+      }
+      const previous = new Set(before.maps.map((map) => map.name.toLowerCase()));
+      const importedMaps = inventory.maps.filter((map) =>
+        !previous.has(map.name.toLowerCase()));
+      const selectedMap = requestedCustomMapName
+        ? inventory.maps.find((map) => map.name === requestedCustomMapName)
+        : (importedMaps.length === 1 ? importedMaps[0] : null);
+      expect(selectedMap?.path,
+        requestedCustomMapName
+          ? `custom map ${requestedCustomMapName} was not installed`
+          : "custom-map package must add exactly one map unless SKIRMISH_START_CUSTOM_MAP_NAME is set",
+        { progress, before: before.maps, after: inventory.maps });
+      requestedSkirmishMap = selectedMap.path;
+      importedCustomMapName = selectedMap.name;
+      if (requestedCustomMapScreenshot) {
+        await page.screenshot({ path: resolve(requestedCustomMapScreenshot) });
+      }
+      console.error(`[skirmish-start] custom map ready ${requestedSkirmishMap}`);
+    }
+
     const harnessUrl = new URL(
       expectTouchControlsProbe ? "harness/play.html" : "harness/index.html",
       server.url,
@@ -2879,6 +2999,20 @@ async function main() {
     }
     await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
     await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
+    if (requestedCustomMapLocalPath || requestedCustomMapLocalDir) {
+      const remountedMap = await page.evaluate((path) => {
+        const FS = window.CnCPort.engineModule()?.FS;
+        try {
+          const stat = FS.stat(path);
+          return { exists: true, size: Number(stat.size) };
+        } catch (error) {
+          return { exists: false, error: error?.message ?? String(error) };
+        }
+      }, requestedSkirmishMap);
+      expect(remountedMap.exists === true,
+        "custom map did not survive the engine-runtime filesystem remount", remountedMap);
+      console.error("[skirmish-start] custom map remounted:", JSON.stringify(remountedMap));
+    }
     if (expectTouchControlsProbe) {
       await page.evaluate(() => {
         const overlay = document.querySelector("#launchOverlay");
@@ -3155,14 +3289,55 @@ async function main() {
 
     let skirmishMapSet = null;
     if (requestedSkirmishMap) {
-      console.error(`[skirmish-start] set skirmish map ${requestedSkirmishMap}`);
-      skirmishMapSet = await rpc(page, "realEngineSetSkirmishMap", {
-        map: requestedSkirmishMap,
-      });
-      expect(skirmishMapSet?.ok === true
-          && skirmishMapSet.result?.applied,
-        "requested skirmish map was not applied", skirmishMapSet);
-      await runSummary(page, 1, "skirmish map apply settle");
+      if (importedCustomMapName) {
+        await activateSemanticUiWindow(
+          page, "SkirmishGameOptionsMenu.wnd:ButtonSelectMap");
+        await runSummary(page, 2, "open original map picker");
+        await activateSemanticUiWindow(
+          page, "SkirmishMapSelectMenu.wnd:RadioButtonUserMaps");
+        await runSummary(page, 2, "show original user maps");
+        const selected = await selectSemanticUiRowMatching(
+          page,
+          "SkirmishMapSelectMenu.wnd:ListboxMap",
+          (text) => text.toLowerCase().includes(importedCustomMapName.toLowerCase()),
+        );
+        await runSummary(page, 2, "custom map selection settle");
+        if (requestedCustomMapPickerScreenshot) {
+          await page.locator("#viewport").screenshot({
+            path: resolve(requestedCustomMapPickerScreenshot),
+          });
+        }
+        await activateSemanticUiWindow(page, "SkirmishMapSelectMenu.wnd:ButtonOK");
+        await runSummary(page, 2, "custom map picker confirmation");
+        const mapCache = await rpc(page, "mapCacheProbe");
+        const gameInfo = mapCache?.probe?.skirmishGameInfo;
+        expect(mapCache?.ok === true
+            && gameInfo?.map?.toLowerCase().includes(importedCustomMapName.toLowerCase())
+            && gameInfo.mapCRC > 0
+            && gameInfo.mapSize > 0,
+          "original user-map picker did not apply the imported map",
+          { selected, mapCache });
+        requestedSkirmishMap = gameInfo.map;
+        skirmishMapSet = {
+          ok: true,
+          result: {
+            ok: true,
+            applied: gameInfo.map,
+            metadata: gameInfo.metadata,
+            skirmishGameInfo: gameInfo,
+          },
+        };
+      } else {
+        console.error(`[skirmish-start] set skirmish map ${requestedSkirmishMap}`);
+        skirmishMapSet = await rpc(page, "realEngineSetSkirmishMap", {
+          map: requestedSkirmishMap,
+        });
+        expect(skirmishMapSet?.ok === true
+            && skirmishMapSet.result?.applied,
+          "requested skirmish map was not applied", skirmishMapSet);
+        requestedSkirmishMap = skirmishMapSet.result.applied;
+        await runSummary(page, 1, "skirmish map apply settle");
+      }
     }
 
     // Optional: force the local player's faction/general (e.g.

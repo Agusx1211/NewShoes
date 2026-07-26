@@ -7983,6 +7983,31 @@ target_link_options(d3d8-shim-smoke PRIVATE
   "SHELL:-sEXIT_RUNTIME=1"
 )
 
+add_executable(win32-find-file-smoke
+  tests/win32_find_file_smoke.cpp
+)
+
+set_target_properties(win32-find-file-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_include_directories(win32-find-file-smoke PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/shims
+)
+
+target_compile_options(win32-find-file-smoke PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+)
+
+target_link_options(win32-find-file-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
 add_executable(water-projection-state-smoke
   tests/water_projection_state_smoke.cpp
 )
