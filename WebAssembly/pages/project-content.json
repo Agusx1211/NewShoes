@@ -47,7 +47,7 @@
       "name": "Play Zero Hour",
       "status": "supported",
       "summary": "The original Zero Hour shell boots and playable skirmishes run against the original AI through the engine's real simulation and input paths.",
-      "reviewedAt": "2026-07-20",
+      "reviewedAt": "2026-07-26",
       "details": [
         "Players use the original menus, mouse, keyboard, touch controls, selection, building, production, movement, camera, and combat behavior. This is the actual C++ engine compiled for WebAssembly rather than reimplemented gameplay.",
         "Mouse camera scrolling preserves the original right-drag default speed across supported render resolutions. The original Options menu Scroll Speed control adjusts right-drag, keyboard, and edge-scrolling sensitivity, and moving the cursor to the game canvas edge scrolls the tactical view.",
@@ -63,7 +63,10 @@
         "GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/SkirmishGameOptionsMenu.cpp",
         "WebAssembly/harness/skirmish_preferences_persistence_smoke.mjs",
         "WebAssembly/harness/threaded_play_gate.mjs",
-        "WebAssembly/harness/shellmap_real_init_gate.mjs"
+        "WebAssembly/harness/shellmap_real_init_gate.mjs",
+        "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DDisplay.cpp",
+        "WebAssembly/src/wasm_real_engine_init.cpp",
+        "WebAssembly/tools/verify_finite_frame_json.mjs"
       ]
     },
     {
@@ -177,7 +180,7 @@
       "name": "Use and manage mods",
       "status": "supported",
       "summary": "The Mod Manager handles engine-data archives and common package containers while explicitly rejecting native components that WebAssembly cannot run.",
-      "reviewedAt": "2026-07-19",
+      "reviewedAt": "2026-07-26",
       "details": [
         "The Mod Manager accepts BIG archives, loose engine-data folders, and downloaded ZIP, 7z, RAR, NSIS, and Clickteam Install Creator packages. Installer packages are decoded as data and never executed. Native DLL or executable components cannot run in the WebAssembly engine and are reported as unsupported rather than silently treated as working.",
         "Players can enable multiple mods, choose archive options, and order them. Later archives and mods retain the engine's normal override precedence. Ordered content hashes produce an exact launch-configuration identity.",
@@ -188,7 +191,10 @@
         "WebAssembly/harness/mod_manager_browser_smoke.mjs",
         "WebAssembly/harness/mod_real_package_smoke.mjs",
         "GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Contain/RiderChangeContain.cpp",
-        "WebAssembly/tools/verify_rider_change_contain_template_guard.mjs"
+        "WebAssembly/tools/verify_rider_change_contain_template_guard.mjs",
+        "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DDisplay.cpp",
+        "WebAssembly/src/wasm_real_engine_init.cpp",
+        "WebAssembly/tools/verify_finite_frame_json.mjs"
       ]
     },
     {

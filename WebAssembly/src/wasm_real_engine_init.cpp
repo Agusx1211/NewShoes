@@ -996,6 +996,17 @@ std::string json_escape(const std::string &value)
 	return out;
 }
 
+void append_json_real(std::string &json, Real value)
+{
+	if (!std::isfinite(value)) {
+		json += "null";
+		return;
+	}
+	char buffer[48];
+	std::snprintf(buffer, sizeof(buffer), "%.6f", static_cast<double>(value));
+	json += buffer;
+}
+
 std::string unicode_to_debug_ascii(const UnicodeString &value)
 {
 	AsciiString ascii;
@@ -4336,7 +4347,8 @@ void append_real_engine_frame_summary_state(std::string &json)
 	if (TheDisplay != NULL) {
 		json += "\"width\":" + std::to_string(TheDisplay->getWidth());
 		json += ",\"height\":" + std::to_string(TheDisplay->getHeight());
-		json += ",\"averageFps\":" + std::to_string(TheDisplay->getAverageFPS());
+		json += ",\"averageFps\":";
+		append_json_real(json, TheDisplay->getAverageFPS());
 		json += ",\"moviePlaying\":";
 		json += TheDisplay->isMoviePlaying() ? "true" : "false";
 		json += ",\"letterBoxed\":";
@@ -6603,7 +6615,8 @@ static const char *run_real_engine_frame_paced(int run_logic, bool render_frame)
 		TheGameLogic != NULL ? (long long)TheGameLogic->getLoadSessionProgress() : -1);
 	json += ",\"display\":{";
 	if (TheDisplay != NULL) {
-		json += "\"averageFps\":" + std::to_string(TheDisplay->getAverageFPS());
+		json += "\"averageFps\":";
+		append_json_real(json, TheDisplay->getAverageFPS());
 	} else {
 		json += "\"averageFps\":null";
 	}

@@ -47,6 +47,7 @@
     "verify:assets": "node tools/verify_real_assets.mjs",
     "verify:gameengine-startup-order": "node tools/verify_gameengine_startup_order.mjs",
     "verify:stepped-load-validation": "node harness/stepped_load_turret_validation_check.mjs",
+    "verify:finite-frame-json": "node tools/verify_finite_frame_json.mjs",
     "verify:gamelogic-new-game-dispatch-frontier": "node tools/verify_gamelogic_new_game_dispatch_frontier.mjs",
     "verify:weapon-disarm-fallback": "node tools/verify_weapon_disarm_fallback.mjs",
     "verify:particle-uplink-outer-node-bounds": "node tools/verify_particle_uplink_outer_node_bounds.mjs",
