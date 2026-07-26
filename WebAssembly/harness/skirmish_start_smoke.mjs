@@ -130,10 +130,21 @@ const requireReplayPerformanceVisible =
 const disableReplayPerformanceRender =
   process.env.SKIRMISH_REPLAY_PERFORMANCE_DISABLE_RENDER === "1";
 const profileReplayPerformance =
-  process.env.SKIRMISH_REPLAY_PERFORMANCE_PROFILE !== "0";
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_PROFILE === "1";
+const replayPerformanceCounters =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_COUNTERS !== "0";
+const replayPerformanceGpuTiming =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_GPU_TIMING === "1";
 const requestedD3D8Batch = String(process.env.SKIRMISH_START_D3D8_BATCH ?? "").trim();
 if (requestedD3D8Batch && !/^(?:0|1|false|true|off|on)$/.test(requestedD3D8Batch)) {
   throw new Error(`Invalid SKIRMISH_START_D3D8_BATCH: ${requestedD3D8Batch}`);
+}
+const requestedD3D8FrameQueue =
+  String(process.env.SKIRMISH_START_D3D8_FRAME_QUEUE ?? "").trim();
+if (requestedD3D8FrameQueue &&
+    !/^(?:0|1|false|true|off|on)$/.test(requestedD3D8FrameQueue)) {
+  throw new Error(
+    `Invalid SKIRMISH_START_D3D8_FRAME_QUEUE: ${requestedD3D8FrameQueue}`);
 }
 const replayPerformanceClientFps = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_CLIENT_FPS", 60);
@@ -143,6 +154,23 @@ const replayPerformanceCatchup = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_CATCHUP", 2);
 const replayPerformanceEndFrame = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_END_FRAME", Number.MAX_SAFE_INTEGER);
+const replayPerformanceRenderStartFrame = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_RENDER_START_FRAME", 0);
+const replayPerformanceMeasureStartFrame = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_MEASURE_START_FRAME",
+  replayPerformanceRenderStartFrame);
+const replayPerformanceRenderGateText =
+  String(process.env.SKIRMISH_REPLAY_PERFORMANCE_RENDER_GATE_FILE ?? "").trim();
+const replayPerformanceRenderGate =
+  replayPerformanceRenderGateText ? resolve(replayPerformanceRenderGateText) : null;
+const replayPerformanceRenderGateTimeoutMs = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_RENDER_GATE_TIMEOUT_MS", 0);
+const replayPerformanceMeasuredClientFps = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_MEASURE_CLIENT_FPS", replayPerformanceClientFps);
+const replayPerformanceMeasuredLogicFps = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_MEASURE_LOGIC_FPS", replayPerformanceLogicFps);
+const replayPerformanceMeasuredCatchup = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_MEASURE_CATCHUP", replayPerformanceCatchup);
 const replayPerformanceGpuProfileStartFrame = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_GPU_PROFILE_START_FRAME", 0);
 const replayPerformanceGpuProfileFrames = parsePositiveInt(
@@ -190,6 +218,10 @@ if (expectReplayPerformance && !retailReplayFixture) {
 }
 if (expectReplayPerformance && replayPerformanceClientFps < replayPerformanceLogicFps) {
   throw new Error("Replay performance client FPS must be at least the logic FPS");
+}
+if (expectReplayPerformance &&
+    replayPerformanceMeasuredClientFps < replayPerformanceMeasuredLogicFps) {
+  throw new Error("Replay performance measured client FPS must be at least the logic FPS");
 }
 
 function parsePositiveInt(name, fallback) {
@@ -1756,6 +1788,16 @@ function performanceDistribution(values) {
   };
 }
 
+async function resetReplayPerformanceCapture(page) {
+  await page.evaluate(() => {
+    const capture = window.__cncReplayPerformanceCapture;
+    capture.engineFrameMs = [];
+    capture.presentationFrameMs = [];
+    capture.statuses = [];
+    capture.slowFrameProfiles = [];
+  });
+}
+
 async function importPerformanceReplay(page) {
   const fixturePath = resolve(retailReplayFixture);
   const fixtureBytes = await readFile(fixturePath);
@@ -1862,10 +1904,11 @@ async function driveReplayPerformance(page, performanceReplay) {
         && startRenderProbe.uniqueColorCount > 1,
       "performance replay start frame is not visibly rendered", startRenderProbe);
   }
-  if (disableReplayPerformanceRender && !renderDisabled) {
+  if ((disableReplayPerformanceRender || replayPerformanceRenderStartFrame > 0)
+      && !renderDisabled) {
     const disabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
     expect(disabled?.ok === true && disabled?.disabled === true,
-      "performance replay could not disable rendering for CPU isolation", disabled);
+      "performance replay could not disable rendering for warm-up", disabled);
     renderDisabled = true;
   }
   const profilingFrame = await rpc(page, "realEngineFrameSummary", {
@@ -1876,8 +1919,8 @@ async function driveReplayPerformance(page, performanceReplay) {
       && profilingFrame.frame?.profile?.enabled === profileReplayPerformance,
     "performance replay CPU profiling mode was not applied", profilingFrame);
 
-  await page.evaluate(() => {
-    window.__cncSetD3D8PerfCounters?.(true);
+  await page.evaluate((countersEnabled) => {
+    window.__cncSetD3D8PerfCounters?.(countersEnabled);
     const capture = {
       engineFrameMs: [],
       presentationFrameMs: [],
@@ -1963,6 +2006,8 @@ async function driveReplayPerformance(page, performanceReplay) {
         logicFrames: loop.logicFrames,
         logicFrame: gameplay?.logicFrame ?? status.frame?.logicFrame ?? null,
         lastFrameMs: status.frame?.lastFrameMs ?? null,
+        display: status.frame?.display ?? null,
+        particles: status.frame?.particles ?? null,
         recorder: gameplay?.recorder ?? recorder ?? null,
         ai: gameplay?.ai ?? status.frame?.ai ?? null,
         playerDiagnostics: gameplay?.playerDiagnostics
@@ -1976,7 +2021,7 @@ async function driveReplayPerformance(page, performanceReplay) {
         presentationFrameMs,
       });
     });
-  });
+  }, replayPerformanceCounters);
 
   const started = await rpc(page, "threadedStartLoop", {
     clientFps: replayPerformanceClientFps,
@@ -2003,8 +2048,76 @@ async function driveReplayPerformance(page, performanceReplay) {
     { target, replayEnd },
     { timeout: waitTimeout, polling: 500 });
   let completionError = null;
+  let renderWarmup = null;
   let gpuProfile = null;
   try {
+    if (replayPerformanceRenderStartFrame > 0
+        && replayPerformanceRenderStartFrame < completionThreshold) {
+      await waitForCapture(replayPerformanceRenderStartFrame);
+      const warmupStopped = await rpc(page, "threadedStopLoop", { timeoutMs: 120000 });
+      expect(warmupStopped?.ok === true,
+        "performance replay warm-up loop did not stop", warmupStopped);
+      if (replayPerformanceRenderGate) {
+        const readyPath = `${replayPerformanceRenderGate}.ready`;
+        await writeFile(readyPath, `${replayPerformanceRenderStartFrame}\n`);
+        const deadline = Date.now() +
+          (replayPerformanceRenderGateTimeoutMs || waitTimeout);
+        while (true) {
+          try {
+            await readFile(replayPerformanceRenderGate);
+            break;
+          } catch (error) {
+            if (error?.code !== "ENOENT" || Date.now() >= deadline) {
+              throw error;
+            }
+          }
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+        }
+      }
+      const enabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: false });
+      expect(enabled?.ok === true && enabled?.disabled === false,
+        "performance replay could not enable measured rendering", enabled);
+      renderDisabled = false;
+      await resetReplayPerformanceCapture(page);
+      const measuredStarted = await rpc(page, "threadedStartLoop", {
+        clientFps: replayPerformanceMeasuredClientFps,
+        logicFps: replayPerformanceMeasuredLogicFps,
+        catchup: replayPerformanceMeasuredCatchup,
+        profilingEnabled: profileReplayPerformance,
+      });
+      expect(measuredStarted?.ok === true,
+        "performance replay measured loop did not start", measuredStarted);
+      renderWarmup = {
+        endFrame: replayPerformanceRenderStartFrame,
+        clientFps: replayPerformanceClientFps,
+        logicFps: replayPerformanceLogicFps,
+        catchup: replayPerformanceCatchup,
+        stopped: warmupStopped,
+        renderGate: replayPerformanceRenderGate != null,
+        renderEnabled: enabled,
+      };
+      if (replayPerformanceMeasureStartFrame > replayPerformanceRenderStartFrame
+          && replayPerformanceMeasureStartFrame < completionThreshold) {
+        await waitForCapture(replayPerformanceMeasureStartFrame);
+        const renderWarmupStopped = await rpc(
+          page, "threadedStopLoop", { timeoutMs: 120000 });
+        expect(renderWarmupStopped?.ok === true,
+          "performance replay rendered warm-up loop did not stop",
+          renderWarmupStopped);
+        await resetReplayPerformanceCapture(page);
+        const measurementStarted = await rpc(page, "threadedStartLoop", {
+          clientFps: replayPerformanceMeasuredClientFps,
+          logicFps: replayPerformanceMeasuredLogicFps,
+          catchup: replayPerformanceMeasuredCatchup,
+          profilingEnabled: profileReplayPerformance,
+        });
+        expect(measurementStarted?.ok === true,
+          "performance replay measurement loop did not start",
+          measurementStarted);
+        renderWarmup.measurementStartFrame = replayPerformanceMeasureStartFrame;
+        renderWarmup.renderedWarmupStopped = renderWarmupStopped;
+      }
+    }
     if (replayPerformanceGpuProfileStartFrame > 0
         && replayPerformanceGpuProfileStartFrame < completionThreshold) {
       const requestedStartFrame = replayPerformanceGpuProfileStartFrame;
@@ -2081,9 +2194,13 @@ async function driveReplayPerformance(page, performanceReplay) {
     clientFps: replayPerformanceClientFps,
     logicFps: replayPerformanceLogicFps,
     catchup: replayPerformanceCatchup,
+    measuredClientFps: replayPerformanceMeasuredClientFps,
+    measuredLogicFps: replayPerformanceMeasuredLogicFps,
+    measuredCatchup: replayPerformanceMeasuredCatchup,
     targetLogicFrame,
     visualRequired: requireReplayPerformanceVisible,
-    renderDisabled: disableReplayPerformanceRender,
+    renderDisabled,
+    renderWarmup,
     playbackStart: compactGameplay(playback.frame),
     finalGameplay: compactGameplay(finalFrame.frame),
     recorder,
@@ -2101,6 +2218,9 @@ async function driveReplayPerformance(page, performanceReplay) {
     completionThreshold,
     completionError,
     stopResult: stopped,
+    engineFrameProfiling: profileReplayPerformance,
+    performanceCounters: replayPerformanceCounters,
+    gpuTiming: replayPerformanceGpuTiming,
     gpuProfile,
     statusSamples: capture.statuses,
     slowFrameProfiles,
@@ -3027,13 +3147,21 @@ async function main() {
     harnessUrl.searchParams.set("dist", distDir);
     if (process.env.SKIRMISH_START_THREADS === "1") harnessUrl.searchParams.set("threads", "1");
     if (requestedD3D8Batch) harnessUrl.searchParams.set("d3d8Batch", requestedD3D8Batch);
+    if (requestedD3D8FrameQueue) {
+      harnessUrl.searchParams.set("d3d8FrameQueue", requestedD3D8FrameQueue);
+    }
     if (expectReplayPerformance) {
       // Match the shipping play page's low-overhead diagnostics in the engine
       // worker while retaining counters needed to rank replay render pressure.
       // Full diagnostics time dozens of sub-phases per draw and can dominate
       // the workload that this performance gate is meant to measure.
       harnessUrl.searchParams.set("diag", "lite");
-      harnessUrl.searchParams.set("perfCounters", "1");
+      if (replayPerformanceCounters) {
+        harnessUrl.searchParams.set("perfCounters", "1");
+      }
+      if (replayPerformanceGpuTiming) {
+        harnessUrl.searchParams.set("gpuTiming", "1");
+      }
     }
     if (expectLightPulseProbe) {
       // Terrain buffers are created while diagnostics are in lite mode. Keep

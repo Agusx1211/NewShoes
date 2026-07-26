@@ -4336,6 +4336,7 @@ void append_real_engine_frame_summary_state(std::string &json)
 	if (TheDisplay != NULL) {
 		json += "\"width\":" + std::to_string(TheDisplay->getWidth());
 		json += ",\"height\":" + std::to_string(TheDisplay->getHeight());
+		json += ",\"averageFps\":" + std::to_string(TheDisplay->getAverageFPS());
 		json += ",\"moviePlaying\":";
 		json += TheDisplay->isMoviePlaying() ? "true" : "false";
 		json += ",\"letterBoxed\":";
@@ -4343,9 +4344,13 @@ void append_real_engine_frame_summary_state(std::string &json)
 		json += ",\"letterBoxFading\":";
 		json += TheDisplay->isLetterBoxFading() ? "true" : "false";
 	} else {
-		json += "\"width\":null,\"height\":null,\"moviePlaying\":null,"
+		json += "\"width\":null,\"height\":null,\"averageFps\":null,\"moviePlaying\":null,"
 			"\"letterBoxed\":null,\"letterBoxFading\":null";
 	}
+	json += ",\"dynamicLod\":";
+	json += TheGameLODManager != NULL
+		? std::to_string(static_cast<Int>(TheGameLODManager->getDynamicLODLevel()))
+		: "null";
 	json += "}";
 	append_real_view_state(json);
 	append_real_particle_state(json);
@@ -6596,6 +6601,32 @@ static const char *run_real_engine_frame_paced(int run_logic, bool render_frame)
 	json += (TheGameLogic != NULL && TheGameLogic->isLoadSessionActive()) ? "true" : "false";
 	json += ",\"loadProgress\":" + std::to_string(
 		TheGameLogic != NULL ? (long long)TheGameLogic->getLoadSessionProgress() : -1);
+	json += ",\"display\":{";
+	if (TheDisplay != NULL) {
+		json += "\"averageFps\":" + std::to_string(TheDisplay->getAverageFPS());
+	} else {
+		json += "\"averageFps\":null";
+	}
+	json += ",\"dynamicLod\":";
+	json += TheGameLODManager != NULL
+		? std::to_string(static_cast<Int>(TheGameLODManager->getDynamicLODLevel()))
+		: "null";
+	json += "}";
+	json += ",\"particles\":{";
+	if (TheParticleSystemManager != NULL) {
+		json += "\"systemCount\":" +
+			std::to_string(TheParticleSystemManager->getParticleSystemCount());
+		json += ",\"particleCount\":" +
+			std::to_string(TheParticleSystemManager->getParticleCount());
+		json += ",\"fieldParticleCount\":" +
+			std::to_string(TheParticleSystemManager->getFieldParticleCount());
+		json += ",\"onScreenParticleCount\":" +
+			std::to_string(TheParticleSystemManager->getOnScreenParticleCount());
+	} else {
+		json += "\"systemCount\":0,\"particleCount\":0,\"fieldParticleCount\":0,"
+			"\"onScreenParticleCount\":0";
+	}
+	json += "}";
 	const bool world_scene_active = TheGameLogic != NULL && TheGameLogic->isInGame()
 		&& !TheGameLogic->isLoadingMap() && !TheGameLogic->isLoadingSave()
 		&& !TheGameLogic->isClearingGameData();

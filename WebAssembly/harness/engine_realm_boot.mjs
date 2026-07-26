@@ -1132,6 +1132,8 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         loadSessionActive: result.loadSessionActive,
         loadProgress: result.loadProgress,
         worldScene: result.worldScene ?? null,
+        display: result.display ?? null,
+        particles: result.particles ?? null,
         lastFrameMs: result.lastFrameMs,
         quitting: result.quitting,
         recorder: result.recorder ?? null,

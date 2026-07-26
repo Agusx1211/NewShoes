@@ -863,18 +863,18 @@ try {
     );
     globalThis.__cncSetD3D8FrameCommandQueue?.(false);
 
-    // Deferred render segments must snapshot DISCARD-updated dynamic geometry
-    // before the engine reuses its ring offsets, upload one vertex/index arena,
-    // and replay both draws in order. The second full-screen triangle is green,
-    // proving that the first red snapshot was not aliased by the later update.
+    // Deferred dynamic geometry retains a zero-copy mirror reference until
+    // frame-arena materialization. An overlapping DISCARD must replay the red
+    // segment before the mirror turns green, preserving both viewport draws.
     const frameVertexBufferId = 900;
     const frameIndexBufferId = 901;
     const dynamicUsage = 0x208; // D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY
     const discardLock = 0x2000; // D3DLOCK_DISCARD
+    const noOverwriteLock = 0x1000; // D3DLOCK_NOOVERWRITE
     expect(hooks.cncPortD3D8BufferCreate({
       kind: 1,
       id: frameVertexBufferId,
-      byteSize: 48,
+      byteSize: 96,
       usage: dynamicUsage,
     }) === 1, "frame-command vertex buffer creation failed");
     expect(hooks.cncPortD3D8BufferCreate({
@@ -899,9 +899,13 @@ try {
     }) === 1, "frame-command index upload failed");
     heapF32.set(identity, worldPtr >>> 2);
     worldTransformRevision += 1;
-    const drawFrameCommand = (hash, spatialUi = false) => hooks.cncPortD3D8DrawIndexed({
+    const drawFrameCommand = (
+      hash,
+      spatialUi = false,
+      vertexByteOffset = 0,
+    ) => hooks.cncPortD3D8DrawIndexed({
       vertexBufferId: frameVertexBufferId,
-      vertexByteOffset: 0,
+      vertexByteOffset,
       vertexBytes: 48,
       vertexCount: 3,
       vertexStride: 16,
@@ -936,6 +940,87 @@ try {
       derivedStateHash: hash,
       spatialUi,
     });
+
+    // NOOVERWRITE appends outside every referenced range can stay deferred in
+    // one segment; materialization reads both ranges before the ring is reused.
+    hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+    globalThis.__cncSetD3D8FrameCommandQueue?.(true);
+    hooks.cncPortD3D8SetViewport({
+      x: 0,
+      y: 0,
+      width: 32,
+      height: 64,
+      minZ: 0,
+      maxZ: 1,
+      targetWidth: 64,
+      targetHeight: 64,
+    });
+    const beforeNonOverlappingCommands = diag.d3d8PerfSummary();
+    expect(drawFrameCommand(800) === 1,
+      "frame-command non-overlapping red draw queue failed");
+    expect(hooks.cncPortD3D8BufferUpdate({
+      kind: 1,
+      id: frameVertexBufferId,
+      byteOffset: 48,
+      bytes: makeTriangle([0, 255, 0, 255]),
+      lockFlags: noOverwriteLock,
+    }) === 1, "frame-command non-overlapping green vertex upload failed");
+    hooks.cncPortD3D8SetViewport({
+      x: 32,
+      y: 0,
+      width: 32,
+      height: 64,
+      minZ: 0,
+      maxZ: 1,
+      targetWidth: 64,
+      targetHeight: 64,
+    });
+    expect(drawFrameCommand(800, true, 48) === 1,
+      "frame-command non-overlapping green draw queue failed");
+    const queuedNonOverlappingCommands = diag.d3d8PerfSummary();
+    expect(queuedNonOverlappingCommands.frameCommandSegments ===
+        beforeNonOverlappingCommands.frameCommandSegments,
+      "non-overlapping NOOVERWRITE update flushed the deferred segment", {
+        beforeNonOverlappingCommands,
+        queuedNonOverlappingCommands,
+      });
+    diag.flushD3D8FrameCommandQueue("frame-command-non-overlap-smoke");
+    const afterNonOverlappingCommands = diag.d3d8PerfSummary();
+    expect(afterNonOverlappingCommands.frameCommandReplayedDraws ===
+        beforeNonOverlappingCommands.frameCommandReplayedDraws + 2,
+      "non-overlapping dynamic frame-command replay lost a draw", {
+        beforeNonOverlappingCommands,
+        afterNonOverlappingCommands,
+      });
+    expect(afterNonOverlappingCommands.frameCommandArenaUploads ===
+        beforeNonOverlappingCommands.frameCommandArenaUploads + 2,
+      "non-overlapping dynamic draws did not share one arena segment", {
+        beforeNonOverlappingCommands,
+        afterNonOverlappingCommands,
+      });
+    const frameNonOverlapLeftPixel = readPixel(16, 32);
+    const frameNonOverlapRightPixel = readPixel(48, 32);
+    expect(
+      frameNonOverlapLeftPixel[0] > 220 &&
+        frameNonOverlapLeftPixel[1] < 32 &&
+        frameNonOverlapLeftPixel[2] < 32 &&
+        frameNonOverlapRightPixel[0] < 32 &&
+        frameNonOverlapRightPixel[1] > 220 &&
+        frameNonOverlapRightPixel[2] < 32,
+      "non-overlapping dynamic frame-command replay aliased ring contents", {
+        frameNonOverlapLeftPixel,
+        frameNonOverlapRightPixel,
+      },
+    );
+    globalThis.__cncSetD3D8FrameCommandQueue?.(false);
+    expect(hooks.cncPortD3D8BufferUpdate({
+      kind: 1,
+      id: frameVertexBufferId,
+      byteOffset: 0,
+      bytes: makeTriangle([255, 0, 0, 255]),
+      lockFlags: discardLock,
+    }) === 1, "frame-command overlap smoke red restore failed");
+
     hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
     globalThis.__cncSetD3D8FrameCommandQueue?.(true);
     hooks.cncPortD3D8SetViewport({
@@ -972,32 +1057,39 @@ try {
     const queuedFrameCommands = diag.d3d8PerfSummary();
     expect(queuedFrameCommands.frameCommandQueuedDraws ===
         beforeFrameCommands.frameCommandQueuedDraws + 2,
-      "frame-command draws were not deferred", {
+      "dynamic frame-command draws were not deferred", {
         beforeFrameCommands,
         queuedFrameCommands,
       });
-    expect(queuedFrameCommands.frameCommandSegments === beforeFrameCommands.frameCommandSegments,
-      "dynamic buffer update flushed the deferred segment", {
+    expect(queuedFrameCommands.frameCommandImmediateDraws ===
+        beforeFrameCommands.frameCommandImmediateDraws,
+      "dynamic frame-command draws unexpectedly used the immediate path", {
+        beforeFrameCommands,
+        queuedFrameCommands,
+      });
+    expect(queuedFrameCommands.frameCommandSegments ===
+        beforeFrameCommands.frameCommandSegments + 1,
+      "overlapping dynamic update did not replay the protected source segment", {
         beforeFrameCommands,
         queuedFrameCommands,
       });
     diag.flushD3D8FrameCommandQueue("frame-command-smoke");
     const afterFrameCommands = diag.d3d8PerfSummary();
     expect(afterFrameCommands.frameCommandSegments ===
-        beforeFrameCommands.frameCommandSegments + 1,
-      "frame-command segment did not replay", {
+        beforeFrameCommands.frameCommandSegments + 2,
+      "dynamic frame-command segments did not replay", {
         beforeFrameCommands,
         afterFrameCommands,
       });
     expect(afterFrameCommands.frameCommandReplayedDraws ===
         beforeFrameCommands.frameCommandReplayedDraws + 2,
-      "frame-command segment lost a draw", {
+      "dynamic frame-command replay lost a draw", {
         beforeFrameCommands,
         afterFrameCommands,
       });
     expect(afterFrameCommands.frameCommandArenaUploads ===
-        beforeFrameCommands.frameCommandArenaUploads + 2,
-      "frame-command segment did not collapse geometry into two arena uploads", {
+        beforeFrameCommands.frameCommandArenaUploads + 4,
+      "dynamic frame-command segments did not materialize both arenas", {
         beforeFrameCommands,
         afterFrameCommands,
       });
