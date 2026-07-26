@@ -38,6 +38,7 @@ static void drawFramerateBar(void);
 #include <windows.h>
 #include <io.h>
 #include <time.h>
+#include <cmath>
 
 // USER INCLUDES //////////////////////////////////////////////////////////////
 #include "Common/ThingFactory.h"
@@ -966,17 +967,25 @@ void W3DDisplay::updateAverageFPS(void)
 	// convert elapsed time to seconds
 	double elapsedSeconds = (double)timeDiff/(double)(freq64);
 
-	if (elapsedSeconds <= MaximumFrameTimeCutoff)	//make sure it's not a spike
+	// Browser performance counters can return the same timestamp for adjacent
+	// draws during map loading. Do not turn that zero-duration sample into an
+	// infinite FPS value; it would poison the moving average and dynamic LOD.
+	if (std::isfinite(elapsedSeconds)
+		&& elapsedSeconds > 0.0
+		&& elapsedSeconds <= MaximumFrameTimeCutoff)	//make sure it's not a spike
 	{
 		// append new sameple to fps history.
 		if (historyOffset >= FPS_HISTORY_SIZE)
 			historyOffset = 0;
 
-		double currentFPS = 1.0/elapsedSeconds; 
-		fpsHistory[historyOffset++] = currentFPS;
-		numSamples++;
-		if (numSamples > FPS_HISTORY_SIZE)
-			numSamples = FPS_HISTORY_SIZE;
+		double currentFPS = 1.0/elapsedSeconds;
+		if (std::isfinite(currentFPS))
+		{
+			fpsHistory[historyOffset++] = currentFPS;
+			numSamples++;
+			if (numSamples > FPS_HISTORY_SIZE)
+				numSamples = FPS_HISTORY_SIZE;
+		}
 	}
 
 	if (numSamples)
