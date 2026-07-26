@@ -825,6 +825,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     suppressedRenderFrames: 0, // catch-up updates advanced without an invisible draw
     replayPlaybackSeen: false,
     crcMismatch: false,
+    playerDiagnostics: false,
     startedAt: null,
     lastResult: null,
     lastClientFrameStamp: null,
@@ -865,6 +866,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     const logicFps = Math.max(1, Math.min(240, Number(msg.logicFps ?? 30)));
     let pacing = null;
     try {
+      cwrapFor(
+        "cnc_port_real_engine_set_player_diagnostics", null, ["number"],
+      )(msg.playerDiagnostics === true ? 1 : 0);
       pacing = parseMaybeJson(cwrapFor(
         "cnc_port_real_engine_set_client_pacing", "string", ["number", "number"],
       )(clientFps, logicFps));
@@ -879,6 +883,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     loop.error = null;
     loop.clientFps = clientFps;
     loop.logicFps = logicFps;
+    loop.playerDiagnostics = msg.playerDiagnostics === true;
     loop.catchup = Math.max(1, Math.min(8, Number(msg.catchup ?? DEFAULT_CATCHUP_FRAMES)));
     loop.maxClientFrames = Math.max(0, Math.trunc(Number(msg.maxClientFrames) || 0));
     loop.clientPeriod = 1000 / clientFps;
@@ -1065,6 +1070,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   function buildStatus() {
     const result = loop.lastResult;
     let networkDiagnostics = null;
+    let runtimeDiagnostics = null;
     let touchUi = null;
     if (live) {
       try {
@@ -1080,6 +1086,15 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         )());
       } catch (error) {
         networkDiagnostics = { ok: false, error: String(error) };
+      }
+    }
+    if (live && loop.playerDiagnostics) {
+      try {
+        runtimeDiagnostics = parseMaybeJson(cwrapFor(
+          "cnc_port_real_engine_runtime_diagnostics", "string", [],
+        )());
+      } catch (error) {
+        runtimeDiagnostics = { ok: false, error: String(error) };
       }
     }
     return {
@@ -1120,6 +1135,8 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         lastFrameMs: result.lastFrameMs,
         quitting: result.quitting,
         recorder: result.recorder ?? null,
+        ai: runtimeDiagnostics?.ai ?? null,
+        playerDiagnostics: runtimeDiagnostics?.playerDiagnostics ?? null,
       } : null,
       networkDiagnostics,
       touchUi,
@@ -1494,6 +1511,36 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         }
         return;
       }
+      case "screenshot":
+        if (!opts.preserveDrawingBuffer && live && framePacedFn) {
+          try {
+            runPacedFrame(false);
+          } catch (error) {
+            recordLog("worker screenshot redraw failed", { error: String(error) });
+          }
+        }
+        canvas.convertToBlob({ type: "image/png" })
+          .then((blob) => blob.arrayBuffer())
+          .then((buffer) => {
+            const bytes = new Uint8Array(buffer);
+            respond({
+              cmd: "screenshotResult",
+              id: msg.id,
+              ok: true,
+              width: canvas.width,
+              height: canvas.height,
+              bytes,
+            }, [bytes.buffer]);
+          })
+          .catch((error) => {
+            respond({
+              cmd: "screenshotResult",
+              id: msg.id,
+              ok: false,
+              error: String((error && error.stack) || error),
+            });
+          });
+        return;
       case "opfsReadRange": {
         // Read [offset, offset+length) of a staged OPFS archive in THIS realm
         // — the sync access handles live here and reads are stateless {at}.

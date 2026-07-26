@@ -1780,6 +1780,7 @@ function createThreadedEngineController() {
       logicFps: payload.logicFps,
       catchup: payload.catchup,
       maxClientFrames: payload.maxClientFrames,
+      playerDiagnostics: payload.playerDiagnostics === true,
     }, { timeoutMs: 60000 });
     return reply;
   }
@@ -1962,25 +1963,6 @@ function notifyEngineAudioCompletedThreaded(fnName, handle) {
       });
     });
   return true;
-}
-
-// Threaded capture of the #viewport placeholder canvas: the transferred
-// canvas commits frames from the worker; drawImage on the placeholder is the
-// spec-supported way to read them back on main.
-function snapshotThreadedViewport() {
-  const scratch = document.createElement("canvas");
-  const width = harnessState.engineDisplaySize?.width ?? canvas.width;
-  const height = harnessState.engineDisplaySize?.height ?? canvas.height;
-  scratch.width = Math.max(1, width);
-  scratch.height = Math.max(1, height);
-  const context = scratch.getContext("2d");
-  try {
-    context.drawImage(canvas, 0, 0, scratch.width, scratch.height);
-    return scratch.toDataURL("image/png");
-  } catch (error) {
-    recordLog("threaded snapshot failed", { error: error?.message ?? String(error) });
-    return null;
-  }
 }
 
 // RPC routing gate for threaded mode. Returns undefined to fall through to
@@ -2360,8 +2342,34 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
-    case "screenshot":
-      return { ok: true, command, screenshot: snapshotThreadedViewport(), threaded: true };
+    case "screenshot": {
+      try {
+        await threadedEngine.ensureReady();
+        const reply = await threadedEngine.sendCommand(
+          { cmd: "screenshot" }, { timeoutMs: 120000 });
+        const bytes = reply?.bytes instanceof Uint8Array ? reply.bytes : null;
+        if (reply?.ok !== true || !bytes) {
+          return {
+            ok: false,
+            command,
+            error: reply?.error ?? "worker screenshot failed",
+            threaded: true,
+          };
+        }
+        return {
+          ok: true,
+          command,
+          screenshot: {
+            width: reply.width,
+            height: reply.height,
+            dataUrl: `data:image/png;base64,${bytesToBase64(bytes)}`,
+          },
+          threaded: true,
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "threadedStatus": {
       await threadedEngine.ensureReady();
       if (threadedEngine.engineThreadStarted) {

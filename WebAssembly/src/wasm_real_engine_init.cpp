@@ -87,6 +87,7 @@
 #include "GameNetwork/GameSpy/ThreadUtils.h"
 #include "wasm_browser_mouse.h"
 #include "GameLogic/AI.h"
+#include "GameLogic/AIPathfind.h"
 #include "GameLogic/Module/AIUpdate.h"
 #include "GameLogic/Module/WorkerAIUpdate.h"
 #include "GameLogic/GameLogic.h"
@@ -3962,6 +3963,11 @@ struct PlayerObjectDiagnostics
 			dozers(0),
 			harvesters(0),
 			supplySources(0),
+			aiObjects(0),
+			aiMoving(0),
+			aiWaitingForPath(0),
+			activeGroundMovers(0),
+			activeGroundMoverPositionHash(2166136261u),
 			sampleCount(0)
 	{
 	}
@@ -3975,6 +3981,11 @@ struct PlayerObjectDiagnostics
 	Int dozers;
 	Int harvesters;
 	Int supplySources;
+	Int aiObjects;
+	Int aiMoving;
+	Int aiWaitingForPath;
+	Int activeGroundMovers;
+	UnsignedInt activeGroundMoverPositionHash;
 	Int sampleCount;
 	std::string samples;
 };
@@ -4078,6 +4089,35 @@ void append_player_runtime_diagnostics(std::string &json)
 			}
 			if (thing_template != NULL && thing_template->isKindOf(KINDOF_SUPPLY_SOURCE)) {
 				++diagnostics.supplySources;
+			}
+			AIUpdateInterface *ai = obj->getAIUpdateInterface();
+			if (ai != NULL) {
+				++diagnostics.aiObjects;
+				if (ai->isMoving()) {
+					++diagnostics.aiMoving;
+				}
+				if (ai->isWaitingForPath()) {
+					++diagnostics.aiWaitingForPath;
+				}
+				if (ai->isMoving() && ai->isDoingGroundMovement()) {
+					++diagnostics.activeGroundMovers;
+					const Coord3D *position = obj->getPosition();
+					if (position != NULL
+							&& std::isfinite(position->x)
+							&& std::isfinite(position->y)) {
+						const UnsignedInt position_x = static_cast<UnsignedInt>(
+							REAL_TO_INT_FLOOR(position->x * 16.0f));
+						const UnsignedInt position_y = static_cast<UnsignedInt>(
+							REAL_TO_INT_FLOOR(position->y * 16.0f));
+						diagnostics.activeGroundMoverPositionHash ^=
+							static_cast<UnsignedInt>(obj->getID());
+						diagnostics.activeGroundMoverPositionHash *= 16777619u;
+						diagnostics.activeGroundMoverPositionHash ^= position_x;
+						diagnostics.activeGroundMoverPositionHash *= 16777619u;
+						diagnostics.activeGroundMoverPositionHash ^= position_y;
+						diagnostics.activeGroundMoverPositionHash *= 16777619u;
+					}
+				}
 			}
 			append_player_object_sample(diagnostics, obj, thing_template);
 		}
@@ -4189,6 +4229,13 @@ void append_player_runtime_diagnostics(std::string &json)
 		json += ",\"dozers\":" + std::to_string(diagnostics.dozers);
 		json += ",\"harvesters\":" + std::to_string(diagnostics.harvesters);
 		json += ",\"supplySources\":" + std::to_string(diagnostics.supplySources);
+		json += ",\"aiObjects\":" + std::to_string(diagnostics.aiObjects);
+		json += ",\"aiMoving\":" + std::to_string(diagnostics.aiMoving);
+		json += ",\"aiWaitingForPath\":" + std::to_string(diagnostics.aiWaitingForPath);
+		json += ",\"activeGroundMovers\":" + std::to_string(diagnostics.activeGroundMovers);
+		json += ",\"activeGroundMoverPositionHash\":" +
+			std::to_string(static_cast<unsigned long long>(
+				diagnostics.activeGroundMoverPositionHash));
 		json += ",\"samples\":[";
 		json += diagnostics.samples;
 		json += "]}";
@@ -4218,6 +4265,14 @@ void append_ai_runtime_state(std::string &json)
 		}
 		json += ",\"pathfinderReady\":";
 		json += TheAI->pathfinder() != NULL ? "true" : "false";
+		json += ",\"pathfinderCellInfoActive\":" +
+			std::to_string(PathfindCellInfo::getActiveCellInfoCount());
+		json += ",\"pathfinderCellInfoCapacity\":" +
+			std::to_string(PathfindCellInfo::getCellInfoCapacity());
+		json += ",\"pathfinderQueuedRequests\":";
+		json += TheAI->pathfinder() != NULL
+			? std::to_string(TheAI->pathfinder()->getQueuedPathfindRequestCount())
+			: "0";
 		json += ",\"aiDataReady\":";
 		json += ai_data != NULL ? "true" : "false";
 		json += ",\"sideInfoCount\":" + std::to_string(side_info_count);
@@ -4226,9 +4281,24 @@ void append_ai_runtime_state(std::string &json)
 		json += ai_data != NULL && ai_data->m_forceSkirmishAI ? "true" : "false";
 	} else {
 		json += ",\"pathfinderReady\":false,\"aiDataReady\":false,"
-			"\"sideInfoCount\":0,\"buildListCount\":0,\"forceSkirmishAI\":false";
+			"\"pathfinderCellInfoActive\":0,\"pathfinderCellInfoCapacity\":0,"
+			"\"pathfinderQueuedRequests\":0,\"sideInfoCount\":0,"
+			"\"buildListCount\":0,\"forceSkirmishAI\":false";
 	}
 	json += "}";
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char *cnc_port_real_engine_runtime_diagnostics()
+{
+	static std::string diagnostics_json;
+	diagnostics_json = "{\"enabled\":";
+	diagnostics_json += g_player_runtime_diagnostics_enabled ? "true" : "false";
+	append_ai_runtime_state(diagnostics_json);
+	if (g_player_runtime_diagnostics_enabled) {
+		append_player_runtime_diagnostics(diagnostics_json);
+	}
+	diagnostics_json += "}";
+	return diagnostics_json.c_str();
 }
 
 void append_recorder_state(std::string &json)
