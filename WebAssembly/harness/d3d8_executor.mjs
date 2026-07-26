@@ -192,6 +192,7 @@ const D3D8_MULTI_WORLD_BUFFER_ID_BASE = 0x61000000;
 const D3D8_MULTI_WORLD_MAX_DRAWS = 16;
 const D3D8_MULTI_WORLD_CACHE_LIMIT = 64;
 const D3D8_MULTI_WORLD_OBSERVATION_LIMIT = 256;
+const D3D8_MULTI_WORLD_BUILD_OBSERVATIONS = 8;
 const D3D8_MULTI_WORLD_MATRIX_POOL_SIZE = 256;
 let d3d8MultiWorldBufferCounter = 0;
 let d3d8MultiWorldMatrixPoolCursor = 0;
@@ -871,6 +872,7 @@ const d3d8PerfStats = {
 };
 const d3d8DrawBatchFlushReasons = new Map();
 const d3d8FrameCommandFlushReasons = new Map();
+const d3d8FrameCommandCaptureFailures = new Map();
 
 // Per-GL-op diagnostics are useful to the harness but measurable in draw-flood
 // frames. Lite mode keeps both clocks and counters out of the human-play hot
@@ -1222,6 +1224,9 @@ function d3d8PerfSummary() {
     frameCommandReplayMs: roundedPerfMs(d3d8PerfStats.frameCommandReplayMs),
     frameCommandFlushReasons: Object.fromEntries(
       [...d3d8FrameCommandFlushReasons.entries()].sort((left, right) =>
+        right[1] - left[1] || left[0].localeCompare(right[0]))),
+    frameCommandCaptureFailures: Object.fromEntries(
+      [...d3d8FrameCommandCaptureFailures.entries()].sort((left, right) =>
         right[1] - left[1] || left[0].localeCompare(right[0]))),
     drawRepeatedGeometryBatches: d3d8PerfStats.drawRepeatedGeometryBatches,
     drawRepeatedGeometryCopies: d3d8PerfStats.drawRepeatedGeometryCopies,
@@ -3320,6 +3325,15 @@ function updateD3D8Buffer(payload = {}) {
   // take the cached whole-mirror refresh path instead (one fresh-storage
   // bufferData per actual change — still no per-draw in-flight sync).
   const discard = Boolean(resource.dynamic && (lockFlags & D3DLOCK_DISCARD));
+  if (resource.dynamic === true &&
+      d3d8FrameSourceUpdateRequiresFlush(
+        resource,
+        byteOffset,
+        requiredByteSize,
+        discard,
+      )) {
+    flushD3D8FrameCommandQueue("dynamicSourceUpdate");
+  }
   if (resource.dynamic === true &&
       (lockFlags & (D3DLOCK_DISCARD | D3DLOCK_NOOVERWRITE)) !== 0) {
     resource.dynRingPattern = true;
@@ -13785,7 +13799,11 @@ function ensureD3D8MultiWorldGeometry(batch) {
   }
   if (!cached) {
     const observations = d3d8MultiWorldGeometryObservations.get(key) ?? 0;
-    if (observations < 1) {
+    // Baking one batch transforms and uploads every source vertex on the CPU.
+    // Moving object groups can repeat briefly with the same matrix and then
+    // never reuse the result enough to repay that work. Promote only geometry
+    // observed repeatedly; stable groups still enter the cache quickly.
+    if (observations < D3D8_MULTI_WORLD_BUILD_OBSERVATIONS) {
       d3d8MultiWorldGeometryObservations.delete(key);
       d3d8MultiWorldGeometryObservations.set(key, observations + 1);
       while (d3d8MultiWorldGeometryObservations.size >
@@ -13992,14 +14010,23 @@ let d3d8FrameCommandReplayActive = false;
 let d3d8FrameNativeRepeatTemplate = null;
 let d3d8FrameVertexArenaBytes = 0;
 let d3d8FrameIndexArenaBytes = 0;
-let d3d8FrameVertexArenaChunks = [];
-let d3d8FrameIndexArenaChunks = [];
-let d3d8FrameVertexSnapshotCache = new Map();
-let d3d8FrameIndexSnapshotCache = new Map();
-let d3d8FrameDerivedSnapshotCache = new Map();
-let d3d8FrameWorldSnapshotCache = new Map();
-let d3d8FrameViewSnapshotCache = new Map();
-let d3d8FrameProjectionSnapshotCache = new Map();
+const d3d8FrameVertexArenaChunks = [];
+const d3d8FrameIndexArenaChunks = [];
+let d3d8FrameVertexArenaScratch = new Uint8Array(0);
+let d3d8FrameIndexArenaScratch = new Uint8Array(0);
+const d3d8FrameSourceRanges = new Map();
+const d3d8FrameVertexSnapshotCache = new Map();
+const d3d8FrameIndexSnapshotCache = new Map();
+const d3d8FrameDerivedSnapshotCache = new Map();
+const d3d8FrameWorldSnapshotCache = new Map();
+const d3d8FrameViewSnapshotCache = new Map();
+const d3d8FrameProjectionSnapshotCache = new Map();
+const d3d8FrameMatrixSnapshotPool = [];
+let d3d8FrameMatrixSnapshotPoolCursor = 0;
+const d3d8FrameTextureSnapshotPool = [];
+let d3d8FrameTextureSnapshotPoolCursor = 0;
+const d3d8FrameViewportSnapshotPool = [];
+let d3d8FrameViewportSnapshotPoolCursor = 0;
 
 function d3d8AdjacentDrawBatchingActive() {
   return Boolean(gl && d3d8AdjacentDrawBatchingEnabled && d3d8DiagLevel !== "full");
@@ -14819,16 +14846,21 @@ function d3d8FrameCommandQueueActiveForPayload(payload) {
 
 function d3d8FrameViewportSnapshot() {
   const viewport = currentD3D8ViewportPayload();
-  return {
-    x: Number(viewport.x ?? 0) >>> 0,
-    y: Number(viewport.y ?? 0) >>> 0,
-    width: Number(viewport.width ?? 0) >>> 0,
-    height: Number(viewport.height ?? 0) >>> 0,
-    minZ: finiteNumber(viewport.minZ, 0),
-    maxZ: finiteNumber(viewport.maxZ, 1),
-    targetWidth: Number(viewport.targetWidth ?? viewport.width ?? 0) >>> 0,
-    targetHeight: Number(viewport.targetHeight ?? viewport.height ?? 0) >>> 0,
-  };
+  let snapshot = d3d8FrameViewportSnapshotPool[d3d8FrameViewportSnapshotPoolCursor];
+  if (!snapshot) {
+    snapshot = {};
+    d3d8FrameViewportSnapshotPool.push(snapshot);
+  }
+  snapshot.x = Number(viewport.x ?? 0) >>> 0;
+  snapshot.y = Number(viewport.y ?? 0) >>> 0;
+  snapshot.width = Number(viewport.width ?? 0) >>> 0;
+  snapshot.height = Number(viewport.height ?? 0) >>> 0;
+  snapshot.minZ = finiteNumber(viewport.minZ, 0);
+  snapshot.maxZ = finiteNumber(viewport.maxZ, 1);
+  snapshot.targetWidth = Number(viewport.targetWidth ?? viewport.width ?? 0) >>> 0;
+  snapshot.targetHeight = Number(viewport.targetHeight ?? viewport.height ?? 0) >>> 0;
+  d3d8FrameViewportSnapshotPoolCursor += 1;
+  return snapshot;
 }
 
 function d3d8FrameViewportsEqual(left, right) {
@@ -14843,6 +14875,33 @@ function d3d8FrameViewportsEqual(left, right) {
     left.targetHeight === right.targetHeight;
 }
 
+function d3d8FrameMatrixSnapshotFromPointer(pointer) {
+  let snapshot = d3d8FrameMatrixSnapshotPool[d3d8FrameMatrixSnapshotPoolCursor];
+  if (!snapshot) {
+    snapshot = new Float32Array(16);
+    d3d8FrameMatrixSnapshotPool.push(snapshot);
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMatrixAllocatedCopies += 1;
+  }
+  if (!copyD3DMatrixFromHeap(pointer, snapshot)) {
+    return null;
+  }
+  d3d8FrameMatrixSnapshotPoolCursor += 1;
+  return snapshot;
+}
+
+function d3d8FrameTextureSnapshot() {
+  let snapshot = d3d8FrameTextureSnapshotPool[d3d8FrameTextureSnapshotPoolCursor];
+  if (!snapshot) {
+    snapshot = new Uint32Array(D3D8_TEXTURE_STAGE_COUNT);
+    d3d8FrameTextureSnapshotPool.push(snapshot);
+  }
+  for (let stage = 0; stage < snapshot.length; stage += 1) {
+    snapshot[stage] = Number(d3d8BoundTextures.get(stage) ?? 0) >>> 0;
+  }
+  d3d8FrameTextureSnapshotPoolCursor += 1;
+  return snapshot;
+}
+
 function d3d8FrameMatrixSnapshot(value, revision, cache, required = false) {
   const pointer = Number(value ?? 0) >>> 0;
   if (pointer === 0) {
@@ -14855,11 +14914,10 @@ function d3d8FrameMatrixSnapshot(value, revision, cache, required = false) {
       return cached;
     }
   }
-  const matrix = normalizeD3DMatrix(pointer);
-  if (!matrix) {
+  const snapshot = d3d8FrameMatrixSnapshotFromPointer(pointer);
+  if (!snapshot) {
     return undefined;
   }
-  const snapshot = Float32Array.from(matrix);
   if (safeRevision !== 0) {
     cache.set(safeRevision, snapshot);
   }
@@ -14883,20 +14941,24 @@ function d3d8FrameDerivedSnapshot(payload) {
   if (!renderState || !clipPlanes || !lights || !material) {
     return null;
   }
-  const textureMatrix = (value) => {
+  const textureMatrix = (value, stage) => {
+    if (renderState.textureStages[stage].textureTransformFlags === 0) {
+      return null;
+    }
     const pointer = Number(value ?? 0) >>> 0;
     if (pointer === 0) {
       return null;
     }
-    const matrix = normalizeD3DMatrix(pointer);
-    return matrix ? Float32Array.from(matrix) : undefined;
+    const snapshot = new Float32Array(16);
+    if (d3d8PerfCountersEnabled) d3d8PerfStats.drawMatrixAllocatedCopies += 1;
+    return copyD3DMatrixFromHeap(pointer, snapshot) ? snapshot : undefined;
   };
   const transforms = {
-    texture0: textureMatrix(payload.transforms?.texture0),
-    texture1: textureMatrix(payload.transforms?.texture1),
-    texture2: textureMatrix(payload.transforms?.texture2),
-    texture3: textureMatrix(payload.transforms?.texture3),
-    texture4: textureMatrix(payload.transforms?.texture4),
+    texture0: textureMatrix(payload.transforms?.texture0, 0),
+    texture1: textureMatrix(payload.transforms?.texture1, 1),
+    texture2: textureMatrix(payload.transforms?.texture2, 2),
+    texture3: textureMatrix(payload.transforms?.texture3, 3),
+    texture4: textureMatrix(payload.transforms?.texture4, 4),
   };
   if (Object.values(transforms).some((value) => value === undefined)) {
     return null;
@@ -14931,6 +14993,31 @@ function d3d8FrameSnapshotCacheKey(resource, byteOffset, byteSize) {
     `:${byteOffset}:${byteSize}`;
 }
 
+function d3d8FrameSourceUpdateRequiresFlush(resource, updateStart, updateEnd, discard) {
+  const ranges = d3d8FrameSourceRanges.get(resource);
+  if (!ranges) {
+    return false;
+  }
+  return discard || ranges.some(
+    (range) => range.start < updateEnd && updateStart < range.end,
+  );
+}
+
+function d3d8FrameNoteSourceRange(resource, start, end) {
+  let ranges = d3d8FrameSourceRanges.get(resource);
+  if (!ranges) {
+    ranges = [];
+    d3d8FrameSourceRanges.set(resource, ranges);
+  }
+  const previous = ranges[ranges.length - 1];
+  if (previous && start <= previous.end && previous.start <= end) {
+    previous.start = Math.min(previous.start, start);
+    previous.end = Math.max(previous.end, end);
+  } else {
+    ranges.push({ start, end });
+  }
+}
+
 function d3d8FrameSnapshotDynamicRange(resource, byteOffset, byteSize, kind) {
   if (!resource?.dynamic) {
     return { id: Number(resource?.id ?? 0) >>> 0, byteOffset };
@@ -14954,22 +15041,27 @@ function d3d8FrameSnapshotDynamicRange(resource, byteOffset, byteSize, kind) {
   if (arenaOffset + byteSize > D3D8_FRAME_COMMAND_MAX_ARENA_BYTES) {
     return null;
   }
-  const bytes = resource.bytes.slice(byteOffset, end);
+  // The update path flushes before DISCARD or an overlapping write, so the
+  // CPU mirror remains immutable until this segment is materialized.
   const entry = {
     id: vertex ? D3D8_FRAME_VERTEX_ARENA_ID : D3D8_FRAME_INDEX_ARENA_ID,
     byteOffset: arenaOffset,
+    sourceResource: resource,
+    sourceByteOffset: byteOffset,
+    byteLength: byteSize,
   };
+  d3d8FrameNoteSourceRange(resource, byteOffset, end);
   cache.set(cacheKey, entry);
   if (vertex) {
-    d3d8FrameVertexArenaChunks.push({ byteOffset: arenaOffset, bytes });
-    d3d8FrameVertexArenaBytes = arenaOffset + bytes.byteLength;
+    d3d8FrameVertexArenaChunks.push(entry);
+    d3d8FrameVertexArenaBytes = arenaOffset + byteSize;
   } else {
-    d3d8FrameIndexArenaChunks.push({ byteOffset: arenaOffset, bytes });
-    d3d8FrameIndexArenaBytes = arenaOffset + bytes.byteLength;
+    d3d8FrameIndexArenaChunks.push(entry);
+    d3d8FrameIndexArenaBytes = arenaOffset + byteSize;
   }
   if (d3d8PerfCountersEnabled) {
     d3d8PerfStats.frameCommandDynamicSnapshots += 1;
-    d3d8PerfStats.frameCommandDynamicSnapshotBytes += bytes.byteLength;
+    d3d8PerfStats.frameCommandDynamicSnapshotBytes += byteSize;
   }
   return entry;
 }
@@ -15012,6 +15104,26 @@ function d3d8EnsureFrameArenaResource(kind) {
   return resource;
 }
 
+function d3d8FrameArenaScratch(kind, byteLength) {
+  const vertex = kind === 1;
+  let scratch = vertex ? d3d8FrameVertexArenaScratch : d3d8FrameIndexArenaScratch;
+  if (scratch.byteLength < byteLength) {
+    let capacity = Math.max(1024, scratch.byteLength);
+    while (capacity < byteLength) {
+      capacity *= 2;
+    }
+    scratch = new Uint8Array(capacity);
+    if (vertex) {
+      d3d8FrameVertexArenaScratch = scratch;
+    } else {
+      d3d8FrameIndexArenaScratch = scratch;
+    }
+  }
+  return scratch.byteLength === byteLength
+    ? scratch
+    : scratch.subarray(0, byteLength);
+}
+
 function d3d8MaterializeFrameArena(kind, byteLength, chunks) {
   if (byteLength === 0) {
     return true;
@@ -15020,9 +15132,17 @@ function d3d8MaterializeFrameArena(kind, byteLength, chunks) {
   if (!resource) {
     return false;
   }
-  const bytes = new Uint8Array(byteLength);
+  // WebGL copies ArrayBufferView contents before bufferData returns. Reuse a
+  // grow-only CPU staging store instead of allocating two large backing stores
+  // for every internal frame-command segment.
+  const bytes = d3d8FrameArenaScratch(kind, byteLength);
   for (const chunk of chunks) {
-    bytes.set(chunk.bytes, chunk.byteOffset);
+    const source = chunk.sourceResource?.bytes;
+    const sourceEnd = chunk.sourceByteOffset + chunk.byteLength;
+    if (!(source instanceof Uint8Array) || sourceEnd > source.byteLength) {
+      return false;
+    }
+    bytes.set(source.subarray(chunk.sourceByteOffset, sourceEnd), chunk.byteOffset);
   }
   const uploadStartedAt = perfNow();
   if (kind === 1) {
@@ -15048,14 +15168,18 @@ function d3d8ResetFrameCommandSegment() {
   d3d8FrameNativeRepeatTemplate = null;
   d3d8FrameVertexArenaBytes = 0;
   d3d8FrameIndexArenaBytes = 0;
-  d3d8FrameVertexArenaChunks = [];
-  d3d8FrameIndexArenaChunks = [];
-  d3d8FrameVertexSnapshotCache = new Map();
-  d3d8FrameIndexSnapshotCache = new Map();
-  d3d8FrameDerivedSnapshotCache = new Map();
-  d3d8FrameWorldSnapshotCache = new Map();
-  d3d8FrameViewSnapshotCache = new Map();
-  d3d8FrameProjectionSnapshotCache = new Map();
+  d3d8FrameVertexArenaChunks.length = 0;
+  d3d8FrameIndexArenaChunks.length = 0;
+  d3d8FrameSourceRanges.clear();
+  d3d8FrameVertexSnapshotCache.clear();
+  d3d8FrameIndexSnapshotCache.clear();
+  d3d8FrameDerivedSnapshotCache.clear();
+  d3d8FrameWorldSnapshotCache.clear();
+  d3d8FrameViewSnapshotCache.clear();
+  d3d8FrameProjectionSnapshotCache.clear();
+  d3d8FrameMatrixSnapshotPoolCursor = 0;
+  d3d8FrameTextureSnapshotPoolCursor = 0;
+  d3d8FrameViewportSnapshotPoolCursor = 0;
 }
 
 function d3d8FrameNativeRepeatEligible(command) {
@@ -15080,6 +15204,16 @@ function d3d8FrameNativeRepeatEligible(command) {
   );
 }
 
+function failD3D8FrameCommandCapture(reason) {
+  if (d3d8PerfCountersEnabled) {
+    d3d8FrameCommandCaptureFailures.set(
+      reason,
+      (d3d8FrameCommandCaptureFailures.get(reason) ?? 0) + 1,
+    );
+  }
+  return false;
+}
+
 function queueD3D8FrameCommand(payload, drawSequence) {
   const captureStartedAt = perfNow();
   const vertexBufferId = Number(payload.vertexBufferId ?? 0) >>> 0;
@@ -15092,7 +15226,7 @@ function queueD3D8FrameCommand(payload, drawSequence) {
   const indexResource = d3d8Buffers.get(d3d8BufferKey(2, indexBufferId));
   if (!vertexResource?.buffer || !indexResource?.buffer ||
       vertexByteSize === 0 || indexByteSize === 0) {
-    return false;
+    return failD3D8FrameCommandCapture("geometry");
   }
 
   const requiredArenaBytes =
@@ -15107,12 +15241,12 @@ function queueD3D8FrameCommand(payload, drawSequence) {
   if (vertexResource.dynamic &&
       (!(vertexResource.bytes instanceof Uint8Array) ||
        vertexByteOffset + vertexByteSize > vertexResource.bytes.byteLength)) {
-    return false;
+    return failD3D8FrameCommandCapture("vertexMirror");
   }
   if (indexResource.dynamic &&
       (!(indexResource.bytes instanceof Uint8Array) ||
        indexByteOffset + indexByteSize > indexResource.bytes.byteLength)) {
-    return false;
+    return failD3D8FrameCommandCapture("indexMirror");
   }
 
   const derived = d3d8FrameDerivedSnapshot(payload);
@@ -15136,7 +15270,7 @@ function queueD3D8FrameCommand(payload, drawSequence) {
     (transformMask & 4) !== 0,
   );
   if (!derived || world === undefined || view === undefined || projection === undefined) {
-    return false;
+    return failD3D8FrameCommandCapture("state");
   }
 
   const vertexSnapshot = d3d8FrameSnapshotDynamicRange(
@@ -15151,8 +15285,11 @@ function queueD3D8FrameCommand(payload, drawSequence) {
     indexByteSize,
     2,
   );
-  if (!vertexSnapshot || !indexSnapshot) {
-    return false;
+  if (!vertexSnapshot) {
+    return failD3D8FrameCommandCapture("vertexSnapshot");
+  }
+  if (!indexSnapshot) {
+    return failD3D8FrameCommandCapture("indexSnapshot");
   }
 
   const treeShroud = payload.treeShroud
@@ -15188,10 +15325,7 @@ function queueD3D8FrameCommand(payload, drawSequence) {
   const command = {
     payload: queuedPayload,
     viewport: d3d8FrameViewportSnapshot(),
-    textureIds: Uint32Array.from(
-      { length: D3D8_TEXTURE_STAGE_COUNT },
-      (_, stage) => Number(d3d8BoundTextures.get(stage) ?? 0) >>> 0,
-    ),
+    textureIds: d3d8FrameTextureSnapshot(),
   };
   d3d8FrameCommands.push(command);
   d3d8FrameNativeRepeatTemplate = d3d8FrameNativeRepeatEligible(command) ? command : null;
@@ -15531,16 +15665,20 @@ function paintD3D8DrawIndexed(payload = {}) {
   const projectionRevisionUnchanged = projectionRevision !== 0 &&
     projectionRevision === d3d8LastTransformSourceProjectionRevision &&
     d3d8LastTransformSourceProjection !== null;
+  // Queued matrices are immutable snapshots from the segment pool. Retain
+  // those arrays directly during replay instead of copying three 4x4 matrices
+  // into draw scratch storage again.
+  const frameMatrixScratch = queuedSequence !== 0 ? null : d3d8DrawMatrixScratch;
   const world = earlyBatchInfo?.worldTransform ??
     (worldRevisionUnchanged
       ? d3d8LastTransformSourceWorld
-      : normalizeD3DMatrix(payload.transforms?.world, d3d8DrawMatrixScratch.world));
+      : normalizeD3DMatrix(payload.transforms?.world, frameMatrixScratch?.world));
   const engineView = viewRevisionUnchanged
     ? d3d8LastTransformSourceView
-    : normalizeD3DMatrix(payload.transforms?.view, d3d8DrawMatrixScratch.view);
+    : normalizeD3DMatrix(payload.transforms?.view, frameMatrixScratch?.view);
   const engineProjection = projectionRevisionUnchanged
     ? d3d8LastTransformSourceProjection
-    : normalizeD3DMatrix(payload.transforms?.projection, d3d8DrawMatrixScratch.projection);
+    : normalizeD3DMatrix(payload.transforms?.projection, frameMatrixScratch?.projection);
   const view = d3d8XrViewOverride && engineView
     ? multiplyD3D8ColumnMatrices(
       d3d8XrViewOverride.viewPrefix,
