@@ -216,10 +216,13 @@ public:
 
 	static PathfindCellInfo * getACellInfo(PathfindCell *cell, const ICoord2D &pos);
 	static void releaseACellInfo(PathfindCellInfo *theInfo);
+	static Int getActiveCellInfoCount(void) { return s_activeCount; }
+	static Int getCellInfoCapacity(void);
 
 protected:
 	static PathfindCellInfo *s_infoArray;
 	static PathfindCellInfo *s_firstFree;							///< 
+	static Int s_activeCount;
 
 
 	PathfindCellInfo *m_nextOpen, *m_prevOpen;						///< for A* "open" list, shared by closed list
@@ -237,11 +240,7 @@ protected:
 	ObjectID m_posUnitID;  ///< The objectID of the ground unit that is occupying this cell.
 	ObjectID m_goalAircraftID; ///< The objectID of the aircraft whose goal this is.
 
-	ObjectID m_obstacleID;	///< the object ID who overlaps this cell
 	UnsignedInt m_isFree:1;
-	UnsignedInt m_blockedByAlly:1;///< True if this cell is blocked by an allied unit.
-	UnsignedInt m_obstacleIsFence:1;///< True if occupied by a fence.
-	UnsignedInt m_obstacleIsTransparent:1;///< True if obstacle is transparent (undefined if obstacleid is invalid)
 	/// @todo Do we need both mark values in this cell?  Can't store a single value and compare it?
 	UnsignedInt m_open:1;													///< place for marking this cell as on the open list
 	UnsignedInt m_closed:1;												///< place for marking this cell as on the closed list
@@ -293,9 +292,9 @@ public:
 
 	Bool isObstaclePresent( ObjectID objID ) const;					///< return true if the given object ID is registered as an obstacle in this cell
 
-	Bool isObstacleTransparent( ) const{return m_info?m_info->m_obstacleIsTransparent:false; }					///< return true if the obstacle in the cell is KINDOF_CAN_SEE_THROUGHT_STRUCTURE
+	Bool isObstacleTransparent( ) const{return m_obstacleIsTransparent; }					///< return true if the obstacle in the cell is KINDOF_CAN_SEE_THROUGHT_STRUCTURE
 
-	Bool isObstacleFence( void ) const {return m_info?m_info->m_obstacleIsFence:false; }///< return true if the given obstacle in the cell is a fence.
+	Bool isObstacleFence( void ) const {return m_obstacleIsFence; }///< return true if the given obstacle in the cell is a fence.
 
 	/// Return estimated cost from given cell to reach goal cell
 	UnsignedInt costToGoal( PathfindCell *goal );
@@ -327,8 +326,8 @@ public:
 	inline UnsignedShort getXIndex(void) const {return m_info->m_pos.x;}
 	inline UnsignedShort getYIndex(void) const {return m_info->m_pos.y;}
 
-	inline Bool isBlockedByAlly(void) const {return m_info->m_blockedByAlly;}
-	inline void setBlockedByAlly(Bool blocked)  {m_info->m_blockedByAlly = (blocked!=0);}
+	inline Bool isBlockedByAlly(void) const {return m_blockedByAlly;}
+	inline void setBlockedByAlly(Bool blocked)  {m_blockedByAlly = (blocked!=0);}
 
 	inline Bool getOpen(void) const {return m_info->m_open;}
 	inline Bool getClosed(void) const {return m_info->m_closed;}
@@ -369,7 +368,7 @@ public:
 	inline ObjectID getGoalAircraft(void) const {ObjectID id = m_info?m_info->m_goalAircraftID:INVALID_ID; return id;}
 	inline ObjectID getPosUnit(void) const {ObjectID id = m_info?m_info->m_posUnitID:INVALID_ID; return id;}	
 
-	inline ObjectID getObstacleID(void) const {ObjectID id = m_info?m_info->m_obstacleID:INVALID_ID; return id;}
+	inline ObjectID getObstacleID(void) const {return m_obstacleID;}
 
 	void setLayer( PathfindLayerEnum layer ) { m_layer = layer; }	///< set the cell layer
 	PathfindLayerEnum getLayer( void ) const { return (PathfindLayerEnum)m_layer; }				///< get the cell layer
@@ -378,7 +377,16 @@ public:
 	PathfindLayerEnum getConnectLayer( void ) const { return (PathfindLayerEnum)m_connectsToLayer; }				///< get the cell layer connect id
 
 private:
+	Bool setObstacleState(ObjectID obstacleID, Bool isFence,
+		Bool isTransparent, Bool isRubble);
+	Bool clearObstacleState(ObjectID obstacleID);
+	friend class PathfindCellTestAccess;
+
 	PathfindCellInfo *m_info;
+	ObjectID m_obstacleID;	                  ///< the object ID who overlaps this cell
+	UnsignedInt m_blockedByAlly:1;	          ///< True if this cell is blocked by an allied unit.
+	UnsignedInt m_obstacleIsFence:1;	        ///< True if occupied by a fence.
+	UnsignedInt m_obstacleIsTransparent:1;	  ///< True if obstacle is transparent (undefined if obstacle ID is invalid).
 	zoneStorageType m_zone:14;			///< Zone. Each zone is a set of adjacent terrain type.  If from & to in the same zone, you can successfully pathfind.  If not,
 														// you still may be able to if you can cross multiple terrain types.
 	UnsignedShort m_aircraftGoal:1; //< This is an aircraft goal cell.
@@ -652,6 +660,10 @@ public:
 
 	Bool queueForPath(ObjectID id);	 ///< The object wants to request a pathfind, so put it on the list to process.
 	void processPathfindQueue(void); ///< Process some or all of the queued pathfinds.
+	Int getQueuedPathfindRequestCount(void) const {
+		const Int count = m_queuePRTail - m_queuePRHead;
+		return count >= 0 ? count : count + PATHFIND_QUEUE_LEN;
+	}
 	void forceMapRecalculation( );	///< Force pathfind map recomputation. If region is given, only that area is recomputed
 
 	/** Returns an aircraft path to the goal.  */
@@ -1011,8 +1023,7 @@ inline Bool PathfindCell::isObstaclePresent( ObjectID objID ) const
 {
 	if (objID != INVALID_ID && (getType() == PathfindCell::CELL_OBSTACLE))
 	{
-		DEBUG_ASSERTCRASH(m_info, ("Should have info to be obstacle."));
-		return (m_info && m_info->m_obstacleID == objID);
+		return m_obstacleID == objID;
 	}
 
 	return false;

@@ -4474,6 +4474,12 @@ public:
 class ProbeW3DRoadBuffer final : public W3DRoadBuffer
 {
 public:
+	struct RoadDiffuseMetrics {
+		unsigned checksum = 2166136261u;
+		unsigned long long rgbSum = 0;
+		Int vertices = 0;
+	};
+
 	bool initialized() const { return m_initialized; }
 	Int numRoads() const { return m_numRoads; }
 	Int maxRoadTypes() const { return m_maxRoadTypes; }
@@ -4481,6 +4487,36 @@ public:
 	Int maxRoadVertex() const { return m_maxRoadVertex; }
 	Int maxRoadIndex() const { return m_maxRoadIndex; }
 	Bool updateBuffers() const { return m_updateBuffers; }
+	Bool vertexDataDirty() const { return m_vertexDataDirty; }
+
+	RoadDiffuseMetrics roadDiffuseMetrics() const
+	{
+		RoadDiffuseMetrics metrics;
+		if (m_roads == nullptr) {
+			return metrics;
+		}
+
+		std::vector<VertexFormatXYZDUV1> vertices;
+		for (Int road = 0; road < m_numRoads; ++road) {
+			const Int vertex_count = m_roads[road].GetNumVertex();
+			if (vertex_count <= 0) {
+				continue;
+			}
+			vertices.resize(vertex_count);
+			const Int copied = m_roads[road].GetVertices(vertices.data(), vertex_count);
+			for (Int vertex = 0; vertex < copied; ++vertex) {
+				const unsigned diffuse = vertices[vertex].diffuse;
+				metrics.checksum ^= diffuse;
+				metrics.checksum *= 16777619u;
+				metrics.rgbSum +=
+					((diffuse >> 16) & 0xffu) +
+					((diffuse >> 8) & 0xffu) +
+					(diffuse & 0xffu);
+				++metrics.vertices;
+			}
+		}
+		return metrics;
+	}
 
 	Int roadSegmentsWithVertices() const
 	{
@@ -10107,6 +10143,10 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 	int begin_render_result = WW3D_ERROR_GENERIC;
 	int render_result = WW3D_ERROR_GENERIC;
 	int end_render_result = WW3D_ERROR_GENERIC;
+	int lighting_refresh_begin_render_result = WW3D_ERROR_GENERIC;
+	int lighting_refresh_end_render_result = WW3D_ERROR_GENERIC;
+	int lighting_steady_begin_render_result = WW3D_ERROR_GENERIC;
+	int lighting_steady_end_render_result = WW3D_ERROR_GENERIC;
 	bool archive_context_ready = false;
 	bool runtime_archive_set_loaded_for_selection = false;
 	bool map_created = false;
@@ -10125,6 +10165,17 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 	bool scene_created = false;
 	bool scene_object_added = false;
 	bool road_scene_draw_flushed = false;
+	bool lighting_refresh_invoked = false;
+	bool lighting_refresh_requested_buffer_update = false;
+	bool lighting_refresh_draw_invoked = false;
+	bool lighting_refresh_cleared_buffer_update = false;
+	bool lighting_refresh_requested_vertex_data_upload = false;
+	bool lighting_refresh_cleared_vertex_data_dirty = false;
+	bool lighting_steady_draw_invoked = false;
+	UINT lighting_refresh_buffer_updates = 0;
+	UINT lighting_steady_buffer_updates = 0;
+	ProbeW3DRoadBuffer::RoadDiffuseMetrics lighting_diffuse_before;
+	ProbeW3DRoadBuffer::RoadDiffuseMetrics lighting_diffuse_after;
 	Int roads_after_load = -1;
 	Int road_segments_with_vertices = -1;
 	Int road_types_with_textures = -1;
@@ -10416,6 +10467,96 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 			road_buffer != nullptr ? road_buffer->totalRoadTypeIndices() : -1;
 	}
 
+	if (road_buffer != nullptr &&
+			camera != nullptr &&
+			global_data != nullptr &&
+			render_object != nullptr &&
+			render_object->probeRoadDrawInvoked()) {
+		lighting_diffuse_before = road_buffer->roadDiffuseMetrics();
+		for (Int light = 0; light < MAX_GLOBAL_LIGHTS; ++light) {
+			global_data->m_terrainAmbient[light].red = 0.15f;
+			global_data->m_terrainAmbient[light].green = 0.15f;
+			global_data->m_terrainAmbient[light].blue = 0.15f;
+			global_data->m_terrainDiffuse[light].red = 0.0f;
+			global_data->m_terrainDiffuse[light].green = 0.0f;
+			global_data->m_terrainDiffuse[light].blue = 0.0f;
+		}
+		const WasmD3D8ShimState *state_before_refresh = wasm_d3d8_get_state();
+		const UINT buffer_updates_before_refresh =
+			state_before_refresh != nullptr ?
+				state_before_refresh->browser_buffer_update_calls :
+				0;
+		road_buffer->updateLighting();
+		lighting_refresh_invoked = true;
+		lighting_refresh_requested_buffer_update = road_buffer->updateBuffers();
+		lighting_refresh_requested_vertex_data_upload = road_buffer->vertexDataDirty();
+		lighting_diffuse_after = road_buffer->roadDiffuseMetrics();
+
+		lighting_refresh_begin_render_result =
+			WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(lighting_refresh_begin_render_result)) {
+			DX8Wrapper::Set_Texture(0, nullptr);
+			DX8Wrapper::Set_Texture(1, nullptr);
+			DX8Wrapper::Set_Transform(D3DTS_WORLD, render_object->Get_Transform());
+			ShaderClass::Invalidate();
+			road_buffer->drawRoads(
+				camera,
+				nullptr,
+				nullptr,
+				false,
+				render_object->probeRoadDrawMinX(),
+				render_object->probeRoadDrawMaxX(),
+				render_object->probeRoadDrawMinY(),
+				render_object->probeRoadDrawMaxY(),
+				nullptr);
+			lighting_refresh_draw_invoked = true;
+			lighting_refresh_end_render_result = WW3D::End_Render(false);
+		}
+
+		const WasmD3D8ShimState *state_after_refresh = wasm_d3d8_get_state();
+		if (state_after_refresh != nullptr &&
+				state_after_refresh->browser_buffer_update_calls >= buffer_updates_before_refresh) {
+			lighting_refresh_buffer_updates =
+				state_after_refresh->browser_buffer_update_calls -
+				buffer_updates_before_refresh;
+		}
+		lighting_refresh_cleared_buffer_update = !road_buffer->updateBuffers();
+		lighting_refresh_cleared_vertex_data_dirty = !road_buffer->vertexDataDirty();
+
+		const WasmD3D8ShimState *state_before_steady = wasm_d3d8_get_state();
+		const UINT buffer_updates_before_steady =
+			state_before_steady != nullptr ?
+				state_before_steady->browser_buffer_update_calls :
+				0;
+		lighting_steady_begin_render_result =
+			WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(lighting_steady_begin_render_result)) {
+			DX8Wrapper::Set_Texture(0, nullptr);
+			DX8Wrapper::Set_Texture(1, nullptr);
+			DX8Wrapper::Set_Transform(D3DTS_WORLD, render_object->Get_Transform());
+			ShaderClass::Invalidate();
+			road_buffer->drawRoads(
+				camera,
+				nullptr,
+				nullptr,
+				false,
+				render_object->probeRoadDrawMinX(),
+				render_object->probeRoadDrawMaxX(),
+				render_object->probeRoadDrawMinY(),
+				render_object->probeRoadDrawMaxY(),
+				nullptr);
+			lighting_steady_draw_invoked = true;
+			lighting_steady_end_render_result = WW3D::End_Render(false);
+		}
+		const WasmD3D8ShimState *state_after_steady = wasm_d3d8_get_state();
+		if (state_after_steady != nullptr &&
+				state_after_steady->browser_buffer_update_calls >= buffer_updates_before_steady) {
+			lighting_steady_buffer_updates =
+				state_after_steady->browser_buffer_update_calls -
+				buffer_updates_before_steady;
+		}
+	}
+
 	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -10506,6 +10647,23 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 		render_object != nullptr &&
 		render_object->probeRoadDrawInvoked() &&
 		road_scene_draw_flushed &&
+		lighting_refresh_invoked &&
+		lighting_refresh_requested_buffer_update &&
+		lighting_refresh_requested_vertex_data_upload &&
+		lighting_diffuse_before.vertices > 0 &&
+		lighting_diffuse_before.vertices == lighting_diffuse_after.vertices &&
+		lighting_diffuse_before.checksum != lighting_diffuse_after.checksum &&
+		lighting_diffuse_after.rgbSum < lighting_diffuse_before.rgbSum &&
+		lighting_refresh_draw_invoked &&
+		succeeded(lighting_refresh_begin_render_result) &&
+		succeeded(lighting_refresh_end_render_result) &&
+		lighting_refresh_buffer_updates > 0 &&
+		lighting_refresh_cleared_buffer_update &&
+		lighting_refresh_cleared_vertex_data_dirty &&
+		lighting_steady_draw_invoked &&
+		succeeded(lighting_steady_begin_render_result) &&
+		succeeded(lighting_steady_end_render_result) &&
+		lighting_steady_buffer_updates == 0 &&
 		road_types_with_draw_data > 0 &&
 		total_road_type_vertices > 0 &&
 		total_road_type_indices > 0 &&
@@ -10555,6 +10713,17 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 		"\"sceneObjectAdded\":%s,\"beginRender\":%d,\"render\":%d,"
 		"\"endRender\":%d,\"roadDrawInvoked\":%s,"
 		"\"roadSceneDrawFlushed\":%s},"
+		"\"lightingRefresh\":{\"path\":\"W3DRoadBuffer::updateLighting -> "
+		"W3DRoadBuffer::drawRoads with unchanged camera bounds\","
+		"\"invoked\":%s,\"requestedBufferUpdate\":%s,"
+		"\"requestedVertexDataUpload\":%s,"
+		"\"cpuDiffuse\":{\"vertices\":%d,\"beforeChecksum\":%u,"
+		"\"afterChecksum\":%u,\"beforeRgbSum\":%llu,\"afterRgbSum\":%llu},"
+		"\"beginRender\":%d,\"drawInvoked\":%s,\"endRender\":%d,"
+		"\"browserBufferUpdates\":%u,\"clearedBufferUpdate\":%s,"
+		"\"clearedVertexDataDirty\":%s,"
+		"\"steadyState\":{\"beginRender\":%d,\"drawInvoked\":%s,"
+		"\"endRender\":%d,\"browserBufferUpdates\":%u}},"
 		"\"logicalTerrain\":{\"path\":\"W3DTerrainLogic::loadMap(query=true) -> "
 		"MapObject list -> W3DRoadBuffer::loadRoads\","
 		"\"attempted\":%s,\"localGlobalDataInstalled\":%s,"
@@ -10676,6 +10845,24 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 		end_render_result,
 		bool_json(render_object != nullptr && render_object->probeRoadDrawInvoked()),
 		bool_json(road_scene_draw_flushed),
+		bool_json(lighting_refresh_invoked),
+		bool_json(lighting_refresh_requested_buffer_update),
+		bool_json(lighting_refresh_requested_vertex_data_upload),
+		lighting_diffuse_before.vertices,
+		lighting_diffuse_before.checksum,
+		lighting_diffuse_after.checksum,
+		lighting_diffuse_before.rgbSum,
+		lighting_diffuse_after.rgbSum,
+		lighting_refresh_begin_render_result,
+		bool_json(lighting_refresh_draw_invoked),
+		lighting_refresh_end_render_result,
+		lighting_refresh_buffer_updates,
+		bool_json(lighting_refresh_cleared_buffer_update),
+		bool_json(lighting_refresh_cleared_vertex_data_dirty),
+		lighting_steady_begin_render_result,
+		bool_json(lighting_steady_draw_invoked),
+		lighting_steady_end_render_result,
+		lighting_steady_buffer_updates,
 		bool_json(logical_terrain_map_objects.attempted),
 		bool_json(logical_terrain_map_objects.localGlobalDataInstalled),
 		bool_json(logical_terrain_map_objects.mapCacheInstalled),

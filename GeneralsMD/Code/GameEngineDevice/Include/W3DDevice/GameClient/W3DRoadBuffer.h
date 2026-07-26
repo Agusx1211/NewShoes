@@ -234,7 +234,8 @@ protected:
 	Int			m_curNumRoadVertices; ///<Number of vertices used in current road type.
 	Int			m_curNumRoadIndices;	///<Number of indices used in current road type;
 
-	Bool m_updateBuffers; ///< If true, update the vertex buffers.
+	Bool m_updateBuffers; ///< If true, check whether changed visibility requires a buffer reload.
+	Bool m_vertexDataDirty; ///< If true, upload changed road vertex contents regardless of visibility.
 
 	void addMapObjects(void);
 	void addMapObject(RoadSegment *pRoad, Bool updateTheCounts);
@@ -273,7 +274,7 @@ protected:
 														Vector2 *cornersP, 
 														Real uOffset, Real vOffset, Real uScale, Real vScale);
 	void loadLit4PtSection(RoadSegment *pRoad, UnsignedShort *ib, VertexFormatXYZDUV1 *vb, RefRenderObjListIterator *pDynamicLightsIterator);
-	void loadRoadsInVertexAndIndexBuffers(void); ///< Fills the index and vertex buffers for drawing.
+	Bool loadRoadsInVertexAndIndexBuffers(void); ///< Fills the index and vertex buffers for drawing.
 	void loadLitRoadsInVertexAndIndexBuffers(RefRenderObjListIterator *pDynamicLightsIterator); ///< Fills the index and vertex buffers for drawing.
 	void loadRoadSegment(UnsignedShort *ib, VertexFormatXYZDUV1 *vb, RoadSegment *pRoad); ///< Fills the index and vertex buffers for drawing 1 segment.
 	void allocateRoadBuffers(void);							 ///< Allocates the buffers.

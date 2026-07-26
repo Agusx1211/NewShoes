@@ -71,6 +71,27 @@
 // PRIVATE DATA ///////////////////////////////////////////////////////////////////////////////////
 static char *mapExtension = ".map";
 
+static const char *findLastPathSeparator(const AsciiString &path)
+{
+	const char *backslash = path.reverseFind('\\');
+	const char *slash = path.reverseFind('/');
+	if (backslash == NULL)
+		return slash;
+	if (slash == NULL)
+		return backslash;
+	return slash > backslash ? slash : backslash;
+}
+
+static Bool hasValidMapLeafLayout(const AsciiString &path, const AsciiString &mapName)
+{
+	AsciiString ending;
+	ending.format("%s\\%s%s", mapName.str(), mapName.str(), mapExtension);
+	if (path.endsWithNoCase(ending.str()))
+		return TRUE;
+	ending.format("%s/%s%s", mapName.str(), mapName.str(), mapExtension);
+	return path.endsWithNoCase(ending.str());
+}
+
 static Int m_width = 0;						///< Height map width.
 static Int m_height = 0;					///< Height map height (y size of array).
 static Int m_borderSize = 0;			///< Non-playable border area.
@@ -649,21 +670,19 @@ Bool MapCache::loadUserMaps()
 		FileInfo fileInfo;
 		AsciiString tempfilename;
 		tempfilename = (*iter);
-		tempfilename.toLower();
+		AsciiString lowerTempFilename = tempfilename;
+		lowerTempFilename.toLower();
 
-		const char *s = tempfilename.reverseFind('\\');
+		const char *s = findLastPathSeparator(tempfilename);
 		if (!s)
 		{
 			DEBUG_CRASH(("Couldn't find \\ in map name!"));
 		}
 		else
 		{
-			AsciiString endingStr;
 			AsciiString fname = s+1;
 			for (Int i=0; i<strlen(mapExtension); ++i)
 				fname.removeLastChar();
-
-			endingStr.format("%s\\%s%s", fname.str(), fname.str(), mapExtension);
 
 			Bool skipMap = FALSE;
 			if (TheGlobalData->m_buildMapCache)
@@ -682,7 +701,7 @@ Bool MapCache::loadUserMaps()
 
 			if (!skipMap)
 			{
-				if (!tempfilename.endsWithNoCase(endingStr.str()))
+				if (!hasValidMapLeafLayout(tempfilename, fname))
 				{
 					DEBUG_CRASH(("Found map '%s' in wrong spot (%s)", fname.str(), tempfilename.str()));
 				}
@@ -700,7 +719,7 @@ Bool MapCache::loadUserMaps()
 							++tempchar;
 						}
 
-						m_seen[tempfilename] = TRUE;
+						m_seen[lowerTempFilename] = TRUE;
 						parsedAMap |= addMap(mapDir, *iter, &fileInfo, TheGlobalData->m_buildMapCache);
 					} else {
 						DEBUG_CRASH(("Could not get file info for map %s", (*iter).str()));
@@ -741,12 +760,19 @@ Bool MapCache::addMap( AsciiString dirName, AsciiString fname, FileInfo *fileInf
 		if ((md.m_filesize == filesize) &&
 				(md.m_CRC != 0))
 		{
+#ifdef __EMSCRIPTEN__
+			// Map-cache keys intentionally use Windows-style case-insensitive
+			// lookup. Keep the enumerated filename as well because browser
+			// filesystems require its real casing when the map is opened.
+			(*this)[lowerFname].m_fileName = fname;
+#endif
 			// Force a lookup so that we don't display the English localization in all builds.
 			if (md.m_nameLookupTag.isEmpty())
 			{
 				// unofficial maps or maps without names
 				AsciiString tempdisplayname;
-				tempdisplayname = fname.reverseFind('\\') + 1;
+				const char *displayName = findLastPathSeparator(fname);
+				tempdisplayname = displayName != NULL ? displayName + 1 : fname.str();
 				(*this)[lowerFname].m_displayName.translate(tempdisplayname);
 				if (md.m_numPlayers >= 2)
 				{
@@ -783,7 +809,11 @@ Bool MapCache::addMap( AsciiString dirName, AsciiString fname, FileInfo *fileInf
 	loadMap(fname); // Just load for querying the data, since we aren't playing this map.
 
 	// The map is now loaded.  Pick out what we need.
+#ifdef __EMSCRIPTEN__
+	md.m_fileName = fname;
+#else
 	md.m_fileName = lowerFname;
+#endif
 	md.m_filesize = filesize;
 	md.m_isOfficial = isOfficial;
 	md.m_waypoints.update();
@@ -802,7 +832,8 @@ Bool MapCache::addMap( AsciiString dirName, AsciiString fname, FileInfo *fileInf
 	{
 		DEBUG_LOG(("Missing TheKey_mapName!\n"));
 		AsciiString tempdisplayname;
-		tempdisplayname = fname.reverseFind('\\') + 1;
+		const char *displayName = findLastPathSeparator(fname);
+		tempdisplayname = displayName != NULL ? displayName + 1 : fname.str();
 		md.m_displayName.translate(tempdisplayname);
 		if (md.m_numPlayers >= 2)
 		{
@@ -815,10 +846,17 @@ Bool MapCache::addMap( AsciiString dirName, AsciiString fname, FileInfo *fileInf
 	else
 	{
 		AsciiString stringFileName;
-		stringFileName.format("%s\\%s", dirName.str(), fname.str());
-		for (Int i=0; i<4; ++i)
-			stringFileName.removeLastChar();
-		stringFileName.concat("\\map.str");
+		const char *separator = findLastPathSeparator(fname);
+		if (separator != NULL)
+		{
+			std::string path(fname.str(), static_cast<std::size_t>(separator - fname.str() + 1));
+			path += "map.str";
+			stringFileName = path.c_str();
+		}
+		else
+		{
+			stringFileName = "map.str";
+		}
 		TheGameText->initMapStringFile(stringFileName);
 		md.m_displayName = TheGameText->fetch(munkee);
 		if (md.m_numPlayers >= 2)
@@ -1027,7 +1065,12 @@ typedef MapDisplayToFileNameList::iterator MapDisplayToFileNameListIter;
 
 				// now set the char* as the item data.  this works because the map cache isn't being
 				// modified while a map listbox is up.
+#ifdef __EMSCRIPTEN__
+				const AsciiString &mapFileName = it->second.m_fileName.isEmpty() ? it->first : it->second.m_fileName;
+				GadgetListBoxSetItemData( listbox, (void *)(mapFileName.str()), index );
+#else
 				GadgetListBoxSetItemData( listbox, (void *)(it->first.str()), index );
+#endif
 
 				if (numColumns > 1)
 				{
@@ -1225,6 +1268,14 @@ static void copyFromBigToDir( const AsciiString& infile, const AsciiString& outf
 
 Image *getMapPreviewImage( AsciiString mapName )
 {
+#ifdef __EMSCRIPTEN__
+	if (TheMapCache)
+	{
+		const MapMetaData *metadata = TheMapCache->findMap(mapName);
+		if (metadata && !metadata->m_fileName.isEmpty())
+			mapName = metadata->m_fileName;
+	}
+#endif
 #ifdef __EMSCRIPTEN__
 	g_cncPortLastMapPreviewMapName = mapName;
 	g_cncPortLastMapPreviewTgaName.clear();

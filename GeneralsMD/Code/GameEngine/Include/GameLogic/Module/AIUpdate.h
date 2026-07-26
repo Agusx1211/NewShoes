@@ -455,6 +455,7 @@ public:
 private:
 	Bool computePath( PathfindServicesInterface *pathfinder, Coord3D *destination );	///< computes path to destination, returns false if no path
 	Bool computeAttackPath(PathfindServicesInterface *pathfinder,  const Object *victim, const Coord3D* victimPos );	///< computes path to attack the current target, returns false if no path
+	void queuePathfindRequest();	///< Queue the current request, retrying next frame if the bounded queue is full.
 #ifdef ALLOW_SURRENDER
 	void doSurrenderUpdateStuff();
 #endif

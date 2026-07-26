@@ -75,13 +75,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, .desktop-icon-l
 
 /* Mod and isolated game-data managers. These use the launcher desktop's
    existing window chrome while keeping large package/file lists scrollable. */
-.mod-manager-body, .game-data-manager-body { flex: 1; min-height: 0; overflow: auto; padding: 18px; color: #203746; background: #f2f6f8; }
+.mod-manager-body, .game-data-manager-body, .custom-map-manager-body { flex: 1; min-height: 0; overflow: auto; padding: 18px; color: #203746; background: #f2f6f8; }
 .manager-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
 .manager-heading h1 { margin: 1px 0 4px; font-size: 23px; color: #153d58; }
 .manager-heading p { max-width: 610px; margin: 0; color: #5d7180; line-height: 1.45; }
 .manager-heading .eyebrow { color: #2471a2; font-size: 10px; font-weight: 800; letter-spacing: .13em; }
 .active-context-badge { max-width: 250px; padding: 9px 12px; border: 1px solid #76a4c0; border-radius: 4px; color: #174b6d; background: #e6f3fb; font-size: 12px; font-weight: 700; text-align: center; }
-.mod-import-panel, .installed-mods-panel, .compatibility-override-panel, .game-data-context { border: 1px solid #afc1cc; border-radius: 5px; background: white; box-shadow: 0 1px 2px rgba(24,60,80,.08); }
+.mod-import-panel, .installed-mods-panel, .compatibility-override-panel, .game-data-context, .custom-map-import-panel, .custom-map-list-panel { border: 1px solid #afc1cc; border-radius: 5px; background: white; box-shadow: 0 1px 2px rgba(24,60,80,.08); }
 .mod-import-panel { display: grid; grid-template-columns: minmax(220px, 1fr) 180px 125px auto; gap: 10px; align-items: end; padding: 13px; }
 .mod-import-panel h2, .installed-mods-panel h2 { margin: 0 0 3px; font-size: 16px; color: #163f5a; }
 .mod-import-panel p, .installed-mods-panel header p { margin: 0; color: #657986; font-size: 11px; line-height: 1.4; }
@@ -139,8 +139,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, .desktop-icon-l
 .compatibility-override-panel select { padding: 6px; }
 .compatibility-override-panel .compatibility-risk { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 7px; padding: 8px; border: 1px solid #e3c991; background: #fff; font-weight: 700; }
 .compatibility-override-panel > div:last-child { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; }
+.custom-map-import-panel { display: grid; grid-template-columns: minmax(260px, 1fr) auto; gap: 10px 16px; align-items: center; padding: 13px; }
+.custom-map-import-panel h2, .custom-map-list-panel h2 { margin: 0 0 3px; color: #163f5a; font-size: 16px; }
+.custom-map-import-panel p, .custom-map-list-panel header p { margin: 0; color: #657986; font-size: 11px; line-height: 1.4; }
+.custom-map-import-panel code { color: #405d6e; font-size: 10px; }
+.custom-map-import-actions { display: flex; gap: 7px; }
+.custom-map-import-panel .mod-import-progress { grid-column: 1 / -1; }
+.custom-map-list-panel { margin-top: 13px; padding: 13px; }
+.custom-map-list-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.custom-map-list { display: grid; gap: 7px; }
+.custom-map-card { display: grid; grid-template-columns: 34px minmax(180px, 1fr) auto; gap: 9px; align-items: center; padding: 10px; border: 1px solid #c5d0d6; border-radius: 4px; background: #f8fafb; }
+.custom-map-card-icon { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #c9b97f; border-radius: 3px; background: #fff9df; }
+.custom-map-card-icon svg { width: 25px; height: 25px; }
+.custom-map-card > span:nth-child(2) { min-width: 0; display: grid; gap: 3px; }
+.custom-map-card strong { overflow: hidden; color: #163f5a; text-overflow: ellipsis; white-space: nowrap; }
+.custom-map-card small { overflow: hidden; color: #637783; text-overflow: ellipsis; white-space: nowrap; }
+.custom-map-card button { padding: 5px 8px; border: 1px solid #8da3b0; border-radius: 3px; color: #244d64; background: #fff; font-size: 11px; cursor: pointer; }
+.custom-map-help { margin: 11px 2px 0; color: #607581; font-size: 11px; line-height: 1.45; }
 @media (max-width: 780px) {
-  .manager-heading, .installed-mods-panel > header { flex-direction: column; }
+  .manager-heading, .installed-mods-panel > header, .custom-map-list-panel > header { align-items: stretch; flex-direction: column; }
   .mod-import-panel { grid-template-columns: 1fr; }
   .mod-import-progress { grid-column: 1; }
   .installed-mod-card { grid-template-columns: 1fr auto; }
@@ -149,6 +166,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, .desktop-icon-l
   .game-data-file-row > div { grid-column: 1 / -1; }
   .compatibility-override-panel { grid-template-columns: 1fr; }
   .compatibility-override-panel .compatibility-risk, .compatibility-override-panel > div:last-child { grid-column: 1; }
+  .custom-map-import-panel { grid-template-columns: 1fr; }
+  .custom-map-import-panel .mod-import-progress { grid-column: 1; }
+  .custom-map-card { grid-template-columns: 30px 1fr; }
+  .custom-map-card button { grid-column: 1 / -1; }
 }
 
 .setup-body { display: grid; grid-template-columns: 220px 1fr; }

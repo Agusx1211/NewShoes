@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cctype>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
@@ -10,7 +11,6 @@
 #include <cwchar>
 #include <cmath>
 #include <dirent.h>
-#include <fnmatch.h>
 #include <mutex>
 #include <new>
 #include <string>
@@ -2490,9 +2490,39 @@ static inline void WasmSplitFindPattern(const char *search, std::string &directo
 		pattern = normalized.substr(slash + 1);
 	}
 
-	if (pattern.empty() || pattern == "*.") {
+	if (pattern.empty() || pattern == "*." || pattern == "*.*") {
 		pattern = "*";
 	}
+}
+
+static inline bool WasmWindowsWildcardMatch(const char *pattern, const char *name)
+{
+	const char *star = nullptr;
+	const char *retry = nullptr;
+	while (*name != '\0') {
+		if (*pattern == '*') {
+			star = pattern++;
+			retry = name;
+			continue;
+		}
+		const unsigned char pattern_char = static_cast<unsigned char>(*pattern);
+		const unsigned char name_char = static_cast<unsigned char>(*name);
+		if (*pattern == '?' || std::tolower(pattern_char) == std::tolower(name_char)) {
+			++pattern;
+			++name;
+			continue;
+		}
+		if (star != nullptr) {
+			pattern = star + 1;
+			name = ++retry;
+			continue;
+		}
+		return false;
+	}
+	while (*pattern == '*') {
+		++pattern;
+	}
+	return *pattern == '\0';
 }
 
 static inline BOOL WasmPopulateFindData(WasmFindHandle *handle, WIN32_FIND_DATA *data)
@@ -2502,7 +2532,7 @@ static inline BOOL WasmPopulateFindData(WasmFindHandle *handle, WIN32_FIND_DATA 
 	}
 
 	while (dirent *entry = readdir(handle->directory)) {
-		if (fnmatch(handle->pattern.c_str(), entry->d_name, 0) != 0) {
+		if (!WasmWindowsWildcardMatch(handle->pattern.c_str(), entry->d_name)) {
 			continue;
 		}
 

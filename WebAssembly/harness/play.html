@@ -28,6 +28,7 @@
       <symbol id="i-box" viewBox="0 0 24 24"><path d="m3 7 9-4.4L21 7v10l-9 4.4L3 17V7Z" fill="#ca8b42"/><path d="m3 7 9 4.4L21 7l-9-4.4L3 7Z" fill="#edb969"/><path d="m12 11.4 9-4.4v10l-9 4.4v-10Z" fill="#a96831"/><path d="m7.4 4.8 9 4.4v3.3l-1.8-.5-1.4 1.9v-3.4L4.8 6.4l2.6-1.6Z" fill="#ffd895"/></symbol>
       <symbol id="i-apps" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5" fill="#4d91cf"/><rect x="13" y="3" width="8" height="8" rx="1.5" fill="#dc8446"/><rect x="3" y="13" width="8" height="8" rx="1.5" fill="#79a952"/><rect x="13" y="13" width="8" height="8" rx="1.5" fill="#e0ba3f"/></symbol>
       <symbol id="i-mod" viewBox="0 0 24 24"><path d="M4.2 4.2h4.1a3.7 3.7 0 1 1 7.4 0h4.1v4.1a3.7 3.7 0 1 1 0 7.4v4.1h-4.1a3.7 3.7 0 1 1-7.4 0H4.2v-4.1a3.7 3.7 0 1 1 0-7.4V4.2Z" fill="#7457ad"/><path d="M12 2.3c-1 0-1.8.8-1.8 1.9 0 .7.4 1.3 1 1.6H6v5.4a1.9 1.9 0 1 0 0 3.6V18h5.2a1.9 1.9 0 1 1 3.6 0H18v-5.2a1.9 1.9 0 1 0 0-3.6V6h-5.2c.7-.3 1-1 1-1.8 0-1-.8-1.9-1.8-1.9Z" fill="#9d83cf"/><path d="M6 11.2a1.9 1.9 0 1 0 0 3.6" fill="none" stroke="#eadfff" stroke-width="1.1"/></symbol>
+      <symbol id="i-map" viewBox="0 0 24 24"><path d="m3 5.2 5.7-2.4 6.6 2.4L21 2.8v16l-5.7 2.4-6.6-2.4L3 21.2v-16Z" fill="#e7d49c" stroke="#fff6ce" stroke-width=".6"/><path d="M8.7 2.8v16m6.6-13.6v16" fill="none" stroke="#a99258" stroke-width="1"/><path d="M5.2 16.2c2.1-2.7 3.8-4.1 5.2-4.1 2 0 2.4 2.5 4.2 2.5 1.2 0 2.6-1.1 4.2-3.3" fill="none" stroke="#3b8b5a" stroke-width="2" stroke-linecap="round"/><circle cx="18.5" cy="8" r="2.1" fill="#d95b45"/><path d="M18.5 10.2 17 13h3l-1.5-2.8Z" fill="#b84335"/></symbol>
       <symbol id="i-llm-ai" viewBox="0 0 48 48"><defs><linearGradient id="g-llm-ai" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#54a5cf"/><stop offset="1" stop-color="#3b4b8d"/></linearGradient></defs><path d="M12 8h24a6 6 0 0 1 6 6v20a6 6 0 0 1-6 6H12a6 6 0 0 1-6-6V14a6 6 0 0 1 6-6Z" fill="url(#g-llm-ai)" stroke="#d8f1ff" stroke-width="2"/><path d="M24 2v6M18 2h12" stroke="#d8f1ff" stroke-width="2" stroke-linecap="round"/><circle cx="17" cy="22" r="3" fill="#9ce7c5"/><circle cx="31" cy="22" r="3" fill="#9ce7c5"/><path d="M15 31c5 4 13 4 18 0M2 20h4M42 20h4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/><path d="m35 7 2-4 2 4 4 2-4 2-2 4-2-4-4-2 4-2Z" fill="#f3cf68"/></symbol>
       <symbol id="i-gear" viewBox="0 0 24 24"><path d="M9.8 2.6h4.4l.7 2.3c.5.2 1 .5 1.4.8l2.3-.5 2.2 3.7-1.6 1.8v1.7l1.6 1.8-2.2 3.7-2.3-.5c-.4.3-.9.6-1.4.8l-.7 2.3H9.8l-.7-2.3c-.5-.2-1-.5-1.4-.8l-2.3.5-2.2-3.7 1.6-1.8v-1.7L3.2 8.9l2.2-3.7 2.3.5c.4-.3.9-.6 1.4-.8l.7-2.3Z" fill="#7893a5"/><circle cx="12" cy="11.7" r="3.4" fill="#e8f1f5"/><circle cx="12" cy="11.7" r="1.6" fill="#65849a"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="#5b9dd3"/><circle cx="12" cy="7.2" r="1.3" fill="#fff"/><path d="M10.7 10.2h2.5v7.1h-2.5z" fill="#fff"/></symbol>
@@ -81,6 +82,9 @@
         </button>
         <button class="desktop-icon" type="button" data-open="mods" aria-label="Open Mod Manager">
           <span class="desktop-icon-art app-art"><svg><use href="#i-mod"/></svg></span><span>Mod Manager</span>
+        </button>
+        <button class="desktop-icon" type="button" data-open="maps" aria-label="Open Custom Map Manager">
+          <span class="desktop-icon-art app-art"><svg><use href="#i-map"/></svg></span><span>Map Manager</span>
         </button>
         <button class="desktop-icon" type="button" data-open="llmAi" aria-label="Open LLM AI Manager">
           <span class="desktop-icon-art app-art"><svg><use href="#i-llm-ai"/></svg></span><span>LLM AI Manager</span>
@@ -343,6 +347,29 @@
               <div id="modImportProgress" class="mod-import-progress" role="status">Ready to import. Files remain on this device.</div>
             </section>
             <section class="installed-mods-panel"><header><div><h2>Launch configuration</h2><p id="modConfigurationSummary">No mods enabled.</p></div><div><button id="modUseVanillaButton" type="button" class="button secondary small">Use vanilla</button><button id="modApplyButton" type="button" class="button primary small">Apply &amp; reload</button></div></header><div id="installedModList" class="installed-mod-list"></div><div id="installedModEmpty" class="manager-empty"><svg><use href="#i-mod"/></svg><strong>No mods installed</strong><span>Import a downloaded package or an unpacked mod folder.</span></div></section>
+          </div>
+        </article>
+
+        <article id="mapsWindow" class="window maps-window" data-app="maps" style="--x: 52%; --y: 45%; --w: 820px; --h: 590px;" aria-label="Custom Map Manager">
+          <header class="titlebar">
+            <div class="titlebar-title"><span class="titlebar-app-icon"><svg><use href="#i-map"/></svg></span><span>Zero Hour Map Manager</span></div>
+            <div class="window-controls"><button type="button" data-window-action="minimize" aria-label="Minimize">—</button><button type="button" data-window-action="maximize" aria-label="Maximize">□</button><button type="button" data-window-action="close" aria-label="Close">×</button></div>
+          </header>
+          <div class="custom-map-manager-body">
+            <header class="manager-heading"><div><p class="eyebrow">LOCAL USER MAPS</p><h1>Zero Hour Map Manager</h1><p>Install standard community map archives and folders into the original engine&rsquo;s User Maps library. Files stay in this browser.</p></div><div id="customMapContextBadge" class="active-context-badge">Active configuration</div></header>
+            <section class="custom-map-import-panel" aria-labelledby="customMapImportTitle">
+              <div><h2 id="customMapImportTitle">Add custom maps</h2><p>Choose a ZIP, 7z, RAR, standalone MAP file, or a folder using the usual <code>MapName/MapName.map</code> layout.</p></div>
+              <div class="custom-map-import-actions"><button id="customMapImportPackageButton" type="button" class="button primary small">Add archive…</button><button id="customMapImportFolderButton" type="button" class="button secondary small">Add folder…</button></div>
+              <input id="customMapImportPackageInput" type="file" accept=".map,.zip,.7z,.rar" hidden>
+              <input id="customMapImportFolderInput" type="file" webkitdirectory directory multiple hidden>
+              <div id="customMapImportProgress" class="mod-import-progress" role="status">Ready to import. Nothing is uploaded.</div>
+            </section>
+            <section class="custom-map-list-panel">
+              <header><div><h2>Installed maps</h2><p id="customMapStatus">Reading the active Zero Hour Maps folder…</p></div><button id="refreshCustomMapsButton" type="button" class="button secondary small">Refresh</button></header>
+              <div id="customMapList" class="custom-map-list"></div>
+              <div id="customMapEmpty" class="manager-empty"><svg><use href="#i-map"/></svg><strong>No custom maps installed</strong><span>Add a downloaded map archive or select its folder.</span></div>
+            </section>
+            <p class="custom-map-help">In Zero Hour, choose Skirmish or Multiplayer, open the map picker, and select <strong>User Maps</strong>. If the game was already open while replacing a map, close and relaunch it so the original map cache is rebuilt.</p>
           </div>
         </article>
 
@@ -694,6 +721,7 @@
             <button type="button" data-open="setup"><span class="start-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><div><strong>Project New Shoes Game Launcher</strong><small>Add files and start a game</small></div></button>
             <button type="button" data-open="explorer"><span class="start-icon"><svg><use href="#i-folder"/></svg></span><div><strong>My Files</strong><small>Browse folders and local files</small></div></button>
             <button type="button" data-open="mods"><span class="start-icon"><svg><use href="#i-mod"/></svg></span><div><strong>Mod Manager</strong><small>Import and choose launch mods</small></div></button>
+            <button type="button" data-open="maps"><span class="start-icon"><svg><use href="#i-map"/></svg></span><div><strong>Map Manager</strong><small>Add and remove custom maps</small></div></button>
             <button type="button" data-open="gameData"><span class="start-icon"><svg><use href="#i-save"/></svg></span><div><strong>Save &amp; Replay Manager</strong><small>Browse isolated game data</small></div></button>
             <button type="button" data-open="agentBridge"><span class="start-icon"><svg><use href="#i-agent"/></svg></span><div><strong>Remote Agent</strong><small>Configure direct agent control</small></div></button>
             <button type="button" data-open="browser"><span class="start-icon"><svg><use href="#i-browser"/></svg></span><div><strong>Project New Shoes Browser</strong><small>Command Net and the open web</small></div></button>

@@ -144,6 +144,13 @@ kept in OPFS and exposed to the original `-mod` loading path. Users can enable
 multiple mods, choose their archive options, and order them; later archives and
 mods retain the engine's normal override precedence.
 
+The browser map manager accepts standard community map archives and folders,
+normalizes their `MapName/MapName.map` layout, and writes the loose files into
+the active configuration's mounted user-data `Maps` directory. It lists and
+removes those folders and invalidates the generated `MapCache.ini` on changes;
+the original engine's user-map scan, metadata parsing, preview, selection, and
+loading paths remain authoritative.
+
 Every launch configuration has a SHA-256 identity derived from the ordered mod
 and archive content hashes. That exact identity owns a separate engine `HOME`
 under the persistent user-data mount, so saves and replays do not leak between
