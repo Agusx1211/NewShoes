@@ -22951,6 +22951,7 @@ async function rpc(command, payload = {}) {
             (textureBefore.samplerApplications ?? 0),
         };
         const roadFvf = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
+        const fullDrawDiagnostics = d3d8DiagLevelValue() === "full";
         const isBaseTerrainPass = (draw) =>
           draw?.vertexShaderFvf === 578
             && draw?.vertexStride === 32
@@ -23012,21 +23013,40 @@ async function rpc(command, payload = {}) {
           && (probe?.roads?.afterLoad ?? 0) > 0
           && (probe?.roads?.segmentsWithVertices ?? 0) > 0
           && (probe?.roads?.typesWithDrawData ?? 0) > 0
+          && probe?.lightingRefresh?.path ===
+            "W3DRoadBuffer::updateLighting -> W3DRoadBuffer::drawRoads with unchanged camera bounds"
+          && probe?.lightingRefresh?.invoked === true
+          && probe?.lightingRefresh?.requestedBufferUpdate === true
+          && probe?.lightingRefresh?.requestedVertexDataUpload === true
+          && (probe?.lightingRefresh?.cpuDiffuse?.vertices ?? 0) > 0
+          && probe?.lightingRefresh?.cpuDiffuse?.beforeChecksum
+            !== probe?.lightingRefresh?.cpuDiffuse?.afterChecksum
+          && probe?.lightingRefresh?.cpuDiffuse?.afterRgbSum
+            < probe?.lightingRefresh?.cpuDiffuse?.beforeRgbSum
+          && probe?.lightingRefresh?.drawInvoked === true
+          && (probe?.lightingRefresh?.browserBufferUpdates ?? 0) > 0
+          && probe?.lightingRefresh?.clearedBufferUpdate === true
+          && probe?.lightingRefresh?.clearedVertexDataDirty === true
+          && probe?.lightingRefresh?.steadyState?.drawInvoked === true
+          && probe?.lightingRefresh?.steadyState?.browserBufferUpdates === 0
           && (probe?.calls?.drawIndexed ?? 0) >= 3
+          && (probe?.calls?.browserBufferCreate ?? 0) >= 4
+          && (probe?.calls?.browserBufferUpdate ?? 0) >= 4
           && probe?.draw?.vertexShaderFvf === roadFvf
           && probe?.draw?.vertexStride === 24
-          && browserProbe?.source === "browser_d3d8_draw_indexed"
-          && (browserProbe?.vertexDiagnostics?.projected?.visible ?? 0) > 0
-          && browserProbe?.usedPersistentBuffers === true
-          && browserProbe?.usedTransforms === true
-          && browserProbe?.vertexShaderFvf === roadFvf
-          && browserProbe?.vertexStride === 24
-          && browserProbe?.texture0?.sampled === true
-          && Array.isArray(drawHistory)
-          && drawHistory.length >= 3
-          && roadAfterTerrain
-          && bufferDelta.creates >= 4
-          && bufferDelta.updates >= 4
+          && (!fullDrawDiagnostics
+            || (browserProbe?.source === "browser_d3d8_draw_indexed"
+              && (browserProbe?.vertexDiagnostics?.projected?.visible ?? 0) > 0
+              && browserProbe?.usedPersistentBuffers === true
+              && browserProbe?.usedTransforms === true
+              && browserProbe?.vertexShaderFvf === roadFvf
+              && browserProbe?.vertexStride === 24
+              && browserProbe?.texture0?.sampled === true
+              && Array.isArray(drawHistory)
+              && drawHistory.length >= 3
+              && roadAfterTerrain
+              && bufferDelta.creates >= 4
+              && bufferDelta.updates >= 4))
           && textureDelta.binds >= 1
           && textureDelta.samplerApplications >= 1
           && (screenshot?.coverage?.coloredPixelCount ?? 0) > 0;
@@ -23045,6 +23065,7 @@ async function rpc(command, payload = {}) {
           bufferDelta,
           textureDelta,
           textureProbe: textureAfter,
+          diagnosticLevel: d3d8DiagLevelValue(),
           screenshot,
           state: snapshotState(),
         };

@@ -1227,45 +1227,55 @@ void W3DRoadBuffer::preloadRoadsInVertexAndIndexBuffers()
 //=============================================================================
 /** Loads the roads into the vertex buffer for drawing. */
 //=============================================================================
-void W3DRoadBuffer::loadRoadsInVertexAndIndexBuffers()
+Bool W3DRoadBuffer::loadRoadsInVertexAndIndexBuffers()
 {
 	if ( !m_initialized) {
-		return;
+		return false;
 	}
 	m_curNumRoadVertices = 0;
 	m_curNumRoadIndices = 0;
-	VertexFormatXYZDUV1 *vb;
-	UnsignedShort *ib;
-	// Lock the buffers.
 	if (m_roadTypes[m_curRoadType].getIB() == NULL || m_roadTypes[m_curRoadType].getVB() == NULL) {
 		this->m_roadTypes[m_curRoadType].setNumVertices(0);
 		this->m_roadTypes[m_curRoadType].setNumIndices(0);
-		return;
+		return true;
 	}
-	DX8IndexBufferClass::WriteLockClass lockIdxBuffer(m_roadTypes[m_curRoadType].getIB(), s_dynamic?D3DLOCK_DISCARD:0);
-	DX8VertexBufferClass::WriteLockClass lockVtxBuffer(m_roadTypes[m_curRoadType].getVB(), s_dynamic?D3DLOCK_DISCARD:0);
-	vb=(VertexFormatXYZDUV1*)lockVtxBuffer.Get_Vertex_Array();
-	ib = lockIdxBuffer.Get_Index_Array();
-	// Add to the index buffer & vertex buffer.
-
-	Int curRoad;
 
 	// Do road segments.
-	TCorner corner;
 	try {
-	for (corner = SEGMENT; corner < NUM_JOINS; corner = (TCorner)(corner+1)) {
-		for (curRoad=0; curRoad<m_numRoads; curRoad++) {
-			if (m_roads[curRoad].m_type == corner) {
-				loadRoadSegment(ib, vb, &m_roads[curRoad]);
+		DX8IndexBufferClass::WriteLockClass lockIdxBuffer(
+			m_roadTypes[m_curRoadType].getIB(), s_dynamic ? D3DLOCK_DISCARD : 0);
+		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(
+			m_roadTypes[m_curRoadType].getVB(), s_dynamic ? D3DLOCK_DISCARD : 0);
+		VertexFormatXYZDUV1 *vb =
+			(VertexFormatXYZDUV1 *)lockVtxBuffer.Get_Vertex_Array();
+		UnsignedShort *ib = lockIdxBuffer.Get_Index_Array();
+		if (vb == NULL || ib == NULL) {
+			this->m_roadTypes[m_curRoadType].setNumVertices(0);
+			this->m_roadTypes[m_curRoadType].setNumIndices(0);
+			return false;
+		}
+
+		for (TCorner corner = SEGMENT;
+				corner < NUM_JOINS;
+				corner = (TCorner)(corner + 1)) {
+			for (Int curRoad = 0; curRoad < m_numRoads; curRoad++) {
+				if (m_roads[curRoad].m_type == corner) {
+					loadRoadSegment(ib, vb, &m_roads[curRoad]);
+				}
 			}
-		}		
-	}
-	IndexBufferExceptionFunc();
+		}
+		IndexBufferExceptionFunc();
 	} catch(...) {
 		IndexBufferExceptionFunc();
+		m_curNumRoadVertices = 0;
+		m_curNumRoadIndices = 0;
+		this->m_roadTypes[m_curRoadType].setNumVertices(0);
+		this->m_roadTypes[m_curRoadType].setNumIndices(0);
+		return false;
 	}
 	this->m_roadTypes[m_curRoadType].setNumVertices(m_curNumRoadVertices);
 	this->m_roadTypes[m_curRoadType].setNumIndices(m_curNumRoadIndices);
+	return true;
 }
 
 //=============================================================================
@@ -3100,7 +3110,8 @@ W3DRoadBuffer::W3DRoadBuffer(void)	:
 	m_maxRoadTypes(8),
 	m_curNumRoadVertices(0),
 	m_curNumRoadIndices(0),
-	m_updateBuffers(false)
+	m_updateBuffers(false),
+	m_vertexDataDirty(false)
 
 {
 	allocateRoadBuffers();
@@ -3239,7 +3250,7 @@ void W3DRoadBuffer::loadRoads()
 //=============================================================================
 // W3DRoadBuffer::updateLighting
 //=============================================================================
-/** Draws the roads.  Uses terrain bounds to cull. */
+/** Recomputes the road vertex lighting after terrain or static lighting changes. */
 //=============================================================================
 void W3DRoadBuffer::updateLighting(void)
 {
@@ -3275,6 +3286,7 @@ void W3DRoadBuffer::updateLighting(void)
 	for (curRoad=0; curRoad<m_numRoads; curRoad++) {
 		m_roads[curRoad].updateSegLighting();
 	}	
+	m_vertexDataDirty = true;
 	m_updateBuffers = true;
 }
 
@@ -3339,13 +3351,12 @@ void W3DRoadBuffer::drawRoads(CameraClass * camera, TextureClass *cloudTexture, 
 	W3DShaderManager::setTexture(2,noiseTexture);	//noise/lightmap
 
 
-	Bool loadBuffers = false;
-	if (m_updateBuffers) {
-		if (visibilityChanged(bounds)) {
-			loadBuffers = true;
-		}
+	Bool loadBuffers = m_vertexDataDirty;
+	if (m_updateBuffers && visibilityChanged(bounds)) {
+		loadBuffers = true;
 	}
 	m_updateBuffers = false;
+	Bool buffersLoaded = true;
 
 	for (stacking=0; stacking <= maxStacking; stacking++) {
 		for (i=0; i<m_maxRoadTypes; i++) {
@@ -3354,7 +3365,9 @@ void W3DRoadBuffer::drawRoads(CameraClass * camera, TextureClass *cloudTexture, 
 			}
 			m_curUniqueID = m_roadTypes[i].getUniqueID();
 			m_curRoadType = i;
-			if (loadBuffers) loadRoadsInVertexAndIndexBuffers();
+			if (loadBuffers && !loadRoadsInVertexAndIndexBuffers()) {
+				buffersLoaded = false;
+			}
 			if (m_roadTypes[i].getNumIndices() == 0) continue;
 			if (wireframe) {
 				m_roadTypes[i].applyTexture();
@@ -3379,6 +3392,9 @@ void W3DRoadBuffer::drawRoads(CameraClass * camera, TextureClass *cloudTexture, 
 			if (!wireframe)	//shader was applied at least once?
  				W3DShaderManager::resetShader(st);
 		}
+	}
+	if (loadBuffers) {
+		m_vertexDataDirty = !buffersLoaded;
 	}
 #ifdef LOG_STATS
 	if (loadBuffers) {
