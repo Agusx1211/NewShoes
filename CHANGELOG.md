@@ -12,7 +12,9 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Add a first-class custom map manager with configuration-isolated browser storage ([PR #330](https://github.com/Agusx1211/NewShoes/pull/330)).
 - Prevent late-game pathfinding freezes by separating persistent obstacle state from A* scratch records ([PR #328](https://github.com/Agusx1211/NewShoes/pull/328)).
 - Remove ShockWave battle stalls from D3D8 staging copies and terrain-flatten scans ([PR #332](https://github.com/Agusx1211/NewShoes/pull/332)).
+- Prevent map-loading crashes by keeping non-finite FPS telemetry valid JSON ([PR #337](https://github.com/Agusx1211/NewShoes/pull/337)).
 - Set version 0.7.0 and complete its audited release inventory ([PR #334](https://github.com/Agusx1211/NewShoes/pull/334)).
+- Complete the 0.7.0 inventory after the FPS telemetry crash fix ([PR #338](https://github.com/Agusx1211/NewShoes/pull/338)).
 
 ## [0.6.0] - 2026-07-25
 
