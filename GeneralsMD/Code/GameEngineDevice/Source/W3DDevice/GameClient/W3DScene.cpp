@@ -547,11 +547,24 @@ void RTS3DScene::Visibility_Check(CameraClass * camera)
 //=============================================================================
 /** Renders a single drawable entity. */
 //=============================================================================
+void RTS3DScene::updateEnabledDynamicLights()
+{
+	m_enabledDynamicLights.clear();
+	RefRenderObjListIterator it(&m_dynamicLightList);
+	for (it.First(); !it.Is_Done(); it.Next())
+	{
+		W3DDynamicLight *light = (W3DDynamicLight *)it.Peek_Obj();
+		if (light->isEnabled())
+			m_enabledDynamicLights.push_back(light);
+	}
+}
+
 void RTS3DScene::renderSpecificDrawables(RenderInfoClass &rinfo, Int numDrawable, Drawable **theDrawables)
 {
 #ifdef DIRTY_CONDITION_FLAGS
 	StDrawableDirtyStuffLocker lockDirtyStuff;
 #endif
+	updateEnabledDynamicLights();
 	Int localPlayerIndex = ThePlayerList ? ThePlayerList->getLocalPlayer()->getPlayerIndex() : 0;
 	RefRenderObjListIterator it(&UpdateList);	
 	// loop through all render objects in the list:
@@ -781,18 +794,16 @@ void RTS3DScene::renderOneObject(RenderInfoClass &rinfo, RenderObjClass *robj, I
     if( draw && draw->getReceivesDynamicLights() )
     {
 		  // dynamic lights
-		  RefRenderObjListIterator dynaLightIt(&m_dynamicLightList);	
-		  for (dynaLightIt.First(); !dynaLightIt.Is_Done(); dynaLightIt.Next())
+		  for (std::vector<W3DDynamicLight *>::const_iterator it = m_enabledDynamicLights.begin();
+		       it != m_enabledDynamicLights.end();
+		       ++it)
 		  {	
-			  W3DDynamicLight* pDyna = (W3DDynamicLight*)dynaLightIt.Peek_Obj();
-			  if (!pDyna->isEnabled()) {
-				  continue;
-			  }
+			  W3DDynamicLight *pDyna = *it;
 			  SphereClass lSph = pDyna->Get_Bounding_Sphere();
 			  if (pDyna->Get_Type() == LightClass::POINT && !Spheres_Intersect(sph, lSph)) {
 				  continue;
 			  }
-			  lightEnv.Add_Light(*(LightClass*)dynaLightIt.Peek_Obj());
+			  lightEnv.Add_Light(*pDyna);
 		  }
     }
 		
@@ -1183,6 +1194,7 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 		}
 	}
 	CNC_PORT_NOTE_W3D_SCENE_STEP("RTS3DScene.customized.updateList.after");
+	updateEnabledDynamicLights();
 
 	//terrain needs to be rendered first
 	if (terrainObject)	// Don't check visibility - terrain is always visible. jba.
