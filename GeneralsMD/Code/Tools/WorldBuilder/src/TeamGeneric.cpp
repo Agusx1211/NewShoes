@@ -200,7 +200,7 @@ void TeamGeneric::_scriptsToDict()
 		CString cstr;
 		pCombo->GetLBText(curSel, cstr);
 
-		AsciiString scriptString = cstr;
+		AsciiString scriptString((LPCTSTR)cstr);
 		m_teamDict->setAsciiString(NAMEKEY(keyName), scriptString);
 		++scriptNum;
 	}

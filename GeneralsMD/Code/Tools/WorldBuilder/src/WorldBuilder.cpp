@@ -20,7 +20,9 @@
 //
 
 #include "stdafx.h"
+#if !defined(__EMSCRIPTEN__)
 #include <eh.h>
+#endif
 #include "WorldBuilder.h"
 #include "EulaDialog.h"
 #include "MainFrm.h"
@@ -283,7 +285,9 @@ BOOL CWorldBuilderApp::InitInstance()
 	ApplicationHWnd = GetDesktopWindow();
 
 	// initialization
+#if !defined(__EMSCRIPTEN__)
   _set_se_translator( DumpExceptionInfo ); // Hook that allows stack trace.
+#endif
 
 	// start the log
 	DEBUG_INIT(DEBUG_FLAGS_DEFAULT);

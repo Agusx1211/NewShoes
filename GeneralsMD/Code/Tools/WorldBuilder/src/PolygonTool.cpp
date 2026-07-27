@@ -127,7 +127,8 @@ Bool PolygonTool::poly_pickPoly(PolygonTrigger *pTrig, Coord3D loc, Int toleranc
 
 // Pick a polygon.
 PolygonTrigger *PolygonTool::pickPolygon(Coord3D loc, CPoint viewPt, WbView* pView) {
-	for (PolygonTrigger *pTrig=PolygonTrigger::getFirstPolygonTrigger(); pTrig; pTrig = pTrig->getNext()) {
+	PolygonTrigger *pTrig;
+	for (pTrig=PolygonTrigger::getFirstPolygonTrigger(); pTrig; pTrig = pTrig->getNext()) {
 		// For water, only do water
 		if (WaterTool::isActive() && !pTrig->isWaterArea()) {
 			continue;
@@ -466,4 +467,3 @@ void PolygonTool::mouseUp(TTrackingMode m, CPoint viewPt, WbView* pView, CWorldB
 	if (m != TRACK_L) return;
 	REF_PTR_RELEASE(m_poly_moveUndoable); // belongs to pDoc now.
 }
-

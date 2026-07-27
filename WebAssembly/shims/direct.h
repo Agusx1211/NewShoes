@@ -4,9 +4,14 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <string>
+
 static inline int _mkdir(const char *path)
 {
-	return mkdir(path, 0777);
+	std::string normalized = path != nullptr ? path : "";
+	std::replace(normalized.begin(), normalized.end(), '\\', '/');
+	return mkdir(normalized.c_str(), 0777);
 }
 
 static inline char *_getcwd(char *buffer, int max_length)

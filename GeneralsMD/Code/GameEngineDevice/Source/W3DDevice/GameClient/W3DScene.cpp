@@ -123,7 +123,12 @@ RTS3DScene::RTS3DScene()
 	else
 		m_shroudMaterialPass = NULL;
 #else
-	m_shroudMaterialPass = NEW_REF(W3DShroudMaterialPassClass,());
+	// World Builder never uses the shroud. Debug and Internal builds disable it
+	// through m_shroudOn, which is not present in the retail GlobalData layout.
+	if (TheGlobalData->m_isWorldBuilder)
+		m_shroudMaterialPass = NULL;
+	else
+		m_shroudMaterialPass = NEW_REF(W3DShroudMaterialPassClass,());
 #endif
 
 	m_maskMaterialPass = NEW_REF(W3DMaskMaterialPassClass,());

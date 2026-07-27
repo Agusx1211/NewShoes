@@ -50,7 +50,7 @@ BuildListTool::BuildListTool(void) :
 	m_moveCursor(NULL),
 	m_created(false)
 {
-	m_curObject = false;
+	m_curObject = NULL;
 }
 	
 /// Destructor
@@ -277,4 +277,3 @@ void BuildListTool::mouseUp(TTrackingMode m, CPoint viewPt, WbView* pView, CWorl
 	}
 	//CMainFrame::GetMainFrame()->showOptionsDialog(IDD_BUILD_LIST_PANEL);
 }
-

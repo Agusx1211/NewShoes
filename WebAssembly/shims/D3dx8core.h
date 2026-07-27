@@ -20,6 +20,21 @@ struct ID3DXBuffer
 
 using LPD3DXBUFFER = ID3DXBuffer *;
 
+struct ID3DXFont
+{
+	virtual int DrawText(
+		LPCSTR text,
+		int count,
+		RECT *rect,
+		DWORD format,
+		D3DCOLOR color) = 0;
+	virtual ULONG AddRef() = 0;
+	virtual ULONG Release() = 0;
+
+protected:
+	virtual ~ID3DXFont() = default;
+};
+
 static inline HRESULT D3DXGetErrorStringA(HRESULT result, LPSTR buffer, UINT buffer_len)
 {
 	if (buffer == nullptr || buffer_len == 0) {

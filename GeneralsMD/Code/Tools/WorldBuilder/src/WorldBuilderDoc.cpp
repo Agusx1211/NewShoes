@@ -26,6 +26,12 @@
 #include <windows.h>
 #include <process.h>
 
+#ifdef WASM_WORLD_BUILDER
+extern "C" int BrowserWorldBuilderLaunchGame(const char *mapPath);
+extern "C" void BrowserWorldBuilderReportJumpStage(const char *stage);
+extern "C" int BrowserWorldBuilderPublishReport(const char *path);
+#endif
+
 #include "Common/Debug.h"
 #include "Common/DataChunk.h"
 #include "Common/PlayerTemplate.h"
@@ -677,16 +683,35 @@ void CWorldBuilderDoc::validate(void)
 void CWorldBuilderDoc::OnJumpToGame()
 {
 	try {
+#ifdef WASM_WORLD_BUILDER
+		BrowserWorldBuilderReportJumpStage("saving");
+#endif
 		DoFileSave();
+#ifdef WASM_WORLD_BUILDER
+		BrowserWorldBuilderReportJumpStage("saved");
+		BrowserWorldBuilderReportJumpStage(
+			BrowserWorldBuilderLaunchGame(m_strPathName.GetString())
+				? "launched"
+				: "failed");
+#else
 		CString filename;
-		DEBUG_LOG(("strTitle=%s strPathName=%s\n", m_strTitle, m_strPathName));
+		DEBUG_LOG(("strTitle=%s strPathName=%s\n",
+			m_strTitle.GetString(),
+			m_strPathName.GetString()));
 		if (strstr(m_strPathName, TheGlobalData->getPath_UserData().str()) != NULL)
-			filename.Format("%sMaps\\%s", TheGlobalData->getPath_UserData().str(), m_strTitle);
+			filename.Format(
+				"%sMaps\\%s",
+				TheGlobalData->getPath_UserData().str(),
+				m_strTitle.GetString());
 		else
-			filename.Format("Maps\\%s", m_strTitle);
+			filename.Format("Maps\\%s", m_strTitle.GetString());
 
 		/*int retval =*/ _spawnl(_P_NOWAIT, "\\projects\\rts\\run\\rtsi.exe", "ignored", "-scriptDebug", "-win", "-file", filename, NULL);
+#endif
 	} catch (...) {
+#ifdef WASM_WORLD_BUILDER
+		BrowserWorldBuilderReportJumpStage("failed");
+#endif
 	}
 }
 
@@ -2175,9 +2200,20 @@ void CWorldBuilderDoc::OnDumpDocToText(void)
 
 		char curbuf[ _MAX_PATH ];
 
+#ifdef WASM_WORLD_BUILDER
+		snprintf(
+			curbuf,
+			sizeof(curbuf),
+			"%s.txt",
+			m_strPathName.IsEmpty() ? m_strTitle.GetString() : m_strPathName.GetString());
+		for (char *character = curbuf; *character != '\0'; ++character) {
+			if (*character == '\\') *character = '/';
+		}
+#else
 		strcpy(curbuf, dirbuf);
 		strcat(curbuf, m_strTitle);
 		strcat(curbuf, ".txt");
+#endif
 
 		theLogFile = fopen(curbuf, "w");
 		if (theLogFile == NULL)
@@ -2428,7 +2464,7 @@ writeRawDict( theLogFile, "TeamInfo",ti->getDict() );
 					AsciiString trigger = ti->getDict()->getAsciiString(TheKey_teamProductionCondition, &exists);
 
 					fprintf(theLogFile, "TEAM %s home '%s', priority %s, condition '%s',\n", teamName.str(),
-						waypoint.str(), pri, trigger.str());
+						waypoint.str(), pri.GetString(), trigger.str());
 					fprintf(theLogFile, "  UNITS:");
 					fprintUnit(theLogFile, ti->getDict(), TheKey_teamUnitMinCount1, TheKey_teamUnitMaxCount1, TheKey_teamUnitType1);
 					fprintUnit(theLogFile, ti->getDict(), TheKey_teamUnitMinCount2, TheKey_teamUnitMaxCount2, TheKey_teamUnitType2);
@@ -2534,6 +2570,9 @@ writeRawDict( theLogFile, "Scripts",d );
 		fprintf(theLogFile,"End of Scripts\n");
 		fclose(theLogFile);
 		open = false;
+#ifdef WASM_WORLD_BUILDER
+		BrowserWorldBuilderPublishReport(curbuf);
+#endif
 	} catch (...) {
 		if (open) {
 			fclose(theLogFile);
@@ -2670,4 +2709,3 @@ void CWorldBuilderDoc::findBoundaryNear(Coord3D *pt, float okDistance, Int *outN
 {
 	m_heightMap->findBoundaryNear(pt, okDistance, outNdx, outHandle);
 }
-

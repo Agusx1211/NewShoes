@@ -26,10 +26,10 @@
 #define CUNDOABLE_H
 
 #include "Lib\BaseType.h"
-#include "../../gameengine/include/common/MapObject.h"
-#include "../../gameengine/include/common/GameCommon.h"
-#include "../../gameengine/include/GameLogic/SidesList.h"
-#include "RefCount.h"
+#include "Common/MapObject.h"
+#include "Common/GameCommon.h"
+#include "GameLogic/SidesList.h"
+#include "refcount.h"
 #include <vector>
 
 class PolygonTrigger;

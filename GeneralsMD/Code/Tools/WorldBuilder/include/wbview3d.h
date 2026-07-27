@@ -40,7 +40,7 @@
 #include "dx8wrapper.h"
 
 //#include "GameLogic/Module/BodyModule.h" -- Yikes... not necessary to include this! (KM)
-enum BodyDamageType; //Ahhhh much better!
+enum BodyDamageType : int; //Ahhhh much better!
 
 class WorldHeightMap;
 class LayerClass;
@@ -226,8 +226,8 @@ protected:
 	void init3dScene();
 	void initAssets();
 	void initWW3D();
-  void drawCircle( HDC hdc, const Coord3D & centerPoint, Real radius, COLORREF color );
-	void drawLabels(HDC hdc);
+  void drawCircle( CDC *deviceContext, const Coord3D & centerPoint, Real radius, COLORREF color );
+	void drawLabels(CDC *deviceContext);
 	void drawLabels(void);
 	void shutdownWW3D();
 	void killTheTimer();

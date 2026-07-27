@@ -76,6 +76,12 @@ static void ConvertShortMapPathToLongMapPath(AsciiString &mapName)
 	AsciiString path = mapName;
 	AsciiString token;
 	AsciiString actualpath;
+#ifdef __EMSCRIPTEN__
+	if (path.startsWith("/"))
+	{
+		actualpath = "/";
+	}
+#endif
 
 	if ((path.find('\\') == NULL) && (path.find('/') == NULL))
 	{
@@ -641,16 +647,6 @@ Int parsePreload( char *args[], int num )
 #endif
 
 
-#if defined(_DEBUG) || defined(_INTERNAL) 
-Int parseDisplayDebug(char *args[], int)
-{
-	if (TheWritableGlobalData)
-	{
-		TheWritableGlobalData->m_displayDebug = TRUE;
-	}
-	return 1;
-}
-
 Int parseFile(char *args[], int num)
 {
 	if (TheWritableGlobalData && num > 1)
@@ -661,6 +657,15 @@ Int parseFile(char *args[], int num)
 	return 2;
 }
 
+#if defined(_DEBUG) || defined(_INTERNAL)
+Int parseDisplayDebug(char *args[], int)
+{
+	if (TheWritableGlobalData)
+	{
+		TheWritableGlobalData->m_displayDebug = TRUE;
+	}
+	return 1;
+}
 
 Int parsePreloadEverything( char *args[], int num )
 {
@@ -1146,6 +1151,7 @@ static CommandLineParam params[] =
 	{ "-mod", parseMod },
 	{ "-noshaders", parseNoShaders },
 	{ "-quickstart", parseQuickStart },
+	{ "-file", parseFile },
 
 #if (defined(_DEBUG) || defined(_INTERNAL))
 	{ "-noaudio", parseNoAudio },
@@ -1197,7 +1203,6 @@ static CommandLineParam params[] =
 	{ "-jabber", parseJabber },
 	{ "-munkee", parseMunkee },
 	{ "-displayDebug", parseDisplayDebug },
-	{ "-file", parseFile },
   
 //	{ "-preload", parsePreload },
 	
@@ -1294,4 +1299,3 @@ void parseCommandLine(int argc, char *argv[])
 
 	TheArchiveFileSystem->loadMods();
 }
-

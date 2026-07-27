@@ -76,6 +76,9 @@
         <button class="desktop-icon game-shortcut" type="button" data-game-shortcut data-launch-game="Zero Hour" aria-label="Launch Zero Hour" hidden>
           <span class="desktop-icon-art game-art"><img data-retail-icon alt="" hidden><svg><use href="#i-command-zero"/></svg><i class="shortcut-arrow">↗</i></span><span>Zero Hour</span>
         </button>
+        <button class="desktop-icon game-shortcut" type="button" data-world-builder-shortcut data-launch-world-builder aria-label="Launch World Builder" hidden>
+          <span class="desktop-icon-art game-art"><svg><use href="#i-apps"/></svg><i class="shortcut-arrow">↗</i></span><span>World Builder</span>
+        </button>
         <button class="desktop-icon" type="button" data-open="explorer" aria-label="Open Save Files">
           <span class="desktop-icon-art"><svg><use href="#i-folder"/></svg></span><span>My Files</span>
         </button>
@@ -490,7 +493,8 @@
           <div class="programs-body">
             <header class="programs-hero"><div><p class="eyebrow">PROGRAM MANAGER</p><h1>Your game library</h1><p>See what is available and how its files are stored in this browser.</p></div><button type="button" class="button primary small" data-open-setup>+ Add game files</button></header>
             <div class="library-list">
-              <article class="library-row"><span class="library-game-art zero"><img data-retail-icon alt="" hidden><span>ZH</span></span><div class="library-details"><strong>Zero Hour</strong><span>Current WebAssembly target</span><small><i></i><b class="library-state-label">Original files required</b></small></div><div class="library-size">Runtime<span>Local source</span></div><button type="button" class="row-launch accent" data-launch-game="Zero Hour">Launch</button><button type="button" class="more-button" data-open-settings="game" aria-label="Open Game and Display settings" title="Game &amp; Display settings">⚙</button></article>
+              <article class="library-row"><span class="library-game-art zero"><img data-retail-icon alt="" hidden><span>ZH</span></span><div class="library-details"><strong>Zero Hour</strong><span>Current WebAssembly target</span><small><i></i><b class="library-state-label">Original files required</b></small></div><div class="library-size">Runtime<span data-library-location>Local source</span></div><button type="button" class="row-launch accent" data-launch-game="Zero Hour">Launch</button><button type="button" class="more-button" data-open-settings="game" aria-label="Open Game and Display settings" title="Game &amp; Display settings">⚙</button></article>
+              <article class="library-row"><span class="library-game-art"><span>WB</span></span><div class="library-details"><strong>World Builder</strong><span>Original Zero Hour map editor</span><small><i></i><b class="library-state-label" data-world-builder-state-label>Browser install required</b></small></div><div class="library-size">Runtime<span>Browser storage</span></div><button type="button" class="row-launch" data-launch-world-builder>Install required</button><button type="button" class="more-button" data-open="setup" aria-label="Open game installation" title="Game installation">⚙</button></article>
             </div>
             <section class="storage-overview"><div class="storage-donut"><span><b id="storageUsedValue">0</b><small>GB used</small></span></div><div class="storage-copy"><strong>Browser storage</strong><p id="storageCopyText">No game assets are stored in this browser yet.</p><div class="storage-legend"><span><i class="game-data"></i>Game data</span><span><i class="saves"></i>Saves</span><span><i class="available"></i>Available</span></div></div><button type="button" class="button secondary small" id="forgetLibraryButton">Forget library</button></section>
           </div>
@@ -692,6 +696,7 @@
         <div class="start-content">
           <div class="start-primary">
             <button type="button" data-open="setup"><span class="start-icon"><img data-launcher-logo-image alt="" width="512" height="512"></span><div><strong>Project New Shoes Game Launcher</strong><small>Add files and start a game</small></div></button>
+            <button type="button" data-launch-world-builder><span class="start-icon"><svg><use href="#i-apps"/></svg></span><div><strong>World Builder</strong><small>Open the original Zero Hour map editor</small></div></button>
             <button type="button" data-open="explorer"><span class="start-icon"><svg><use href="#i-folder"/></svg></span><div><strong>My Files</strong><small>Browse folders and local files</small></div></button>
             <button type="button" data-open="mods"><span class="start-icon"><svg><use href="#i-mod"/></svg></span><div><strong>Mod Manager</strong><small>Import and choose launch mods</small></div></button>
             <button type="button" data-open="gameData"><span class="start-icon"><svg><use href="#i-save"/></svg></span><div><strong>Save &amp; Replay Manager</strong><small>Browse isolated game data</small></div></button>

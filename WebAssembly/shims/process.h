@@ -16,7 +16,12 @@ static inline unsigned long _beginthread(_beginthread_proc, unsigned, void *)
 	return 0;
 }
 
-static inline int _spawnl(int, const char *, const char *, ...)
+static inline int _spawnl(
+	int,
+	const char *,
+	const char *firstArgument,
+	...)
 {
+	(void)firstArgument;
 	return -1;
 }

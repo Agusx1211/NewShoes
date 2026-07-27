@@ -15349,6 +15349,12 @@ function d3d8GpuFrameTimerSummary() {
 function presentD3D8Frame() {
   flushD3D8PendingDrawBatch("present");
   drainD3D8BufferRetirements();
+  // D3D8 Present submits the completed frame immediately. WebGL normally
+  // flushes at the browser's rendering boundary, but worker-owned
+  // OffscreenCanvas contexts can otherwise keep a completed MFC paint in the
+  // command buffer until a synchronizing operation (such as readPixels).
+  // Explicitly submit here so the placeholder canvas observes every Present.
+  gl?.flush();
   return true;
 }
 

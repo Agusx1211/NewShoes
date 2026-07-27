@@ -738,10 +738,26 @@ async function waitForRpc() {
   throw new Error("bridge RPC surface never appeared");
 }
 
-function buildArchives() {
-  const prepared = window.ZeroHAssetLibrary?.preparedArchives;
+async function buildArchives() {
+  // launcher-entry.mjs and play.mjs are sibling modules. Autostart callers
+  // (including World Builder's Jump to Game) can reach this point before the
+  // asset manager module has finished evaluating, so wait for that local
+  // library surface instead of accidentally falling back to development URLs.
+  for (let attempt = 0;
+    attempt < 200 && !window.ZeroHAssetLibrary;
+    attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const assetLibrary = window.ZeroHAssetLibrary;
+  const prepared = assetLibrary?.preparedArchives;
   if (Array.isArray(prepared) && prepared.length) {
     return prepared.map((archive) => ({ ...archive }));
+  }
+  if (assetLibrary?.archivesForLaunch) {
+    const installed = await assetLibrary.archivesForLaunch().catch(() => null);
+    if (Array.isArray(installed) && installed.length) {
+      return installed.map((archive) => ({ ...archive }));
+    }
   }
   return archiveSpecs.map((spec) => {
     const sourceName = spec.sourceName ?? spec.name;
@@ -1070,7 +1086,7 @@ async function start() {
       network: networkRuntime,
     });
 
-    const archives = buildArchives();
+    const archives = await buildArchives();
     analyticsStage = "archives";
     const preparedAssets = archives.every((archive) => typeof archive.opfsPath === "string");
     report(`${preparedAssets ? "mounting local" : "downloading + mounting"} ${archives.length} archives...`);
@@ -1098,7 +1114,8 @@ async function start() {
       },
     });
 
-    const shellMap = queryParams.get("shellmap") !== "0";
+    const worldBuilderMap = queryParams.get("worldBuilderMap") ?? "";
+    const shellMap = !worldBuilderMap && queryParams.get("shellmap") !== "0";
     issueRecorder.setSessionContext({ shellMap });
     bootProgressEnginePhase();
     analyticsStage = "engine";
@@ -1137,6 +1154,7 @@ async function start() {
         bootWidth: bootResolution?.width,
         bootHeight: bootResolution?.height,
         modDirectory: mount.modDirectory ?? "",
+        initialFile: worldBuilderMap,
       });
     } finally {
       window.removeEventListener("cncport:initprogress", onInitProgress);

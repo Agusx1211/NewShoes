@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Command &amp; Conquer: Generals World Builder</title>
+    <link rel="stylesheet" href="./world-builder.css">
+  </head>
+  <body>
+    <header class="wb-runtime-status" role="status">
+      <span data-world-builder-status>Preparing the original World Builder…</span>
+      <a href="./play.html">Return to launcher</a>
+    </header>
+    <main class="wb-desktop" data-world-builder-desktop>
+      <canvas
+        id="worldBuilderRenderCanvas"
+        class="wb-view-surface"
+        width="1280"
+        height="720"
+        aria-label="Original World Builder 3D map view"
+      ></canvas>
+    </main>
+    <script type="module" src="./world-builder.mjs"></script>
+  </body>
+</html>

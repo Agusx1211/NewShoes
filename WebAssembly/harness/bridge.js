@@ -1709,6 +1709,7 @@ function createThreadedEngineController() {
         stepBudgetMs: payload.stepBudgetMs,
         commanderName: payload.commanderName,
         modDirectory: payload.modDirectory,
+        initialFile: payload.initialFile,
         userDataHome: CNC_PORT_USER_DATA_HOME,
       }, {
         // SwiftShader full boots take minutes; each init slice posts progress
@@ -1749,6 +1750,8 @@ function createThreadedEngineController() {
       attempted: true,
       threaded: true,
       runDirectory: String(payload.runDirectory ?? "/assets/runtime"),
+      requestedInitialFile: String(payload.initialFile ?? ""),
+      workerRequestedInitialFile: String(result?.requestedInitialFile ?? ""),
       aborted,
       abortMessage,
       releaseCrash,
@@ -1761,6 +1764,8 @@ function createThreadedEngineController() {
       command: "realEngineInit",
       threaded: true,
       runDirectory: String(payload.runDirectory ?? "/assets/runtime"),
+      requestedInitialFile: String(payload.initialFile ?? ""),
+      workerRequestedInitialFile: String(result?.requestedInitialFile ?? ""),
       aborted,
       abortMessage,
       releaseCrash,
@@ -6803,6 +6808,11 @@ async function loadWasmModule() {
       realEngineInitStep: module.cwrap("cnc_port_real_engine_init_step", "string", ["number"]),
       realEngineSetModDirectory: module.cwrap(
         "cnc_port_real_engine_set_mod_directory",
+        "number",
+        ["string"],
+      ),
+      realEngineSetInitialFile: module.cwrap(
+        "cnc_port_real_engine_set_initial_file",
         "number",
         ["string"],
       ),
@@ -11976,6 +11986,13 @@ async function realEngineInit(payload = {}) {
   if (typeof wasmModule.realEngineSetModDirectory === "function"
       && wasmModule.realEngineSetModDirectory(modDirectory) !== 1) {
     return { ok: false, command: "realEngineInit", error: "mod directory rejected" };
+  }
+  const initialFile = String(payload.initialFile ?? "");
+  if (initialFile && (
+    typeof wasmModule.realEngineSetInitialFile !== "function"
+    || wasmModule.realEngineSetInitialFile(initialFile) !== 1
+  )) {
+    return { ok: false, command: "realEngineInit", error: "initial map rejected" };
   }
   const useStepped = payload.stepped === true
     && typeof wasmModule.realEngineInitBegin === "function"

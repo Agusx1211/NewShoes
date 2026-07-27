@@ -80,7 +80,11 @@ set(GAMEENGINE_GAMELOGIC_DIR "${GAMEENGINE_DIR}/Source/GameLogic")
 set(GAMEENGINE_GAMENETWORK_DIR "${GAMEENGINE_DIR}/Source/GameNetwork")
 set(GAMEENGINE_DEVICE_DIR "${ZH_CODE_DIR}/GameEngineDevice")
 set(GAMEENGINE_DEVICE_INCLUDE_DIR "${GAMEENGINE_DEVICE_DIR}/Include")
+set(WORLD_BUILDER_DIR "${ZH_CODE_DIR}/Tools/WorldBuilder")
+set(WORLD_BUILDER_INCLUDE_DIR "${WORLD_BUILDER_DIR}/include")
+set(WORLD_BUILDER_RES_DIR "${WORLD_BUILDER_DIR}/res")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
+set(WORLD_BUILDER_CASE_SHIMS_DIR "${WASM_SHIMS_DIR}/world_builder_case")
 set(WIN32_GAMEENGINE_SHIMS_DIR "${WASM_SHIMS_DIR}/win32_gameengine")
 set(WINMAIN_WNDPROC_SHIMS_DIR "${WASM_SHIMS_DIR}/winmain_wndproc")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
@@ -89,6 +93,158 @@ set(WWSTRING_PORT_SHIM "${WASM_SHIMS_DIR}/wwstring_port.h")
 set(RNDSTRNG_PORT_SHIM "${WASM_SHIMS_DIR}/rndstrng_port.h")
 
 find_program(NODE_EXECUTABLE NAMES node nodejs REQUIRED)
+
+add_library(zh_browser_mfc STATIC
+  src/wasm_mfc_browser.cpp
+)
+
+target_include_directories(zh_browser_mfc PUBLIC
+  "${WASM_SHIMS_DIR}"
+)
+
+target_compile_options(zh_browser_mfc PRIVATE
+  ${CNC_EXCEPTION_COMPILE_OPTION}
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-unused-parameter
+)
+
+add_executable(worldbuilder-original-cell-width-smoke
+  src/wasm_worldbuilder_cell_width_smoke.cpp
+  "${WORLD_BUILDER_DIR}/src/CellWidth.cpp"
+)
+
+set_target_properties(worldbuilder-original-cell-width-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_include_directories(worldbuilder-original-cell-width-smoke PRIVATE
+  "${WORLD_BUILDER_CASE_SHIMS_DIR}"
+  "${WASM_SHIMS_DIR}"
+  "${WORLD_BUILDER_INCLUDE_DIR}"
+  "${WORLD_BUILDER_DIR}/src"
+  "${WORLD_BUILDER_RES_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+)
+
+target_compile_definitions(worldbuilder-original-cell-width-smoke PRIVATE
+  EDITOR=1
+)
+
+target_compile_options(worldbuilder-original-cell-width-smoke PRIVATE
+  ${CNC_EXCEPTION_COMPILE_OPTION}
+  "-include${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(worldbuilder-original-cell-width-smoke PRIVATE
+  zh_browser_mfc
+)
+
+target_link_options(worldbuilder-original-cell-width-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sEXIT_RUNTIME=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  ${CNC_EXCEPTION_LINK_OPTION}
+)
+
+file(STRINGS
+  "${WORLD_BUILDER_DIR}/WorldBuilder.dsp"
+  WORLD_BUILDER_PROJECT_SOURCE_LINES
+  REGEX "^SOURCE=.*\\.cpp$"
+)
+set(WORLD_BUILDER_ORIGINAL_SOURCES)
+foreach(project_source_line IN LISTS WORLD_BUILDER_PROJECT_SOURCE_LINES)
+  string(REGEX REPLACE "^SOURCE=\\." "" project_source_path "${project_source_line}")
+  string(REPLACE "\\" "/" project_source_path "${project_source_path}")
+  list(APPEND
+    WORLD_BUILDER_ORIGINAL_SOURCES
+    "${WORLD_BUILDER_DIR}${project_source_path}"
+  )
+endforeach()
+list(LENGTH WORLD_BUILDER_ORIGINAL_SOURCES WORLD_BUILDER_ORIGINAL_SOURCE_COUNT)
+if(NOT WORLD_BUILDER_ORIGINAL_SOURCE_COUNT EQUAL 100)
+  message(FATAL_ERROR
+    "Expected all 100 original World Builder C++ sources, found "
+    "${WORLD_BUILDER_ORIGINAL_SOURCE_COUNT}"
+  )
+endif()
+
+add_library(zh_worldbuilder_original_objects OBJECT EXCLUDE_FROM_ALL
+  ${WORLD_BUILDER_ORIGINAL_SOURCES}
+)
+
+target_include_directories(zh_worldbuilder_original_objects PRIVATE
+  "${WORLD_BUILDER_CASE_SHIMS_DIR}"
+  "${WASM_SHIMS_DIR}"
+  "${WORLD_BUILDER_INCLUDE_DIR}"
+  "${WORLD_BUILDER_DIR}/src"
+  "${WORLD_BUILDER_RES_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(zh_worldbuilder_original_objects PRIVATE
+  EDITOR=1
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+  WASM_WORLD_BUILDER=1
+  ${CNC_ENGINE_DEBUG_COMPILE_DEFINITIONS}
+)
+
+target_compile_options(zh_worldbuilder_original_objects PRIVATE
+  ${CNC_EXCEPTION_COMPILE_OPTION}
+  "-include${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-language-extension-token
+  -Werror=non-pod-varargs
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+add_custom_target(worldbuilder-original-compile-frontier
+  DEPENDS zh_worldbuilder_original_objects
+)
 
 add_library(zh_browser_d3d8 STATIC
   src/wasm_d3d8_shim.cpp
@@ -2508,6 +2664,82 @@ add_library(zh_w3d_terrain_probe_runtime STATIC
 
 target_link_libraries(zh_w3d_terrain_probe_runtime PUBLIC
   zh_w3d_device_utility
+)
+
+# BaseHeightMap is compiled above with a probe-only shroud switch for the
+# shipping game's deterministic terrain diagnostics. World Builder must use
+# the original editor configuration instead: its startup owns m_shroudOn and
+# BaseHeightMap reads that value through the normal engine path.
+add_library(zh_worldbuilder_real_heightmap_runtime STATIC
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/BaseHeightMap.cpp"
+)
+
+target_link_libraries(zh_worldbuilder_real_heightmap_runtime PUBLIC
+  zh_w3d_device_utility
+)
+
+target_compile_definitions(zh_worldbuilder_real_heightmap_runtime PRIVATE
+  EDITOR=1
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+  ${CNC_ENGINE_DEBUG_COMPILE_DEFINITIONS}
+)
+
+target_include_directories(zh_worldbuilder_real_heightmap_runtime PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(zh_worldbuilder_real_heightmap_runtime PRIVATE
+  -ffunction-sections
+  -fdata-sections
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${CMAKE_CURRENT_SOURCE_DIR}/src/wasm_prerts_real.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -fms-extensions
+  "-DMIN(a,b)=(((a)<(b))?(a):(b))"
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-invalid-offsetof
+  -Wno-new-returns-null
+  -Wno-non-pod-varargs
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
 )
 
 target_compile_definitions(zh_w3d_terrain_probe_runtime PRIVATE
@@ -5176,6 +5408,206 @@ target_link_libraries(cnc-port PRIVATE
   zh_compression_manager
   zh_compression_eac
 )
+
+add_executable(worldbuilder-original-link-frontier EXCLUDE_FROM_ALL
+  src/wasm_worldbuilder_link_frontier.cpp
+  src/wasm_worldbuilder_dom_host.cpp
+  src/wasm_win32_gdi_browser.cpp
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DFileSystem.cpp"
+  $<TARGET_OBJECTS:zh_worldbuilder_original_objects>
+)
+
+set_target_properties(worldbuilder-original-link-frontier PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_include_directories(worldbuilder-original-link-frontier PRIVATE
+  "${WORLD_BUILDER_CASE_SHIMS_DIR}"
+  "${WASM_SHIMS_DIR}"
+  "${WORLD_BUILDER_INCLUDE_DIR}"
+  "${WORLD_BUILDER_DIR}/src"
+  "${WORLD_BUILDER_RES_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(worldbuilder-original-link-frontier PRIVATE
+  EDITOR=1
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+  ${CNC_ENGINE_DEBUG_COMPILE_DEFINITIONS}
+)
+
+target_compile_options(worldbuilder-original-link-frontier PRIVATE
+  ${CNC_EXCEPTION_COMPILE_OPTION}
+  "-include${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-language-extension-token
+  -Wno-non-pod-varargs
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(worldbuilder-original-link-frontier PRIVATE
+  zh_browser_mfc
+  zh_worldbuilder_real_heightmap_runtime
+  $<TARGET_PROPERTY:cnc-port,LINK_LIBRARIES>
+)
+
+target_link_options(worldbuilder-original-link-frontier PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=1"
+  "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=1"
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sEXIT_RUNTIME=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sMAXIMUM_MEMORY=2147483648"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  ${CNC_EXCEPTION_LINK_OPTION}
+)
+
+add_executable(world-builder EXCLUDE_FROM_ALL
+  src/wasm_worldbuilder_main.cpp
+  src/wasm_worldbuilder_dom_host.cpp
+  src/wasm_opfs_files.cpp
+  src/wasm_win32_gdi_browser.cpp
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DFileSystem.cpp"
+  $<TARGET_OBJECTS:zh_worldbuilder_original_objects>
+)
+
+set_target_properties(world-builder PROPERTIES
+  OUTPUT_NAME "world-builder"
+  SUFFIX ".js"
+)
+
+target_include_directories(world-builder PRIVATE
+  "${WORLD_BUILDER_CASE_SHIMS_DIR}"
+  "${WASM_SHIMS_DIR}"
+  "${WORLD_BUILDER_INCLUDE_DIR}"
+  "${WORLD_BUILDER_DIR}/src"
+  "${WORLD_BUILDER_RES_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(world-builder PRIVATE
+  EDITOR=1
+  CNC_PORT_REAL_GAMELOGIC_HEADER=1
+  WASM_USE_ORIGINAL_GLOBALDATA=1
+  WASM_WORLD_BUILDER=1
+  ${CNC_ENGINE_DEBUG_COMPILE_DEFINITIONS}
+)
+
+target_compile_options(world-builder PRIVATE
+  ${CNC_EXCEPTION_COMPILE_OPTION}
+  "-include${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-language-extension-token
+  -Wno-non-pod-varargs
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(world-builder PRIVATE
+  zh_browser_mfc
+  zh_worldbuilder_real_heightmap_runtime
+  $<TARGET_PROPERTY:cnc-port,LINK_LIBRARIES>
+)
+
+if(CNC_PORT_THREADS)
+  set(WORLD_BUILDER_MEMORY_LINK_OPTIONS
+    "SHELL:-sALLOW_MEMORY_GROWTH=0"
+    "SHELL:-sINITIAL_MEMORY=2147483648"
+  )
+else()
+  set(WORLD_BUILDER_MEMORY_LINK_OPTIONS
+    "SHELL:-sALLOW_MEMORY_GROWTH=1"
+    "SHELL:-sINITIAL_MEMORY=67108864"
+    "SHELL:-sMAXIMUM_MEMORY=2147483648"
+  )
+endif()
+
+target_link_options(world-builder PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=1"
+  "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=1"
+  "SHELL:-sENVIRONMENT=web,worker"
+  "SHELL:-sMODULARIZE=1"
+  "SHELL:-sEXPORT_ES6=1"
+  "SHELL:-sEXPORT_NAME=createWorldBuilderModule"
+  ${WORLD_BUILDER_MEMORY_LINK_OPTIONS}
+  "SHELL:-sTOTAL_STACK=8388608"
+  "SHELL:-sNO_EXIT_RUNTIME=1"
+  "SHELL:-sFORCE_FILESYSTEM=1"
+  "SHELL:-lidbfs.js"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_main','_BrowserWorldBuilderStart','_BrowserWorldBuilderState','_BrowserWorldBuilderPollPlatformActions','_BrowserMfcDispatchCommand','_BrowserMfcDispatchControl','_BrowserMfcDispatchNotify','_BrowserMfcDispatchWindowMessage','_BrowserMfcDispatchPointer','_BrowserMfcDispatchKey','_BrowserMfcUpdateCommandUi','_BrowserMfcPumpMessages','_cnc_port_opfs_register_prefix','_cnc_port_opfs_clear_prefixes']"
+  "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS','addRunDependency','removeRunDependency']"
+  "SHELL:--extern-pre-js ${CMAKE_CURRENT_SOURCE_DIR}/world-builder/browser-mfc-host.js"
+  "SHELL:--pre-js ${CMAKE_CURRENT_SOURCE_DIR}/world-builder/browser-mfc-module.pre.js"
+  "SHELL:--embed-file ${CMAKE_CURRENT_SOURCE_DIR}/world-builder/original-resources.json@/world-builder/original-resources.json"
+  "SHELL:--embed-file ${WORLD_BUILDER_RES_DIR}@/world-builder/assets"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  ${CNC_EXCEPTION_LINK_OPTION}
+)
+
+set_property(TARGET world-builder APPEND PROPERTY LINK_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/world-builder/browser-mfc-host.js"
+  "${CMAKE_CURRENT_SOURCE_DIR}/world-builder/browser-mfc-module.pre.js"
+  "${CMAKE_CURRENT_SOURCE_DIR}/world-builder/original-resources.json"
+)
+
+if(CNC_PORT_THREADS)
+  target_link_options(world-builder PRIVATE
+    "SHELL:-sOFFSCREENCANVAS_SUPPORT=1"
+    "SHELL:-sPTHREAD_POOL_SIZE=1"
+    "SHELL:--pre-js ${CMAKE_CURRENT_SOURCE_DIR}/src/threads_realm_stub.pre.js"
+  )
+  set_property(TARGET world-builder APPEND PROPERTY LINK_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/threads_realm_stub.pre.js"
+  )
+endif()
 
 # cnc-port heap shape (P3, notes/p1-engine-thread.md "P3 results"):
 #

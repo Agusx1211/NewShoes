@@ -10,6 +10,7 @@ import {
   PAGES_GENERATED_PROJECT_FILES,
   PAGES_RUNTIME_FILES,
   PAGES_TEMPLATE_FILES,
+  PAGES_WORLD_BUILDER_RUNTIME_FILES,
 } from "./pages_site_manifest.mjs";
 import {
   loadPublicProjectContent,
@@ -69,7 +70,10 @@ async function assertExactRuntimeDirectory() {
   }
   const entries = await readdir(runtimeDist, { withFileTypes: true });
   const actual = entries.map((entry) => entry.name).sort();
-  const expected = [...PAGES_RUNTIME_FILES].sort();
+  const expected = [
+    ...PAGES_RUNTIME_FILES,
+    ...PAGES_WORLD_BUILDER_RUNTIME_FILES,
+  ].sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`Runtime directory must contain exactly ${expected.join(", ")}; found ${actual.join(", ")}`);
   }
@@ -140,6 +144,20 @@ for (const name of PAGES_HARNESS_FILES) {
     }
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, sourceText.replaceAll(developmentRoot, "./vendor/7z-wasm/"));
+  } else if (name === "world-builder.html") {
+    const sourceText = await readFile(source, "utf8");
+    const head = "  <head>\n";
+    if (!sourceText.includes(head)) {
+      throw new Error("world-builder.html has no head element");
+    }
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(
+      destination,
+      sourceText.replace(
+        head,
+        `${head}    <script src="../coi-direct.js"></script>\n`,
+      ),
+    );
   } else {
     await copyRegularFile(source, destination);
   }
@@ -219,6 +237,9 @@ await writeFile(join(outputRoot, "manifest.webmanifest"), `${JSON.stringify(root
 
 for (const name of PAGES_RUNTIME_FILES) {
   await copyRegularFile(join(runtimeDist, name), join(outputRoot, "dist-threaded-release", name));
+}
+for (const name of PAGES_WORLD_BUILDER_RUNTIME_FILES) {
+  await copyRegularFile(join(runtimeDist, name), join(outputRoot, "dist-world-builder", name));
 }
 await buildBinkDecoderRuntime(outputRoot);
 await copyRegularFile(join(repoRoot, "LICENSE.md"), join(outputRoot, "LICENSE.md"));

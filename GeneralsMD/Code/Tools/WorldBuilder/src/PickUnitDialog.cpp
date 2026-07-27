@@ -313,7 +313,8 @@ void PickUnitDialog::addObject( MapObject *mapObject, const char *pPath, Int ind
 		parent = findOrAdd( parent, buffer );
 
 		// next tier uses the editor sorting that design can specify in the INI
-		for( EditorSortingType i = ES_FIRST; 
+		EditorSortingType i;
+		for( i = ES_FIRST;
 				 i < ES_NUM_SORTING_TYPES;
 				 i = (EditorSortingType)(i + 1) )
 		{

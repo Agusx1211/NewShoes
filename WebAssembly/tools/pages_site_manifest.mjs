@@ -112,6 +112,10 @@ export const PAGES_HARNESS_FILES = Object.freeze([
   "webxr-d3d8-renderer.mjs",
   "webxr-runtime.mjs",
   "webxr-settings.mjs",
+  "world-builder.css",
+  "world-builder.html",
+  "world-builder.mjs",
+  "world_builder_realm_boot.mjs",
 ]);
 
 export const PAGES_DEPENDENCY_FILES = Object.freeze([
@@ -127,6 +131,12 @@ export const PAGES_RUNTIME_FILES = Object.freeze([
   "cnc-port.js",
   "cnc-port.wasm",
   "cnc-port.worker.js",
+]);
+
+export const PAGES_WORLD_BUILDER_RUNTIME_FILES = Object.freeze([
+  "world-builder.js",
+  "world-builder.wasm",
+  "world-builder.worker.js",
 ]);
 
 export const PAGES_VIDEO_RUNTIME_FILES = Object.freeze([
@@ -151,5 +161,8 @@ export const PAGES_OUTPUT_FILES = Object.freeze([
   "harness/build-info.json",
   "harness/play.html",
   ...PAGES_RUNTIME_FILES.map((name) => `dist-threaded-release/${name}`),
+  ...PAGES_WORLD_BUILDER_RUNTIME_FILES.map(
+    (name) => `dist-world-builder/${name}`,
+  ),
   ...PAGES_VIDEO_RUNTIME_FILES,
 ].sort());

@@ -931,10 +931,26 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
     document.querySelectorAll(".library-state-label").forEach((label) => {
       label.textContent = state.library ? labels.state : "Original files required";
     });
-    document.querySelectorAll(".library-size span").forEach((el) => { el.textContent = state.library ? labels.location : "Local source"; });
+    document.querySelectorAll("[data-library-location]").forEach((el) => {
+      el.textContent = state.library ? labels.location : "Local source";
+    });
     const installed = mode === "install";
     const hasShortcuts = Boolean(state.library && (mode === "remember" || installed));
     document.querySelectorAll("[data-game-shortcut]").forEach((shortcut) => { shortcut.hidden = !hasShortcuts; });
+    document.querySelectorAll("[data-world-builder-shortcut]").forEach((shortcut) => {
+      shortcut.hidden = !installed;
+    });
+    document.querySelectorAll("[data-launch-world-builder]").forEach((button) => {
+      button.disabled = !installed;
+      if (button.classList.contains("row-launch")) {
+        button.textContent = installed ? "Launch" : "Install required";
+      }
+    });
+    document.querySelectorAll("[data-world-builder-state-label]").forEach((label) => {
+      label.textContent = installed
+        ? "Installed in this browser"
+        : "Browser install required";
+    });
     document.querySelectorAll("[data-launch-game]").forEach((button) => {
       const label = state.library ? "Launch game" : "Original files required";
       button.disabled = false;
@@ -1031,6 +1047,31 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
     }
   }
 
+  function launchWorldBuilder() {
+    closeStartMenu();
+    if (
+      state.library?.mode !== "install" ||
+      !window.ZeroHAssetLibrary?.installedLibrary()
+    ) {
+      openApp("setup");
+      showToast(
+        "Browser install required",
+        "Install your original Generals and Zero Hour files in this browser before opening World Builder.",
+        "warning",
+      );
+      return;
+    }
+    const target = new URL("./world-builder.html", document.baseURI);
+    const opened = window.open(target.href, "_blank", "noopener");
+    if (!opened) {
+      showToast(
+        "World Builder pop-up blocked",
+        "Allow this site to open a new tab, then launch World Builder again.",
+        "warning",
+      );
+    }
+  }
+
   function updateClock() {
     const now = new Date();
     document.querySelector("#clockTime").textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -1077,6 +1118,7 @@ import { probeBinkVideoSupport } from "./bink_runtime.mjs";
   document.querySelectorAll("[data-open-setup]").forEach((button) => button.addEventListener("click", () => openApp("setup")));
   document.querySelectorAll("[data-open-settings]").forEach((button) => button.addEventListener("click", () => openSettingsPanel(button.dataset.openSettings)));
   document.querySelectorAll("[data-launch-game]").forEach((button) => button.addEventListener("click", launchGame));
+  document.querySelectorAll("[data-launch-world-builder]").forEach((button) => button.addEventListener("click", launchWorldBuilder));
 
   document.querySelectorAll("[data-settings-tab]").forEach((button) => button.addEventListener("click", () => {
     const section = button.dataset.settingsTab;

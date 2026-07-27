@@ -1,6 +1,6 @@
 {
   "schema": "project-new-shoes/public-project/v1",
-  "reviewedAt": "2026-07-20",
+  "reviewedAt": "2026-07-26",
   "maxReviewAgeDays": 90,
   "site": {
     "name": "Project New Shoes",
@@ -64,6 +64,29 @@
         "WebAssembly/harness/skirmish_preferences_persistence_smoke.mjs",
         "WebAssembly/harness/threaded_play_gate.mjs",
         "WebAssembly/harness/shellmap_real_init_gate.mjs"
+      ]
+    },
+    {
+      "id": "world-builder",
+      "name": "Build maps with World Builder",
+      "status": "supported",
+      "summary": "The actual Zero Hour World Builder C++ application runs in the browser with its original map document, tools, menus, dialogs, resources, renderer, and file format.",
+      "reviewedAt": "2026-07-26",
+      "details": [
+        "This is the original World Builder application compiled to WebAssembly, not a lookalike editor or a parallel JavaScript map model. All 100 C++ source files from the original Zero Hour World Builder project are built, and its original menu, toolbar, accelerator, dialog, string, bitmap, icon, and cursor resources drive the browser UI.",
+        "World Builder loads the locally installed Zero Hour archives, creates and edits maps through the original document and undo paths, renders the real 3D editing scene, and reads and writes the original compressed .map format. Browser-backed file dialogs and persistent storage replace native Windows paths without replacing map behavior.",
+        "The original menus, toolbar tools, view toggles, selection filters, modal and modeless dialogs, Layers List context commands, recent-file list, map report, save, reopen, undo, redo, and Jump to Game paths have live browser coverage. Jump to Game saves through World Builder and starts the real game runtime with that exact map.",
+        "After a complete local game installation, the browser desktop and game library expose World Builder as a separate application. Its dense pointer-and-keyboard interface retains the desktop layout of the original editor."
+      ],
+      "evidence": [
+        "GeneralsMD/Code/Tools/WorldBuilder/WorldBuilder.dsp",
+        "WebAssembly/world-builder/original-parity-inventory.json",
+        "WebAssembly/world-builder/original-resources.json",
+        "WebAssembly/src/wasm_worldbuilder_main.cpp",
+        "WebAssembly/src/wasm_worldbuilder_dom_host.cpp",
+        "WebAssembly/harness/world_builder_runtime_smoke.mjs",
+        "WebAssembly/harness/world_builder_original_parity_unit.mjs",
+        "WebAssembly/harness/world_builder_original_resources_unit.mjs"
       ]
     },
     {
@@ -291,6 +314,7 @@
     "Review the detected source. Choose whether to retain source permission when the browser supports it and whether to install the validated runtime into browser storage.",
     "Keep the tab open while local extraction, hashing, validation, and OPFS installation finish. The first import can take several minutes.",
     "When Zero Hour appears in the game library, review Game & Display settings if desired and launch it.",
+    "To edit maps, launch World Builder from the desktop shortcut, Start menu, or installed game library. It uses the same locally installed Zero Hour data and stores user maps in the browser profile.",
     "Use the original game menus after the canvas opens. On a touch screen, open Touch help for the gesture map and Keys for hotkeys and control groups; landscape is recommended. All picker operations require a person at the browser; a remote text agent cannot grant file permissions or provide the user's retail media.",
     "For optional remote play, start the external AgentBridge in Global or Camera mode. Before launch, open Remote Agent, enable it, enter the bridge's printed WebRTC URL and browser credential, choose a session ID and the same fixed mode, test the authenticated peer connection, and select Apply for next launch. Non-secret settings are remembered; browser-token storage is an explicit device-local choice.",
     "Give the bridge's separate REST address and API credential only to the trusted controller. Treat both credentials as secrets, and disable Remote Agent or close the bridge when the session is over."
@@ -317,6 +341,7 @@
     "Retail game data is required and not bundled.",
     "Zero Hour is the current target; standalone vanilla Generals is not exposed.",
     "Chrome and Chromium have the strongest validation.",
+    "World Builder retains its original desktop-oriented, pointer-and-keyboard interface; phone and tablet layouts are intended for the game, not the map editor.",
     "Immersive VR is experimental and currently does not work well. Real-headset rendering, controls, comfort, performance, and compatibility remain incomplete.",
     "Campaign, Challenge, save/load, replay, movies, long multiplayer sessions, reconnects, difficult NAT environments, performance, and remaining rendering fidelity continue to receive testing and fixes.",
     "Browser storage is scoped to the current browser profile, device, and site origin unless the user exports or transfers data.",

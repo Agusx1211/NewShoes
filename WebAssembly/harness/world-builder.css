@@ -1,0 +1,525 @@
+:root {
+  color-scheme: light;
+  font-family: Tahoma, "MS Sans Serif", system-ui, sans-serif;
+  font-size: 11px;
+  background: #3a6ea5;
+  color: #101010;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.wb-runtime-status {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 9px;
+  border-bottom: 1px solid #404040;
+  background: #d4d0c8;
+  font-size: 12px;
+}
+
+.wb-runtime-status a {
+  color: #000080;
+}
+
+.wb-desktop {
+  position: relative;
+  width: 100%;
+  height: calc(100% - 28px);
+  overflow: hidden;
+  background: #808080;
+}
+
+.wb-window-layer,
+.wb-modal-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.wb-modal-layer {
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 32%);
+}
+
+.wb-modal-layer[hidden] {
+  display: none;
+}
+
+.wb-main-frame,
+.wb-dialog,
+.wb-native-window {
+  border: 2px outset #f0f0f0;
+  background: #d4d0c8;
+  color: #101010;
+}
+
+.wb-native-window {
+  position: absolute;
+  overflow: hidden;
+}
+
+.wb-main-frame {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+}
+
+.wb-dialog {
+  position: absolute;
+  min-width: 260px;
+  max-width: min(94vw, 860px);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 8px;
+}
+
+.wb-dialog.modal {
+  position: relative;
+  left: auto !important;
+  top: auto !important;
+}
+
+.wb-message-box {
+  width: min(460px, calc(100vw - 48px));
+  border: 2px outset #f0f0f0;
+  background: #d4d0c8;
+  box-shadow: 4px 5px 12px rgb(0 0 0 / 40%);
+}
+
+.wb-message-box-copy {
+  min-height: 72px;
+  margin: 0;
+  padding: 22px 24px 14px;
+  white-space: pre-wrap;
+}
+
+.wb-message-box-actions,
+.wb-property-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px 12px;
+}
+
+.wb-message-box-actions button,
+.wb-property-actions button,
+.wb-property-tabs button {
+  min-width: 76px;
+  padding: 4px 12px;
+  border: 2px outset #f0f0f0;
+  background: #d4d0c8;
+}
+
+.wb-color-dialog-body {
+  padding: 20px 24px 10px;
+}
+
+.wb-color-dialog-body label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.wb-color-dialog-body input {
+  width: 100px;
+  height: 48px;
+}
+
+.wb-property-sheet > .wb-dialog-client {
+  display: grid;
+  height: calc(100% - 22px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.wb-property-tabs {
+  z-index: 1;
+  display: flex;
+  align-items: end;
+  padding: 6px 6px 0;
+}
+
+.wb-property-tabs button {
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.wb-property-tabs button[aria-selected="true"] {
+  position: relative;
+  padding-top: 6px;
+  background: #e4e1da;
+}
+
+.wb-property-page-host {
+  position: relative;
+  min-height: 0;
+  margin: 0 6px;
+  border: 2px inset #f0f0f0;
+  background: #d4d0c8;
+  overflow: auto;
+}
+
+.wb-property-page {
+  position: relative;
+  inset: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  overflow: auto;
+}
+
+.wb-property-page > .wb-titlebar {
+  display: none;
+}
+
+.wb-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 3px 6px;
+  background: linear-gradient(90deg, #0a246a, #a6caf0);
+  color: #fff;
+  font-weight: 700;
+}
+
+.wb-title-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.wb-title-close {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px outset #fff;
+  background: #d4d0c8;
+  color: #000;
+  font: 700 14px/14px Arial, sans-serif;
+}
+
+.wb-title-close:active {
+  border-style: inset;
+}
+
+.wb-menubar {
+  min-height: 24px;
+  border-bottom: 1px solid #808080;
+  background: #d4d0c8;
+}
+
+.wb-menu-root,
+.wb-menu-popup {
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+}
+
+.wb-menu-root {
+  display: flex;
+}
+
+.wb-menu-root > li {
+  position: relative;
+}
+
+.wb-menu-heading,
+.wb-menu-popup button,
+.wb-context-menu button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.wb-menu-heading {
+  width: auto;
+  padding: 3px 8px;
+}
+
+.wb-menu-heading:hover,
+.wb-menu-popup button:hover:not(:disabled),
+.wb-context-menu button:hover:not(:disabled) {
+  background: #0a246a;
+  color: #fff;
+}
+
+.wb-menu-popup {
+  position: absolute;
+  z-index: 500;
+  top: 100%;
+  left: 0;
+  display: none;
+  min-width: 230px;
+  border: 2px outset #f0f0f0;
+  background: #d4d0c8;
+  box-shadow: 2px 2px 5px rgb(0 0 0 / 35%);
+}
+
+.open > .wb-menu-popup {
+  display: block;
+}
+
+.wb-menu-popup button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  padding: 4px 18px;
+}
+
+.wb-menu-popup kbd {
+  font: inherit;
+}
+
+.wb-menu-separator {
+  margin: 3px 4px;
+  border-top: 1px solid #808080;
+  border-bottom: 1px solid #fff;
+}
+
+.wb-frame-client,
+.wb-dialog-client,
+.wb-view-stack {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wb-view-stack {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+.wb-view-surface,
+.wb-view-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.wb-view-overlay {
+  pointer-events: none;
+}
+
+.wb-control {
+  position: absolute;
+}
+
+.wb-resource-bitmap,
+.wb-control-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+button.wb-control {
+  border: 2px outset #f0f0f0;
+  background: #d4d0c8;
+}
+
+button.wb-control:active {
+  border-style: inset;
+}
+
+input.wb-control,
+textarea.wb-control,
+select.wb-control,
+.wb-list-control,
+.wb-tree-control {
+  border: 2px inset #f0f0f0;
+  background: #fff;
+}
+
+.wb-tree-control,
+.wb-list-control {
+  overflow: auto;
+}
+
+.wb-tree-root,
+.wb-tree-root ul {
+  margin: 0;
+  padding-left: 18px;
+  list-style: none;
+}
+
+.wb-tree-root {
+  padding: 2px;
+}
+
+.wb-tree-row {
+  display: flex;
+  min-height: 19px;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.wb-tree-row:hover,
+.wb-tree-row:has(+ ul) {
+  cursor: default;
+}
+
+.wb-tree-root li.selected > .wb-tree-row {
+  background: #0a246a;
+  color: #fff;
+}
+
+.wb-tree-toggle {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  font-size: 10px;
+  line-height: 10px;
+}
+
+.wb-tree-toggle-spacer {
+  width: 14px;
+}
+
+.wb-tree-icon {
+  flex: 0 0 auto;
+  background-repeat: no-repeat;
+  image-rendering: auto;
+}
+
+.wb-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.wb-list-table th,
+.wb-list-table td {
+  padding: 2px 4px;
+  border-right: 1px solid #d0d0d0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wb-list-table tr.selected {
+  background: #0a246a;
+  color: #fff;
+}
+
+.wb-toolbar {
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid #808080;
+  background: #d4d0c8;
+}
+
+.wb-toolbar button {
+  width: 20px;
+  min-width: 20px;
+  height: 21px;
+  min-height: 21px;
+  padding: 1px;
+  border: 1px outset #f0f0f0;
+  background: #d4d0c8;
+}
+
+.wb-toolbar-icon {
+  display: block;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
+.wb-toolbar-separator {
+  width: 5px;
+  min-width: 5px;
+}
+
+.wb-context-menu {
+  position: absolute;
+  z-index: 700;
+  min-width: 180px;
+  padding: 2px;
+  border: 2px outset #f0f0f0;
+  background: #d4d0c8;
+}
+
+.wb-context-menu button {
+  display: block;
+  padding: 4px 16px;
+}
+
+.wb-context-submenu {
+  position: relative;
+}
+
+.wb-context-submenu > summary {
+  padding: 4px 16px;
+  list-style: none;
+}
+
+.wb-context-submenu > summary::after {
+  float: right;
+  content: "▶";
+}
+
+.wb-context-submenu > div {
+  position: absolute;
+  z-index: 1;
+  top: -4px;
+  left: 100%;
+  min-width: 190px;
+  padding: 2px;
+  border: 2px outset #f0f0f0;
+  background: #d4d0c8;
+}
+
+.wb-statusbar {
+  display: flex;
+  min-height: 22px;
+  border: 1px inset #f0f0f0;
+  background: #d4d0c8;
+}
+
+.wb-status-pane {
+  min-width: 64px;
+  padding: 2px 5px;
+  border-right: 1px inset #f0f0f0;
+}
+
+.wb-status-pane:first-child {
+  flex: 1;
+}
+
+#worldBuilderRenderCanvas {
+  visibility: hidden;
+}
+
+.wb-view-stack > #worldBuilderRenderCanvas {
+  visibility: visible;
+}

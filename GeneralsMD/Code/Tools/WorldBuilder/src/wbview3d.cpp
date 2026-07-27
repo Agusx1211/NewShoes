@@ -563,6 +563,11 @@ void WbView3d::ReAcquireResources(void)
 		logFont.lfPitchAndFamily = DEFAULT_PITCH;
 		strcpy(logFont.lfFaceName, "Arial");
 
+#ifdef __EMSCRIPTEN__
+		if (BrowserMfcD3DXCreateFont(pDev, &logFont, &m3DFont) != D3D_OK) {
+			m3DFont = NULL;
+		}
+#else
 		HFONT hFont = CreateFontIndirect(&logFont);
 		if (hFont) {
 			D3DXCreateFont(pDev, hFont, &m3DFont);
@@ -570,6 +575,7 @@ void WbView3d::ReAcquireResources(void)
 		} else {
 			m3DFont = NULL;
 		}
+#endif
 		
 	} else {
 		m3DFont = NULL;
@@ -2278,6 +2284,11 @@ void WbView3d::initWW3D()
 			logFont.lfPitchAndFamily = DEFAULT_PITCH;
 			strcpy(logFont.lfFaceName, "Arial");
 
+#ifdef __EMSCRIPTEN__
+			if (BrowserMfcD3DXCreateFont(pDev, &logFont, &m3DFont) != D3D_OK) {
+				m3DFont = NULL;
+			}
+#else
 			HFONT hFont = CreateFontIndirect(&logFont);
 			if (hFont) {
 				D3DXCreateFont(pDev, hFont, &m3DFont);
@@ -2285,6 +2296,7 @@ void WbView3d::initWW3D()
 			} else {
 				m3DFont = NULL;
 			}
+#endif
 			
 		} else {
 			m3DFont = NULL;
@@ -2350,13 +2362,11 @@ int WbView3d::OnCreate(LPCREATESTRUCT lpCreateStruct)
 void WbView3d::OnPaint() 
 {	
 
-	PAINTSTRUCT ps;
-	HDC hdc = ::BeginPaint(m_hWnd, &ps);
+	CPaintDC deviceContext(this);
 	if (!m_firstPaint) {
 		redraw();
 	}
-	drawLabels(hdc);
-	::EndPaint(m_hWnd, &ps);
+	drawLabels(&deviceContext);
 	if (m_firstPaint) {
 		CMainFrame::GetMainFrame()->adjustWindowSize();
 		m_firstPaint = false;
@@ -2367,7 +2377,7 @@ void WbView3d::OnPaint()
 
 //////////////////////////////////////////////////////////////////////////
 /// Draw a (not very good) circle into the hdc
-void WbView3d::drawCircle( HDC hdc, const Coord3D & centerPoint, Real radius, COLORREF color )
+void WbView3d::drawCircle( CDC *deviceContext, const Coord3D & centerPoint, Real radius, COLORREF color )
 {
   CPoint rulerPoints[2];
   Coord3D pnt;
@@ -2375,8 +2385,8 @@ void WbView3d::drawCircle( HDC hdc, const Coord3D & centerPoint, Real radius, CO
   Real inc = PI/4.0f;
 
   // Create and select a correctly colored pen. Remember the old one so that it can be restored.
-  HPEN pen = CreatePen(PS_SOLID, 2, color);
-  HPEN penOld = (HPEN)SelectObject(hdc, pen); 
+  CPen pen(PS_SOLID, 2, color);
+  CPen *penOld = deviceContext->SelectObject(&pen);
   
   
   // Get the starting point on the circumference of the circle.
@@ -2394,7 +2404,8 @@ void WbView3d::drawCircle( HDC hdc, const Coord3D & centerPoint, Real radius, CO
     
     docToViewCoords(pnt, &rulerPoints[1]);
     
-    ::Polyline(hdc, rulerPoints, 2);
+    deviceContext->MoveTo(rulerPoints[0]);
+    deviceContext->LineTo(rulerPoints[1]);
     
     // Remember the last point to use as the starting point for the next line.
     rulerPoints[0].x = rulerPoints[1].x; 
@@ -2402,21 +2413,19 @@ void WbView3d::drawCircle( HDC hdc, const Coord3D & centerPoint, Real radius, CO
   }
 
   // Restore previous pen.
-  SelectObject(hdc, penOld);	
-  // Delete new pen.
-  DeleteObject(pen);	
+  deviceContext->SelectObject(penOld);
 }
 
 
 void WbView3d::drawLabels(void)
 {
 	CDC * pDC = GetDC();
-	drawLabels(pDC->m_hDC);
+	drawLabels(pDC);
 	ReleaseDC(pDC);
 }
 
 /// This is actually draw any 2d graphics and/or feedback.
-void WbView3d::drawLabels(HDC hdc)
+void WbView3d::drawLabels(CDC *deviceContext)
 {
 	Coord3D selectedPos;	//position of selected object
 	Real	selectedRadius=120.0f;	//default distance of lightfeeback model from object
@@ -2507,7 +2516,7 @@ void WbView3d::drawLabels(HDC hdc)
 							red = 255, green = 0;
 						}
 
-						if (m3DFont && !hdc) {
+						if (m3DFont && !deviceContext) {
 							RECT rct;
 							pt.y -= 5;
 							pt.x += 1;
@@ -2518,11 +2527,11 @@ void WbView3d::drawLabels(HDC hdc)
 
 						} else if (!m3DFont) {
 							//docToViewCoords(pos, &pt);
-							::SetBkMode(hdc, TRANSPARENT);
+							deviceContext->SetBkMode(TRANSPARENT);
 							pt.y -= 5;
 							pt.x += 1;
-							::SetTextColor(hdc, RGB(red,green,0));
-							::TextOut(hdc, pt.x, pt.y, name.str(), name.getLength());
+							deviceContext->SetTextColor(RGB(red,green,0));
+							deviceContext->TextOut(pt.x, pt.y, name.str(), name.getLength());
 						}
 					}
 				}
@@ -2531,14 +2540,14 @@ void WbView3d::drawLabels(HDC hdc)
 	}
 
 	// Draw tracking box.
-	if (hdc && m_doRectFeedback) {
+	if (deviceContext && m_doRectFeedback) {
 		CBrush brush;
 		// green brush for drawing the grid.
 		brush.CreateSolidBrush(RGB(0,255,0));
-		::FrameRect(hdc, &m_feedbackBox, (HBRUSH)brush.GetSafeHandle());
+		deviceContext->FrameRect(&m_feedbackBox, &brush);
 	}
 
-	if (hdc && m_doRulerFeedback) {
+	if (deviceContext && m_doRulerFeedback) {
 		if (m_doRulerFeedback == RULER_LINE) {
       // Change world coords to screen viewport coords.
       CPoint rulerPoints[2];
@@ -2546,21 +2555,20 @@ void WbView3d::drawLabels(HDC hdc)
       docToViewCoords(m_rulerPoints[1], &rulerPoints[1]);
       
       // Create and select a green pen. Remember the old one so that it can be restored.
-      HPEN pen = CreatePen(PS_SOLID, 2, RGB(0,255,0));
-      HPEN penOld = (HPEN)SelectObject(hdc, pen); 
+      CPen pen(PS_SOLID, 2, RGB(0,255,0));
+      CPen *penOld = deviceContext->SelectObject(&pen);
       // Draw the line ruler.
-			::Polyline(hdc, rulerPoints, 2);
+			deviceContext->MoveTo(rulerPoints[0]);
+			deviceContext->LineTo(rulerPoints[1]);
 
       // Restore previous pen.
-      SelectObject(hdc, penOld);	
-      // Delete new pen.
-      DeleteObject(pen);	
+      deviceContext->SelectObject(penOld);
 		} else if (m_doRulerFeedback == RULER_CIRCLE) {
-      drawCircle( hdc, m_rulerPoints[0], m_rulerLength, RGB( 0, 255, 0 ) );
+      drawCircle( deviceContext, m_rulerPoints[0], m_rulerLength, RGB( 0, 255, 0 ) );
 		}  
 	}
 
-	if (hdc && m_doLightFeedback)
+	if (deviceContext && m_doLightFeedback)
 	{	//Draw Lines to indicate the direction of each light source
 //		Int LightColors[MAX_GLOBAL_LIGHTS]={RGB(255,0,0),RGB(0,255,0),RGB(0,0,255)};
 
@@ -3249,4 +3257,3 @@ void WbView3d::OnUpdateViewShowSoundCircles(CCmdUI* pCmdUI)
 {
   pCmdUI->SetCheck(m_showSoundCircles ? 1 : 0);
 }
-

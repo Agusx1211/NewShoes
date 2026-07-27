@@ -942,6 +942,7 @@ std::string g_state_json;
 static bool g_use_shell_map = false;
 static std::string g_mod_directory;
 static std::string g_user_data_home = "/home/web_user";
+static std::string g_initial_file;
 static std::vector<std::string> g_engine_argument_storage;
 static std::vector<char *> g_engine_argv;
 static std::string g_engine_command_line;
@@ -950,7 +951,7 @@ void build_engine_arguments()
 {
 	g_engine_argument_storage.clear();
 	g_engine_argv.clear();
-	g_engine_argument_storage.reserve(5);
+	g_engine_argument_storage.reserve(7);
 	g_engine_argument_storage.push_back("CnCGeneralsZH");
 	if (!g_use_shell_map) {
 		g_engine_argument_storage.push_back("-noshellmap");
@@ -959,6 +960,10 @@ void build_engine_arguments()
 	if (!g_mod_directory.empty()) {
 		g_engine_argument_storage.push_back("-mod");
 		g_engine_argument_storage.push_back(g_mod_directory);
+	}
+	if (!g_initial_file.empty()) {
+		g_engine_argument_storage.push_back("-file");
+		g_engine_argument_storage.push_back(g_initial_file);
 	}
 	g_engine_argv.reserve(g_engine_argument_storage.size());
 	for (std::string &argument : g_engine_argument_storage) {
@@ -1066,6 +1071,9 @@ const char *build_state_json()
 	json += ",\"factory\":\"GeneralsMD/Code/Main/WinMain.cpp::CreateGameEngine\"";
 	json += ",\"commandLine\":\"";
 	json += json_escape(g_engine_command_line);
+	json += "\"";
+	json += ",\"initialFile\":\"";
+	json += json_escape(g_initial_file);
 	json += "\"";
 	json += ",\"runDirectory\":\"" + json_escape(g_state.run_directory) + "\"";
 	json += ",\"userDataHome\":\"" + json_escape(g_user_data_home) + "\"";
@@ -9319,6 +9327,27 @@ extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_mod_directory(const
 		return 0;
 	}
 	g_mod_directory = requested;
+	return 1;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int cnc_port_real_engine_set_initial_file(
+	const char *initial_file)
+{
+	if (g_state.attempted || initial_file == NULL) return 0;
+	std::string requested = initial_file;
+	std::replace(requested.begin(), requested.end(), '\\', '/');
+	const std::string user_maps =
+		"/home/web_user/Command and Conquer Generals Zero Hour Data/Maps/";
+	const bool in_user_maps = requested.compare(0, user_maps.size(), user_maps) == 0;
+	const bool in_install_maps = requested.compare(0, 5, "Maps/") == 0;
+	if ((!in_user_maps && !in_install_maps) ||
+		requested.find("..") != std::string::npos ||
+		requested.size() < 5 ||
+		requested.size() > 4096 ||
+		requested.compare(requested.size() - 4, 4, ".map") != 0) {
+		return 0;
+	}
+	g_initial_file = requested;
 	return 1;
 }
 

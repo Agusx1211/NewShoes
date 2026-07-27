@@ -6,7 +6,7 @@
 
 __attribute__((weak)) bool DX8Wrapper_IsWindowed = true;
 char g_cnc_port_app_prefix[] = "";
-char *gAppPrefix = g_cnc_port_app_prefix;
+char *gAppPrefix __attribute__((weak)) = g_cnc_port_app_prefix;
 // TheSystemIsUnicode is owned by the real Common/GameEngine.cpp.
 AsciiString g_LastErrorDump;
 

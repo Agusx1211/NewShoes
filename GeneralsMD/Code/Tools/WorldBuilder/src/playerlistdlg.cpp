@@ -455,7 +455,8 @@ void PlayerListDlg::updateTheUI(void)
 	list->ResetContent();
 
 	Int len = m_sides.getNumSides();
-	for (int i = 0; i < len; i++)
+	Int i;
+	for (i = 0; i < len; i++)
 	{
 		Dict *d = m_sides.getSideInfo(i)->getDict();
 		AsciiString name = d->getAsciiString(TheKey_playerName);
@@ -704,7 +705,7 @@ void PlayerListDlg::OnSelectPlayerColor()
 			}
 		}
 		if (index >= 0) {
-			Int color = TheMultiplayerSettings->getColor(c)->getColor();
+			Int color = TheMultiplayerSettings->getColor(index)->getColor();
 			playerDict->setInt(TheKey_playerColor, color);
 		}
 	}
@@ -839,7 +840,7 @@ void PlayerListDlg::OnChangePlayerdisplayname()
 }
 
 static void addSide(SidesList *sides, AsciiString faction, 
-										AsciiString playerName, UnsignedShort *playerUName)
+										AsciiString playerName, const WideChar *playerUName)
 {
 	if (!sides->findSideInfo(playerName)) {
 

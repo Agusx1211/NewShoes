@@ -95,7 +95,7 @@
     }
   }
 
-  function handleCommand(msg, replyPort) {
+  function handleCommand(msg, replyPort, transferredPorts) {
     var cmd = msg && msg.cmd;
     if (cmd === "ping") {
       respond(replyPort, { cmd: "pong", isPthread: true });
@@ -114,6 +114,10 @@
             Module: realmModule,
             realm: "engine",
             options: msg.options != null ? msg.options : null,
+            ports: transferredPorts || [],
+            respond: function (payload, transfer) {
+              respond(replyPort, payload, transfer);
+            },
           });
         })
         .then(
@@ -189,11 +193,11 @@
         if (!portData || typeof portData !== "object" || !portData.__cncRealm) {
           return;
         }
-        handleCommand(portData.__cncRealm, connectedPort);
+        handleCommand(portData.__cncRealm, connectedPort, portEvent.ports || []);
       };
       respond(connectedPort, { cmd: "connected", isPthread: true });
       return;
     }
-    handleCommand(msg, connectedPort);
+    handleCommand(msg, connectedPort, event.ports || []);
   });
 })();

@@ -92,7 +92,6 @@ protected:
 	afx_msg void OnUpdateWindowPreview640x480(CCmdUI* pCmdUI);
 	afx_msg void OnWindowPreview800x600();
 	afx_msg void OnUpdateWindowPreview800x600(CCmdUI* pCmdUI);
-	afx_msg void OnPaint();
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
 };

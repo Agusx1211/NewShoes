@@ -171,9 +171,12 @@ static void SpitLights()
 			y = TheGlobalData->m_terrainLighting[time+TIME_OF_DAY_FIRST][light].lightPos.y;
 			z = TheGlobalData->m_terrainLighting[time+TIME_OF_DAY_FIRST][light].lightPos.z;
 
-			DEBUG_LOG(("TerrainLighting%sAmbient%s = R:%d G:%d B:%d\n", times[time], lights[light], redA, greenA, blueA));
-			DEBUG_LOG(("TerrainLighting%sDiffuse%s = R:%d G:%d B:%d\n", times[time], lights[light], redD, greenD, blueD));
-			DEBUG_LOG(("TerrainLighting%sLightPos%s = X:%0.2f Y:%0.2f Z:%0.2f\n", times[time], lights[light], x, y, z));
+			DEBUG_LOG(("TerrainLighting%sAmbient%s = R:%d G:%d B:%d\n",
+				times[time].GetString(), lights[light].GetString(), redA, greenA, blueA));
+			DEBUG_LOG(("TerrainLighting%sDiffuse%s = R:%d G:%d B:%d\n",
+				times[time].GetString(), lights[light].GetString(), redD, greenD, blueD));
+			DEBUG_LOG(("TerrainLighting%sLightPos%s = X:%0.2f Y:%0.2f Z:%0.2f\n",
+				times[time].GetString(), lights[light].GetString(), x, y, z));
 
 			redA = TheGlobalData->m_terrainObjectsLighting[time+TIME_OF_DAY_FIRST][light].ambient.red*255;
 			greenA = TheGlobalData->m_terrainObjectsLighting[time+TIME_OF_DAY_FIRST][light].ambient.green*255;
@@ -187,9 +190,12 @@ static void SpitLights()
 			y = TheGlobalData->m_terrainObjectsLighting[time+TIME_OF_DAY_FIRST][light].lightPos.y;
 			z = TheGlobalData->m_terrainObjectsLighting[time+TIME_OF_DAY_FIRST][light].lightPos.z;
 
-			DEBUG_LOG(("TerrainObjectsLighting%sAmbient%s = R:%d G:%d B:%d\n", times[time], lights[light], redA, greenA, blueA));
-			DEBUG_LOG(("TerrainObjectsLighting%sDiffuse%s = R:%d G:%d B:%d\n", times[time], lights[light], redD, greenD, blueD));
-			DEBUG_LOG(("TerrainObjectsLighting%sLightPos%s = X:%0.2f Y:%0.2f Z:%0.2f\n", times[time], lights[light], x, y, z));
+			DEBUG_LOG(("TerrainObjectsLighting%sAmbient%s = R:%d G:%d B:%d\n",
+				times[time].GetString(), lights[light].GetString(), redA, greenA, blueA));
+			DEBUG_LOG(("TerrainObjectsLighting%sDiffuse%s = R:%d G:%d B:%d\n",
+				times[time].GetString(), lights[light].GetString(), redD, greenD, blueD));
+			DEBUG_LOG(("TerrainObjectsLighting%sLightPos%s = X:%0.2f Y:%0.2f Z:%0.2f\n",
+				times[time].GetString(), lights[light].GetString(), x, y, z));
 
 			DEBUG_LOG(("\n"));
 		}
@@ -197,7 +203,7 @@ static void SpitLights()
 	}
 
 	DEBUG_LOG(("GlobalLighting Code\n\n"));
-	for (time=0; time<4; time++) {
+	for (Int time=0; time<4; time++) {
 		for (Int light=0; light<3; light++) {
 			Int theTime = time+TIME_OF_DAY_FIRST;
 			GlobalData::TerrainLighting tl = TheGlobalData->m_terrainLighting[theTime][light];

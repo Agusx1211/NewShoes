@@ -697,6 +697,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
           abortMessage: init.abortMessage,
           frontier,
           stepped: init.request?.stepped !== false,
+          requestedInitialFile: String(init.request?.initialFile ?? ""),
           lastStep: init.lastStep,
         },
       });
@@ -748,6 +749,15 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
         )(modDirectory);
         if (modAccepted !== 1) {
           throw new Error("mod directory rejected");
+        }
+        const initialFile = String(request.initialFile ?? "");
+        if (initialFile) {
+          const initialFileAccepted = cwrapFor(
+            "cnc_port_real_engine_set_initial_file", "number", ["string"],
+          )(initialFile);
+          if (initialFileAccepted !== 1) {
+            throw new Error("initial map rejected");
+          }
         }
         if (request.stepped === false) {
           // ?initstep=0 fallback: the monolithic init call — blocks this
@@ -1243,6 +1253,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
           stepBudgetMs: msg.stepBudgetMs,
           commanderName: String(msg.commanderName ?? ""),
           modDirectory: String(msg.modDirectory ?? ""),
+          initialFile: String(msg.initialFile ?? ""),
           userDataHome: String(msg.userDataHome ?? ""),
         };
         init.respond = respond;

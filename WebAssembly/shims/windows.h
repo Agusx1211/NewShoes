@@ -187,6 +187,10 @@ struct GUID
 #define MAKELPARAM(low, high) static_cast<LPARAM>((static_cast<DWORD>(static_cast<WORD>(low)) & 0xffffUL) | \
 	((static_cast<DWORD>(static_cast<WORD>(high)) & 0xffffUL) << 16))
 #endif
+#ifndef MAKEWPARAM
+#define MAKEWPARAM(low, high) static_cast<WPARAM>((static_cast<DWORD>(static_cast<WORD>(low)) & 0xffffUL) | \
+	((static_cast<DWORD>(static_cast<WORD>(high)) & 0xffffUL) << 16))
+#endif
 
 #ifndef ZeroMemory
 #define ZeroMemory(destination, length) std::memset((destination), 0, (length))
@@ -433,14 +437,21 @@ static inline double Win32PortNowMilliseconds()
 #define MB_OK 0x00000000
 #define MB_OKCANCEL 0x00000001
 #define MB_ABORTRETRYIGNORE 0x00000002
+#define MB_YESNOCANCEL 0x00000003
 #define MB_YESNO 0x00000004
+#define MB_RETRYCANCEL 0x00000005
+#define MB_CANCELTRYCONTINUE 0x00000006
 #define MB_ICONHAND 0x00000010
 #define MB_ICONSTOP MB_ICONHAND
 #define MB_ICONERROR MB_ICONHAND
+#define MB_ICONQUESTION 0x00000020
 #define MB_ICONWARNING 0x00000030
 #define MB_ICONEXCLAMATION 0x00000030
 #define MB_ICONINFORMATION 0x00000040
+#define MB_DEFBUTTON1 0x00000000
+#define MB_DEFBUTTON2 0x00000100
 #define MB_DEFBUTTON3 0x00000200
+#define MB_DEFBUTTON4 0x00000300
 #define MB_APPLMODAL 0x00000000
 #define MB_SYSTEMMODAL 0x00001000
 #define MB_TASKMODAL 0x00002000
@@ -453,6 +464,8 @@ static inline double Win32PortNowMilliseconds()
 #define IDIGNORE 5
 #define IDYES 6
 #define IDNO 7
+#define IDTRYAGAIN 10
+#define IDCONTINUE 11
 
 #define CS_HREDRAW 0x0002
 #define CS_VREDRAW 0x0001
@@ -555,6 +568,7 @@ static inline double Win32PortNowMilliseconds()
 #define WM_ACTIVATEAPP 0x001C
 #define WM_ACTIVATE 0x0006
 #define WM_SETCURSOR 0x0020
+#define WM_NOTIFY 0x004E
 #define WM_PAINT 0x000F
 #define WM_ERASEBKGND 0x0014
 #define SC_SIZE 0xF000
@@ -944,16 +958,48 @@ static inline DWORD FormatMessageW(
 	return count;
 }
 
-static inline int MessageBoxA(void *, const char *text, const char *caption, unsigned int)
+#if defined(__EMSCRIPTEN__) && defined(WASM_WORLD_BUILDER)
+extern "C" int BrowserWorldBuilderMessageBox(
+	const char *text,
+	const char *caption,
+	unsigned int type);
+#endif
+
+static inline int MessageBoxA(
+	void *,
+	const char *text,
+	const char *caption,
+	unsigned int type)
 {
+#if defined(__EMSCRIPTEN__) && defined(WASM_WORLD_BUILDER)
+	return BrowserWorldBuilderMessageBox(text, caption, type);
+#else
 	std::fprintf(stderr, "%s: %s\n", caption ? caption : "MessageBoxA", text ? text : "");
 	return IDIGNORE;
+#endif
 }
 
-static inline int MessageBoxW(void *, const wchar_t *text, const wchar_t *caption, unsigned int)
+static inline int MessageBoxW(
+	void *,
+	const wchar_t *text,
+	const wchar_t *caption,
+	unsigned int type)
 {
+#if defined(__EMSCRIPTEN__) && defined(WASM_WORLD_BUILDER)
+	char narrow_text[4096] = {};
+	char narrow_caption[512] = {};
+	if (text != nullptr) std::wcstombs(narrow_text, text, sizeof(narrow_text) - 1);
+	if (caption != nullptr) {
+		std::wcstombs(narrow_caption, caption, sizeof(narrow_caption) - 1);
+	}
+	return BrowserWorldBuilderMessageBox(
+		narrow_text,
+		caption != nullptr ? narrow_caption : nullptr,
+		type);
+#else
 	std::fwprintf(stderr, L"%ls: %ls\n", caption ? caption : L"MessageBoxW", text ? text : L"");
 	return IDIGNORE;
+#endif
 }
 
 static inline int MessageBox(void *window, const char *text, const char *caption, unsigned int flags)
@@ -1460,11 +1506,24 @@ static inline HCURSOR LoadCursorFromFile(LPCSTR path)
 	return WasmWin32Input::LoadCursorFile(path);
 }
 
+#if defined(__EMSCRIPTEN__) && defined(WASM_WORLD_BUILDER)
+extern "C" void BrowserWorldBuilderSetCursor(
+	std::uintptr_t cursor,
+	const char *cursor_file) __attribute__((weak));
+#endif
+
 static inline HCURSOR SetCursor(HCURSOR cursor)
 {
 	HCURSOR previous = WasmWin32Input::current_cursor;
 	WasmWin32Input::current_cursor = cursor;
 	WasmWin32Input::current_cursor_file = WasmWin32Input::GetCursorFile(cursor);
+#if defined(__EMSCRIPTEN__) && defined(WASM_WORLD_BUILDER)
+	if (BrowserWorldBuilderSetCursor != nullptr) {
+		BrowserWorldBuilderSetCursor(
+			reinterpret_cast<std::uintptr_t>(cursor),
+			WasmWin32Input::current_cursor_file);
+	}
+#endif
 	return previous;
 }
 
@@ -1869,7 +1928,12 @@ static inline BOOL SHGetSpecialFolderPath(HWND, LPSTR path, int, BOOL)
 		return FALSE;
 	}
 
-	const char *home = std::getenv("HOME");
+	const char *home = nullptr;
+#if defined(__EMSCRIPTEN__) && defined(WASM_WORLD_BUILDER)
+	home = "/home/web_user";
+#else
+	home = std::getenv("HOME");
+#endif
 	if (home == nullptr || *home == '\0') {
 		home = ".";
 	}
@@ -2142,9 +2206,13 @@ static inline DWORD GetModuleFileNameA(HINSTANCE, LPSTR buffer, DWORD size)
 		return 0;
 	}
 
+	#if defined(__EMSCRIPTEN__) && defined(WASM_WORLD_BUILDER)
+	const char fallback[] = "/assets/world-builder\\world-builder.exe";
+	#else
 	const char fallback[] = "cnc-port.exe";
+	#endif
 	const char *path = fallback;
-#if defined(__linux__) || defined(__EMSCRIPTEN__)
+#if defined(__linux__) && !defined(__EMSCRIPTEN__)
 	char resolved[_MAX_PATH];
 	const ssize_t length = readlink("/proc/self/exe", resolved, sizeof(resolved) - 1);
 	if (length > 0) {
@@ -2257,14 +2325,17 @@ static inline BOOL QueryPerformanceFrequency(LARGE_INTEGER *frequency)
 	return TRUE;
 }
 
+static inline std::string WasmNormalizePath(const char *path);
+
 static inline DWORD GetFileAttributes(LPCSTR filename)
 {
 	if (filename == nullptr) {
 		return INVALID_FILE_ATTRIBUTES;
 	}
 
+	const std::string normalized = WasmNormalizePath(filename);
 	struct stat attributes;
-	if (stat(filename, &attributes) != 0) {
+	if (stat(normalized.c_str(), &attributes) != 0) {
 		return INVALID_FILE_ATTRIBUTES;
 	}
 
@@ -2490,7 +2561,9 @@ static inline void WasmSplitFindPattern(const char *search, std::string &directo
 		pattern = normalized.substr(slash + 1);
 	}
 
-	if (pattern.empty() || pattern == "*.") {
+	// Win32 treats "*.*" as the all-files pattern, including names without a
+	// dot. POSIX fnmatch does not, so normalize both legacy wildcard spellings.
+	if (pattern.empty() || pattern == "*." || pattern == "*.*") {
 		pattern = "*";
 	}
 }
