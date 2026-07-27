@@ -176,6 +176,9 @@ const replayPerformanceGpuProfileStartFrame = parsePositiveInt(
 const replayPerformanceGpuProfileFrames = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_GPU_PROFILE_FRAMES", 120);
 const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
+const expectBrightRoadProbe = process.env.SKIRMISH_START_BRIGHT_ROAD_PROBE === "1";
+const brightRoadScreenshotPrefix = String(
+  process.env.SKIRMISH_START_BRIGHT_ROAD_SCREENSHOT_PREFIX ?? "").trim();
 const expectParticleVisibilityProbe =
   process.env.SKIRMISH_START_PARTICLE_VISIBILITY_PROBE === "1";
 const expectTouchControlsProbe = process.env.SKIRMISH_START_TOUCH_PROBE === "1";
@@ -401,6 +404,87 @@ async function sampleViewportGrid(page) {
       pixels,
     };
   });
+}
+
+async function sampleViewportPatches(page, groups, radius = 1) {
+  return page.evaluate(async ({ sampleGroups, sampleRadius }) => {
+    const viewport = document.querySelector("#viewport");
+    if (!(viewport instanceof HTMLCanvasElement)) {
+      return { ok: false, error: "viewport canvas is missing" };
+    }
+
+    const result = await window.CnCPort?.rpc?.("screenshot");
+    const dataUrl = typeof result?.screenshot === "string"
+      ? result.screenshot
+      : result?.screenshot?.dataUrl;
+    if (result?.ok !== true || typeof dataUrl !== "string"
+        || !dataUrl.startsWith("data:image/png;base64,")) {
+      return { ok: false, error: "viewport screenshot is unavailable", result };
+    }
+
+    const image = new Image();
+    image.src = dataUrl;
+    await image.decode();
+    const snapshot = document.createElement("canvas");
+    snapshot.width = image.naturalWidth;
+    snapshot.height = image.naturalHeight;
+    const context = snapshot.getContext("2d", { willReadFrequently: true });
+    if (context == null) {
+      return { ok: false, error: "viewport snapshot context is unavailable" };
+    }
+    context.drawImage(image, 0, 0);
+
+    const sampledGroups = {};
+    for (const [name, points] of Object.entries(sampleGroups)) {
+      const pointResults = [];
+      const groupSum = [0, 0, 0];
+      let groupPixelCount = 0;
+      for (const point of points) {
+        const centerX = Math.round(Number(point.x));
+        const centerY = Math.round(Number(point.y));
+        const x0 = Math.max(0, centerX - sampleRadius);
+        const y0 = Math.max(0, centerY - sampleRadius);
+        const x1 = Math.min(snapshot.width - 1, centerX + sampleRadius);
+        const y1 = Math.min(snapshot.height - 1, centerY + sampleRadius);
+        const pixels = context.getImageData(
+          x0, y0, x1 - x0 + 1, y1 - y0 + 1).data;
+        const sum = [0, 0, 0];
+        const pixelCount = pixels.length / 4;
+        for (let offset = 0; offset < pixels.length; offset += 4) {
+          for (let component = 0; component < 3; ++component) {
+            sum[component] += pixels[offset + component];
+            groupSum[component] += pixels[offset + component];
+          }
+        }
+        groupPixelCount += pixelCount;
+        const rgb = sum.map((value) => Number((value / pixelCount).toFixed(3)));
+        pointResults.push({
+          x: centerX,
+          y: centerY,
+          rgb,
+          luminance: Number(
+            (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722).toFixed(3)),
+        });
+      }
+      const rgb = groupSum.map((value) =>
+        Number((value / groupPixelCount).toFixed(3)));
+      sampledGroups[name] = {
+        rgb,
+        luminance: Number(
+          (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722).toFixed(3)),
+        points: pointResults,
+      };
+    }
+
+    return {
+      ok: true,
+      source: "rpc-screenshot",
+      width: snapshot.width,
+      height: snapshot.height,
+      radius: sampleRadius,
+      groups: sampledGroups,
+    };
+  }, { sampleGroups: groups, sampleRadius: radius });
 }
 
 async function sampleViewportAnnulus(page, screenPos, innerRadius = 14, outerRadius = 42) {
@@ -2738,6 +2822,84 @@ async function inspectGraphics(page) {
   });
 }
 
+async function driveBrightRoadProbe(page) {
+  const screenshotPrefix = resolve(
+    brightRoadScreenshotPrefix || resolve(screenshotsRoot, "bright-road-regression"));
+  const position = { x: 4012.368164, y: 893.541748 };
+  const sampleGroups = {
+    road: [
+      { x: 400, y: 180 },
+      { x: 400, y: 200 },
+      { x: 200, y: 230 },
+      { x: 600, y: 140 },
+    ],
+    terrain: [
+      { x: 400, y: 350 },
+      { x: 200, y: 350 },
+      { x: 600, y: 350 },
+      { x: 100, y: 100 },
+    ],
+  };
+
+  const capture = async (name) => {
+    const settled = await runFrames(page, 2, `bright-road ${name} settle`);
+    const screenshot = `${screenshotPrefix}-${name}.png`;
+    await captureViewport(page, screenshot);
+    const samples = await sampleViewportPatches(page, sampleGroups);
+    expect(samples?.ok === true,
+      `bright-road probe could not sample ${name} pixels`, samples);
+    expect(samples.width === 800 && samples.height === 600,
+      `bright-road probe requires an 800x600 viewport`, samples);
+    return {
+      shroud: locateNested(settled.frame, ["shroud"]) ?? null,
+      samples,
+      screenshot,
+    };
+  };
+
+  const camera = await rpc(page, "agentCameraLookAt", position);
+  expect(camera?.ok === true,
+    "bright-road probe could not move to the reported location", camera);
+  const fogged = await capture("fogged");
+
+  const reveal = await rpc(page, "revealLocalMap", { permanent: true });
+  expect(reveal?.ok === true,
+    "bright-road probe could not reveal the local map", reveal);
+  const revealed = await capture("revealed");
+
+  const roadFogged = fogged.samples.groups.road.luminance;
+  const roadRevealed = revealed.samples.groups.road.luminance;
+  const terrainFogged = fogged.samples.groups.terrain.luminance;
+  const terrainRevealed = revealed.samples.groups.terrain.luminance;
+  const roadAttenuation = Number((roadFogged / roadRevealed).toFixed(3));
+  const terrainAttenuation = Number((terrainFogged / terrainRevealed).toFixed(3));
+
+  expect(roadRevealed >= 24,
+    "bright-road probe clear road pixels are too dark for a meaningful comparison",
+    { roadFogged, roadRevealed, fogged, revealed });
+  expect(terrainRevealed >= 24,
+    "bright-road probe clear terrain pixels are too dark for a meaningful comparison",
+    { terrainFogged, terrainRevealed, fogged, revealed });
+  expect(terrainAttenuation <= 0.72,
+    "bright-road probe did not observe fog attenuation on terrain",
+    { terrainAttenuation, fogged, revealed });
+  expect(roadAttenuation <= 0.72,
+    "road pixels remained bright under fog",
+    { roadAttenuation, terrainAttenuation, fogged, revealed });
+  expect(Math.abs(roadAttenuation - terrainAttenuation) <= 0.18,
+    "road fog attenuation differs materially from adjacent terrain",
+    { roadAttenuation, terrainAttenuation, fogged, revealed });
+
+  return {
+    position,
+    camera: camera.result ?? camera,
+    fogged,
+    revealed,
+    roadAttenuation,
+    terrainAttenuation,
+  };
+}
+
 async function driveParticleVisibilityProbe(page) {
   const screenshot = resolve(screenshotsRoot, "particle-visibility-smoke.png");
   await rpc(page, "revealLocalMap", { permanent: true });
@@ -3762,6 +3924,11 @@ async function main() {
       decalProbe = await driveDecalProbe(page);
       console.error("[skirmish-start] decalProbe:", JSON.stringify(decalProbe));
     }
+    let brightRoadProbe = null;
+    if (expectBrightRoadProbe) {
+      brightRoadProbe = await driveBrightRoadProbe(page);
+      console.error("[skirmish-start] brightRoadProbe:", JSON.stringify(brightRoadProbe));
+    }
     let scorchProbe = null;
     if (expectScorchProbe) {
       scorchProbe = await driveScorchProbe(page);
@@ -3995,6 +4162,7 @@ async function main() {
       enemyAiActivity,
       escMenuResume,
       rallyProbe,
+      brightRoadProbe,
       scorchProbe,
       particleVisibilityProbe,
       touchControlsProbe,

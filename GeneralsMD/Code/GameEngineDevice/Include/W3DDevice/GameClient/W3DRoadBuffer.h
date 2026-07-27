@@ -169,6 +169,7 @@ protected:
 #endif
 public:
 	void loadTexture(AsciiString path, Int id);
+	void applyBuffers(void);
 	void applyTexture(void);
 	Int getStacking(void) {return m_stackingOrder;}
 	void setStacking(Int order) {m_stackingOrder = order;}
@@ -206,6 +207,8 @@ public:
 	/// Draws the roads.  Uses terrain bounds for culling.
 	void drawRoads(CameraClass * camera, TextureClass *cloudTexture, TextureClass *noiseTexture, Bool wireframe,
 																	Int minX, Int maxX, Int minY, Int maxY, RefRenderObjListIterator *pDynamicLightsIterator);
+	/// Draws the visible road geometry using the caller's currently installed material pass.
+	void drawShroud(void);
 	/// Sets the map pointer.
 	void setMap(WorldHeightMap *pMap);
 	/// Updates the diffuse lighting in the buffers.

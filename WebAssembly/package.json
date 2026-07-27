@@ -172,6 +172,7 @@
     "test:weapon-impact-fx": "npm run build:port && node harness/weapon_impact_fx_smoke.mjs",
     "test:real-audio-event": "npm run build:port && node harness/real_audio_event_smoke.mjs",
     "test:skirmish-start": "npm run build:port && node harness/skirmish_start_smoke.mjs",
+    "test:bright-road-shroud": "npm run build:port:threaded:release && SKIRMISH_START_DIST=dist-threaded-release SKIRMISH_START_THREADS=1 SKIRMISH_START_MAP='Maps\\Destruction Station\\Destruction Station.map' SKIRMISH_START_SEED=104741 SKIRMISH_START_LOCAL_TEMPLATE=FactionAmerica SKIRMISH_START_BRIGHT_ROAD_PROBE=1 SKIRMISH_START_OMIT_AUDIO_ARCHIVES=1 node harness/skirmish_start_smoke.mjs",
     "test:skirmish-start-assets": "npm run build:port && SKIRMISH_START_EXPECT_ENEMY_START_ASSETS=1 node harness/skirmish_start_smoke.mjs",
     "test:skirmish-music-transition": "npm run build:port && SKIRMISH_START_EXPECT_MUSIC_STOP=1 node harness/skirmish_start_smoke.mjs",
     "test:skirmish-esc-menu": "npm run build:port && SKIRMISH_START_EXPECT_ESC_MENU_RESUME=1 node harness/skirmish_start_smoke.mjs",
