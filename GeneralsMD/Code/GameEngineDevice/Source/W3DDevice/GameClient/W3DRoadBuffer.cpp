@@ -161,6 +161,17 @@ RoadType::~RoadType(void)
 }
 
 //=============================================================================
+// RoadType applyBuffers
+//=============================================================================
+/** Sets the road's index and vertex buffers without replacing the active texture. */
+//=============================================================================
+void RoadType::applyBuffers(void)
+{
+	DX8Wrapper::Set_Index_Buffer(m_indexRoad,0);
+	DX8Wrapper::Set_Vertex_Buffer(m_vertexRoad);
+}
+
+//=============================================================================
 // RoadType applyTexture
 //=============================================================================
 /** Sets the W3D texture. */
@@ -168,8 +179,7 @@ RoadType::~RoadType(void)
 void RoadType::applyTexture(void)
 {
  	W3DShaderManager::setTexture(0,m_roadTexture);
-	DX8Wrapper::Set_Index_Buffer(m_indexRoad,0);
-	DX8Wrapper::Set_Vertex_Buffer(m_vertexRoad);
+	applyBuffers();
 }
 
 
@@ -3428,4 +3438,32 @@ void W3DRoadBuffer::drawRoads(CameraClass * camera, TextureClass *cloudTexture, 
 	}
 #endif
 	m_curRoadType = 0;
+}
+
+//=============================================================================
+// W3DRoadBuffer::drawShroud
+//=============================================================================
+/** Draws road geometry with the currently installed shroud material. */
+//=============================================================================
+void W3DRoadBuffer::drawShroud(void)
+{
+	Int maxStacking = 0;
+	Int i;
+	for (i=0; i<m_maxRoadTypes; i++) {
+		if (m_roadTypes[i].getStacking() > maxStacking) {
+			maxStacking = m_roadTypes[i].getStacking();
+		}
+	}
+
+	for (Int stacking=0; stacking <= maxStacking; stacking++) {
+		for (i=0; i<m_maxRoadTypes; i++) {
+			if (stacking != m_roadTypes[i].getStacking() ||
+					m_roadTypes[i].getNumIndices() == 0) {
+				continue;
+			}
+			m_roadTypes[i].applyBuffers();
+			DX8Wrapper::Draw_Triangles(0, m_roadTypes[i].getNumIndices()/3, 0,
+				m_roadTypes[i].getNumVertices());
+		}
+	}
 }

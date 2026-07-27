@@ -2986,6 +2986,16 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
+    case "revealLocalMap": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_reveal_local_map", "string", ["number"],
+          [payload.permanent === false ? 0 : 1]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "realEngineProbeWorkerSupplyExit": {
       try {
         const result = await threadedEngine.engineCall(

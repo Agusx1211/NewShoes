@@ -2009,6 +2009,7 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	Int i,j,devicePasses;
 	W3DShaderManager::ShaderTypes st;
 	Bool doCloud = TheGlobalData->m_useCloudMap;
+	Bool roadsRendered = FALSE;
 
 	Matrix3D tm(Transform);
 #if 0 // There is some weirdness sometimes with the dx8 static buffers.
@@ -2252,6 +2253,7 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 				RefRenderObjListIterator pDynamicLightsIterator(pMyScene->getDynamicLights());
 				m_roadBuffer->drawRoads(&rinfo.Camera, doCloud?m_stageTwoTexture:NULL, TheGlobalData->m_useLightMap?m_stageThreeTexture:NULL,
 					m_disableTextures,xCoordMin-m_map->getBorderSizeInline(), xCoordMax-m_map->getBorderSizeInline(), yCoordMin-m_map->getBorderSizeInline(), yCoordMax-m_map->getBorderSizeInline(), &pDynamicLightsIterator);
+				roadsRendered = TRUE;
 				CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.roads.after");
 			}
 		}
@@ -2298,6 +2300,11 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			TheTerrainRenderObject=this;
 			rinfo.Peek_Additional_Pass(0)->Install_Materials();
 			renderTerrainPass(&rinfo.Camera);
+			if (roadsRendered) {
+				CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.shroudPass.roads.before");
+				m_roadBuffer->drawShroud();
+				CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.shroudPass.roads.after");
+			}
 			rinfo.Peek_Additional_Pass(0)->UnInstall_Materials();
 			TheTerrainRenderObject=oldTerrainRenderObject;
 			CNC_PORT_NOTE_TERRAIN_STEP("HeightMap.render.shroudPass.after");
