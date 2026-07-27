@@ -1712,15 +1712,23 @@ Particle *ParticleSystem::createParticle( const ParticleInfo *info,
 		// ALWAYS_RENDER particles are exempt from all count limits, and are always created, regardless of LOD issues.
 		if (priority != ALWAYS_RENDER)
 		{
-			int numInExcess = TheParticleSystemManager->getParticleCount() - (UnsignedInt)TheGlobalData->m_maxParticleCount;
-			if ( numInExcess > 0)
+			const UnsignedInt maxParticleCount = (UnsignedInt)TheGlobalData->m_maxParticleCount;
+			if (maxParticleCount == 0)
+				return NULL;
+
+			const UnsignedInt particleCount = TheParticleSystemManager->getParticleCount();
+			if (particleCount >= maxParticleCount)
 			{
-				if( TheParticleSystemManager->removeOldestParticles((UnsignedInt) numInExcess, priority) != numInExcess )
+				const UnsignedInt particlesToRemove = particleCount - maxParticleCount + 1;
+				const UnsignedInt culledParticlesRemoved =
+					TheParticleSystemManager->removeOldestCulledParticles(
+						particlesToRemove, priority);
+				const UnsignedInt remainingParticlesToRemove =
+					particlesToRemove - culledParticlesRemoved;
+				if (TheParticleSystemManager->removeOldestParticles(
+						remainingParticlesToRemove, priority) != remainingParticlesToRemove)
 					return NULL;  // could not remove enough particles, don't create new stuff
 			}
-
-			if (TheGlobalData->m_maxParticleCount == 0)
-				return NULL;
 		}
 
 	}  // end if
@@ -2837,6 +2845,7 @@ ParticleSystemManager::ParticleSystemManager( void )
 	//Initializations inserted
 	m_lastLogicFrameUpdate = 0;
 	m_particleCount = 0;
+	m_culledParticleCount = 0;
 	m_fieldParticleCount = 0;
 	m_particleSystemCount = 0;
 	//
@@ -2915,6 +2924,7 @@ void ParticleSystemManager::reset( void )
 	}  // end for, i
 
 	m_particleCount = 0;
+	m_culledParticleCount = 0;
 	m_fieldParticleCount = 0;
 	m_particleSystemCount = 0;
 
@@ -3182,6 +3192,11 @@ void ParticleSystemManager::removeParticle( Particle *particleToRemove)
 	particleToRemove->m_overallNext = particleToRemove->m_overallPrev = NULL;
 	particleToRemove->m_inOverallList = FALSE;
 	--m_particleCount;
+	if (particleToRemove->isCulled()) {
+		DEBUG_ASSERTCRASH(m_culledParticleCount > 0,
+			("ParticleSystemManager culled particle count underflow\n"));
+		--m_culledParticleCount;
+	}
 
 
 }
@@ -3209,30 +3224,73 @@ void ParticleSystemManager::friend_removeParticleSystem( ParticleSystem *particl
 }
 
 // ------------------------------------------------------------------------------------------------
+/** Remove culled particles from the lowest eligible priority lists first. */
+// ------------------------------------------------------------------------------------------------
+Int ParticleSystemManager::removeOldestCulledParticles(
+	UnsignedInt count,
+	ParticlePriorityType priorityCap )
+{
+	UnsignedInt removedCount = 0;
+
+	while (removedCount < count && m_culledParticleCount > 0)
+	{
+		Bool removedParticle = false;
+		for (Int i = PARTICLE_PRIORITY_LOWEST; i <= priorityCap; ++i)
+		{
+			for (Particle *particle = m_allParticlesHead[i];
+				particle != NULL;
+				particle = particle->m_overallNext)
+			{
+				if (particle->isCulled())
+				{
+					particle->deleteInstance();
+					++removedCount;
+					removedParticle = true;
+					break;
+				}
+			}
+			if (removedParticle)
+				break;
+		}
+
+		if (!removedParticle)
+			break;
+	}
+
+	return (Int)removedCount;
+}
+
+// ------------------------------------------------------------------------------------------------
 /** Remove the oldest N number of particles from the lowest priority lists first.  We will
- * not remove particles from any priorities higher or equal to the priorityCap parameter. */
+ * not remove particles from any priority higher than the priorityCap parameter. */
 // ------------------------------------------------------------------------------------------------
 Int ParticleSystemManager::removeOldestParticles( UnsignedInt count, 
 																									ParticlePriorityType priorityCap )
 {
-	Int countToRemove = count;
+	UnsignedInt removedCount = 0;
 
-	while (count-- && getParticleCount()) 
+	while (removedCount < count && getParticleCount())
 	{
+		Bool removedParticle = false;
 		for( Int i = PARTICLE_PRIORITY_LOWEST;
-				 i < priorityCap;
+				 i <= priorityCap;
 				 ++i )
 		{
 			if( m_allParticlesHead[ i ] ) 
 			{
 				m_allParticlesHead[ i ]->deleteInstance();
+				++removedCount;
+				removedParticle = true;
 				break;  // exit for
 			}
 		}
+
+		if (!removedParticle)
+			break;
 	}
 
 	// return the number of particles actually removed
-	return countToRemove - count;
+	return (Int)removedCount;
 
 }
 

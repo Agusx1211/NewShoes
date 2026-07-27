@@ -183,7 +183,7 @@ public:
 	inline const RGBColor *getColor( void ) { return &m_color; }
 	inline void setColor( RGBColor *color ) { m_color = *color; }
 
-	inline Bool isInvisible( void );										///< return true if this particle is invisible
+	Bool isInvisible( void );													///< return true if this particle is invisible
 	inline Bool isCulled (void) {return m_isCulled;}				///< return true if the particle falls off the edge of the screen
 	inline void setIsCulled (Bool enable) { m_isCulled = enable;}		///< set particle to not visible because it's outside view frustum
 
@@ -765,8 +765,11 @@ public:
 	void setLocalPlayerIndex(Int index)	{m_localPlayerIndex=index;}
 	void addParticle( Particle *particleToAdd, ParticlePriorityType priority );
 	void removeParticle( Particle *particleToRemove );
+	void setCulledParticleCount( UnsignedInt count ) { m_culledParticleCount = count; }
+	Int removeOldestCulledParticles( UnsignedInt count, ParticlePriorityType priorityCap );
 	Int removeOldestParticles( UnsignedInt count, ParticlePriorityType priorityCap );
 	UnsignedInt getParticleCount( void ) const { return m_particleCount; }
+	UnsignedInt getCulledParticleCount( void ) const { return m_culledParticleCount; }
 
 	UnsignedInt getFieldParticleCount( void )     const { return m_fieldParticleCount; }
 
@@ -799,6 +802,7 @@ protected:
 	ParticleSystemList m_allParticleSystemList;
 
 	UnsignedInt m_particleCount;
+	UnsignedInt m_culledParticleCount;
 	UnsignedInt m_fieldParticleCount; ///< this does not need to be xfered, since it is evaluated every frame
 	UnsignedInt m_particleSystemCount;
 	Int m_onScreenParticleCount;                ///< number of particles displayed on screen per frame
