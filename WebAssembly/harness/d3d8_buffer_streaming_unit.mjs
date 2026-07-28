@@ -138,10 +138,10 @@ assert.equal(
   null,
 );
 
-function vertexArrayKey(vertexBufferId) {
+function vertexArrayKey(vertexBufferId, vertexByteOffset = 0) {
   return {
     vertexBufferId,
-    vertexByteOffset: 0,
+    vertexByteOffset,
     vertexStride: 16,
     positionAttrib: 0,
     normalAttrib: -1,
@@ -234,6 +234,33 @@ assert.equal(hooks.cncPortD3D8BufferUpdate({
 assert.equal(calls.deletedVertexArrays.includes(cachedVertexArray), true);
 assert.equal(calls.deletedVertexArrays.includes(unrelatedVertexArray), false);
 assert.equal(diag.d3d8PerfSummary().vertexArrayCacheEntries, 1);
+
+const denseVertexArrays = [];
+for (let index = 0; index < 512; index += 1) {
+  const vertexArray = { id: `dense-vao-${index}` };
+  denseVertexArrays.push(vertexArray);
+  diag.rememberD3D8VertexArray(
+    vertexArrayKey(700, index * 16),
+    701,
+    vertexArray,
+    { id: "dense-index-buffer" },
+  );
+}
+for (const index of [0, 1, 255, 511]) {
+  assert.equal(
+    diag.findD3D8VertexArrayCacheEntry(vertexArrayKey(700, index * 16), 701)?.vertexArray,
+    denseVertexArrays[index],
+  );
+}
+assert.equal(
+  diag.findD3D8VertexArrayCacheEntry(vertexArrayKey(700, 512 * 16), 701),
+  null,
+);
+assert.equal(diag.invalidateD3D8VertexArrayCacheForBufferId(700), 512);
+assert.equal(
+  calls.deletedVertexArrays.filter(({ id }) => id.startsWith("dense-vao-")).length,
+  512,
+);
 
 assert.equal(hooks.cncPortD3D8BufferCreate({
   kind: 1,

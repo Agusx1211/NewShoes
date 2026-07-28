@@ -2599,7 +2599,7 @@ function d3d8VertexArrayKeyMatches(entry, key, indexBufferId) {
     entry.indexBufferId === indexBufferId;
 }
 
-function d3d8VertexArrayCacheBucket(vertexBufferId, indexBufferId, create = false) {
+function d3d8VertexArrayCacheOffsetBuckets(vertexBufferId, indexBufferId, create = false) {
   let byIndexBuffer = d3d8VertexArrayCache.get(vertexBufferId);
   if (!byIndexBuffer) {
     if (!create) {
@@ -2613,7 +2613,7 @@ function d3d8VertexArrayCacheBucket(vertexBufferId, indexBufferId, create = fals
     if (!create) {
       return null;
     }
-    bucket = [];
+    bucket = new Map();
     byIndexBuffer.set(indexBufferId, bucket);
   }
   return bucket;
@@ -2660,11 +2660,19 @@ function unlinkD3D8VertexArrayCacheEntry(entry) {
 }
 
 function findD3D8VertexArrayCacheEntry(key, indexBufferId) {
-  const bucket = d3d8VertexArrayCacheBucket(key.vertexBufferId, indexBufferId, false);
-  if (!bucket) {
+  const offsetBuckets = d3d8VertexArrayCacheOffsetBuckets(
+    key.vertexBufferId,
+    indexBufferId,
+    false,
+  );
+  if (!offsetBuckets) {
     return null;
   }
-  for (const entry of bucket) {
+  const entries = offsetBuckets.get(key.vertexByteOffset);
+  if (!entries) {
+    return null;
+  }
+  for (const entry of entries) {
     if (d3d8VertexArrayKeyMatches(entry, key, indexBufferId)) {
       touchD3D8VertexArrayCacheEntry(entry);
       return entry;
@@ -2696,11 +2704,15 @@ function removeD3D8VertexArrayCacheEntry(entry) {
     return;
   }
   const byIndexBuffer = d3d8VertexArrayCache.get(entry.vertexBufferId);
-  const bucket = byIndexBuffer?.get(entry.indexBufferId);
-  const bucketIndex = bucket?.indexOf(entry) ?? -1;
+  const offsetBuckets = byIndexBuffer?.get(entry.indexBufferId);
+  const entries = offsetBuckets?.get(entry.vertexByteOffset);
+  const bucketIndex = entries?.indexOf(entry) ?? -1;
   if (bucketIndex >= 0) {
-    bucket.splice(bucketIndex, 1);
-    if (bucket.length === 0) {
+    entries.splice(bucketIndex, 1);
+    if (entries.length === 0) {
+      offsetBuckets.delete(entry.vertexByteOffset);
+    }
+    if (offsetBuckets.size === 0) {
       byIndexBuffer.delete(entry.indexBufferId);
       if (byIndexBuffer.size === 0) {
         d3d8VertexArrayCache.delete(entry.vertexBufferId);
@@ -2710,6 +2722,14 @@ function removeD3D8VertexArrayCacheEntry(entry) {
   unlinkD3D8VertexArrayCacheEntry(entry);
   deleteD3D8VertexArrayCacheEntry(entry);
   d3d8VertexArrayCacheEntries = Math.max(0, d3d8VertexArrayCacheEntries - 1);
+}
+
+function collectD3D8VertexArrayCacheEntries(offsetBuckets, matches) {
+  for (const entries of offsetBuckets.values()) {
+    for (const entry of entries) {
+      matches.add(entry);
+    }
+  }
 }
 
 function invalidateD3D8VertexArrayCacheForBufferIds(bufferIds) {
@@ -2736,22 +2756,18 @@ function invalidateD3D8VertexArrayCacheForBufferIds(bufferIds) {
     if (!byIndexBuffer) {
       continue;
     }
-    for (const bucket of byIndexBuffer.values()) {
-      for (const entry of bucket) {
-        matches.add(entry);
-      }
+    for (const offsetBuckets of byIndexBuffer.values()) {
+      collectD3D8VertexArrayCacheEntries(offsetBuckets, matches);
     }
   }
   // Index-buffer buckets are nested once beneath each vertex-buffer id.
   for (const byIndexBuffer of d3d8VertexArrayCache.values()) {
     for (const id of ids) {
-      const bucket = byIndexBuffer.get(id);
-      if (!bucket) {
+      const offsetBuckets = byIndexBuffer.get(id);
+      if (!offsetBuckets) {
         continue;
       }
-      for (const entry of bucket) {
-        matches.add(entry);
-      }
+      collectD3D8VertexArrayCacheEntries(offsetBuckets, matches);
     }
   }
   for (const entry of matches) {
@@ -14547,8 +14563,17 @@ function rememberD3D8VertexArray(key, indexBufferId, vertexArray, elementArrayBu
   if (!key || !vertexArray) {
     return null;
   }
-  const bucket = d3d8VertexArrayCacheBucket(key.vertexBufferId, indexBufferId, true);
-  for (const entry of bucket) {
+  const offsetBuckets = d3d8VertexArrayCacheOffsetBuckets(
+    key.vertexBufferId,
+    indexBufferId,
+    true,
+  );
+  let entries = offsetBuckets.get(key.vertexByteOffset);
+  if (!entries) {
+    entries = [];
+    offsetBuckets.set(key.vertexByteOffset, entries);
+  }
+  for (const entry of entries) {
     if (d3d8VertexArrayKeyMatches(entry, key, indexBufferId)) {
       if (entry.vertexArray !== vertexArray) {
         deleteD3D8VertexArrayCacheEntry(entry);
@@ -14565,7 +14590,7 @@ function rememberD3D8VertexArray(key, indexBufferId, vertexArray, elementArrayBu
   entry.elementArrayBuffer = elementArrayBuffer;
   entry.lruPrevious = null;
   entry.lruNext = null;
-  bucket.push(entry);
+  entries.push(entry);
   touchD3D8VertexArrayCacheEntry(entry);
   d3d8VertexArrayCacheEntries += 1;
   d3d8VertexArrayCachePeakEntries = Math.max(
@@ -18112,6 +18137,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     d3d8Buffers,
     d3d8Textures,
     acquireD3D8DynamicRangeSlot,
+    findD3D8VertexArrayCacheEntry,
     invalidateD3D8VertexArrayCacheForBufferId,
     rememberD3D8VertexArray,
     drainD3D8BufferRetirements,
