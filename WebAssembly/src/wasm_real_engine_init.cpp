@@ -1332,8 +1332,8 @@ void append_real_particle_state(std::string &json)
 	json += "\"managerReady\":";
 	json += TheParticleSystemManager != NULL ? "true" : "false";
 	if (TheParticleSystemManager == NULL) {
-		json += ",\"systemCount\":0,\"particleCount\":0,\"fieldParticleCount\":0,"
-			"\"onScreenParticleCount\":0,\"samples\":[]}";
+		json += ",\"systemCount\":0,\"particleCount\":0,\"culledParticleCount\":0,"
+			"\"fieldParticleCount\":0,\"onScreenParticleCount\":0,\"samples\":[]}";
 		return;
 	}
 
@@ -1341,6 +1341,8 @@ void append_real_particle_state(std::string &json)
 		std::to_string(TheParticleSystemManager->getParticleSystemCount());
 	json += ",\"particleCount\":" +
 		std::to_string(TheParticleSystemManager->getParticleCount());
+	json += ",\"culledParticleCount\":" +
+		std::to_string(TheParticleSystemManager->getCulledParticleCount());
 	json += ",\"fieldParticleCount\":" +
 		std::to_string(TheParticleSystemManager->getFieldParticleCount());
 	json += ",\"onScreenParticleCount\":" +
@@ -6631,13 +6633,15 @@ static const char *run_real_engine_frame_paced(int run_logic, bool render_frame)
 			std::to_string(TheParticleSystemManager->getParticleSystemCount());
 		json += ",\"particleCount\":" +
 			std::to_string(TheParticleSystemManager->getParticleCount());
+		json += ",\"culledParticleCount\":" +
+			std::to_string(TheParticleSystemManager->getCulledParticleCount());
 		json += ",\"fieldParticleCount\":" +
 			std::to_string(TheParticleSystemManager->getFieldParticleCount());
 		json += ",\"onScreenParticleCount\":" +
 			std::to_string(TheParticleSystemManager->getOnScreenParticleCount());
 	} else {
-		json += "\"systemCount\":0,\"particleCount\":0,\"fieldParticleCount\":0,"
-			"\"onScreenParticleCount\":0";
+		json += "\"systemCount\":0,\"particleCount\":0,\"culledParticleCount\":0,"
+			"\"fieldParticleCount\":0,\"onScreenParticleCount\":0";
 	}
 	json += "}";
 	const bool world_scene_active = TheGameLogic != NULL && TheGameLogic->isInGame()

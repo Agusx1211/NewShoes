@@ -120,6 +120,7 @@ void W3DParticleSystemManager::doParticles(RenderInfoClass &rinfo)
 	//reset each frame
 	/// @todo lorenzen sez: this should be debug only:
 	m_onScreenParticleCount = 0;
+	UnsignedInt culledParticleCount = 0;
 
 	Int visibleSmudgeCount = 0;
 	if (TheSmudgeManager)
@@ -159,6 +160,12 @@ void W3DParticleSystemManager::doParticles(RenderInfoClass &rinfo)
 			continue;
 		}
 
+		// Long-running effects can retain an emitter after all of its particles
+		// have expired or been evicted.  Avoid setting up render buffers for an
+		// empty system.
+		if (sys->getParticleCount() == 0)
+			continue;
+
 		// only look at particle/point style systems
 		if (sys->isUsingDrawables())
 			continue;
@@ -166,32 +173,30 @@ void W3DParticleSystemManager::doParticles(RenderInfoClass &rinfo)
 		//temporary hack that checks if texture name starts with "SMUD" - if so, we can assume it's a smudge type
 		if (/*sys->isUsingSmudge()*/ *((DWORD *)sys->getParticleTypeName().str()) == 0x44554D53)
 		{
-			if (TheSmudgeManager && ((W3DSmudgeManager*)TheSmudgeManager)->getHardwareSupport() && TheGlobalData->m_useHeatEffects)
+			const Bool canRenderSmudges = TheSmudgeManager &&
+				((W3DSmudgeManager*)TheSmudgeManager)->getHardwareSupport() &&
+				TheGlobalData->m_useHeatEffects;
+			for (Particle *p = sys->getFirstParticle(); p; p = p->m_systemNext)
 			{
-				//set-up all the per-particle
-				for (Particle *p = sys->getFirstParticle(); p; p = p->m_systemNext)
-				{
-					const Coord3D *pos = p->getPosition();
-					Real psize = p->getSize();
-
-					//Cull particle to edges of screen and terrain.
-					if (WWMath::Fabs( pos->x - bcX ) > ( beX + psize ) )
-						continue;
-
-					if (WWMath::Fabs( pos->y - bcY ) > ( beY + psize ) )
-						continue;
-
-					if (WWMath::Fabs( pos->z - bcZ ) > ( beZ + psize ) )
-						continue;
-
-					Smudge *smudge = set->addSmudgeToSet();
-
-					smudge->m_pos.Set( pos->x, pos->y, pos->z );
-					smudge->m_offset.Set( GameClientRandomValueReal(-0.06f,0.06f), GameClientRandomValueReal(-0.03f,0.03f) );
-					smudge->m_size = psize;
-					smudge->m_opacity = p->getAlpha();
-					visibleSmudgeCount++;
+				const Coord3D *pos = p->getPosition();
+				Real psize = p->getSize();
+				const Bool culled = !canRenderSmudges || p->isInvisible() ||
+					WWMath::Fabs(pos->x - bcX) > (beX + psize) ||
+					WWMath::Fabs(pos->y - bcY) > (beY + psize) ||
+					WWMath::Fabs(pos->z - bcZ) > (beZ + psize);
+				p->setIsCulled(culled);
+				if (culled) {
+					++culledParticleCount;
+					continue;
 				}
+
+				Smudge *smudge = set->addSmudgeToSet();
+
+				smudge->m_pos.Set( pos->x, pos->y, pos->z );
+				smudge->m_offset.Set( GameClientRandomValueReal(-0.06f,0.06f), GameClientRandomValueReal(-0.03f,0.03f) );
+				smudge->m_size = psize;
+				smudge->m_opacity = p->getAlpha();
+				visibleSmudgeCount++;
 			}
 			continue;
 		}
@@ -216,15 +221,17 @@ void W3DParticleSystemManager::doParticles(RenderInfoClass &rinfo)
 			pos = p->getPosition();
 			psize = p->getSize();
 
-			//Cull particle to edges of screen and terrain.
-			if (WWMath::Fabs(pos->x - bcX) > (beX + psize))
+			Bool culled = p->isInvisible() ||
+				WWMath::Fabs(pos->x - bcX) > (beX + psize) ||
+				WWMath::Fabs(pos->y - bcY) > (beY + psize) ||
+				WWMath::Fabs(pos->z - bcZ) > (beZ + psize);
+			if (!culled && count == MAX_POINTS_PER_GROUP)
+				culled = true;
+			p->setIsCulled(culled);
+			if (culled) {
+				++culledParticleCount;
 				continue;
-
-			if (WWMath::Fabs(pos->y - bcY) > (beY + psize))
-				continue;
-
-			if (WWMath::Fabs(pos->z - bcZ) > (beZ + psize))
-				continue;
+			}
 
 			m_fieldParticleCount += ( sys->getPriority() == AREA_EFFECT && sys->m_isGroundAligned != FALSE );
 			
@@ -245,8 +252,7 @@ void W3DParticleSystemManager::doParticles(RenderInfoClass &rinfo)
 		
 			angleArray[count] = (uint8)(p->getAngle() * 255.0f / (2.0f * PI));
 			
-			if (++count == MAX_POINTS_PER_GROUP)
-				break;
+			++count;
 		}
 
 		if ( count == 0 )
@@ -371,8 +377,9 @@ void W3DParticleSystemManager::doParticles(RenderInfoClass &rinfo)
 
 	}// next system
 
-		/// @todo lorenzen sez: this should be debug only:
+	/// @todo lorenzen sez: this should be debug only:
 	TheParticleSystemManager->setOnScreenParticleCount(m_onScreenParticleCount);
+	TheParticleSystemManager->setCulledParticleCount(culledParticleCount);
 
 	//Draw any particles belonging to weather effects
 	if (TheSnowManager)
