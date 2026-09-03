@@ -75,11 +75,14 @@ const expectEscMenuResume = process.env.SKIRMISH_START_EXPECT_ESC_MENU_RESUME ==
 const expectEnemyStartAssets = process.env.SKIRMISH_START_EXPECT_ENEMY_START_ASSETS === "1";
 const expectEnemyAiActivity = process.env.SKIRMISH_START_EXPECT_ENEMY_AI_ACTIVITY === "1";
 const expectHard4v4 = process.env.SKIRMISH_START_HARD_4V4 === "1";
+const requestPlayerDiagnostics =
+  process.env.SKIRMISH_START_PLAYER_DIAGNOSTICS === "1";
 const expectWorkerSupplyExitProbe =
   process.env.SKIRMISH_START_WORKER_SUPPLY_EXIT_PROBE === "1";
 const partitionDistanceBenchmarkIterations = parsePositiveInt(
   "SKIRMISH_START_PARTITION_DISTANCE_BENCHMARK_ITERATIONS", 0);
-const collectPlayerDiagnostics = expectEnemyStartAssets || expectEnemyAiActivity || expectHard4v4;
+const collectPlayerDiagnostics = requestPlayerDiagnostics
+  || expectEnemyStartAssets || expectEnemyAiActivity || expectHard4v4;
 const disablePostActiveRender =
   process.env.SKIRMISH_START_POST_ACTIVE_DISABLE_RENDER === "1";
 const logPostActiveTiming = process.env.SKIRMISH_START_LOG_POST_ACTIVE === "1";
@@ -90,7 +93,24 @@ const postActiveFrames = expectEnemyAiActivity
   : requestedPostActiveFrames;
 const postActiveFrameChunk = parsePositiveInt("SKIRMISH_START_POST_ACTIVE_CHUNK", frameChunk);
 const musicStopMaxFrames = parsePositiveInt("SKIRMISH_START_MUSIC_STOP_MAX_FRAMES", 360);
-const requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
+let requestedSkirmishMap = String(process.env.SKIRMISH_START_MAP ?? "").trim();
+let importedCustomMapName = null;
+const requestedCustomMapLocalPath =
+  String(process.env.SKIRMISH_START_CUSTOM_MAP_PATH ?? "").trim();
+const requestedCustomMapLocalDir =
+  String(process.env.SKIRMISH_START_CUSTOM_MAP_DIR ?? "").trim();
+const requestedCustomMapName =
+  String(process.env.SKIRMISH_START_CUSTOM_MAP_NAME ?? "").trim();
+const requestedCustomMapScreenshot =
+  String(process.env.SKIRMISH_START_CUSTOM_MAP_SCREENSHOT ?? "").trim();
+const requestedCustomMapPickerScreenshot =
+  String(process.env.SKIRMISH_START_CUSTOM_MAP_PICKER_SCREENSHOT ?? "").trim();
+if (requestedCustomMapLocalPath && requestedCustomMapLocalDir) {
+  throw new Error("Choose either SKIRMISH_START_CUSTOM_MAP_PATH or SKIRMISH_START_CUSTOM_MAP_DIR");
+}
+if ((requestedCustomMapLocalPath || requestedCustomMapLocalDir) && requestedSkirmishMap) {
+  throw new Error("A custom-map import supplies SKIRMISH_START_MAP automatically");
+}
 const requestedSkirmishSeedText = String(process.env.SKIRMISH_START_SEED ?? "").trim();
 const requestedSkirmishSeed = requestedSkirmishSeedText
   ? Number.parseInt(requestedSkirmishSeedText, 10)
@@ -110,10 +130,21 @@ const requireReplayPerformanceVisible =
 const disableReplayPerformanceRender =
   process.env.SKIRMISH_REPLAY_PERFORMANCE_DISABLE_RENDER === "1";
 const profileReplayPerformance =
-  process.env.SKIRMISH_REPLAY_PERFORMANCE_PROFILE !== "0";
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_PROFILE === "1";
+const replayPerformanceCounters =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_COUNTERS !== "0";
+const replayPerformanceGpuTiming =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_GPU_TIMING === "1";
 const requestedD3D8Batch = String(process.env.SKIRMISH_START_D3D8_BATCH ?? "").trim();
 if (requestedD3D8Batch && !/^(?:0|1|false|true|off|on)$/.test(requestedD3D8Batch)) {
   throw new Error(`Invalid SKIRMISH_START_D3D8_BATCH: ${requestedD3D8Batch}`);
+}
+const requestedD3D8FrameQueue =
+  String(process.env.SKIRMISH_START_D3D8_FRAME_QUEUE ?? "").trim();
+if (requestedD3D8FrameQueue &&
+    !/^(?:0|1|false|true|off|on)$/.test(requestedD3D8FrameQueue)) {
+  throw new Error(
+    `Invalid SKIRMISH_START_D3D8_FRAME_QUEUE: ${requestedD3D8FrameQueue}`);
 }
 const replayPerformanceClientFps = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_CLIENT_FPS", 60);
@@ -123,11 +154,31 @@ const replayPerformanceCatchup = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_CATCHUP", 2);
 const replayPerformanceEndFrame = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_END_FRAME", Number.MAX_SAFE_INTEGER);
+const replayPerformanceRenderStartFrame = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_RENDER_START_FRAME", 0);
+const replayPerformanceMeasureStartFrame = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_MEASURE_START_FRAME",
+  replayPerformanceRenderStartFrame);
+const replayPerformanceRenderGateText =
+  String(process.env.SKIRMISH_REPLAY_PERFORMANCE_RENDER_GATE_FILE ?? "").trim();
+const replayPerformanceRenderGate =
+  replayPerformanceRenderGateText ? resolve(replayPerformanceRenderGateText) : null;
+const replayPerformanceRenderGateTimeoutMs = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_RENDER_GATE_TIMEOUT_MS", 0);
+const replayPerformanceMeasuredClientFps = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_MEASURE_CLIENT_FPS", replayPerformanceClientFps);
+const replayPerformanceMeasuredLogicFps = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_MEASURE_LOGIC_FPS", replayPerformanceLogicFps);
+const replayPerformanceMeasuredCatchup = parsePositiveInt(
+  "SKIRMISH_REPLAY_PERFORMANCE_MEASURE_CATCHUP", replayPerformanceCatchup);
 const replayPerformanceGpuProfileStartFrame = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_GPU_PROFILE_START_FRAME", 0);
 const replayPerformanceGpuProfileFrames = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_GPU_PROFILE_FRAMES", 120);
 const expectScorchProbe = process.env.SKIRMISH_START_SCORCH_PROBE === "1";
+const expectBrightRoadProbe = process.env.SKIRMISH_START_BRIGHT_ROAD_PROBE === "1";
+const brightRoadScreenshotPrefix = String(
+  process.env.SKIRMISH_START_BRIGHT_ROAD_SCREENSHOT_PREFIX ?? "").trim();
 const expectParticleVisibilityProbe =
   process.env.SKIRMISH_START_PARTICLE_VISIBILITY_PROBE === "1";
 const expectTouchControlsProbe = process.env.SKIRMISH_START_TOUCH_PROBE === "1";
@@ -170,6 +221,10 @@ if (expectReplayPerformance && !retailReplayFixture) {
 }
 if (expectReplayPerformance && replayPerformanceClientFps < replayPerformanceLogicFps) {
   throw new Error("Replay performance client FPS must be at least the logic FPS");
+}
+if (expectReplayPerformance &&
+    replayPerformanceMeasuredClientFps < replayPerformanceMeasuredLogicFps) {
+  throw new Error("Replay performance measured client FPS must be at least the logic FPS");
 }
 
 function parsePositiveInt(name, fallback) {
@@ -248,8 +303,22 @@ function pixelHasVisibleColor(pixel, threshold = 8) {
     && pixel.slice(0, 3).some((component) => component > threshold);
 }
 
+async function captureViewport(page, path) {
+  const result = await rpc(page, "screenshot");
+  const dataUrl = typeof result?.screenshot === "string"
+    ? result.screenshot
+    : result?.screenshot?.dataUrl;
+  if (result?.ok === true && typeof dataUrl === "string"
+      && dataUrl.startsWith("data:image/png;base64,")) {
+    await writeFile(path, Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64"));
+    return path;
+  }
+  await page.locator("#viewport").screenshot({ path });
+  return path;
+}
+
 async function sampleViewportGrid(page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const canvas = document.querySelector("#viewport");
     if (!(canvas instanceof HTMLCanvasElement)) {
       return { ok: false, error: "viewport canvas is missing" };
@@ -262,12 +331,29 @@ async function sampleViewportGrid(page) {
       // placeholder remains drawable, but requesting its context is invalid.
     }
     let snapshot = null;
+    let source = "webgl";
     if (gl == null) {
       const scratch = document.createElement("canvas");
       scratch.width = canvas.width;
       scratch.height = canvas.height;
       snapshot = scratch.getContext("2d", { willReadFrequently: true });
-      snapshot?.drawImage(canvas, 0, 0);
+      const result = await window.CnCPort?.rpc?.("screenshot");
+      const dataUrl = typeof result?.screenshot === "string"
+        ? result.screenshot
+        : result?.screenshot?.dataUrl;
+      if (result?.ok === true && typeof dataUrl === "string") {
+        const image = new Image();
+        image.src = dataUrl;
+        await image.decode();
+        scratch.width = image.naturalWidth;
+        scratch.height = image.naturalHeight;
+        snapshot = scratch.getContext("2d", { willReadFrequently: true });
+        snapshot?.drawImage(image, 0, 0);
+        source = "threaded-worker-snapshot";
+      } else {
+        snapshot?.drawImage(canvas, 0, 0);
+        source = "threaded-placeholder";
+      }
     }
     if (gl == null && snapshot == null) {
       return { ok: false, error: "viewport pixels are unavailable" };
@@ -289,11 +375,13 @@ async function sampleViewportGrid(page) {
     ];
     const pixels = {};
     const pixel = new Uint8Array(4);
+    const width = gl != null ? canvas.width : snapshot.canvas.width;
+    const height = gl != null ? canvas.height : snapshot.canvas.height;
     for (const point of samplePoints) {
-      const x = Math.max(0, Math.min(canvas.width - 1, Math.floor(point.x * canvas.width)));
-      const y = Math.max(0, Math.min(canvas.height - 1, Math.floor(point.y * canvas.height)));
+      const x = Math.max(0, Math.min(width - 1, Math.floor(point.x * width)));
+      const y = Math.max(0, Math.min(height - 1, Math.floor(point.y * height)));
       if (gl != null) {
-        gl.readPixels(x, canvas.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        gl.readPixels(x, height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
       } else {
         pixel.set(snapshot.getImageData(x, y, 1, 1).data);
       }
@@ -307,15 +395,96 @@ async function sampleViewportGrid(page) {
       (value[0] > 8 || value[1] > 8 || value[2] > 8));
     return {
       ok: true,
-      width: canvas.width,
-      height: canvas.height,
-      source: gl != null ? "webgl" : "threaded-placeholder",
+      width,
+      height,
+      source,
       sampleCount: samplePoints.length,
       visibleSampleCount: visible.length,
       uniqueColorCount: new Set(colors).size,
       pixels,
     };
   });
+}
+
+async function sampleViewportPatches(page, groups, radius = 1) {
+  return page.evaluate(async ({ sampleGroups, sampleRadius }) => {
+    const viewport = document.querySelector("#viewport");
+    if (!(viewport instanceof HTMLCanvasElement)) {
+      return { ok: false, error: "viewport canvas is missing" };
+    }
+
+    const result = await window.CnCPort?.rpc?.("screenshot");
+    const dataUrl = typeof result?.screenshot === "string"
+      ? result.screenshot
+      : result?.screenshot?.dataUrl;
+    if (result?.ok !== true || typeof dataUrl !== "string"
+        || !dataUrl.startsWith("data:image/png;base64,")) {
+      return { ok: false, error: "viewport screenshot is unavailable", result };
+    }
+
+    const image = new Image();
+    image.src = dataUrl;
+    await image.decode();
+    const snapshot = document.createElement("canvas");
+    snapshot.width = image.naturalWidth;
+    snapshot.height = image.naturalHeight;
+    const context = snapshot.getContext("2d", { willReadFrequently: true });
+    if (context == null) {
+      return { ok: false, error: "viewport snapshot context is unavailable" };
+    }
+    context.drawImage(image, 0, 0);
+
+    const sampledGroups = {};
+    for (const [name, points] of Object.entries(sampleGroups)) {
+      const pointResults = [];
+      const groupSum = [0, 0, 0];
+      let groupPixelCount = 0;
+      for (const point of points) {
+        const centerX = Math.round(Number(point.x));
+        const centerY = Math.round(Number(point.y));
+        const x0 = Math.max(0, centerX - sampleRadius);
+        const y0 = Math.max(0, centerY - sampleRadius);
+        const x1 = Math.min(snapshot.width - 1, centerX + sampleRadius);
+        const y1 = Math.min(snapshot.height - 1, centerY + sampleRadius);
+        const pixels = context.getImageData(
+          x0, y0, x1 - x0 + 1, y1 - y0 + 1).data;
+        const sum = [0, 0, 0];
+        const pixelCount = pixels.length / 4;
+        for (let offset = 0; offset < pixels.length; offset += 4) {
+          for (let component = 0; component < 3; ++component) {
+            sum[component] += pixels[offset + component];
+            groupSum[component] += pixels[offset + component];
+          }
+        }
+        groupPixelCount += pixelCount;
+        const rgb = sum.map((value) => Number((value / pixelCount).toFixed(3)));
+        pointResults.push({
+          x: centerX,
+          y: centerY,
+          rgb,
+          luminance: Number(
+            (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722).toFixed(3)),
+        });
+      }
+      const rgb = groupSum.map((value) =>
+        Number((value / groupPixelCount).toFixed(3)));
+      sampledGroups[name] = {
+        rgb,
+        luminance: Number(
+          (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722).toFixed(3)),
+        points: pointResults,
+      };
+    }
+
+    return {
+      ok: true,
+      source: "rpc-screenshot",
+      width: snapshot.width,
+      height: snapshot.height,
+      radius: sampleRadius,
+      groups: sampledGroups,
+    };
+  }, { sampleGroups: groups, sampleRadius: radius });
 }
 
 async function sampleViewportAnnulus(page, screenPos, innerRadius = 14, outerRadius = 42) {
@@ -663,6 +832,50 @@ async function selectSemanticUiRow(page, name, index) {
     cells: row.cells,
     notificationHandled: selected.result.notificationHandled,
   };
+}
+
+async function activateSemanticUiWindow(page, name) {
+  const snapshot = await rpc(page, "agentUiSnapshot");
+  expect(snapshot?.ok === true && snapshot?.result?.ok === true,
+    `semantic UI snapshot failed before activating ${name}`, snapshot);
+  const window = snapshot.result.windows.find((candidate) =>
+    candidate.name === name && candidate.visible && candidate.interactive);
+  expect(Boolean(window), `semantic UI window is unavailable: ${name}`, snapshot.result);
+  const activated = await rpc(page, "agentUiActivate", {
+    windowId: window.id,
+    name: window.name,
+  });
+  expect(activated?.ok === true && activated?.result?.ok === true,
+    `semantic UI activation failed: ${name}`, activated);
+  return activated.result;
+}
+
+async function selectSemanticUiRowMatching(page, name, predicate) {
+  const snapshot = await rpc(page, "agentUiSnapshot");
+  expect(snapshot?.ok === true && snapshot?.result?.ok === true,
+    `semantic UI snapshot failed before selecting ${name}`, snapshot);
+  const window = snapshot.result.windows.find((candidate) =>
+    candidate.name === name && candidate.visible && candidate.interactive);
+  expect(Boolean(window), `semantic UI window is unavailable: ${name}`, snapshot.result);
+  const items = await rpc(page, "agentUiListItems", {
+    windowId: window.id,
+    name: window.name,
+    offset: 0,
+    limit: 128,
+  });
+  expect(items?.ok === true && items?.result?.ok === true,
+    `semantic UI rows are unavailable: ${name}`, items);
+  const row = items.result.rows.find((candidate) => predicate(candidate.cells.join(" ")));
+  expect(Boolean(row), `semantic UI has no matching row: ${name}`, items.result);
+  const selected = await rpc(page, "agentUiSelectIndex", {
+    windowId: window.id,
+    name: window.name,
+    index: row.index,
+  });
+  expect(selected?.ok === true && selected?.result?.ok === true
+      && selected.result.notificationHandled > 0,
+    `semantic UI selection did not reach the real callback: ${name}`, selected);
+  return { row, result: selected.result };
 }
 
 async function configureHard4v4(page) {
@@ -1659,6 +1872,16 @@ function performanceDistribution(values) {
   };
 }
 
+async function resetReplayPerformanceCapture(page) {
+  await page.evaluate(() => {
+    const capture = window.__cncReplayPerformanceCapture;
+    capture.engineFrameMs = [];
+    capture.presentationFrameMs = [];
+    capture.statuses = [];
+    capture.slowFrameProfiles = [];
+  });
+}
+
 async function importPerformanceReplay(page) {
   const fixturePath = resolve(retailReplayFixture);
   const fixtureBytes = await readFile(fixturePath);
@@ -1729,7 +1952,7 @@ async function driveReplayPerformance(page, performanceReplay) {
     });
   if (requireReplayPerformanceVisible) {
     await runFrames(page, 2, "performance replay menu visual settle");
-    await page.locator("#viewport").screenshot({ path: replayMenuScreenshotPath });
+    await captureViewport(page, replayMenuScreenshotPath);
   }
   let renderDisabled = false;
   if (disableReplayPerformanceRender && !requireReplayPerformanceVisible) {
@@ -1755,7 +1978,7 @@ async function driveReplayPerformance(page, performanceReplay) {
     maxStartFrames);
   if (requireReplayPerformanceVisible) {
     await runFrames(page, 30, "performance replay visible playback settle");
-    await page.locator("#viewport").screenshot({ path: replayPlaybackScreenshotPath });
+    await captureViewport(page, replayPlaybackScreenshotPath);
   }
   const startRenderProbe = requireReplayPerformanceVisible
     ? await sampleViewportGrid(page)
@@ -1765,10 +1988,11 @@ async function driveReplayPerformance(page, performanceReplay) {
         && startRenderProbe.uniqueColorCount > 1,
       "performance replay start frame is not visibly rendered", startRenderProbe);
   }
-  if (disableReplayPerformanceRender && !renderDisabled) {
+  if ((disableReplayPerformanceRender || replayPerformanceRenderStartFrame > 0)
+      && !renderDisabled) {
     const disabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
     expect(disabled?.ok === true && disabled?.disabled === true,
-      "performance replay could not disable rendering for CPU isolation", disabled);
+      "performance replay could not disable rendering for warm-up", disabled);
     renderDisabled = true;
   }
   const profilingFrame = await rpc(page, "realEngineFrameSummary", {
@@ -1779,8 +2003,8 @@ async function driveReplayPerformance(page, performanceReplay) {
       && profilingFrame.frame?.profile?.enabled === profileReplayPerformance,
     "performance replay CPU profiling mode was not applied", profilingFrame);
 
-  await page.evaluate(() => {
-    window.__cncSetD3D8PerfCounters?.(true);
+  await page.evaluate((countersEnabled) => {
+    window.__cncSetD3D8PerfCounters?.(countersEnabled);
     const capture = {
       engineFrameMs: [],
       presentationFrameMs: [],
@@ -1844,8 +2068,11 @@ async function driveReplayPerformance(page, performanceReplay) {
         status.timing?.presentationFrameMs, addedClientFrames);
       capture.lastClientFrames = loop.clientFrames;
       capture.lastEngineFrameSamples = Number(loop.engineFrameSamples ?? 0);
+      const gameplay = status.frame?.gameplay
+        ?? status.frame?.clientState?.gameplay
+        ?? null;
       capture.maxLogicFrame = Math.max(capture.maxLogicFrame,
-        Number(status.frame?.logicFrame ?? 0));
+        Number(gameplay?.logicFrame ?? status.frame?.logicFrame ?? 0));
       const recorder = status.frame?.recorder;
       if (loop.replayPlaybackSeen === true) {
         capture.replayPlaybackSeen = true;
@@ -1861,9 +2088,15 @@ async function driveReplayPerformance(page, performanceReplay) {
         clientFrames: loop.clientFrames,
         engineFrameSamples: loop.engineFrameSamples ?? null,
         logicFrames: loop.logicFrames,
-        logicFrame: status.frame?.logicFrame ?? null,
+        logicFrame: gameplay?.logicFrame ?? status.frame?.logicFrame ?? null,
         lastFrameMs: status.frame?.lastFrameMs ?? null,
-        recorder: recorder ?? null,
+        display: status.frame?.display ?? null,
+        particles: status.frame?.particles ?? null,
+        recorder: gameplay?.recorder ?? recorder ?? null,
+        ai: gameplay?.ai ?? status.frame?.ai ?? null,
+        playerDiagnostics: gameplay?.playerDiagnostics
+          ?? status.frame?.playerDiagnostics
+          ?? null,
         active: loop.active,
         contextLost: status.contextLost,
         renderer: status.graphics?.renderer ?? null,
@@ -1872,13 +2105,14 @@ async function driveReplayPerformance(page, performanceReplay) {
         presentationFrameMs,
       });
     });
-  });
+  }, replayPerformanceCounters);
 
   const started = await rpc(page, "threadedStartLoop", {
     clientFps: replayPerformanceClientFps,
     logicFps: replayPerformanceLogicFps,
     catchup: replayPerformanceCatchup,
     profilingEnabled: profileReplayPerformance,
+    playerDiagnostics: collectPlayerDiagnostics,
   });
   expect(started?.ok === true, "performance replay paced loop did not start", started);
   const targetLogicFrame = Math.min(expectedLogicFrames, replayPerformanceEndFrame);
@@ -1898,8 +2132,76 @@ async function driveReplayPerformance(page, performanceReplay) {
     { target, replayEnd },
     { timeout: waitTimeout, polling: 500 });
   let completionError = null;
+  let renderWarmup = null;
   let gpuProfile = null;
   try {
+    if (replayPerformanceRenderStartFrame > 0
+        && replayPerformanceRenderStartFrame < completionThreshold) {
+      await waitForCapture(replayPerformanceRenderStartFrame);
+      const warmupStopped = await rpc(page, "threadedStopLoop", { timeoutMs: 120000 });
+      expect(warmupStopped?.ok === true,
+        "performance replay warm-up loop did not stop", warmupStopped);
+      if (replayPerformanceRenderGate) {
+        const readyPath = `${replayPerformanceRenderGate}.ready`;
+        await writeFile(readyPath, `${replayPerformanceRenderStartFrame}\n`);
+        const deadline = Date.now() +
+          (replayPerformanceRenderGateTimeoutMs || waitTimeout);
+        while (true) {
+          try {
+            await readFile(replayPerformanceRenderGate);
+            break;
+          } catch (error) {
+            if (error?.code !== "ENOENT" || Date.now() >= deadline) {
+              throw error;
+            }
+          }
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+        }
+      }
+      const enabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: false });
+      expect(enabled?.ok === true && enabled?.disabled === false,
+        "performance replay could not enable measured rendering", enabled);
+      renderDisabled = false;
+      await resetReplayPerformanceCapture(page);
+      const measuredStarted = await rpc(page, "threadedStartLoop", {
+        clientFps: replayPerformanceMeasuredClientFps,
+        logicFps: replayPerformanceMeasuredLogicFps,
+        catchup: replayPerformanceMeasuredCatchup,
+        profilingEnabled: profileReplayPerformance,
+      });
+      expect(measuredStarted?.ok === true,
+        "performance replay measured loop did not start", measuredStarted);
+      renderWarmup = {
+        endFrame: replayPerformanceRenderStartFrame,
+        clientFps: replayPerformanceClientFps,
+        logicFps: replayPerformanceLogicFps,
+        catchup: replayPerformanceCatchup,
+        stopped: warmupStopped,
+        renderGate: replayPerformanceRenderGate != null,
+        renderEnabled: enabled,
+      };
+      if (replayPerformanceMeasureStartFrame > replayPerformanceRenderStartFrame
+          && replayPerformanceMeasureStartFrame < completionThreshold) {
+        await waitForCapture(replayPerformanceMeasureStartFrame);
+        const renderWarmupStopped = await rpc(
+          page, "threadedStopLoop", { timeoutMs: 120000 });
+        expect(renderWarmupStopped?.ok === true,
+          "performance replay rendered warm-up loop did not stop",
+          renderWarmupStopped);
+        await resetReplayPerformanceCapture(page);
+        const measurementStarted = await rpc(page, "threadedStartLoop", {
+          clientFps: replayPerformanceMeasuredClientFps,
+          logicFps: replayPerformanceMeasuredLogicFps,
+          catchup: replayPerformanceMeasuredCatchup,
+          profilingEnabled: profileReplayPerformance,
+        });
+        expect(measurementStarted?.ok === true,
+          "performance replay measurement loop did not start",
+          measurementStarted);
+        renderWarmup.measurementStartFrame = replayPerformanceMeasureStartFrame;
+        renderWarmup.renderedWarmupStopped = renderWarmupStopped;
+      }
+    }
     if (replayPerformanceGpuProfileStartFrame > 0
         && replayPerformanceGpuProfileStartFrame < completionThreshold) {
       const requestedStartFrame = replayPerformanceGpuProfileStartFrame;
@@ -1939,7 +2241,7 @@ async function driveReplayPerformance(page, performanceReplay) {
     : null;
   const finalScreenshotPath = requireReplayPerformanceVisible ? screenshotPath : null;
   if (finalScreenshotPath) {
-    await page.locator("#viewport").screenshot({ path: finalScreenshotPath });
+    await captureViewport(page, finalScreenshotPath);
   }
   const contextLosses = capture.statuses.filter((status) => status.contextLost === true).length;
   expect(contextLosses === 0, "performance replay lost the WebGL context", { contextLosses });
@@ -1976,9 +2278,13 @@ async function driveReplayPerformance(page, performanceReplay) {
     clientFps: replayPerformanceClientFps,
     logicFps: replayPerformanceLogicFps,
     catchup: replayPerformanceCatchup,
+    measuredClientFps: replayPerformanceMeasuredClientFps,
+    measuredLogicFps: replayPerformanceMeasuredLogicFps,
+    measuredCatchup: replayPerformanceMeasuredCatchup,
     targetLogicFrame,
     visualRequired: requireReplayPerformanceVisible,
-    renderDisabled: disableReplayPerformanceRender,
+    renderDisabled,
+    renderWarmup,
     playbackStart: compactGameplay(playback.frame),
     finalGameplay: compactGameplay(finalFrame.frame),
     recorder,
@@ -1996,6 +2302,9 @@ async function driveReplayPerformance(page, performanceReplay) {
     completionThreshold,
     completionError,
     stopResult: stopped,
+    engineFrameProfiling: profileReplayPerformance,
+    performanceCounters: replayPerformanceCounters,
+    gpuTiming: replayPerformanceGpuTiming,
     gpuProfile,
     statusSamples: capture.statuses,
     slowFrameProfiles,
@@ -2513,6 +2822,84 @@ async function inspectGraphics(page) {
   });
 }
 
+async function driveBrightRoadProbe(page) {
+  const screenshotPrefix = resolve(
+    brightRoadScreenshotPrefix || resolve(screenshotsRoot, "bright-road-regression"));
+  const position = { x: 4012.368164, y: 893.541748 };
+  const sampleGroups = {
+    road: [
+      { x: 400, y: 180 },
+      { x: 400, y: 200 },
+      { x: 200, y: 230 },
+      { x: 600, y: 140 },
+    ],
+    terrain: [
+      { x: 400, y: 350 },
+      { x: 200, y: 350 },
+      { x: 600, y: 350 },
+      { x: 100, y: 100 },
+    ],
+  };
+
+  const capture = async (name) => {
+    const settled = await runFrames(page, 2, `bright-road ${name} settle`);
+    const screenshot = `${screenshotPrefix}-${name}.png`;
+    await captureViewport(page, screenshot);
+    const samples = await sampleViewportPatches(page, sampleGroups);
+    expect(samples?.ok === true,
+      `bright-road probe could not sample ${name} pixels`, samples);
+    expect(samples.width === 800 && samples.height === 600,
+      `bright-road probe requires an 800x600 viewport`, samples);
+    return {
+      shroud: locateNested(settled.frame, ["shroud"]) ?? null,
+      samples,
+      screenshot,
+    };
+  };
+
+  const camera = await rpc(page, "agentCameraLookAt", position);
+  expect(camera?.ok === true,
+    "bright-road probe could not move to the reported location", camera);
+  const fogged = await capture("fogged");
+
+  const reveal = await rpc(page, "revealLocalMap", { permanent: true });
+  expect(reveal?.ok === true,
+    "bright-road probe could not reveal the local map", reveal);
+  const revealed = await capture("revealed");
+
+  const roadFogged = fogged.samples.groups.road.luminance;
+  const roadRevealed = revealed.samples.groups.road.luminance;
+  const terrainFogged = fogged.samples.groups.terrain.luminance;
+  const terrainRevealed = revealed.samples.groups.terrain.luminance;
+  const roadAttenuation = Number((roadFogged / roadRevealed).toFixed(3));
+  const terrainAttenuation = Number((terrainFogged / terrainRevealed).toFixed(3));
+
+  expect(roadRevealed >= 24,
+    "bright-road probe clear road pixels are too dark for a meaningful comparison",
+    { roadFogged, roadRevealed, fogged, revealed });
+  expect(terrainRevealed >= 24,
+    "bright-road probe clear terrain pixels are too dark for a meaningful comparison",
+    { terrainFogged, terrainRevealed, fogged, revealed });
+  expect(terrainAttenuation <= 0.72,
+    "bright-road probe did not observe fog attenuation on terrain",
+    { terrainAttenuation, fogged, revealed });
+  expect(roadAttenuation <= 0.72,
+    "road pixels remained bright under fog",
+    { roadAttenuation, terrainAttenuation, fogged, revealed });
+  expect(Math.abs(roadAttenuation - terrainAttenuation) <= 0.18,
+    "road fog attenuation differs materially from adjacent terrain",
+    { roadAttenuation, terrainAttenuation, fogged, revealed });
+
+  return {
+    position,
+    camera: camera.result ?? camera,
+    fogged,
+    revealed,
+    roadAttenuation,
+    terrainAttenuation,
+  };
+}
+
 async function driveParticleVisibilityProbe(page) {
   const screenshot = resolve(screenshotsRoot, "particle-visibility-smoke.png");
   await rpc(page, "revealLocalMap", { permanent: true });
@@ -2761,6 +3148,12 @@ async function main() {
   if (menuScreenshotPath) {
     await mkdir(dirname(menuScreenshotPath), { recursive: true });
   }
+  if (requestedCustomMapScreenshot) {
+    await mkdir(dirname(resolve(requestedCustomMapScreenshot)), { recursive: true });
+  }
+  if (requestedCustomMapPickerScreenshot) {
+    await mkdir(dirname(resolve(requestedCustomMapPickerScreenshot)), { recursive: true });
+  }
   if (browserProfileDir) {
     await rm(browserProfileDir, { recursive: true, force: true });
     await mkdir(browserProfileDir, { recursive: true });
@@ -2856,6 +3249,59 @@ async function main() {
       console.error(`[skirmish-start] imported ${activeMod.name}: ${activeMod.archiveCount} enabled archives`);
     }
 
+    if (requestedCustomMapLocalPath || requestedCustomMapLocalDir) {
+      const customMapInput = resolve(requestedCustomMapLocalDir || requestedCustomMapLocalPath);
+      console.error(`[skirmish-start] import custom map ${customMapInput}`);
+      await page.goto(new URL("harness/play.html", server.url).href, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.waitForFunction(() => Boolean(
+        window.ZeroHMapManager && window.CnCPort?.listCustomMaps,
+      ));
+      const before = await page.evaluate(() => window.CnCPort.listCustomMaps());
+      await page.locator('.desktop-icon[data-open="maps"]').click();
+      await page.waitForSelector("#mapsWindow.is-open");
+      await page.locator(requestedCustomMapLocalDir
+        ? "#customMapImportFolderInput"
+        : "#customMapImportPackageInput").setInputFiles(customMapInput);
+      const importDeadline = Date.now() + 30 * 60_000;
+      let progress = "";
+      let inventory = before;
+      while (Date.now() < importDeadline) {
+        [progress, inventory] = await Promise.all([
+          page.locator("#customMapImportProgress").textContent(),
+          page.evaluate(() => window.CnCPort.listCustomMaps()),
+        ]);
+        if (progress.startsWith("Import failed:")
+            || (requestedCustomMapName
+              ? inventory.maps.some((map) => map.name === requestedCustomMapName)
+              : inventory.maps.length > before.maps.length)) {
+          break;
+        }
+        await page.waitForTimeout(250);
+      }
+      if (progress.startsWith("Import failed:")) {
+        throw new Error(`Custom-map import failed: ${progress}`);
+      }
+      const previous = new Set(before.maps.map((map) => map.name.toLowerCase()));
+      const importedMaps = inventory.maps.filter((map) =>
+        !previous.has(map.name.toLowerCase()));
+      const selectedMap = requestedCustomMapName
+        ? inventory.maps.find((map) => map.name === requestedCustomMapName)
+        : (importedMaps.length === 1 ? importedMaps[0] : null);
+      expect(selectedMap?.path,
+        requestedCustomMapName
+          ? `custom map ${requestedCustomMapName} was not installed`
+          : "custom-map package must add exactly one map unless SKIRMISH_START_CUSTOM_MAP_NAME is set",
+        { progress, before: before.maps, after: inventory.maps });
+      requestedSkirmishMap = selectedMap.path;
+      importedCustomMapName = selectedMap.name;
+      if (requestedCustomMapScreenshot) {
+        await page.screenshot({ path: resolve(requestedCustomMapScreenshot) });
+      }
+      console.error(`[skirmish-start] custom map ready ${requestedSkirmishMap}`);
+    }
+
     const harnessUrl = new URL(
       expectTouchControlsProbe ? "harness/play.html" : "harness/index.html",
       server.url,
@@ -2863,13 +3309,21 @@ async function main() {
     harnessUrl.searchParams.set("dist", distDir);
     if (process.env.SKIRMISH_START_THREADS === "1") harnessUrl.searchParams.set("threads", "1");
     if (requestedD3D8Batch) harnessUrl.searchParams.set("d3d8Batch", requestedD3D8Batch);
+    if (requestedD3D8FrameQueue) {
+      harnessUrl.searchParams.set("d3d8FrameQueue", requestedD3D8FrameQueue);
+    }
     if (expectReplayPerformance) {
       // Match the shipping play page's low-overhead diagnostics in the engine
       // worker while retaining counters needed to rank replay render pressure.
       // Full diagnostics time dozens of sub-phases per draw and can dominate
       // the workload that this performance gate is meant to measure.
       harnessUrl.searchParams.set("diag", "lite");
-      harnessUrl.searchParams.set("perfCounters", "1");
+      if (replayPerformanceCounters) {
+        harnessUrl.searchParams.set("perfCounters", "1");
+      }
+      if (replayPerformanceGpuTiming) {
+        harnessUrl.searchParams.set("gpuTiming", "1");
+      }
     }
     if (expectLightPulseProbe) {
       // Terrain buffers are created while diagnostics are in lite mode. Keep
@@ -2879,6 +3333,20 @@ async function main() {
     }
     await page.goto(harnessUrl.href, { waitUntil: "networkidle" });
     await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
+    if (requestedCustomMapLocalPath || requestedCustomMapLocalDir) {
+      const remountedMap = await page.evaluate((path) => {
+        const FS = window.CnCPort.engineModule()?.FS;
+        try {
+          const stat = FS.stat(path);
+          return { exists: true, size: Number(stat.size) };
+        } catch (error) {
+          return { exists: false, error: error?.message ?? String(error) };
+        }
+      }, requestedSkirmishMap);
+      expect(remountedMap.exists === true,
+        "custom map did not survive the engine-runtime filesystem remount", remountedMap);
+      console.error("[skirmish-start] custom map remounted:", JSON.stringify(remountedMap));
+    }
     if (expectTouchControlsProbe) {
       await page.evaluate(() => {
         const overlay = document.querySelector("#launchOverlay");
@@ -3155,14 +3623,55 @@ async function main() {
 
     let skirmishMapSet = null;
     if (requestedSkirmishMap) {
-      console.error(`[skirmish-start] set skirmish map ${requestedSkirmishMap}`);
-      skirmishMapSet = await rpc(page, "realEngineSetSkirmishMap", {
-        map: requestedSkirmishMap,
-      });
-      expect(skirmishMapSet?.ok === true
-          && skirmishMapSet.result?.applied,
-        "requested skirmish map was not applied", skirmishMapSet);
-      await runSummary(page, 1, "skirmish map apply settle");
+      if (importedCustomMapName) {
+        await activateSemanticUiWindow(
+          page, "SkirmishGameOptionsMenu.wnd:ButtonSelectMap");
+        await runSummary(page, 2, "open original map picker");
+        await activateSemanticUiWindow(
+          page, "SkirmishMapSelectMenu.wnd:RadioButtonUserMaps");
+        await runSummary(page, 2, "show original user maps");
+        const selected = await selectSemanticUiRowMatching(
+          page,
+          "SkirmishMapSelectMenu.wnd:ListboxMap",
+          (text) => text.toLowerCase().includes(importedCustomMapName.toLowerCase()),
+        );
+        await runSummary(page, 2, "custom map selection settle");
+        if (requestedCustomMapPickerScreenshot) {
+          await page.locator("#viewport").screenshot({
+            path: resolve(requestedCustomMapPickerScreenshot),
+          });
+        }
+        await activateSemanticUiWindow(page, "SkirmishMapSelectMenu.wnd:ButtonOK");
+        await runSummary(page, 2, "custom map picker confirmation");
+        const mapCache = await rpc(page, "mapCacheProbe");
+        const gameInfo = mapCache?.probe?.skirmishGameInfo;
+        expect(mapCache?.ok === true
+            && gameInfo?.map?.toLowerCase().includes(importedCustomMapName.toLowerCase())
+            && gameInfo.mapCRC > 0
+            && gameInfo.mapSize > 0,
+          "original user-map picker did not apply the imported map",
+          { selected, mapCache });
+        requestedSkirmishMap = gameInfo.map;
+        skirmishMapSet = {
+          ok: true,
+          result: {
+            ok: true,
+            applied: gameInfo.map,
+            metadata: gameInfo.metadata,
+            skirmishGameInfo: gameInfo,
+          },
+        };
+      } else {
+        console.error(`[skirmish-start] set skirmish map ${requestedSkirmishMap}`);
+        skirmishMapSet = await rpc(page, "realEngineSetSkirmishMap", {
+          map: requestedSkirmishMap,
+        });
+        expect(skirmishMapSet?.ok === true
+            && skirmishMapSet.result?.applied,
+          "requested skirmish map was not applied", skirmishMapSet);
+        requestedSkirmishMap = skirmishMapSet.result.applied;
+        await runSummary(page, 1, "skirmish map apply settle");
+      }
     }
 
     // Optional: force the local player's faction/general (e.g.
@@ -3415,6 +3924,11 @@ async function main() {
       decalProbe = await driveDecalProbe(page);
       console.error("[skirmish-start] decalProbe:", JSON.stringify(decalProbe));
     }
+    let brightRoadProbe = null;
+    if (expectBrightRoadProbe) {
+      brightRoadProbe = await driveBrightRoadProbe(page);
+      console.error("[skirmish-start] brightRoadProbe:", JSON.stringify(brightRoadProbe));
+    }
     let scorchProbe = null;
     if (expectScorchProbe) {
       scorchProbe = await driveScorchProbe(page);
@@ -3648,6 +4162,7 @@ async function main() {
       enemyAiActivity,
       escMenuResume,
       rallyProbe,
+      brightRoadProbe,
       scorchProbe,
       particleVisibilityProbe,
       touchControlsProbe,

@@ -132,11 +132,11 @@ for (const name of PAGES_HARNESS_FILES) {
     }
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, template.replaceAll("__GA_MEASUREMENT_ID__", measurementId));
-  } else if (name === "mod-package-worker.mjs") {
+  } else if (name === "mod-package-worker.mjs" || name === "custom-map-package-worker.mjs") {
     const sourceText = await readFile(source, "utf8");
     const developmentRoot = "../node_modules/7z-wasm/";
     if (!sourceText.includes(developmentRoot)) {
-      throw new Error("mod-package-worker.mjs has no development 7z-wasm path marker");
+      throw new Error(`${name} has no development 7z-wasm path marker`);
     }
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, sourceText.replaceAll(developmentRoot, "./vendor/7z-wasm/"));

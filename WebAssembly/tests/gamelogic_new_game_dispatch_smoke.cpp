@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <string>
 
 #include <emscripten/emscripten.h>
@@ -330,6 +331,25 @@ void GameClient::xfer(Xfer *)
 void GameClient::loadPostProcess()
 {
 }
+
+class PathfindCellTestAccess
+{
+public:
+	static Bool setObstacle(
+		PathfindCell &cell,
+		ObjectID obstacle_id,
+		Bool is_fence,
+		Bool is_transparent)
+	{
+		return cell.setObstacleState(
+			obstacle_id, is_fence, is_transparent, FALSE);
+	}
+
+	static Bool clearObstacle(PathfindCell &cell, ObjectID obstacle_id)
+	{
+		return cell.clearObstacleState(obstacle_id);
+	}
+};
 
 namespace {
 
@@ -1988,6 +2008,48 @@ int main()
 	Bool stale_result = TRUE;
 	const Bool old_generation_miss = !line_cache_cell.getCachedLinePassability(
 		18, 10, 9, 10, 10, stale_result);
+	const ObjectID pathfinder_obstacle_id = static_cast<ObjectID>(0x1234);
+	const Int initial_pathfind_info_count =
+		PathfindCellInfo::getActiveCellInfoCount();
+	const Int pathfind_info_probe_limit =
+		PathfindCellInfo::getCellInfoCapacity() + 1;
+	std::unique_ptr<PathfindCell[]> pathfind_info_probe_cells(
+		new PathfindCell[pathfind_info_probe_limit]);
+	ICoord2D pathfind_info_probe_position = { 1, 1 };
+	Int pathfind_info_probe_allocated = 0;
+	while (pathfind_info_probe_allocated < pathfind_info_probe_limit
+			&& pathfind_info_probe_cells[pathfind_info_probe_allocated].allocateInfo(
+				pathfind_info_probe_position)) {
+		++pathfind_info_probe_allocated;
+	}
+	const Bool pathfind_info_pool_exhausted =
+		pathfind_info_probe_allocated < pathfind_info_probe_limit;
+	const Bool pathfind_info_pool_filled =
+		initial_pathfind_info_count + pathfind_info_probe_allocated
+			== PathfindCellInfo::getCellInfoCapacity();
+	PathfindCell obstacle_without_info;
+	const Bool obstacle_set_without_info =
+		PathfindCellTestAccess::setObstacle(
+			obstacle_without_info, pathfinder_obstacle_id, TRUE, TRUE);
+	const Bool obstacle_metadata_without_info =
+		obstacle_set_without_info
+		&& !obstacle_without_info.hasInfo()
+		&& obstacle_without_info.getType() == PathfindCell::CELL_OBSTACLE
+		&& obstacle_without_info.getObstacleID() == pathfinder_obstacle_id
+		&& obstacle_without_info.isObstacleFence()
+		&& obstacle_without_info.isObstacleTransparent()
+		&& obstacle_without_info.isObstaclePresent(pathfinder_obstacle_id);
+	const Bool obstacle_removed_without_info =
+		obstacle_set_without_info
+		&& PathfindCellTestAccess::clearObstacle(
+			obstacle_without_info, pathfinder_obstacle_id)
+		&& obstacle_without_info.getType() == PathfindCell::CELL_CLEAR
+		&& obstacle_without_info.getObstacleID() == INVALID_ID
+		&& !obstacle_without_info.isObstacleFence()
+		&& !obstacle_without_info.isObstaclePresent(pathfinder_obstacle_id);
+	pathfind_info_probe_cells.reset();
+	const Bool pathfind_info_probe_released =
+		PathfindCellInfo::getActiveCellInfoCount() == initial_pathfind_info_count;
 	if (TheTerrainRenderObject == terrain_render_object) {
 		TheTerrainRenderObject = nullptr;
 	}
@@ -2007,6 +2069,16 @@ int main()
 			&& west_cache_survived_clear && west_result
 			&& old_generation_miss,
 		"directional line results must coexist with movement and clearance caches within one search") && ok;
+	ok = expect(pathfind_info_pool_exhausted
+			&& pathfind_info_pool_filled
+			&& pathfind_info_probe_allocated > 0,
+		"path-search info probes should exhaust and account for the bounded scratch pool") && ok;
+	ok = expect(obstacle_metadata_without_info,
+		"persistent obstacle metadata should not consume a path-search info record") && ok;
+	ok = expect(obstacle_removed_without_info,
+		"persistent obstacles should remain removable without a path-search info record") && ok;
+	ok = expect(pathfind_info_probe_released,
+		"path-search info probes should release every scratch-pool record") && ok;
 	ok = expect(startup_multiplayer_color_count > 0,
 		"original MultiplayerSettings should parse shipped multiplayer colors before player population") && ok;
 	ok = expect(nearlyEqual(startup_partition_cell_size, 40.0f, 0.001f),
@@ -2324,6 +2396,13 @@ int main()
 		<< "\"pathfinderExpectedExtentY\":" << pathfinder_expected_extent_y << ","
 		<< "\"pathfinderExtentXAfterNewMap\":" << pathfinder_extent_x_after_new_map << ","
 		<< "\"pathfinderExtentYAfterNewMap\":" << pathfinder_extent_y_after_new_map << ","
+		<< "\"pathfinderInfoInitialActive\":" << initial_pathfind_info_count << ","
+		<< "\"pathfinderInfoProbeAllocated\":" << pathfind_info_probe_allocated << ","
+		<< "\"pathfinderInfoPoolExhausted\":" << jsonBool(pathfind_info_pool_exhausted) << ","
+		<< "\"pathfinderInfoPoolFilled\":" << jsonBool(pathfind_info_pool_filled) << ","
+		<< "\"pathfinderInfoProbeReleased\":" << jsonBool(pathfind_info_probe_released) << ","
+		<< "\"pathfinderObstacleMetadataWithoutInfo\":" << jsonBool(obstacle_metadata_without_info) << ","
+		<< "\"pathfinderObstacleRemovedWithoutInfo\":" << jsonBool(obstacle_removed_without_info) << ","
 		<< "\"pathfinderCenterCellX\":" << pathfinder_center_cell_x << ","
 		<< "\"pathfinderCenterCellY\":" << pathfinder_center_cell_y << ","
 		<< "\"pathfinderCenterGroundCellReady\":" << jsonBool(pathfinder_center_ground_cell_ready) << ","

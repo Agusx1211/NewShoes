@@ -37,6 +37,7 @@
 #define __W3DSCENE_H_
 
 // SYSTEM INCLUDES ////////////////////////////////////////////////////////////
+#include <vector>
 
 // USER INCLUDES //////////////////////////////////////////////////////////////
 #include "WW3D2/Scene.h"
@@ -102,6 +103,7 @@ public:
 
 protected:
 	void	renderOneObject(RenderInfoClass &rinfo, RenderObjClass *robj, Int localPlayerIndex);
+	void	updateEnabledDynamicLights();
 	void	updateFixedLightEnvironments(RenderInfoClass & rinfo);
 	void flushTranslucentObjects(RenderInfoClass & rinfo);
 	void flushOccludedObjects(RenderInfoClass & rinfo);
@@ -111,6 +113,7 @@ protected:
 
 protected:
 	RefRenderObjListClass	m_dynamicLightList;
+	std::vector<W3DDynamicLight *> m_enabledDynamicLights;
 	Bool									m_drawTerrainOnly;
 	LightClass						*m_globalLight[LightEnvironmentClass::MAX_LIGHTS];				///< The global directional light (sun, moon) Applies to objects.
 	LightClass						*m_scratchLight; ///< a workspace for copying global lights and modifying // MLorenzen

@@ -497,7 +497,9 @@ const multiWorldBatch = {
     ]),
   ],
 };
-assert.equal(diag.ensureD3D8MultiWorldGeometry(multiWorldBatch), null);
+for (let observation = 0; observation < 8; observation += 1) {
+  assert.equal(diag.ensureD3D8MultiWorldGeometry(multiWorldBatch), null);
+}
 const multiWorldGeometry = diag.ensureD3D8MultiWorldGeometry(multiWorldBatch);
 assert.ok(multiWorldGeometry);
 assert.equal(multiWorldGeometry.indexCount, 12);
@@ -505,7 +507,9 @@ assert.equal(calls.copyBufferSubData.length, copyCallsBeforeMultiWorld);
 assert.equal(diag.ensureD3D8MultiWorldGeometry(multiWorldBatch), multiWorldGeometry);
 assert.equal(calls.copyBufferSubData.length, copyCallsBeforeMultiWorld);
 multiWorldBatch.worldTransforms[1][12] = 11;
-assert.equal(diag.ensureD3D8MultiWorldGeometry(multiWorldBatch), null);
+for (let observation = 0; observation < 8; observation += 1) {
+  assert.equal(diag.ensureD3D8MultiWorldGeometry(multiWorldBatch), null);
+}
 const movedMultiWorldGeometry = diag.ensureD3D8MultiWorldGeometry(multiWorldBatch);
 assert.ok(movedMultiWorldGeometry);
 assert.notEqual(movedMultiWorldGeometry, multiWorldGeometry);

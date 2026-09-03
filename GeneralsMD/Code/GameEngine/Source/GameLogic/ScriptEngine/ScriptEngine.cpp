@@ -148,6 +148,12 @@ static void scriptDiagNoteScriptStep(
 	Int conditionType,
 	Int actionType)
 {
+	// Called once per evaluated condition and per executed action on every
+	// logic frame. Do not build the name (an AsciiString copy) unless a
+	// diagnostic listener is actually installed.
+	if (cnc_port_note_script_step == NULL) {
+		return;
+	}
 	AsciiString scriptName;
 	if (script != NULL) {
 		scriptName = script->getName();

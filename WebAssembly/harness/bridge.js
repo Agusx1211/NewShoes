@@ -9,6 +9,7 @@ import {
 import { createBinkDecoderSourceRegistry } from "./bink_decoder.mjs";
 import { createBinkDirectVideoRuntime } from "./bink_direct_runtime.mjs";
 import { createGdiHooks } from "./gdi_executor.mjs";
+import { createCustomMapStore } from "./custom-map-store.mjs";
 import { createGameDataStore } from "./game-data-store.mjs";
 import { loadCursorStyle } from "./cursor-style-config.mjs";
 import { resolveShaderTier } from "./shader-tier-config.mjs";
@@ -1780,6 +1781,7 @@ function createThreadedEngineController() {
       logicFps: payload.logicFps,
       catchup: payload.catchup,
       maxClientFrames: payload.maxClientFrames,
+      playerDiagnostics: payload.playerDiagnostics === true,
     }, { timeoutMs: 60000 });
     return reply;
   }
@@ -1964,25 +1966,6 @@ function notifyEngineAudioCompletedThreaded(fnName, handle) {
   return true;
 }
 
-// Threaded capture of the #viewport placeholder canvas: the transferred
-// canvas commits frames from the worker; drawImage on the placeholder is the
-// spec-supported way to read them back on main.
-function snapshotThreadedViewport() {
-  const scratch = document.createElement("canvas");
-  const width = harnessState.engineDisplaySize?.width ?? canvas.width;
-  const height = harnessState.engineDisplaySize?.height ?? canvas.height;
-  scratch.width = Math.max(1, width);
-  scratch.height = Math.max(1, height);
-  const context = scratch.getContext("2d");
-  try {
-    context.drawImage(canvas, 0, 0, scratch.width, scratch.height);
-    return scratch.toDataURL("image/png");
-  } catch (error) {
-    recordLog("threaded snapshot failed", { error: error?.message ?? String(error) });
-    return null;
-  }
-}
-
 // RPC routing gate for threaded mode. Returns undefined to fall through to
 // the regular (main-side JS only) handler; anything else is the final RPC
 // result. Commands that would call wasm exports from the MAIN thread while
@@ -2018,6 +2001,9 @@ const THREADED_MAIN_SIDE_COMMANDS = new Set([
   "importGameData",
   "copyGameDataOverride",
   "deleteGameData",
+  "listCustomMaps",
+  "installCustomMaps",
+  "deleteCustomMap",
   // WebRTC signaling and RTCDataChannels live in the window realm. Their
   // datagrams cross into the engine worker through threadedUdpBridge.
   "browserWebRtcEndpointConnect",
@@ -2360,8 +2346,34 @@ async function threadedRpc(command, payload = {}) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
       }
     }
-    case "screenshot":
-      return { ok: true, command, screenshot: snapshotThreadedViewport(), threaded: true };
+    case "screenshot": {
+      try {
+        await threadedEngine.ensureReady();
+        const reply = await threadedEngine.sendCommand(
+          { cmd: "screenshot" }, { timeoutMs: 120000 });
+        const bytes = reply?.bytes instanceof Uint8Array ? reply.bytes : null;
+        if (reply?.ok !== true || !bytes) {
+          return {
+            ok: false,
+            command,
+            error: reply?.error ?? "worker screenshot failed",
+            threaded: true,
+          };
+        }
+        return {
+          ok: true,
+          command,
+          screenshot: {
+            width: reply.width,
+            height: reply.height,
+            dataUrl: `data:image/png;base64,${bytesToBase64(bytes)}`,
+          },
+          threaded: true,
+        };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
     case "threadedStatus": {
       await threadedEngine.ensureReady();
       if (threadedEngine.engineThreadStarted) {
@@ -2969,6 +2981,16 @@ async function threadedRpc(command, payload = {}) {
         const result = await threadedEngine.engineCall(
           "cnc_port_real_engine_set_skirmish_seed", "string", ["number"],
           [Number(payload.seed)]);
+        return { ok: result?.ok === true, command, result, threaded: true };
+      } catch (error) {
+        return { ok: false, command, error: error?.message ?? String(error), threaded: true };
+      }
+    }
+    case "revealLocalMap": {
+      try {
+        const result = await threadedEngine.engineCall(
+          "cnc_port_reveal_local_map", "string", ["number"],
+          [payload.permanent === false ? 0 : 1]);
         return { ok: result?.ok === true, command, result, threaded: true };
       } catch (error) {
         return { ok: false, command, error: error?.message ?? String(error), threaded: true };
@@ -6494,6 +6516,13 @@ const replayFileStore = createReplayFileStore({
 });
 
 const gameDataStore = createGameDataStore({
+  ready: () => wasmModulePromise,
+  getModule: () => cncPortEmscriptenModule,
+  persist: (reason) => persistSaveFilesystem(reason),
+  storage: CNC_PORT_MOD_STORAGE,
+});
+
+const customMapStore = createCustomMapStore({
   ready: () => wasmModulePromise,
   getModule: () => cncPortEmscriptenModule,
   persist: (reason) => persistSaveFilesystem(reason),
@@ -13293,6 +13322,46 @@ async function rpc(command, payload = {}) {
             ...await gameDataStore.remove(payload.contextId, payload.kind, payload.name, {
               allowActiveLastReplay: payload.allowActiveLastReplay === true,
             }),
+          };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "listCustomMaps":
+      {
+        try {
+          return { command, ...await customMapStore.list(payload.contextId ?? null) };
+        } catch (error) {
+          return { ok: false, command, maps: [], error: error?.message ?? String(error) };
+        }
+      }
+    case "installCustomMaps":
+      {
+        try {
+          const maps = Array.from(payload.maps ?? [], (map) => ({
+            name: map.name,
+            files: Array.from(map.files ?? [], (file) => ({
+              path: file.path,
+              size: file.size,
+              bytes: base64ToBytes(file.bytesBase64),
+            })),
+          }));
+          return {
+            command,
+            ...await customMapStore.install(payload.contextId, maps, {
+              replace: payload.replace === true,
+            }),
+          };
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+      }
+    case "deleteCustomMap":
+      {
+        try {
+          return {
+            command,
+            ...await customMapStore.remove(payload.contextId, payload.name),
           };
         } catch (error) {
           return { ok: false, command, error: error?.message ?? String(error) };
@@ -22951,6 +23020,7 @@ async function rpc(command, payload = {}) {
             (textureBefore.samplerApplications ?? 0),
         };
         const roadFvf = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
+        const fullDrawDiagnostics = d3d8DiagLevelValue() === "full";
         const isBaseTerrainPass = (draw) =>
           draw?.vertexShaderFvf === 578
             && draw?.vertexStride === 32
@@ -23012,21 +23082,40 @@ async function rpc(command, payload = {}) {
           && (probe?.roads?.afterLoad ?? 0) > 0
           && (probe?.roads?.segmentsWithVertices ?? 0) > 0
           && (probe?.roads?.typesWithDrawData ?? 0) > 0
+          && probe?.lightingRefresh?.path ===
+            "W3DRoadBuffer::updateLighting -> W3DRoadBuffer::drawRoads with unchanged camera bounds"
+          && probe?.lightingRefresh?.invoked === true
+          && probe?.lightingRefresh?.requestedBufferUpdate === true
+          && probe?.lightingRefresh?.requestedVertexDataUpload === true
+          && (probe?.lightingRefresh?.cpuDiffuse?.vertices ?? 0) > 0
+          && probe?.lightingRefresh?.cpuDiffuse?.beforeChecksum
+            !== probe?.lightingRefresh?.cpuDiffuse?.afterChecksum
+          && probe?.lightingRefresh?.cpuDiffuse?.afterRgbSum
+            < probe?.lightingRefresh?.cpuDiffuse?.beforeRgbSum
+          && probe?.lightingRefresh?.drawInvoked === true
+          && (probe?.lightingRefresh?.browserBufferUpdates ?? 0) > 0
+          && probe?.lightingRefresh?.clearedBufferUpdate === true
+          && probe?.lightingRefresh?.clearedVertexDataDirty === true
+          && probe?.lightingRefresh?.steadyState?.drawInvoked === true
+          && probe?.lightingRefresh?.steadyState?.browserBufferUpdates === 0
           && (probe?.calls?.drawIndexed ?? 0) >= 3
+          && (probe?.calls?.browserBufferCreate ?? 0) >= 4
+          && (probe?.calls?.browserBufferUpdate ?? 0) >= 4
           && probe?.draw?.vertexShaderFvf === roadFvf
           && probe?.draw?.vertexStride === 24
-          && browserProbe?.source === "browser_d3d8_draw_indexed"
-          && (browserProbe?.vertexDiagnostics?.projected?.visible ?? 0) > 0
-          && browserProbe?.usedPersistentBuffers === true
-          && browserProbe?.usedTransforms === true
-          && browserProbe?.vertexShaderFvf === roadFvf
-          && browserProbe?.vertexStride === 24
-          && browserProbe?.texture0?.sampled === true
-          && Array.isArray(drawHistory)
-          && drawHistory.length >= 3
-          && roadAfterTerrain
-          && bufferDelta.creates >= 4
-          && bufferDelta.updates >= 4
+          && (!fullDrawDiagnostics
+            || (browserProbe?.source === "browser_d3d8_draw_indexed"
+              && (browserProbe?.vertexDiagnostics?.projected?.visible ?? 0) > 0
+              && browserProbe?.usedPersistentBuffers === true
+              && browserProbe?.usedTransforms === true
+              && browserProbe?.vertexShaderFvf === roadFvf
+              && browserProbe?.vertexStride === 24
+              && browserProbe?.texture0?.sampled === true
+              && Array.isArray(drawHistory)
+              && drawHistory.length >= 3
+              && roadAfterTerrain
+              && bufferDelta.creates >= 4
+              && bufferDelta.updates >= 4))
           && textureDelta.binds >= 1
           && textureDelta.samplerApplications >= 1
           && (screenshot?.coverage?.coloredPixelCount ?? 0) > 0;
@@ -23045,6 +23134,7 @@ async function rpc(command, payload = {}) {
           bufferDelta,
           textureDelta,
           textureProbe: textureAfter,
+          diagnosticLevel: d3d8DiagLevelValue(),
           screenshot,
           state: snapshotState(),
         };
@@ -25833,6 +25923,10 @@ window.CnCPort = {
   copyGameDataOverride: (options) => gameDataStore.copyWithCompatibilityOverride(options),
   deleteGameData: (contextId, kind, name, options) =>
     gameDataStore.remove(contextId, kind, name, options),
+  listCustomMaps: (contextId = null) => customMapStore.list(contextId),
+  installCustomMaps: (contextId, maps, options) =>
+    customMapStore.install(contextId, maps, options),
+  deleteCustomMap: (contextId, name) => customMapStore.remove(contextId, name),
   listTransferUserFiles: (options) => transferUserDataStore.list(options),
   readTransferUserFileChunk: (file, offset, length) =>
     transferUserDataStore.readChunk(file, offset, length),

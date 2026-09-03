@@ -6,6 +6,30 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-03
+
+- Cache enabled dynamic lights per render pass to cut late-match scene-render CPU cost ([PR #347](https://github.com/Agusx1211/NewShoes/pull/347)).
+- Fix road shroud composition ([PR #348](https://github.com/Agusx1211/NewShoes/pull/348)).
+- Use saturating float-to-int conversions so NaN and out-of-range casts no longer abort the engine ([PR #354](https://github.com/Agusx1211/NewShoes/pull/354)).
+- Clamp the pathfinder fast open queue bucket index to stop out-of-bounds writes on very long paths ([PR #355](https://github.com/Agusx1211/NewShoes/pull/355)).
+- Scope the D3D8 executor point-sprite uniform gate and shader-pair cache per program ([PR #356](https://github.com/Agusx1211/NewShoes/pull/356)).
+- Detect Y-only water grid resolution changes ([PR #357](https://github.com/Agusx1211/NewShoes/pull/357)).
+- Override GameInfo::amIHost in LANGameInfo so LAN host detection works through GameInfo pointers ([PR #358](https://github.com/Agusx1211/NewShoes/pull/358)).
+- Skip script diagnostic name copies when no listener is installed ([PR #359](https://github.com/Agusx1211/NewShoes/pull/359)).
+- Set version 0.7.1 and complete its audited release inventory ([PR #361](https://github.com/Agusx1211/NewShoes/pull/361)).
+- Audit production dependencies in the CI setup action so advisories in development-only tooling no longer block every build ([PR #362](https://github.com/Agusx1211/NewShoes/pull/362)).
+- Complete the 0.7.1 inventory after the CI audit fix ([PR #363](https://github.com/Agusx1211/NewShoes/pull/363)).
+
+## [0.7.0] - 2026-07-26
+
+- Refresh road vertex buffers after terrain lighting changes to prevent camera-dependent bright roads ([PR #329](https://github.com/Agusx1211/NewShoes/pull/329)).
+- Add a first-class custom map manager with configuration-isolated browser storage ([PR #330](https://github.com/Agusx1211/NewShoes/pull/330)).
+- Prevent late-game pathfinding freezes by separating persistent obstacle state from A* scratch records ([PR #328](https://github.com/Agusx1211/NewShoes/pull/328)).
+- Remove ShockWave battle stalls from D3D8 staging copies and terrain-flatten scans ([PR #332](https://github.com/Agusx1211/NewShoes/pull/332)).
+- Prevent map-loading crashes by keeping non-finite FPS telemetry valid JSON ([PR #337](https://github.com/Agusx1211/NewShoes/pull/337)).
+- Set version 0.7.0 and complete its audited release inventory ([PR #334](https://github.com/Agusx1211/NewShoes/pull/334)).
+- Complete the 0.7.0 inventory after the FPS telemetry crash fix ([PR #338](https://github.com/Agusx1211/NewShoes/pull/338)).
+
 ## [0.6.0] - 2026-07-25
 
 - Refresh the README and add deterministic agent codenames ([PR #300](https://github.com/Agusx1211/NewShoes/pull/300)).
