@@ -17,6 +17,8 @@ repository `release` skill describes the promotion workflow from `dev` to
 - Override GameInfo::amIHost in LANGameInfo so LAN host detection works through GameInfo pointers ([PR #358](https://github.com/Agusx1211/NewShoes/pull/358)).
 - Skip script diagnostic name copies when no listener is installed ([PR #359](https://github.com/Agusx1211/NewShoes/pull/359)).
 - Set version 0.7.1 and complete its audited release inventory ([PR #361](https://github.com/Agusx1211/NewShoes/pull/361)).
+- Audit production dependencies in the CI setup action so advisories in development-only tooling no longer block every build ([PR #362](https://github.com/Agusx1211/NewShoes/pull/362)).
+- Complete the 0.7.1 inventory after the CI audit fix ([PR #363](https://github.com/Agusx1211/NewShoes/pull/363)).
 
 ## [0.7.0] - 2026-07-26
 
