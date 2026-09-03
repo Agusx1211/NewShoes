@@ -1109,6 +1109,11 @@ function resetD3D8UniformSubgroupCaches() {
   d3d8LastFixedLightUniformKey = null;
   d3d8LastStageUniformKey = null;
   d3d8LastAlphaFogUniformKey = null;
+  // Point-sprite uniforms live per GL program like every other subgroup. The
+  // gate below must not report "unchanged" for a program that never received
+  // the current tuple, or point-list draws inherit a stale uDrawingPoints /
+  // uPointSize from whatever that program last drew.
+  d3d8LastPointSpriteUniformInfo = null;
 }
 
 function invalidateD3D8AppliedViewportCache() {
@@ -10112,6 +10117,7 @@ function registerD3D8SM1Shader(spec) {
       // fragment source so unsupported constructs fail at create time.
       d3d8SM1BuildFragmentSource(shader, { translatedVs: false, vsWritesFog: false });
       d3d8SM1PixelShaders.set(spec.handle, shader);
+      purgeD3D8SM1FailedPairPrograms(true, spec.handle);
       d3d8SM1MostRecentPixelHandle = spec.handle;
       if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1PixelShadersRegistered += 1;
       // Warm the likely pairings so first use never compiles mid-frame: the
@@ -10150,6 +10156,7 @@ function registerD3D8SM1Shader(spec) {
     shader.relativeConstantReads = d3d8SM1RelativeConstantReads(shader);
     d3d8SM1BuildVertexSource(shader); // eager validation
     d3d8SM1VertexShaders.set(spec.handle, shader);
+    purgeD3D8SM1FailedPairPrograms(false, spec.handle);
     d3d8SM1MostRecentVertexHandle = spec.handle;
     if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1VertexShadersRegistered += 1;
     // Warm the translated-vs + FF-pixel pair (the shipped tree path draws
@@ -10225,7 +10232,7 @@ function ensureD3D8ShaderPairProgram(
   if (cached !== undefined) {
     return cached.program;
   }
-  let entry = {
+  const entry = {
     vsHandle,
     psHandle,
     ffVertexVariant: normalizedFFVertexVariant,
@@ -10233,7 +10240,11 @@ function ensureD3D8ShaderPairProgram(
     terrainShroudFusion: normalizedTerrainShroudFusion,
     program: null,
   };
-  d3d8SM1PairPrograms.set(key, entry);
+  // The cache entry is only stored once the outcome is known. A pair
+  // requested before one of its shaders is registered is not a failure of
+  // the pair and must be retried on the next draw, so those early returns
+  // stay uncached; a compile/link failure is deterministic for the same
+  // sources and is cached until either shader is re-registered or deleted.
   const psShader = psHandle !== 0 ? d3d8SM1PixelShaders.get(psHandle) : null;
   if (psHandle !== 0 && !psShader) {
     return null;
@@ -10314,12 +10325,29 @@ function ensureD3D8ShaderPairProgram(
       }));
     }
     entry.program = bridgeProgram;
+    d3d8SM1PairPrograms.set(key, entry);
     if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1PairProgramsLinked += 1;
     return bridgeProgram;
   } catch (error) {
     console.warn(`D3D8 SM1: pair program (vs=${vsHandle}, ps=${psHandle}, ff=${normalizedFFVertexVariant}) failed: ${error?.message ?? error}`);
     if (d3d8PerfCountersEnabled) d3d8PerfStats.sm1PairProgramFailures += 1;
+    entry.program = null;
+    d3d8SM1PairPrograms.set(key, entry);
     return null;
+  }
+}
+
+// Drop cached pair-program failures that referenced this shader handle. A
+// shader registered (or re-registered) under the handle must get a fresh
+// build attempt instead of inheriting an earlier miss.
+function purgeD3D8SM1FailedPairPrograms(isPixel, handle) {
+  for (const [key, entry] of Array.from(d3d8SM1PairPrograms)) {
+    if (entry.program !== null) {
+      continue;
+    }
+    if ((isPixel && entry.psHandle === handle) || (!isPixel && entry.vsHandle === handle)) {
+      d3d8SM1PairPrograms.delete(key);
+    }
   }
 }
 
