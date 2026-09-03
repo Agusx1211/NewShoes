@@ -23,6 +23,17 @@ if(CNC_PORT_THREADS)
   add_compile_options(-pthread)
   add_link_options(-pthread)
 endif()
+# Every float-to-int cast in the engine lowers to i32/i64.trunc_f32/f64 on
+# wasm, which traps on NaN or out-of-range input ("RuntimeError: float
+# unrepresentable in integer range") and aborts the whole game. The original
+# x86 build silently produced INT_MIN for those casts and the simulation
+# carried on, so degenerate physics or pathfinding values that retail
+# survived became browser crashes. Emit saturating conversions instead
+# (i32.trunc_sat_*): the nontrapping-fptoint feature is implemented by every
+# browser this port supports. Applied globally so every static library the
+# engine links gets the same lowering.
+add_compile_options(-mnontrapping-fptoint)
+add_link_options(-mnontrapping-fptoint)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/${CNC_DIST_DIR}")
 
 set(CNC_EXCEPTION_COMPILE_OPTION "-fexceptions")
