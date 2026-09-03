@@ -1851,6 +1851,18 @@ PathfindCell *PathfindCell::removeFromClosedList( PathfindCell *list )
 
 const Int COST_ORTHOGONAL = 10;
 const Int COST_DIAGONAL = 14;
+
+// The fast open queue buckets cells by A* total cost. Costs are unbounded
+// (long detours on large maps add up), so the bucket index must be clamped:
+// every cell at or beyond the last bucket shares it FIFO instead of writing
+// past the array and unlinking from the wrong bucket. m_openBucketCost stores
+// the clamped index, so it always fits its 16-bit field.
+enum { FAST_OPEN_BUCKET_COUNT = 1 << 16 };
+static inline UnsignedInt fastOpenBucketIndex(UnsignedInt totalCost)
+{
+	const UnsignedInt last = (UnsignedInt)(FAST_OPEN_BUCKET_COUNT - 1);
+	return totalCost < last ? totalCost : last;
+}
 const Real COST_TO_DISTANCE_FACTOR = 1.0f/10.0f;
 const Real COST_TO_DISTANCE_FACTOR_SQR = COST_TO_DISTANCE_FACTOR*COST_TO_DISTANCE_FACTOR;
 
@@ -4060,8 +4072,8 @@ Pathfinder::Pathfinder( void ) :
 {
 	debugPath = NULL;
 	PathfindCellInfo::allocateCellInfos();
-	m_fastOpenBucketHeads = new PathfindCell *[1 << 16]();
-	m_fastOpenBucketTails = new PathfindCell *[1 << 16]();
+	m_fastOpenBucketHeads = new PathfindCell *[FAST_OPEN_BUCKET_COUNT]();
+	m_fastOpenBucketTails = new PathfindCell *[FAST_OPEN_BUCKET_COUNT]();
 	reset();
 }
 
@@ -4078,8 +4090,8 @@ void Pathfinder::reset( void )
 {
 	frameToShowObstacles = 0;
 	DEBUG_LOG(("Pathfind cell is %d bytes, PathfindCellInfo is %d bytes\n", sizeof(PathfindCell), sizeof(PathfindCellInfo)));
-	memset(m_fastOpenBucketHeads, 0, (1 << 16) * sizeof(*m_fastOpenBucketHeads));
-	memset(m_fastOpenBucketTails, 0, (1 << 16) * sizeof(*m_fastOpenBucketTails));
+	memset(m_fastOpenBucketHeads, 0, FAST_OPEN_BUCKET_COUNT * sizeof(*m_fastOpenBucketHeads));
+	memset(m_fastOpenBucketTails, 0, FAST_OPEN_BUCKET_COUNT * sizeof(*m_fastOpenBucketTails));
 
 	if (m_blockOfMapCells) {
 		delete []m_blockOfMapCells;
@@ -4101,7 +4113,7 @@ void Pathfinder::reset( void )
 	m_openList = NULL;
 	m_closedList = NULL;
 	m_fastOpenCount = 0;
-	m_fastOpenMinimumCost = 1 << 16;
+	m_fastOpenMinimumCost = FAST_OPEN_BUCKET_COUNT;
 	m_fastOpenQueueActive = false;
 
 	m_ignoreObstacleID = INVALID_ID;
@@ -5046,7 +5058,7 @@ void Pathfinder::startFastOpenQueue(PathfindCell *startCell)
 	// equivalent without repeatedly walking the full sorted list.
 	DEBUG_ASSERTCRASH(startCell && startCell->getOpen(), ("Invalid fast open queue start cell."));
 	DEBUG_ASSERTCRASH(m_fastOpenCount == 0, ("Fast open queue was not empty."));
-	UnsignedInt cost = startCell->m_info->m_totalCost;
+	const UnsignedInt cost = fastOpenBucketIndex(startCell->m_info->m_totalCost);
 	DEBUG_ASSERTCRASH(m_fastOpenBucketHeads[cost] == NULL && m_fastOpenBucketTails[cost] == NULL,
 		("Fast open queue bucket was not empty."));
 	m_fastOpenBucketHeads[cost] = startCell;
@@ -5062,7 +5074,7 @@ void Pathfinder::pushFastOpenQueue(PathfindCell *cell)
 {
 	DEBUG_ASSERTCRASH(cell->m_info && !cell->m_info->m_open && !cell->m_info->m_closed,
 		("Invalid cell added to fast open queue."));
-	UnsignedInt cost = cell->m_info->m_totalCost;
+	const UnsignedInt cost = fastOpenBucketIndex(cell->m_info->m_totalCost);
 	cell->m_info->m_openBucketCost = static_cast<UnsignedShort>(cost);
 	PathfindCell *tail = m_fastOpenBucketTails[cost];
 	cell->m_info->m_prevOpen = tail ? tail->m_info : NULL;
@@ -5111,11 +5123,11 @@ PathfindCell *Pathfinder::popFastOpenQueue(void)
 	if (m_fastOpenCount == 0) {
 		return NULL;
 	}
-	while (m_fastOpenMinimumCost < (1U << 16)
+	while (m_fastOpenMinimumCost < (UnsignedInt)FAST_OPEN_BUCKET_COUNT
 		&& m_fastOpenBucketHeads[m_fastOpenMinimumCost] == NULL) {
 		m_fastOpenMinimumCost++;
 	}
-	DEBUG_ASSERTCRASH(m_fastOpenMinimumCost < (1U << 16), ("Fast open queue has no minimum cell."));
+	DEBUG_ASSERTCRASH(m_fastOpenMinimumCost < (UnsignedInt)FAST_OPEN_BUCKET_COUNT, ("Fast open queue has no minimum cell."));
 	PathfindCell *cell = m_fastOpenBucketHeads[m_fastOpenMinimumCost];
 	removeFastOpenQueue(cell);
 	return cell;
@@ -5142,7 +5154,7 @@ void Pathfinder::cleanOpenAndClosedLists(void) {
 		m_closedList = NULL;
 	}		 
 	m_fastOpenCount = 0;
-	m_fastOpenMinimumCost = 1 << 16;
+	m_fastOpenMinimumCost = FAST_OPEN_BUCKET_COUNT;
 	m_fastOpenQueueActive = false;
 	m_cumulativeCellsAllocated += count;
 //#ifdef _DEBUG
