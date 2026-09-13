@@ -3402,6 +3402,9 @@ Object *PartitionManager::getClosestObjects(
 	DEBUG_ASSERTCRASH((obj==NULL) != (pos == NULL), ("either obj or pos must be null"));
 
 	DistCalcProc distProc = closestVecArg ? theDistCalcProcs[dc] : NULL;
+	PartitionFilter *earlyFilter = filters && filters[0]
+		&& filters[0]->canEvaluateBeforeDistance() ? filters[0] : NULL;
+	PartitionFilter **remainingFilters = earlyFilter ? filters + 1 : filters;
 
 	const Coord3D *objPos;
 	const Object *objToUse;
@@ -3446,10 +3449,11 @@ Object *PartitionManager::getClosestObjects(
 	static Int theIterFlag = 1;	// nonzero, thanks
 	++theIterFlag;
 
-	// Start with cheap local rings. If a nearest search finds nothing nearby,
-	// bucket occupied cells in progressively wider bands, retaining ring order.
-	// Range searches need every band and can build the remainder in one pass.
-	Int indexedThrough = 8;
+	// Nearest searches start with cheap local rings, then widen the index.
+	// Range searches must visit every band anyway: build once, including the
+	// local rings, so sparse areas don't repeatedly scan their empty cells.
+	const Int localRadius = iterArg ? -1 : 8;
+	Int indexedThrough = localRadius;
 
 	/*
 		m_radiusVec[curRadius] contains a list of the cells (foo) that could
@@ -3457,7 +3461,7 @@ Object *PartitionManager::getClosestObjects(
 	*/
   for (Int curRadius = 0; curRadius <= maxRadiusLimit; ++curRadius)
   {
-		const Bool indexedRange = curRadius > 8;
+		const Bool indexedRange = curRadius > localRadius;
 		if (indexedRange && curRadius > indexedThrough)
 		{
 			indexedThrough = iterArg ? maxRadiusLimit : minInt(maxRadiusLimit, indexedThrough * 2);
@@ -3498,6 +3502,8 @@ Object *PartitionManager::getClosestObjects(
 				if (thisMod->friend_getDoneFlag() == theIterFlag)
 					continue;
 				thisMod->friend_setDoneFlag(theIterFlag);
+				if (earlyFilter && !earlyFilter->allow(thisObj))
+					continue;
 			
 				Real thisDistSqr;
 				Coord3D distVec;
@@ -3509,7 +3515,7 @@ Object *PartitionManager::getClosestObjects(
 				if (!withinRange)
 					continue;
 
-				if (!filtersAllow(filters, thisObj))
+				if (!filtersAllow(remainingFilters, thisObj))
 					continue;
 
 				// ok, this is within the range, and the filters allow it.
@@ -3578,6 +3584,8 @@ Object *PartitionManager::getClosestObjects(
 				continue;
 
 			thisMod->friend_setDoneFlag(theIterFlag);
+			if (earlyFilter && !earlyFilter->allow(thisObj))
+				continue;
 		
 			// hmm, ok, calc the distance.
 			Real thisDistSqr;
@@ -3591,7 +3599,7 @@ Object *PartitionManager::getClosestObjects(
 				continue;
 
 			// check the filters now
-			if (!filtersAllow(filters, thisObj))
+			if (!filtersAllow(remainingFilters, thisObj))
 				continue;
 
 			// ok, guess this is a winner!

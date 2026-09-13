@@ -833,6 +833,28 @@ try {
       "frame-command native-repeat seed was not eligible");
     expect(hooks.cncPortD3D8AppendRepeatedDraws(new Uint32Array([2])) === 1,
       "frame-command native-repeat append failed");
+    for (const kind of [1, 2]) {
+      createBuffer(kind, 908, kind === 1 ? makeTexturedTriangle() : indexBytes);
+      expect(hooks.cncPortD3D8BufferRelease({ kind, id: 908 }) === 1,
+        "unrelated static buffer release failed", { kind });
+    }
+    expect(diag.d3d8PerfSummary().frameCommandSegments ===
+        beforeFrameNativeRepeat.frameCommandSegments,
+      "unrelated buffer creation or release flushed queued draws");
+    expect(hooks.cncPortD3D8BufferUpdate({
+      kind: 1, id: 4, byteOffset: 0, bytes: makeTexturedTriangle(),
+    }) === 1, "unrelated static buffer update failed");
+    expect(diag.d3d8PerfSummary().frameCommandSegments ===
+        beforeFrameNativeRepeat.frameCommandSegments,
+      "unrelated static upload flushed queued draws");
+    // A natively appended vertex buffer is still a dependency of the queued
+    // segment. Its old green contents must be drawn before this blue update.
+    expect(hooks.cncPortD3D8BufferUpdate({
+      kind: 1, id: 2, byteOffset: 0, bytes: makeTriangle([0, 0, 255, 255]),
+    }) === 1, "appended static buffer update failed");
+    expect(diag.d3d8PerfSummary().frameCommandSegments ===
+        beforeFrameNativeRepeat.frameCommandSegments + 1,
+      "appended static buffer update did not replay its dependent draws");
     diag.flushD3D8FrameCommandQueue("frame-command-native-repeat-smoke");
     const afterFrameNativeRepeat = diag.d3d8PerfSummary();
     expect(afterFrameNativeRepeat.drawNativeRepeatedAppends ===
@@ -861,6 +883,33 @@ try {
       "frame-command native-repeat replay changed ordering",
       frameNativeRepeatPixel,
     );
+    expect(hooks.cncPortD3D8BufferUpdate({
+      kind: 1, id: 2, byteOffset: 0, bytes: makeTriangle([0, 255, 0, 255]),
+    }) === 1, "static green buffer restore failed");
+
+    // Ordinary queued draws also retain both vertex and index dependencies.
+    // After either buffer changes, the old red triangle must remain visible.
+    for (const operation of ["update", "replace", "release"]) for (const kind of [1, 2]) {
+      hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+      const beforeStaticUpdate = diag.d3d8PerfSummary();
+      expect(draw(1, 0, 801) === 1, "static dependency seed draw failed");
+      const id = kind === 1 ? 1 : 3;
+      const bytes = kind === 1 ? makeTriangle([0, 0, 255, 255])
+        : new Uint8Array(new Uint16Array([0, 0, 0]).buffer);
+      const changed = operation === "update"
+        ? hooks.cncPortD3D8BufferUpdate({ kind, id, byteOffset: 0, bytes })
+        : operation === "replace"
+          ? hooks.cncPortD3D8BufferCreate({ kind, id, byteSize: bytes.byteLength })
+          : hooks.cncPortD3D8BufferRelease({ kind, id });
+      expect(changed === 1, "referenced static buffer change failed", { operation, kind });
+      expect(diag.d3d8PerfSummary().frameCommandSegments ===
+          beforeStaticUpdate.frameCommandSegments + 1,
+        "referenced static buffer change did not flush", { operation, kind });
+      const pixel = readCenterPixel();
+      expect(pixel[0] > 220 && pixel[1] < 32 && pixel[2] < 32,
+        "static buffer change altered an earlier queued draw", { operation, kind, pixel });
+      createBuffer(kind, id, kind === 1 ? makeTriangle([255, 0, 0, 255]) : indexBytes);
+    }
     globalThis.__cncSetD3D8FrameCommandQueue?.(false);
 
     // Deferred dynamic geometry retains a zero-copy mirror reference until
@@ -1125,8 +1174,10 @@ try {
 
     const frameRedTextureId = 790;
     const frameGreenTextureId = 791;
+    const frameUnusedTextureId = 792;
     createSolidTexture(frameRedTextureId, [0, 0, 255, 255]);
     createSolidTexture(frameGreenTextureId, [0, 255, 0, 255]);
+    createSolidTexture(frameUnusedTextureId, [255, 0, 0, 255]);
     configureStage(0, 2, 2, 2, 2); // SELECTARG1(TEXTURE)
     configureStage(1, 1, 1, 1, 1); // DISABLE
     hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
@@ -1138,14 +1189,24 @@ try {
     expect(hooks.cncPortD3D8TextureBind({ stage: 0, id: frameGreenTextureId }) === 1,
       "frame-command green texture bind failed");
     expect(drawTextured(803) === 1, "frame-command green textured draw failed");
+    expect(hooks.cncPortD3D8TextureBind({ stage: 0, id: frameUnusedTextureId }) === 1,
+      "unused texture bind failed");
+    expect(hooks.cncPortD3D8TextureRelease({ id: frameUnusedTextureId }) === 1,
+      "unused texture release failed");
     const queuedFrameTextureBinds = diag.d3d8PerfSummary();
     expect(queuedFrameTextureBinds.frameCommandSegments ===
         beforeFrameTextureBinds.frameCommandSegments,
-      "texture bind flushed the deferred segment", {
+      "texture bind or unrelated release flushed the deferred segment", {
         beforeFrameTextureBinds,
         queuedFrameTextureBinds,
       });
-    diag.flushD3D8FrameCommandQueue("frame-command-texture-bind-smoke");
+    // The sampled texture is no longer logically bound, but queued draws must
+    // still consume it before it is destroyed.
+    expect(hooks.cncPortD3D8TextureRelease({ id: frameGreenTextureId }) === 1,
+      "queued texture release failed");
+    expect(diag.d3d8PerfSummary().frameCommandSegments ===
+        beforeFrameTextureBinds.frameCommandSegments + 1,
+      "referenced texture release did not replay queued draws");
     const frameTextureBindPixel = readCenterPixel();
     expect(
       frameTextureBindPixel[0] < 32 &&
@@ -1154,11 +1215,50 @@ try {
       "frame-command replay lost per-draw texture bindings",
       frameTextureBindPixel,
     );
+    hooks.cncPortD3D8TextureBind({ stage: 0, id: frameRedTextureId });
+    expect(drawTextured(805) === 1, "queued texture replacement draw failed");
+    createSolidTexture(frameRedTextureId, [255, 0, 0, 255]);
+    const replacedTexturePixel = readCenterPixel();
+    expect(replacedTexturePixel[0] > 220 && replacedTexturePixel[1] < 32 && replacedTexturePixel[2] < 32,
+      "texture replacement changed a queued draw", replacedTexturePixel);
     globalThis.__cncSetD3D8FrameCommandQueue?.(false);
     hooks.cncPortD3D8TextureRelease({ id: frameRedTextureId });
-    hooks.cncPortD3D8TextureRelease({ id: frameGreenTextureId });
     expect(hooks.cncPortD3D8TextureBind({ stage: 0, id: textureId }) === 1,
       "frame-command smoke did not restore the primary texture");
+
+    // Neither attachment is sampled. Releasing depth must nevertheless finish
+    // the offscreen draw before deleting its framebuffer.
+    const frameTargetId = 793;
+    const frameDepthId = 794;
+    createSolidTexture(frameUnusedTextureId, [0, 0, 255, 255]);
+    hooks.cncPortD3D8TextureBind({ stage: 0, id: frameUnusedTextureId });
+    for (const [id, format, usage] of [[frameTargetId, 21, 1], [frameDepthId, 75, 2]]) {
+      expect(hooks.cncPortD3D8TextureCreate({
+        id, width: 64, height: 64, levels: 1, format, usage,
+      }) === 1, "queued target texture creation failed", { id });
+    }
+    expect(hooks.cncPortD3D8BindFramebuffer({
+      colorTextureId: frameTargetId, depthTextureId: frameDepthId, width: 64, height: 64,
+    }) === 1, "queued target bind failed");
+    hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+    globalThis.__cncSetD3D8FrameCommandQueue?.(true);
+    const beforeTargetRelease = diag.d3d8PerfSummary();
+    expect(drawTextured(804) === 1, "queued offscreen draw failed");
+    expect(hooks.cncPortD3D8TextureRelease({ id: frameDepthId }) === 1,
+      "queued depth attachment release failed");
+    expect(diag.d3d8PerfSummary().frameCommandSegments ===
+        beforeTargetRelease.frameCommandSegments + 1,
+      "depth attachment release did not replay offscreen draws");
+    globalThis.__cncSetD3D8FrameCommandQueue?.(false);
+    expect(hooks.cncPortD3D8BindFramebuffer({
+      colorTextureId: frameTargetId, width: 64, height: 64,
+    }) === 1, "offscreen verification bind failed");
+    const targetReleasePixel = readCenterPixel();
+    expect(targetReleasePixel[0] > 220 && targetReleasePixel[1] < 32 && targetReleasePixel[2] < 32,
+      "attachment release lost the offscreen draw", targetReleasePixel);
+    hooks.cncPortD3D8TextureRelease({ id: frameTargetId });
+    hooks.cncPortD3D8TextureRelease({ id: frameUnusedTextureId });
+    hooks.cncPortD3D8TextureBind({ stage: 0, id: textureId });
 
     const stage2TextureId = 701;
     const stage3TextureId = 702;

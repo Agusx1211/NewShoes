@@ -551,7 +551,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   const prebootQueue = []; // functions to run on first tick, in arrival order
   const cwrapCache = new Map();
   function cwrapFor(name, returnType, argTypes) {
-    const key = `${name} ${returnType} ${(argTypes ?? []).join(",")}`;
+    const key = `${name}\0${returnType}\0${(argTypes ?? []).join(",")}`;
     let fn = cwrapCache.get(key);
     if (!fn) {
       fn = Module.cwrap(name, returnType === "void" || returnType === null ? null : returnType, argTypes ?? []);
@@ -586,6 +586,10 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     try {
       const fn = cwrapFor(String(msg.name), msg.returnType ?? null, msg.argTypes ?? []);
       const value = fn(...(Array.isArray(msg.args) ? msg.args : []));
+      // Frame and diagnostic calls can draw while the paced loop is stopped.
+      // Complete their queued rendering before replying, as the main-realm
+      // frame RPCs do; resource churn must not supply an accidental flush.
+      d3d8Diag.flushD3D8PendingDrawBatch("threadedEngineCall");
       reply.ok = true;
       reply.value = msg.parseJson === false ? value : parseMaybeJson(value);
     } catch (error) {

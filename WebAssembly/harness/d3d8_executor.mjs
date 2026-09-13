@@ -2955,7 +2955,7 @@ function createD3D8Buffer(payload = {}) {
   if (!gl) {
     return 0;
   }
-  flushD3D8PendingDrawBatch("bufferCreate");
+  flushD3D8PendingDrawBatch("bufferCreate", false);
   const kind = Number(payload.kind ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
   const byteSize = Number(payload.byteSize ?? 0) >>> 0;
@@ -2968,6 +2968,9 @@ function createD3D8Buffer(payload = {}) {
   const key = d3d8BufferKey(kind, id);
   const existing = d3d8Buffers.get(key);
   if (existing) {
+    if (d3d8FrameStaticSources.has(existing) || d3d8FrameSourceRanges.has(existing)) {
+      flushD3D8FrameCommandQueue("bufferCreate");
+    }
     invalidateD3D8RepeatedGeometryForBuffer(kind, id);
     forgetD3D8BufferBinding(existing.buffer, existing.bindingId);
     gl.deleteBuffer(existing.buffer);
@@ -3330,7 +3333,9 @@ function updateD3D8Buffer(payload = {}) {
   if (!resource || bytes.byteLength === 0) {
     return 0;
   }
-  if (resource.dynamic !== true) {
+  // Only queued draws that reference this static buffer need to precede its
+  // update. Unrelated uploads can leave the command segment intact.
+  if (resource.dynamic !== true && d3d8FrameStaticSources.has(resource)) {
     flushD3D8FrameCommandQueue("bufferUpdate");
   }
 
@@ -3525,7 +3530,7 @@ function releaseD3D8Buffer(payload = {}) {
   if (!resource) {
     return 0;
   }
-  if (resource.dynamic !== true) {
+  if (resource.dynamic !== true && d3d8FrameStaticSources.has(resource)) {
     flushD3D8FrameCommandQueue("bufferRelease");
   }
   invalidateD3D8RepeatedGeometryForBuffer(kind, id);
@@ -6056,6 +6061,7 @@ function createD3D8Texture(payload = {}) {
 
   const existing = d3d8Textures.get(id);
   if (existing) {
+    flushD3D8PendingDrawBatch("textureReplace");
     releaseD3D8FramebufferEntriesForTexture(id);
     if (existing.feedbackSnapshot?.texture) {
       gl.deleteTexture(existing.feedbackSnapshot.texture);
@@ -6949,11 +6955,20 @@ function releaseD3D8Texture(payload = {}) {
   if (!gl) {
     return 0;
   }
-  flushD3D8PendingDrawBatch("textureRelease");
   const id = Number(payload.id ?? 0) >>> 0;
   const resource = d3d8Textures.get(id);
   if (!resource) {
     return 0;
+  }
+  // Queued draws retain their sampled texture IDs. A render target is also a
+  // dependency even when none of the queued draws sample its attachments.
+  const currentTargetUsesTexture = d3d8CurrentFramebuffer !== null &&
+    Array.from(d3d8Framebuffers.values()).some(entry =>
+      entry.fbo === d3d8CurrentFramebuffer &&
+      (entry.colorTextureId === id || entry.depthTextureId === id));
+  flushD3D8PendingDrawBatch("textureRelease", false);
+  if (d3d8FrameTextureSources.has(id) || currentTargetUsesTexture) {
+    flushD3D8FrameCommandQueue("textureRelease");
   }
   const target = resource.target ?? gl.TEXTURE_2D;
   const releasedBindings = [];
@@ -6975,7 +6990,11 @@ function releaseD3D8Texture(payload = {}) {
   }
   gl.deleteTexture(resource.texture);
   invalidateD3D8GlTextureBindingCache();
-  invalidateD3D8DrawStateCache();
+  if (currentTargetUsesTexture) {
+    invalidateD3D8DrawStateCache();
+  } else {
+    invalidateD3D8TextureContentState(id);
+  }
   if (releasedBindings.length > 0) {
     d3d8TextureStats.releaseUnbinds += releasedBindings.length;
     d3d8TextureStats.lastReleaseUnbind = { id, stages: releasedBindings };
@@ -14063,6 +14082,8 @@ const d3d8FrameIndexArenaChunks = [];
 let d3d8FrameVertexArenaScratch = new Uint8Array(0);
 let d3d8FrameIndexArenaScratch = new Uint8Array(0);
 const d3d8FrameSourceRanges = new Map();
+const d3d8FrameStaticSources = new Set();
+const d3d8FrameTextureSources = new Set();
 const d3d8FrameVertexSnapshotCache = new Map();
 const d3d8FrameIndexSnapshotCache = new Map();
 const d3d8FrameDerivedSnapshotCache = new Map();
@@ -14349,7 +14370,8 @@ function appendD3D8NativeRepeatedDraws(vertexBufferIds) {
       resources.push({ vertexBufferId, resource });
     }
     let drawSequence = Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0;
-    for (const { vertexBufferId } of resources) {
+    for (const { vertexBufferId, resource } of resources) {
+      d3d8FrameStaticSources.add(resource);
       drawSequence += 1;
       d3d8FrameCommands.push({
         payload: {
@@ -14954,6 +14976,7 @@ function d3d8FrameTextureSnapshot() {
   }
   for (let stage = 0; stage < snapshot.length; stage += 1) {
     snapshot[stage] = Number(d3d8BoundTextures.get(stage) ?? 0) >>> 0;
+    if (snapshot[stage] !== 0) d3d8FrameTextureSources.add(snapshot[stage]);
   }
   d3d8FrameTextureSnapshotPoolCursor += 1;
   return snapshot;
@@ -15077,6 +15100,7 @@ function d3d8FrameNoteSourceRange(resource, start, end) {
 
 function d3d8FrameSnapshotDynamicRange(resource, byteOffset, byteSize, kind) {
   if (!resource?.dynamic) {
+    d3d8FrameStaticSources.add(resource);
     return { id: Number(resource?.id ?? 0) >>> 0, byteOffset };
   }
   const end = byteOffset + byteSize;
@@ -15228,6 +15252,8 @@ function d3d8ResetFrameCommandSegment() {
   d3d8FrameVertexArenaChunks.length = 0;
   d3d8FrameIndexArenaChunks.length = 0;
   d3d8FrameSourceRanges.clear();
+  d3d8FrameStaticSources.clear();
+  d3d8FrameTextureSources.clear();
   d3d8FrameVertexSnapshotCache.clear();
   d3d8FrameIndexSnapshotCache.clear();
   d3d8FrameDerivedSnapshotCache.clear();

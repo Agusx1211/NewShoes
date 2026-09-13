@@ -535,6 +535,7 @@ private:
 	const Object *m_obj;
 public:
 	PartitionFilterLiveMapEnemies(const Object *obj) : m_obj(obj) { }
+	virtual Bool canEvaluateBeforeDistance() const { return true; }
 
 	virtual Bool allow(Object *objOther)
 	{

@@ -105,12 +105,16 @@ W3DDisplayString::W3DDisplayString( void )
 	m_size.x = 0;
 	m_size.y = 0;
 	m_fontChanged = FALSE;
+	m_polysChanged = FALSE;
+	m_dropOffset.x = 1;
+	m_dropOffset.y = 1;
 	m_clipRegion.lo.x = 0;
 	m_clipRegion.lo.y = 0;
 	m_clipRegion.hi.x = 0;
 	m_clipRegion.hi.y = 0;
 	m_lastResourceFrame = 0;
 	m_useHotKey = FALSE;
+	m_hotKeyRequested = FALSE;
 	m_hotKeyPos.x = 0;
 	m_hotKeyPos.y = 0;
 	m_hotKeyColor = GameMakeColor(255,255,255,255);
@@ -188,6 +192,7 @@ void W3DDisplayString::draw( Int x, Int y, Color color, Color dropColor, Int xDr
 	if( m_fontChanged || m_textChanged )
 	{
 		CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP("W3DDisplayString.draw.buildSentence.before");
+		m_useHotKey = m_hotKeyRequested;
 		if(m_useHotKey)
 		{
 			m_textRenderer.Set_Hot_Key_Parse(TRUE);
@@ -214,9 +219,11 @@ void W3DDisplayString::draw( Int x, Int y, Color color, Color dropColor, Int xDr
 	// if our position has changed, or our colors have chagned, or our
 	// text data has changed, we need to redo the texture quads
 	//
-	if( needNewPolys ||
+	if( needNewPolys || m_polysChanged ||
 			x != m_textPos.x || 
 			y != m_textPos.y || 
+			xDrop != m_dropOffset.x ||
+			yDrop != m_dropOffset.y ||
 			color != m_currTextColor || 
 			dropColor != m_currDropColor )
 	{
@@ -226,6 +233,9 @@ void W3DDisplayString::draw( Int x, Int y, Color color, Color dropColor, Int xDr
 		// save the new attributes of the text position and color
 		m_textPos.x = x;
 		m_textPos.y = y;
+		m_dropOffset.x = xDrop;
+		m_dropOffset.y = yDrop;
+		m_polysChanged = FALSE;
 		m_currTextColor = color;
 		m_currDropColor = dropColor;
 
@@ -245,7 +255,6 @@ void W3DDisplayString::draw( Int x, Int y, Color color, Color dropColor, Int xDr
 			m_textRendererHotKey.Reset_Polys();
 			m_textRendererHotKey.Set_Location( Vector2( m_textPos.x + m_hotKeyPos.x , m_textPos.y +m_hotKeyPos.y) );
 			m_textRendererHotKey.Draw_Sentence( m_hotKeyColor );
-			m_textRendererHotKey.Render();
 		}
 	
 		CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP("W3DDisplayString.draw.buildPolys.after");
@@ -254,6 +263,8 @@ void W3DDisplayString::draw( Int x, Int y, Color color, Color dropColor, Int xDr
 
 	// render the text
 	CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP("W3DDisplayString.draw.render.before");
+	if(m_useHotKey)
+		m_textRendererHotKey.Render();
 	m_textRenderer.Render();
 	CNC_PORT_NOTE_W3D_DISPLAY_STRING_PROFILE_STEP("W3DDisplayString.draw.render.after");
 
@@ -355,6 +366,7 @@ void W3DDisplayString::setClipRegion( IRegion2D *region )
 
 		// assign new region
 		m_clipRegion = *region;
+		m_polysChanged = TRUE;
 
 		// set new region in renderer
 		m_textRenderer.Set_Clipping_Rect( RectClass( m_clipRegion.lo.x,
@@ -407,6 +419,12 @@ void W3DDisplayString::setWordWrap( Int wordWrap )
 
 void W3DDisplayString::setUseHotkey( Bool useHotkey, Color hotKeyColor )
 {
+	// Static text gadgets repeat this on every repaint. Keep the existing
+	// sentence unless the requested parsing or highlight color actually changes.
+	// m_useHotKey separately records whether the current text has a hotkey.
+	if(m_hotKeyRequested == useHotkey && m_hotKeyColor == hotKeyColor)
+		return;
+	m_hotKeyRequested = useHotkey;
 	m_useHotKey = useHotkey;
 	m_hotKeyColor = hotKeyColor;
 	m_textRenderer.Set_Hot_Key_Parse(useHotkey);

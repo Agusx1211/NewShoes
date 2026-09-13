@@ -601,6 +601,10 @@ class PartitionFilter
 {
 public:
 	virtual Bool allow(Object *objOther) = 0;
+	// Only pure predicates may opt in: allow() can then be called for objects
+	// outside the search radius. The query moves only its first filter, so all
+	// later filters retain their original distance check and call order.
+	virtual Bool canEvaluateBeforeDistance() const { return false; }
 #if defined(_DEBUG) || defined(_INTERNAL)
 	virtual const char* debugGetName() = 0;
 #endif

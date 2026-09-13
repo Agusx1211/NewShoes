@@ -167,18 +167,20 @@
       "reviewedAt": "2026-09-13",
       "details": [
         "The Direct3D 8-shaped renderer maps the original rendering path to WebGL2. The default enhanced tier translates shipped shader model 1.1 programs to GLSL ES, while a classic tier generates fixed-function-style shaders for comparison and fallback. Terrain, objects, UI, particles, effects, render targets, and common scenes work; fidelity and performance fixes continue.",
-        "Radar blips share texture updates, and shadow volumes avoid unnecessary temporary index uploads. These optimizations preserve radar pixels, shadow depth and stencil behavior, clipping, and visible flat shading.",
+        "Radar blips share texture updates, shadow volumes avoid unnecessary temporary index uploads, and unchanged HUD text reuses its rendering resources. Buffer changes and texture releases retain queued draws that do not use the changed resource. These optimizations preserve draw order, resource lifetimes, text and radar pixels, shadow depth and stencil behavior, clipping, and visible flat shading.",
         "Engine-driven music, speech, streams, and two-dimensional and three-dimensional samples play through Web Audio. The mixer retains the engine's category and positional intent at the browser boundary.",
         "Original Bink movie ownership remains in the game path. Hosted builds use a focused on-device decoder for supported classic Bink content selected from the player's own files. Broader mission and playback coverage remains ongoing."
       ],
       "evidence": [
         "WebAssembly/harness/shader_fidelity_probe.mjs",
         "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/Common/System/W3DRadar.cpp",
+        "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DDisplayString.cpp",
         "WebAssembly/harness/d3d8_executor.mjs",
         "WebAssembly/harness/d3d8_shadow_indices_smoke.mjs",
         "WebAssembly/harness/d3d8_dxt_cpu_fallback_unit.mjs",
         "WebAssembly/harness/d3d8_dxt_cpu_fallback_browser_smoke.mjs",
         "WebAssembly/harness/d3d8_sm1_transform_switch_smoke.mjs",
+        "WebAssembly/harness/threaded_frame_flush_smoke.mjs",
         "WebAssembly/harness/skirmish_start_smoke.mjs",
         "WebAssembly/harness/terrain_culling_orientation_probe.mjs",
         "WebAssembly/harness/real_audio_event_smoke.mjs",
