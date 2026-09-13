@@ -8,6 +8,7 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [0.8.0] - 2026-09-13
 
+- Index vertex-array cache entries by buffer offset to reduce late-match renderer lookup costs ([PR #345](https://github.com/Agusx1211/NewShoes/pull/345)).
 - Reduce midgame AI cleanup and spatial-search costs, batch radar pixel updates, and avoid temporary shadow index uploads ([PR #365](https://github.com/Agusx1211/NewShoes/pull/365)).
 
 ## [0.7.1] - 2026-09-03
