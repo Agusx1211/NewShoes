@@ -358,6 +358,7 @@ public:
 
 	*/
 	Relationship getRelationship(const Team *that) const;
+	UnsignedInt getPotentialEnemyPlayerMask() const;
 
 	/**
 		set a special relationship between this team and that team, that overrides

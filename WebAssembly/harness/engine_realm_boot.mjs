@@ -551,7 +551,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
   const prebootQueue = []; // functions to run on first tick, in arrival order
   const cwrapCache = new Map();
   function cwrapFor(name, returnType, argTypes) {
-    const key = `${name} ${returnType} ${(argTypes ?? []).join(",")}`;
+    const key = `${name}\0${returnType}\0${(argTypes ?? []).join(",")}`;
     let fn = cwrapCache.get(key);
     if (!fn) {
       fn = Module.cwrap(name, returnType === "void" || returnType === null ? null : returnType, argTypes ?? []);
@@ -586,6 +586,10 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     try {
       const fn = cwrapFor(String(msg.name), msg.returnType ?? null, msg.argTypes ?? []);
       const value = fn(...(Array.isArray(msg.args) ? msg.args : []));
+      // Frame and diagnostic calls can draw while the paced loop is stopped.
+      // Complete their queued rendering before replying, as the main-realm
+      // frame RPCs do; resource churn must not supply an accidental flush.
+      d3d8Diag.flushD3D8PendingDrawBatch("threadedEngineCall");
       reply.ok = true;
       reply.value = msg.parseJson === false ? value : parseMaybeJson(value);
     } catch (error) {
@@ -889,6 +893,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     loop.clientPeriod = 1000 / clientFps;
     loop.logicPeriod = 1000 / logicFps;
     loop.rafDeltas.length = 0;
+    loop.refreshMs = Math.min(loop.clientPeriod, loop.logicPeriod);
     loop.lastStamp = null;
     loop.nextClientDue = null;
     loop.nextLogicDue = null;
@@ -966,7 +971,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       }
     }
     loop.lastStamp = stamp;
-    const halfTick = loop.refreshMs / 2;
+    // Slow engine frames also delay callbacks. Do not treat those missed
+    // refreshes as permission to advance the next client/logic deadline early.
+    const halfTick = Math.min(loop.refreshMs, loop.clientPeriod, loop.logicPeriod) / 2;
     if (loop.nextClientDue === null) {
       loop.nextClientDue = stamp;
       loop.nextLogicDue = stamp;
