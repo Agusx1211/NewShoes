@@ -156,6 +156,8 @@ const replayPerformanceEndFrame = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_END_FRAME", Number.MAX_SAFE_INTEGER);
 const replayPerformanceRenderStartFrame = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_RENDER_START_FRAME", 0);
+const renderReplayPerformanceWarmup =
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_RENDER_WARMUP === "1";
 const replayPerformanceMeasureStartFrame = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_MEASURE_START_FRAME",
   replayPerformanceRenderStartFrame);
@@ -1988,7 +1990,10 @@ async function driveReplayPerformance(page, performanceReplay) {
         && startRenderProbe.uniqueColorCount > 1,
       "performance replay start frame is not visibly rendered", startRenderProbe);
   }
-  if ((disableReplayPerformanceRender || replayPerformanceRenderStartFrame > 0)
+  // Particle systems advance in W3DDisplay::draw(). Keeping warm-up rendering
+  // active avoids accumulating an artificial backlog before a late sample.
+  if ((disableReplayPerformanceRender
+      || (replayPerformanceRenderStartFrame > 0 && !renderReplayPerformanceWarmup))
       && !renderDisabled) {
     const disabled = await rpc(page, "realEngineSetRenderDisabled", { disabled: true });
     expect(disabled?.ok === true && disabled?.disabled === true,
@@ -2121,7 +2126,8 @@ async function driveReplayPerformance(page, performanceReplay) {
     ? Math.max(1, expectedLogicFrames - Math.max(120, replayPerformanceLogicFps * 2))
     : targetLogicFrame;
   const waitForReplayEnd = targetLogicFrame === expectedLogicFrames;
-  const waitTimeout = Math.max(600_000, expectedWallMs * 3 + 120_000);
+  const waitTimeout = parsePositiveInt("SKIRMISH_REPLAY_PERFORMANCE_TIMEOUT_MS",
+    Math.max(600_000, expectedWallMs * 3 + 120_000));
   const waitForCapture = (target, replayEnd = false) => page.waitForFunction(
     ({ target: requestedTarget, replayEnd: requestedReplayEnd }) => {
       const capture = window.__cncReplayPerformanceCapture;
@@ -2173,6 +2179,7 @@ async function driveReplayPerformance(page, performanceReplay) {
         "performance replay measured loop did not start", measuredStarted);
       renderWarmup = {
         endFrame: replayPerformanceRenderStartFrame,
+        rendering: renderReplayPerformanceWarmup,
         clientFps: replayPerformanceClientFps,
         logicFps: replayPerformanceLogicFps,
         catchup: replayPerformanceCatchup,

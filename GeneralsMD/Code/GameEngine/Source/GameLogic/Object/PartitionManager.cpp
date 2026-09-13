@@ -1364,6 +1364,7 @@ PartitionCell::PartitionCell()
 	m_cellX = m_cellY = 0;
 	//
 	m_firstCoiInCell = NULL;
+	m_occupancyWord = NULL;
 	m_coiCount = 0;
 #ifdef PM_CACHE_TERRAIN_HEIGHT
 	m_loTerrainZ = HUGE_DIST;		// huge positive
@@ -1599,6 +1600,8 @@ void PartitionCell::friend_addToCellList(CellAndObjectIntersection *coi)
 {
 	if (coi)
 	{
+		if (m_firstCoiInCell == NULL && m_occupancyWord)
+			*m_occupancyWord |= 1u << (m_cellX & 31);
 		coi->friend_addToCellList(&m_firstCoiInCell);
 		++m_coiCount;
 	}
@@ -1611,6 +1614,8 @@ void PartitionCell::friend_removeFromCellList(CellAndObjectIntersection *coi)
 	{
 		coi->friend_removeFromCellList(&m_firstCoiInCell);
 		--m_coiCount;
+		if (m_firstCoiInCell == NULL && m_occupancyWord)
+			*m_occupancyWord &= ~(1u << (m_cellX & 31));
 	}
 }
 
@@ -2765,6 +2770,9 @@ void PartitionManager::init()
 		m_cellCountX = REAL_TO_INT_CEIL(m_worldExtents.width() * m_cellSizeInv);
 		m_cellCountY = REAL_TO_INT_CEIL(m_worldExtents.height() * m_cellSizeInv);
 		m_totalCellCount = m_cellCountX * m_cellCountY;
+#ifdef FASTER_GCO
+		m_queryIndex.init(m_cellCountX, m_cellCountY);
+#endif
 		m_cells = MSGNEW("PartitionManager_Cells") PartitionCell[m_totalCellCount];
 		for (Int x = 0; x < m_cellCountX; x++)
 		{
@@ -2776,6 +2784,9 @@ void PartitionManager::init()
 				getCellAt(x, y)->init(x, y, loZ, hiZ);
 #else
 				getCellAt(x, y)->init(x, y);
+#endif
+#ifdef FASTER_GCO
+				getCellAt(x, y)->setOccupancyWord(m_queryIndex.occupancyWord(x, y));
 #endif
 			}
 		}
@@ -2854,6 +2865,9 @@ void PartitionManager::shutdown()
 	
 	delete [] m_cells;
 	m_cells = NULL;
+#ifdef FASTER_GCO
+	m_queryIndex.clear();
+#endif
 
 	m_cellSize = m_cellSizeInv = 0.0f;
 	m_cellCountX = 0;
@@ -3329,9 +3343,13 @@ void PartitionManager::calcRadiusVec()
 			Int curRadius = calcMinRadius(cur);
 			DEBUG_ASSERTCRASH(curRadius <= m_maxGcoRadius, ("expected max of %d but got %d\n",m_maxGcoRadius,curRadius));
 			if (curRadius <= m_maxGcoRadius)
+			{
 				m_radiusVec[curRadius].push_back(cur);
+				m_queryIndex.setRadius(cur.x, cur.y, curRadius);
+			}
 		}
 	}
+	m_queryIndex.finishRadii();
 
 #if defined(_DEBUG) || defined(_INTERNAL)
 	Int total = 0;
@@ -3428,6 +3446,13 @@ Object *PartitionManager::getClosestObjects(
 	static Int theIterFlag = 1;	// nonzero, thanks
 	++theIterFlag;
 
+	// Wide range queries must visit every eligible cell. Bucket occupied cells
+	// in the original ring order instead of walking thousands of empty offsets.
+	// Nearest-only and small queries retain the cheap, incremental ring walk.
+	const Bool indexedRange = iterArg != NULL && maxRadiusLimit > 8;
+	if (indexedRange)
+		m_queryIndex.build(cellCenterX, cellCenterY, maxRadiusLimit);
+
 	/*
 		m_radiusVec[curRadius] contains a list of the cells (foo) that could
 		contain objects that are <= (curRadius * cellSize) distance away from cell (0,0).
@@ -3437,9 +3462,21 @@ Object *PartitionManager::getClosestObjects(
     const OffsetVec& offsets = m_radiusVec[curRadius];
 		if (offsets.empty())
 			continue;
-    for (OffsetVec::const_iterator it = offsets.begin(); it != offsets.end(); ++it)
+		OffsetVec::const_iterator it = offsets.begin();
+		Int indexedCell = indexedRange ? m_queryIndex.firstCell(curRadius) : -1;
+		while (indexedRange ? indexedCell >= 0 : it != offsets.end())
 		{
-			PartitionCell* thisCell = getCellAt(cellCenterX + it->x, cellCenterY + it->y);
+			PartitionCell* thisCell;
+			if (indexedRange)
+			{
+				thisCell = &m_cells[indexedCell];
+				indexedCell = m_queryIndex.nextCell(indexedCell);
+			}
+			else
+			{
+				thisCell = getCellAt(cellCenterX + it->x, cellCenterY + it->y);
+				++it;
+			}
 			if (thisCell == NULL)
 				continue;
 
