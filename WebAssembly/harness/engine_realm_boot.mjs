@@ -893,6 +893,7 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
     loop.clientPeriod = 1000 / clientFps;
     loop.logicPeriod = 1000 / logicFps;
     loop.rafDeltas.length = 0;
+    loop.refreshMs = Math.min(loop.clientPeriod, loop.logicPeriod);
     loop.lastStamp = null;
     loop.nextClientDue = null;
     loop.nextLogicDue = null;
@@ -970,7 +971,9 @@ export default async function setupEngineRealm({ canvas, Module, realm, options 
       }
     }
     loop.lastStamp = stamp;
-    const halfTick = loop.refreshMs / 2;
+    // Slow engine frames also delay callbacks. Do not treat those missed
+    // refreshes as permission to advance the next client/logic deadline early.
+    const halfTick = Math.min(loop.refreshMs, loop.clientPeriod, loop.logicPeriod) / 2;
     if (loop.nextClientDue === null) {
       loop.nextClientDue = stamp;
       loop.nextLogicDue = stamp;
