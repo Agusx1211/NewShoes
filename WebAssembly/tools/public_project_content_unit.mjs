@@ -9,8 +9,12 @@ import {
   validatePublicProjectContent,
 } from "./public_project_content.mjs";
 
-await loadPublicProjectContent();
-const current = await loadPublicProjectContent({ now: new Date("2026-08-01T12:00:00Z") });
+// Validate the published record against today. Fixed-clock checks below use
+// fixture dates so a new capability review is not mistaken for a future date.
+const current = await loadPublicProjectContent();
+current.reviewedAt = "2026-07-14";
+for (const capability of current.capabilities) capability.reviewedAt = "2026-07-14";
+validatePublicProjectContent(current, { now: new Date("2026-08-01T12:00:00Z") });
 const generated = renderGeneratedProjectFiles(current);
 
 assert.equal(nextReviewDue(current), "2026-10-12");

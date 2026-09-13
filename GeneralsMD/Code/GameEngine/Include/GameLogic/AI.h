@@ -294,8 +294,16 @@ public:
 	inline UnsignedInt getNextGroupID( void ) { return ++m_nextGroupID; }
 
 protected:
+	struct GroupPointerHash
+	{
+		size_t operator()(const AIGroup *group) const { return reinterpret_cast<size_t>(group); }
+	};
+	typedef std::hash_map<AIGroup *, std::list<AIGroup *>::iterator,
+		GroupPointerHash, std::equal_to<AIGroup *> > GroupIndex;
+
 	Pathfinder *m_pathfinder;							///< the pathfinding system
 	std::list<AIGroup *> m_groupList;			///< the list of AIGroups
+	GroupIndex m_groupIndex;						///< removal lookup; m_groupList retains CRC order
 	TAiData *m_aiData;
 	void newOverride(void);
 	void addSideInfo(AISideInfo *info);

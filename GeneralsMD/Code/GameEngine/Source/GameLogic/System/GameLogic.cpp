@@ -96,6 +96,7 @@
 #include "GameLogic/ScriptConditions.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/SidesList.h"
+#include "GameLogic/SleepyUpdateRemoval.h"
 #include "GameLogic/VictoryConditions.h"
 #include "GameLogic/Weapon.h"
 #include "GameLogic/GhostObject.h"
@@ -3155,13 +3156,18 @@ void GameLogic::processDestroyList( void )
 		UpdateModulePtr sleepyUpdatesForThisObject[MAX_SUO];
 		Int numSUO = 0;
 
-		for (std::vector<UpdateModulePtr>::iterator it2 = m_sleepyUpdates.begin(); it2 != m_sleepyUpdates.end(); ++it2)
+		// Registration and save loading obtain updates from these same modules.
+		// Their stored heap indices let us reproduce the old heap scan's order
+		// using only the object being destroyed, even when the match is large.
+		for (BehaviorModule** module = currentObject->getBehaviorModules(); *module; ++module)
 		{
-			UpdateModulePtr u = *it2;
-			if (u->friend_getObject() == currentObject && numSUO < MAX_SUO)
-			{
-				sleepyUpdatesForThisObject[numSUO++] = u;
-			}
+#ifdef DIRECT_UPDATEMODULE_ACCESS
+			UpdateModulePtr u = (UpdateModulePtr)((*module)->getUpdate());
+#else
+			UpdateModulePtr u = (*module)->getUpdate();
+#endif
+			if (u)
+				insertSleepyUpdateForRemoval(u, sleepyUpdatesForThisObject, numSUO);
 		}
 
 		for (--numSUO; numSUO >= 0; --numSUO)

@@ -54,6 +54,7 @@
 //-----------------------------------------------------------------------------
 #include "Common/GameCommon.h"	// ensure we get DUMP_PERF_STATS, or not
 #include "GameLogic/ObjectIter.h"
+#include "GameLogic/PartitionQueryIndex.h"
 #include "Common/ObjectStatusTypes.h"
 #include "Common/KindOf.h"
 #include "Common/Snapshot.h"
@@ -297,6 +298,7 @@ class PartitionCell : public Snapshot	// not MPO: allocated in an array
 {
 private:
 	CellAndObjectIntersection*		m_firstCoiInCell;	///< list of COIs in this cell (may be null).
+	unsigned int* m_occupancyWord;	///< derived query index, owned by PartitionManager
 	ShroudLevel										m_shroudLevel[MAX_PLAYER_COUNT];	
 #ifdef PM_CACHE_TERRAIN_HEIGHT
 	Real													m_loTerrainZ;			///< lowest terrain-pt in this cell
@@ -318,6 +320,7 @@ public:
 	void init(Int x, Int y) { m_cellX = x; m_cellY = y; }
 #endif
 	~PartitionCell();
+	void setOccupancyWord(unsigned int* word) { m_occupancyWord = word; }
 
 	// --------------- inherited from Snapshot interface --------------
 	void crc( Xfer *xfer );
@@ -1258,6 +1261,7 @@ private:
 #ifdef FASTER_GCO
 	Int							m_maxGcoRadius;
 	RadiusVec				m_radiusVec;
+	PartitionQueryIndex m_queryIndex;
 #endif
 
 protected:

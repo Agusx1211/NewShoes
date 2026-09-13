@@ -11588,6 +11588,7 @@ function createD3D8ShadeModeDrawInfo(
   indexCount,
   indexSize,
   fillModeDraw,
+  depthStencilOnlyDraw,
 ) {
   const mode = Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0;
   const flat = mode === D3DSHADE_FLAT;
@@ -11597,7 +11598,7 @@ function createD3D8ShadeModeDrawInfo(
     flat,
     gouraud: mode === D3DSHADE_GOURAUD,
     phongRequested: mode === D3DSHADE_PHONG,
-    usesFlatShader: flat,
+    usesFlatShader: flat && !depthStencilOnlyDraw,
     usesFirstVertexConvention: false,
     rotatedIndexBuffer: false,
     temporaryIndexBuffer: false,
@@ -11612,7 +11613,10 @@ function createD3D8ShadeModeDrawInfo(
     fallbackReason: fillModeDraw.fallbackReason,
   };
 
-  if (!info.supported || !flat) {
+  // The depth/stencil program has no flat color outputs. Rotating provoking
+  // vertices cannot affect it, and would upload a temporary index buffer for
+  // every shadow volume. Alpha-tested draws never select this program.
+  if (!info.supported || !info.usesFlatShader) {
     return info;
   }
 
@@ -11656,10 +11660,10 @@ const d3d8LiteSolidDrawInfo = {
 
 // Lite draws consume this synchronously and never retain it, so one stable
 // object can carry the per-draw offsets without feeding the garbage collector.
-function setD3D8LiteSolidDrawInfo(renderState, primitiveType, indexByteOffset, indexCount) {
+function setD3D8LiteSolidDrawInfo(renderState, primitiveType, indexByteOffset, indexCount, depthStencilOnlyDraw) {
   const fillMode = Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0;
   const shadeMode = Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0;
-  if (fillMode !== D3DFILL_SOLID || shadeMode === D3DSHADE_FLAT) {
+  if (fillMode !== D3DFILL_SOLID || (shadeMode === D3DSHADE_FLAT && !depthStencilOnlyDraw)) {
     return null;
   }
   const glPrimitive = d3dPrimitiveToGl(primitiveType);
@@ -16709,7 +16713,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     // Per-draw geometry setup: ALWAYS executed (not skippable — geometry changes
     // every draw even when render state is identical).
     const liteSolidDrawInfo = d3d8DiagLevel !== "full"
-      ? setD3D8LiteSolidDrawInfo(renderState, payload.primitiveType, indexByteOffset, indexCount)
+      ? setD3D8LiteSolidDrawInfo(renderState, payload.primitiveType, indexByteOffset, indexCount, depthStencilOnlyDraw)
       : null;
     if (liteSolidDrawInfo) {
       fillModeDraw = liteSolidDrawInfo.fillModeDraw;
@@ -16737,6 +16741,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         indexCount,
         indexSize,
         fillModeDraw,
+        depthStencilOnlyDraw,
       );
     }
     recordDrawSubphase?.("sortedDrawFillShadeMs");

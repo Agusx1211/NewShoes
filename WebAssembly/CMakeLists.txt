@@ -6516,6 +6516,28 @@ target_link_options(gameengine-header-case-smoke PRIVATE
   "SHELL:-sEXIT_RUNTIME=1"
 )
 
+add_executable(sleepy-update-removal-smoke tests/sleepy_update_removal_smoke.cpp)
+set_target_properties(sleepy-update-removal-smoke PROPERTIES SUFFIX ".cjs")
+target_include_directories(sleepy-update-removal-smoke PRIVATE "${GAMEENGINE_INCLUDE_DIR}")
+target_compile_options(sleepy-update-removal-smoke PRIVATE -Wall -Wextra -Wpedantic)
+target_link_options(sleepy-update-removal-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
+add_executable(partition-query-index-smoke tests/partition_query_index_smoke.cpp)
+set_target_properties(partition-query-index-smoke PROPERTIES SUFFIX ".cjs")
+target_include_directories(partition-query-index-smoke PRIVATE "${GAMEENGINE_INCLUDE_DIR}")
+target_compile_options(partition-query-index-smoke PRIVATE -Wall -Wextra -Wpedantic)
+target_link_options(partition-query-index-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  ${CNC_ASSERTIONS_LINK_OPTION}
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
 add_executable(academy-stats-dozer-search-smoke
   tests/academy_stats_dozer_search_smoke.cpp
 )
