@@ -6615,9 +6615,14 @@ async function loadWasmModule() {
   try {
     const distDir = selectedCncPortDistDir();
     const runtimeCacheToken = await cncPortRuntimeCacheToken(distDir);
-    const moduleExports = await import(browserAssetUrl(`../${distDir}/cnc-port.js`, runtimeCacheToken));
+    const runtimeModuleUrl = browserAssetUrl(`../${distDir}/cnc-port.js`, runtimeCacheToken);
+    const moduleExports = await import(runtimeModuleUrl);
     const createModule = moduleExports.default ?? moduleExports.createCncPortModule;
     const module = await createModule({
+      // The pthread must import the same version as its compiled wasm module.
+      // Its default relative import drops the cache token and can load an old
+      // ASM_CONSTS table after deployment, aborting during engine initialization.
+      mainScriptUrlOrBlob: runtimeModuleUrl,
       // .wasm AND the pthread pool worker script (threaded build) live in the
       // dist directory; returning a bare relative path from locateFile makes
       // the browser resolve it against the DOCUMENT (harness/) and 404 — the

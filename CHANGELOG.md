@@ -6,6 +6,10 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-09-13
+
+- Keep the engine worker's JavaScript and WebAssembly on the same runtime version to prevent launch failures after an update ([PR #372](https://github.com/Agusx1211/NewShoes/pull/372)).
+
 ## [0.8.1] - 2026-09-13
 
 - Reduce spatial-query, text-rendering, and draw-queue overhead, repair worker frame flushing, and adjust frame pacing; late-game regressions remain and locked 60 FPS is not achieved ([PR #367](https://github.com/Agusx1211/NewShoes/pull/367)).
