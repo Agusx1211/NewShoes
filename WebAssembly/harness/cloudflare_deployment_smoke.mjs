@@ -26,6 +26,7 @@ const requiredHeaders = {
 const rolloutSeedName = "__cloudflare_worker_retirement_seed.html";
 const oldWorkerSource = await readFile(new URL("./fixtures/coi-serviceworker-18b95831.js", import.meta.url), "utf8");
 let serveOldServiceWorker = false;
+const runtimeScriptRequests = [];
 
 function inside(parent, child) {
   const name = relative(parent, child);
@@ -34,6 +35,9 @@ function inside(parent, child) {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", "http://127.0.0.1");
+  if (request.method === "GET" && url.pathname.endsWith("/cnc-port.js")) {
+    runtimeScriptRequests.push(url);
+  }
   if (url.pathname === `/${rolloutSeedName}`) {
     const body = "<!doctype html><meta charset=utf-8><title>Cloudflare worker retirement seed</title>";
     response.writeHead(200, { ...requiredHeaders, "content-length": Buffer.byteLength(body), "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
@@ -167,6 +171,12 @@ try {
   const prep = await page.evaluate(() => window.CnCPort.rpc("threadedStatus", {}));
   if (prep.ok !== true || prep.threaded !== true) {
     throw new Error(`Threaded realm preparation failed: ${JSON.stringify(prep)}`);
+  }
+  // A worker importing an unversioned script can reuse an older ASM_CONSTS
+  // table with the freshly compiled wasm, failing only when the engine boots.
+  const runtimeVersions = new Set(runtimeScriptRequests.map((url) => url.searchParams.get("v")));
+  if (runtimeVersions.size !== 1 || ![...runtimeVersions][0]) {
+    throw new Error(`Runtime realms requested mismatched versions: ${runtimeScriptRequests.join(", ")}`);
   }
   const videoFallbackMount = await page.evaluate(async () => {
     const bytes = new Uint8Array(64);
