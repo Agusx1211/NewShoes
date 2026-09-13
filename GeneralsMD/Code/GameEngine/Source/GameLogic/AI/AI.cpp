@@ -338,6 +338,7 @@ void AI::reset( void )
 		delete cur;
 	}
 	m_groupList.clear();
+	m_groupIndex.clear();
 	m_nextGroupID = 0;
 	m_nextFormationID = NO_FORMATION_ID;
 #else
@@ -473,6 +474,9 @@ AIGroup *AI::createGroup( void )
 	// add it to the list
 //	DEBUG_LOG(("***AIGROUP %x is being added to m_groupList.\n", group ));
 	m_groupList.push_back( group );
+	std::list<AIGroup *>::iterator position = m_groupList.end();
+	--position;
+	m_groupIndex.insert(GroupIndex::value_type(group, position));
 
 	return group;
 }
@@ -482,17 +486,18 @@ AIGroup *AI::createGroup( void )
  */
 void AI::destroyGroup( AIGroup *group )
 {
-	std::list<AIGroup *>::iterator i = std::find( m_groupList.begin(), m_groupList.end(), group );
+	GroupIndex::iterator i = m_groupIndex.find(group);
 
 	// make sure group is actually in the list
-	if (i == m_groupList.end())
+	if (i == m_groupIndex.end())
 		return;
 
 	DEBUG_ASSERTCRASH(group != NULL, ("A NULL group made its way into the AIGroup list.. jkmcd"));
 
 	// remove it
 //	DEBUG_LOG(("***AIGROUP %x is being removed from m_groupList.\n", group ));
-	m_groupList.erase( i );
+	m_groupList.erase( i->second );
+	m_groupIndex.erase( i );
 
 	// destroy group
 	group->deleteInstance();

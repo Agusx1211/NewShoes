@@ -676,6 +676,23 @@ void W3DRadar::renderObjectList( const RadarObject *listHead, TextureClass *text
 
 	// get surface for texture to render into
 	SurfaceClass *surface = texture->Get_Surface_Level();
+	SurfaceClass::SurfaceDescription surfaceDescription;
+	surface->Get_Description( surfaceDescription );
+	const UnsignedInt pixelSize = writableRadarPixelSize( surfaceDescription.Format );
+	Int pitch = 0;
+	UnsignedByte *bits = NULL;
+	if( pixelSize != 0 )
+		bits = (UnsignedByte *)surface->Lock( &pitch );
+
+	// Updating each blip with DrawPixel locks and uploads the texture four
+	// times per object. Keep the same packed pixels and draw order in one lock.
+	const auto drawPixel = [&]( Int x, Int y, Color color )
+	{
+		if( bits )
+			writeRadarPixel( bits, pitch, pixelSize, x, y, color );
+		else
+			surface->DrawPixel( x, y, color );
+	};
 
 	// loop through all objects and draw
 	ICoord2D radarPoint;
@@ -772,21 +789,23 @@ void W3DRadar::renderObjectList( const RadarObject *listHead, TextureClass *text
 		
 		// draw the blip, but make sure the points are legal
 		if( legalRadarPoint( radarPoint.x, radarPoint.y ) )
-			surface->DrawPixel( radarPoint.x, radarPoint.y, c );
+			drawPixel( radarPoint.x, radarPoint.y, c );
 
 		radarPoint.y++;
 		if( legalRadarPoint( radarPoint.x, radarPoint.y ) )
-			surface->DrawPixel( radarPoint.x, radarPoint.y, c );
+			drawPixel( radarPoint.x, radarPoint.y, c );
 
 		radarPoint.x++;
 		if( legalRadarPoint( radarPoint.x, radarPoint.y ) )
-			surface->DrawPixel( radarPoint.x, radarPoint.y, c );
+			drawPixel( radarPoint.x, radarPoint.y, c );
 
 		radarPoint.y--;
 		if( legalRadarPoint( radarPoint.x, radarPoint.y ) )
-			surface->DrawPixel( radarPoint.x, radarPoint.y, c );
+			drawPixel( radarPoint.x, radarPoint.y, c );
 
 	}  // end for
+	if( bits )
+		surface->Unlock();
 	REF_PTR_RELEASE(surface);
 
 }  // end renderObjectList
