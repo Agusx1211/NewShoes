@@ -68,6 +68,21 @@ int main()
 								return 1;
 							}
 							++checks;
+							actual.clear();
+							for (int first = 0, last = 8; first <= limit; first = last + 1, last = last * 2)
+							{
+								last = std::min(last, limit);
+								index.build(centerX, centerY, last, first);
+								for (int radius = first; radius <= last; ++radius)
+									for (int cell = index.firstCell(radius); cell >= 0; cell = index.nextCell(cell))
+										actual.push_back(cell);
+							}
+							if (actual != reference)
+							{
+								std::fprintf(stderr, "Banded traversal mismatch\n");
+								return 1;
+							}
+							++checks;
 						}
 			}
 			index.clear();

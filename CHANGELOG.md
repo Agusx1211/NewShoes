@@ -6,6 +6,10 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-13
+
+- Reduce midgame AI cleanup and spatial-search costs, batch radar pixel updates, and avoid temporary shadow index uploads ([PR #365](https://github.com/Agusx1211/NewShoes/pull/365)).
+
 ## [0.7.1] - 2026-09-03
 
 - Cache enabled dynamic lights per render pass to cut late-match scene-render CPU cost ([PR #347](https://github.com/Agusx1211/NewShoes/pull/347)).

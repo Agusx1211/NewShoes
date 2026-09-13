@@ -68,9 +68,9 @@ public:
 
 	// getClosestObjects is already non-reentrant. Its range searches can reuse
 	// this scratch storage without allocating memory for each querying unit.
-	void build(int centerX, int centerY, int maxRadius)
+	void build(int centerX, int centerY, int maxRadius, int minRadius = 0)
 	{
-		std::fill(m_first.begin(), m_first.begin() + maxRadius + 1, -1);
+		std::fill(m_first.begin() + minRadius, m_first.begin() + maxRadius + 1, -1);
 		// Use the original table's bounds, including its floating-point rounding.
 		const int extentX = m_extentX[maxRadius];
 		const int extentY = m_extentY[maxRadius];
@@ -96,7 +96,7 @@ public:
 					const int x = wordX * 32 + firstSetBit(bits);
 					bits &= bits - 1;
 					const int radius = m_radius[radiusRow + x - centerX + m_width - 1];
-					if (radius < 0 || radius > maxRadius)
+					if (radius < minRadius || radius > maxRadius)
 						continue;
 					const int cell = y * m_width + x;
 					if (m_first[radius] < 0)

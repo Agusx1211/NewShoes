@@ -157,7 +157,7 @@ const replayPerformanceEndFrame = parsePositiveInt(
 const replayPerformanceRenderStartFrame = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_RENDER_START_FRAME", 0);
 const renderReplayPerformanceWarmup =
-  process.env.SKIRMISH_REPLAY_PERFORMANCE_RENDER_WARMUP === "1";
+  process.env.SKIRMISH_REPLAY_PERFORMANCE_RENDER_WARMUP !== "0";
 const replayPerformanceMeasureStartFrame = parsePositiveInt(
   "SKIRMISH_REPLAY_PERFORMANCE_MEASURE_START_FRAME",
   replayPerformanceRenderStartFrame);
@@ -2121,7 +2121,8 @@ async function driveReplayPerformance(page, performanceReplay) {
   });
   expect(started?.ok === true, "performance replay paced loop did not start", started);
   const targetLogicFrame = Math.min(expectedLogicFrames, replayPerformanceEndFrame);
-  const expectedWallMs = targetLogicFrame / replayPerformanceLogicFps * 1000;
+  const expectedWallMs = targetLogicFrame /
+    Math.min(replayPerformanceLogicFps, replayPerformanceMeasuredLogicFps) * 1000;
   const completionThreshold = targetLogicFrame === expectedLogicFrames
     ? Math.max(1, expectedLogicFrames - Math.max(120, replayPerformanceLogicFps * 2))
     : targetLogicFrame;

@@ -3446,12 +3446,10 @@ Object *PartitionManager::getClosestObjects(
 	static Int theIterFlag = 1;	// nonzero, thanks
 	++theIterFlag;
 
-	// Wide range queries must visit every eligible cell. Bucket occupied cells
-	// in the original ring order instead of walking thousands of empty offsets.
-	// Nearest-only and small queries retain the cheap, incremental ring walk.
-	const Bool indexedRange = iterArg != NULL && maxRadiusLimit > 8;
-	if (indexedRange)
-		m_queryIndex.build(cellCenterX, cellCenterY, maxRadiusLimit);
+	// Start with cheap local rings. If a nearest search finds nothing nearby,
+	// bucket occupied cells in progressively wider bands, retaining ring order.
+	// Range searches need every band and can build the remainder in one pass.
+	Int indexedThrough = 8;
 
 	/*
 		m_radiusVec[curRadius] contains a list of the cells (foo) that could
@@ -3459,6 +3457,12 @@ Object *PartitionManager::getClosestObjects(
 	*/
   for (Int curRadius = 0; curRadius <= maxRadiusLimit; ++curRadius)
   {
+		const Bool indexedRange = curRadius > 8;
+		if (indexedRange && curRadius > indexedThrough)
+		{
+			indexedThrough = iterArg ? maxRadiusLimit : minInt(maxRadiusLimit, indexedThrough * 2);
+			m_queryIndex.build(cellCenterX, cellCenterY, indexedThrough, curRadius);
+		}
     const OffsetVec& offsets = m_radiusVec[curRadius];
 		if (offsets.empty())
 			continue;
