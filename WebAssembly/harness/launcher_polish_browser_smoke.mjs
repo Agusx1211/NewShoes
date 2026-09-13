@@ -37,6 +37,8 @@ async function assertTaskbarInVisibleViewport(page, label) {
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--ignore-certificate-errors"] });
 try {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1365, height: 768 } });
+  // Exercise the no-external-requests contract with analytics explicitly opted out.
+  await context.addInitScript(() => localStorage.setItem("newShoesAnalyticsConsent.v1", "denied"));
   await context.route("**/artifacts/browser-video/bink/bink-browser-video-manifest.json", (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({
@@ -361,8 +363,18 @@ try {
     "optional videos must be disabled by default");
   await page.locator(".option-tooltip").hover();
   await page.locator("#includeVideosTooltip").waitFor({ state: "visible" });
-  assert.match(await page.locator("#includeVideosTooltip").textContent(), /0\.9 GB.*longer/i,
-    "the video option tooltip must explain its storage/time tradeoff");
+  const videoSupportMode = await page.evaluate(() => window.ZeroHDesktop.videoSupport.mode);
+  const videoTooltip = await page.locator("#includeVideosTooltip").textContent();
+  if (videoSupportMode === "direct") {
+    assert.match(videoTooltip, /original Bink files.*decoded as they play/i,
+      "direct playback must explain that original movies are decoded during playback");
+    assert.match(videoTooltip, /nothing is converted, cached, or uploaded/i,
+      "direct playback must explain its storage and privacy behavior");
+  } else {
+    assert.equal(videoSupportMode, "sidecar", "the available video mode must be recognized");
+    assert.match(videoTooltip, /0\.9 GB.*longer/i,
+      "sidecar playback must explain its storage/time tradeoff");
+  }
   await page.locator(".optional-content-copy").click();
   assert.equal(await videoToggle.isChecked(), true,
     "the optional-video install choice must be selectable");
@@ -539,6 +551,7 @@ try {
   }));
   const githubPage = await githubContext.newPage();
   await githubPage.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  await githubPage.locator('#setupWindow [data-window-action="close"]').click();
   const githubShortcut = githubPage.locator("[data-github-shortcut]");
   await githubShortcut.waitFor({ state: "visible" });
   assert.equal(await githubShortcut.getAttribute("href"), "https://github.com/Agusx1211/NewShoes");
@@ -654,6 +667,7 @@ try {
 
   process.stdout.write(`${JSON.stringify({
     ok: true,
+    videoSupportMode,
     screenshots: {
       fallbackShot,
       aboutBuildShot,
