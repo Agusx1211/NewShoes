@@ -657,6 +657,22 @@ Relationship Player::getRelationship(const Team *that) const
 	return NEUTRAL;
 }
 
+UnsignedInt Player::getPotentialEnemyPlayerMask() const
+{
+	// A team-specific exception can override its owner's relationship. Retain
+	// the ordinary object filter whenever such exceptions are present.
+	if (!m_teamRelations->m_map.empty())
+		return ~0u;
+	UnsignedInt mask = 0x80000000u; // conservatively retain unknown owners
+	for (Int index = 0; index < MAX_PLAYER_COUNT; ++index)
+	{
+		Relationship relationship;
+		if (m_playerRelations->findRelationship(index, &relationship) && relationship == ENEMIES)
+			mask |= 1u << index;
+	}
+	return mask;
+}
+
 //=============================================================================
 void Player::setPlayerRelationship(const Player *that, Relationship r)
 {

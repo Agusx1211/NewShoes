@@ -533,9 +533,20 @@ class PartitionFilterLiveMapEnemies : public PartitionFilter
 {
 private:
 	const Object *m_obj;
+	Bool m_cullPlayers;
 public:
-	PartitionFilterLiveMapEnemies(const Object *obj) : m_obj(obj) { }
+	PartitionFilterLiveMapEnemies(const Object *obj, Bool cullPlayers = false)
+		: m_obj(obj), m_cullPlayers(cullPlayers) { }
 	virtual Bool canEvaluateBeforeDistance() const { return true; }
+	virtual UnsignedInt getPotentialPlayerMask() const
+	{
+		if (!m_cullPlayers)
+			return ~0u;
+		if (m_obj->getIsUndetectedDefector())
+			return 0;
+		const Team *team = m_obj->getTeam();
+		return team ? team->getPotentialEnemyPlayerMask() : 0;
+	}
 
 	virtual Bool allow(Object *objOther)
 	{
@@ -627,7 +638,9 @@ Object *AI::findClosestEnemy( const Object *me, Real range, UnsignedInt qualifie
 	// only consider live, on-map enemies.
 	// since this gets called a ton, I made a special custom filter to
 	// combine several canned ones, in the name of speed (srj)
-	PartitionFilterLiveMapEnemies filterObvious(me);
+	// The built-in predicates do not change ownership or diplomacy. A caller's
+	// optional filter has no such contract, so it retains ordinary traversal.
+	PartitionFilterLiveMapEnemies filterObvious(me, optionalFilter == NULL);
 
 	PartitionFilterWithinAttackRange filterWithinAttackRange(me);
 

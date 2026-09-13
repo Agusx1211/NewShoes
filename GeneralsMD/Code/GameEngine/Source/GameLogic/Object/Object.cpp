@@ -868,6 +868,8 @@ void Object::setOrRestoreTeam( Team* team, Bool restoring )
 		
 	// Switch //////////////////////////
 	m_team = team;
+	if (ThePartitionManager)
+		ThePartitionManager->invalidatePlayerMaskCache();
 
 	// After Switch //////////////////////////
 	if (m_team)

@@ -576,6 +576,7 @@ public:
 
 	/// get the relationship between this->that. 
 	Relationship getRelationship(const Team *that) const;
+	UnsignedInt getPotentialEnemyPlayerMask() const;
 
 	/// set the relationship between this->that. (note that this doesn't affect the that->this relationship.)
 	void setPlayerRelationship(const Player *that, Relationship r);
