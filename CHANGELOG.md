@@ -6,6 +6,10 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-13
+
+- Reduce spatial-query, text-rendering, and draw-queue overhead, repair worker frame flushing, and adjust frame pacing; late-game regressions remain and locked 60 FPS is not achieved ([PR #367](https://github.com/Agusx1211/NewShoes/pull/367)).
+
 ## [0.8.0] - 2026-09-13
 
 - Index vertex-array cache entries by buffer offset to reduce late-match renderer lookup costs ([PR #345](https://github.com/Agusx1211/NewShoes/pull/345)).
