@@ -2188,27 +2188,34 @@ async function driveReplayPerformance(page, performanceReplay) {
         renderGate: replayPerformanceRenderGate != null,
         renderEnabled: enabled,
       };
-      if (replayPerformanceMeasureStartFrame > replayPerformanceRenderStartFrame
-          && replayPerformanceMeasureStartFrame < completionThreshold) {
-        await waitForCapture(replayPerformanceMeasureStartFrame);
-        const renderWarmupStopped = await rpc(
-          page, "threadedStopLoop", { timeoutMs: 120000 });
-        expect(renderWarmupStopped?.ok === true,
-          "performance replay rendered warm-up loop did not stop",
-          renderWarmupStopped);
-        await resetReplayPerformanceCapture(page);
-        const measurementStarted = await rpc(page, "threadedStartLoop", {
-          clientFps: replayPerformanceMeasuredClientFps,
-          logicFps: replayPerformanceMeasuredLogicFps,
-          catchup: replayPerformanceMeasuredCatchup,
-          profilingEnabled: profileReplayPerformance,
-        });
-        expect(measurementStarted?.ok === true,
-          "performance replay measurement loop did not start",
-          measurementStarted);
-        renderWarmup.measurementStartFrame = replayPerformanceMeasureStartFrame;
-        renderWarmup.renderedWarmupStopped = renderWarmupStopped;
-      }
+    }
+    if (replayPerformanceMeasureStartFrame > replayPerformanceRenderStartFrame
+        && replayPerformanceMeasureStartFrame < completionThreshold) {
+      await waitForCapture(replayPerformanceMeasureStartFrame);
+      const renderWarmupStopped = await rpc(
+        page, "threadedStopLoop", { timeoutMs: 120000 });
+      expect(renderWarmupStopped?.ok === true,
+        "performance replay rendered warm-up loop did not stop",
+        renderWarmupStopped);
+      await resetReplayPerformanceCapture(page);
+      const measurementStarted = await rpc(page, "threadedStartLoop", {
+        clientFps: replayPerformanceMeasuredClientFps,
+        logicFps: replayPerformanceMeasuredLogicFps,
+        catchup: replayPerformanceMeasuredCatchup,
+        profilingEnabled: profileReplayPerformance,
+      });
+      expect(measurementStarted?.ok === true,
+        "performance replay measurement loop did not start",
+        measurementStarted);
+      renderWarmup ??= {
+        endFrame: 0,
+        rendering: !renderDisabled,
+        clientFps: replayPerformanceClientFps,
+        logicFps: replayPerformanceLogicFps,
+        catchup: replayPerformanceCatchup,
+      };
+      renderWarmup.measurementStartFrame = replayPerformanceMeasureStartFrame;
+      renderWarmup.renderedWarmupStopped = renderWarmupStopped;
     }
     if (replayPerformanceGpuProfileStartFrame > 0
         && replayPerformanceGpuProfileStartFrame < completionThreshold) {
