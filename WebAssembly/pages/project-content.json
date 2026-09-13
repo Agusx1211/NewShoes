@@ -66,6 +66,7 @@
         "docs/shockwave-replay-performance.md",
         "WebAssembly/tests/sleepy_update_removal_smoke.cpp",
         "WebAssembly/harness/bridge.js",
+        "WebAssembly/harness/engine_realm_boot.mjs",
         "WebAssembly/harness/camera_scroll_runtime_smoke.mjs",
         "WebAssembly/harness/skirmish_start_smoke.mjs",
         "GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/SkirmishGameOptionsMenu.cpp",

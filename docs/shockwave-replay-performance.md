@@ -13,40 +13,36 @@ The requested locked 60 FPS target is not established. Presentation intervals,
 including their tails, must fit 16.7 ms; an engine's internal FPS counter or a
 fast individual AI query cannot establish that result.
 
-A fresh comparison against the released 0.8.0 binary reduced median midgame
-presentation time from 44.91 to 34.56 ms with the query-filter, occupied-range,
-resource-dependency, and HUD text changes at `9746184a`. That is a 23.1%
-reduction in median interval, or 1.30 times its reciprocal frame rate. The p99
-did not improve in this pair. These are individual runs on a shared machine,
-not universal speed guarantees.
+The query, HUD, and resource changes alone did not establish an end-to-end
+speedup. At `6d85d377`, midgame averaged 33.2 FPS, then 31.7 FPS on repeat,
+with worse tail latency than the repeat 0.8.0 control. A subsequent scheduler
+correction at `5465e833` averaged 40.3 and 39.6 FPS in two runs of the same window,
+with no presentation intervals above 100 ms. That improvement still falls short
+of 60 FPS.
 
-| Frames 30,000–31,000 | 0.8.0 | `9746184a` |
-| --- | ---: | ---: |
-| Presentation median | 44.910 ms | 34.555 ms |
-| Presentation p95 | 84.810 ms | 75.805 ms |
-| Presentation p99 | 96.805 ms | 98.995 ms |
-| Presentation maximum | 112.225 ms | 124.775 ms |
-| Engine median | 30.6 ms | 28.6 ms |
-| Engine p95 | 52.2 ms | 46.6 ms |
-| Presented samples | 678 | 831 |
+All rows below cover logic frames 30,000–31,000. FPS is 1000 divided by the
+mean presentation interval, not the reciprocal of the median. The first 0.8.0
+control was substantially slower than its repeat; comparing only against that
+first run would overstate the evidence. These are individual runs on a shared
+machine, not broad hardware guarantees or a statistical performance estimate.
 
-The same candidate completed the replay naturally without CRC mismatch or
-WebGL context loss. Its isolated late window, frames 65,000–66,000, measured
-30.545 ms median presentation, 55.020 ms p95, and 66.595 ms p99. There is no
-matched fresh 0.8.0 late window in this comparison, so this is an absolute
-measurement rather than a late-game speedup claim.
+| Build and run | Mean FPS | Median | p95 | p99 | Maximum | Intervals >100 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.8.0 first control | 20.1 | 44.910 ms | 84.810 ms | 96.805 ms | 112.225 ms | 5 |
+| 0.8.0 repeat control | 34.7 | 29.225 ms | 39.250 ms | 52.805 ms | 79.450 ms | 0 |
+| `6d85d377` first | 33.2 | 26.560 ms | 66.455 ms | 103.935 ms | 140.295 ms | 14 |
+| `6d85d377` repeat | 31.7 | 28.255 ms | 64.810 ms | 104.945 ms | 147.215 ms | 13 |
+| `5465e833` first | 40.3 | 26.025 ms | 34.095 ms | 40.750 ms | 54.080 ms | 0 |
+| `5465e833` repeat | 39.6 | 26.525 ms | 34.865 ms | 46.460 ms | 67.355 ms | 0 |
 
-The owner-mask checkpoint `2c4d635f` also completed the full replay without a
-CRC mismatch or context loss. Its midgame median was 28.440 ms and p95 was
-67.420 ms, but p99 rose to 109.595 ms and the maximum to 189.385 ms. The late
-window measured 22.970 ms median, 32.485 ms p95, and 36.770 ms p99. Its median
-improvements therefore do not establish consistently smooth presentation.
-
-The follow-up at `6d85d377` retains cached ownership while creating objects that
-have not entered the grid. Its latest replay measurements and acceptance status
-are recorded in [PR #367](https://github.com/Agusx1211/NewShoes/pull/367), alongside
-the final implementation and verification. The tables above identify their
-specific measured checkpoints; they should not be relabeled as later builds.
+The C++ checkpoint `6d85d377` completed the replay naturally without CRC mismatch
+or WebGL context loss. Its isolated late window, frames 65,000–66,000, averaged
+43.8 FPS. Earlier checkpoints `9746184a` and `2c4d635f` also completed the replay
+without CRC mismatch or context loss. Full-replay acceptance and late-window
+measurements for the scheduler follow-up are recorded in
+[PR #367](https://github.com/Agusx1211/NewShoes/pull/367). There is no matched
+fresh 0.8.0 late window, so late measurements are absolute results rather than
+late-game speedup claims.
 
 ## Changes and targeted evidence
 
@@ -90,6 +86,12 @@ RPC boundaries. Those calls now flush before replying, matching the paced
 worker loop. The regression test stops that loop and confirms that three direct
 calls render all 992 queued draws and produce nonblank screenshots.
 
+The worker estimates refresh timing from callback intervals. Slow engine frames
+inflate those intervals, so they must not grant an arbitrarily large tolerance
+for starting client or logic work early. The scheduler now caps that tolerance
+at half the smaller requested client/logic period and resets its estimate when
+the loop restarts. Fixed simulation steps and catch-up limits are unchanged.
+
 ## Method and limits
 
 The machine is a Linux VM with a Ryzen 9 5950X host CPU and NVIDIA RTX 4080,
@@ -97,7 +99,7 @@ using Chromium 149 and the actual ANGLE OpenGL ES renderer. This is not weak
 hardware. The threaded Release wasm build uses Emscripten 3.1.6 and the normal
 release flags, without LTO, SIMD, or profiling-function names added for timing.
 The engine renders at 800×600. Native adaptive LOD remains enabled and unchanged;
-both midgame runs selected LOD 3 at the median. Particle visibility can vary
+the control and original candidate runs selected LOD 3 at the median. Particle visibility can vary
 with presentation cadence. No effects or simulation work are removed to reach
 a frame-rate target.
 
