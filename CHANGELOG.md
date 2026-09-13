@@ -6,6 +6,11 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-09-13
+
+- Restore complete launcher browser verification for current video tooltips, analytics consent, and desktop shortcuts ([PR #374](https://github.com/Agusx1211/NewShoes/pull/374)).
+- Set version 0.8.3 and record its release inventory ([PR #376](https://github.com/Agusx1211/NewShoes/pull/376)).
+
 ## [0.8.2] - 2026-09-13
 
 - Keep the engine worker's JavaScript and WebAssembly on the same runtime version to prevent launch failures after an update ([PR #372](https://github.com/Agusx1211/NewShoes/pull/372)).
