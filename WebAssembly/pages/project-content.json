@@ -62,6 +62,8 @@
         "GeneralsMD/Code/GameEngine/Source/GameLogic/Object/PartitionManager.cpp",
         "GeneralsMD/Code/GameEngine/Source/GameLogic/System/GameLogic.cpp",
         "WebAssembly/tests/partition_query_index_smoke.cpp",
+        "WebAssembly/tests/partition_detach_dirty_smoke.cpp",
+        "docs/shockwave-replay-performance.md",
         "WebAssembly/tests/sleepy_update_removal_smoke.cpp",
         "WebAssembly/harness/bridge.js",
         "WebAssembly/harness/camera_scroll_runtime_smoke.mjs",
