@@ -896,6 +896,8 @@ void TeamPrototype::setControllingPlayer(Player *newController)
 		m_owningPlayer->removeTeamFromList(this);
 
 	m_owningPlayer = newController;
+	if (ThePartitionManager)
+		ThePartitionManager->invalidatePlayerMaskCache();
 
 	// impossible to get here with a NULL pointer.
 	m_owningPlayer->addTeamToList(this);
@@ -1211,6 +1213,8 @@ void TeamPrototype::xfer( Xfer *xfer )
 		owningPlayerIndex = m_owningPlayer->getPlayerIndex();
 	xfer->xferInt( &owningPlayerIndex );
 	m_owningPlayer = ThePlayerList->getNthPlayer( owningPlayerIndex );
+	if (ThePartitionManager)
+		ThePartitionManager->invalidatePlayerMaskCache();
 
 	if (version>=2) {
 		xfer->xferAsciiString(&m_attackPriorityName);
@@ -1498,6 +1502,28 @@ Relationship Team::getRelationship(const Team *that) const
 
 	// nope -- go with our Player's view on the matter.
 	return getControllingPlayer()->getRelationship(that);
+}
+
+UnsignedInt Team::getPotentialEnemyPlayerMask() const
+{
+	const Player *player = getControllingPlayer();
+	if (!player || !m_teamRelations->m_map.empty())
+		return ~0u;
+	UnsignedInt mask = player->getPotentialEnemyPlayerMask();
+	if (mask == ~0u)
+		return mask;
+	for (Int index = 0; index < MAX_PLAYER_COUNT; ++index)
+	{
+		Relationship relationship;
+		if (m_playerRelations->findRelationship(index, &relationship))
+		{
+			if (relationship == ENEMIES)
+				mask |= 1u << index;
+			else
+				mask &= ~(1u << index);
+		}
+	}
+	return mask;
 }
 
 // ------------------------------------------------------------------------

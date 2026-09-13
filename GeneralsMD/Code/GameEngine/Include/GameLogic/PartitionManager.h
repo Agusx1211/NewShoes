@@ -299,6 +299,9 @@ class PartitionCell : public Snapshot	// not MPO: allocated in an array
 private:
 	CellAndObjectIntersection*		m_firstCoiInCell;	///< list of COIs in this cell (may be null).
 	unsigned int* m_occupancyWord;	///< derived query index, owned by PartitionManager
+	// Derived owner occupancy; excluded from save data and CRC.
+	UnsignedInt m_playerMask;
+	UnsignedInt m_playerMaskGeneration;
 	ShroudLevel										m_shroudLevel[MAX_PLAYER_COUNT];	
 #ifdef PM_CACHE_TERRAIN_HEIGHT
 	Real													m_loTerrainZ;			///< lowest terrain-pt in this cell
@@ -321,6 +324,8 @@ public:
 #endif
 	~PartitionCell();
 	void setOccupancyWord(unsigned int* word) { m_occupancyWord = word; }
+	UnsignedInt getPlayerMask(UnsignedInt generation);
+	void invalidatePlayerMask() { m_playerMaskGeneration = 0; }
 
 	// --------------- inherited from Snapshot interface --------------
 	void crc( Xfer *xfer );
@@ -601,6 +606,13 @@ class PartitionFilter
 {
 public:
 	virtual Bool allow(Object *objOther) = 0;
+	// Only pure predicates may opt in: allow() can then be called for objects
+	// outside the search radius. The query moves only its first filter, so all
+	// later filters retain their original distance check and call order.
+	virtual Bool canEvaluateBeforeDistance() const { return false; }
+	// Conservative owners accepted by this pure filter. Only opt in when the
+	// rest of the query cannot change diplomacy or any object's ownership.
+	virtual UnsignedInt getPotentialPlayerMask() const { return ~0u; }
 #if defined(_DEBUG) || defined(_INTERNAL)
 	virtual const char* debugGetName() = 0;
 #endif
@@ -1263,6 +1275,7 @@ private:
 	RadiusVec				m_radiusVec;
 	PartitionQueryIndex m_queryIndex;
 #endif
+	UnsignedInt m_playerMaskGeneration;
 
 protected:
 
@@ -1340,6 +1353,9 @@ public:
 	void unRegisterGhostObject (GhostObject *object);	///< release partition data held for ghost object.
 
 	void processEntirePendingUndoShroudRevealQueue(); ///< process every pending one regardless of timestamp
+
+	/// invalidate derived cell-owner masks after an ownership change.
+	void invalidatePlayerMaskCache();
 
 	/// return the number of PartitionCells in the x-dimension.
 	Int getCellCountX() { DEBUG_ASSERTCRASH(m_cellCountX != 0, ("partition not inited")); return m_cellCountX; }

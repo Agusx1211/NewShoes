@@ -100,11 +100,14 @@ protected:
 	Render2DSentenceClass m_textRendererHotKey;  ///< for drawing text
 	Bool m_textChanged;  ///< when contents of string change this is TRUE
 	Bool m_fontChanged;  ///< when font has chagned this is TRUE
+	Bool m_polysChanged; ///< clipping changed without changing the glyphs
 	UnicodeString m_hotkey;		///< holds the current hotkey marker.
-	Bool m_useHotKey;
+	Bool m_hotKeyRequested; ///< parsing requested by the caller
+	Bool m_useHotKey; ///< current sentence contains a highlighted hotkey
 	ICoord2D m_hotKeyPos;
 	Color m_hotKeyColor;
 	ICoord2D m_textPos;  ///< current text pos set in text renderer
+	ICoord2D m_dropOffset;
 	Color m_currTextColor,  ///< current color used in text renderer
 				m_currDropColor;  ///< current color used for shadow in text
 	ICoord2D m_size;				///< (width,height) size of rendered text
@@ -121,4 +124,3 @@ inline void W3DDisplayString::usingResources( UnsignedInt frame ) { m_lastResour
 // EXTERNALS //////////////////////////////////////////////////////////////////
 
 #endif // __W3DDISPLAYSTRING_H_
-

@@ -1365,6 +1365,8 @@ PartitionCell::PartitionCell()
 	//
 	m_firstCoiInCell = NULL;
 	m_occupancyWord = NULL;
+	m_playerMask = 0;
+	m_playerMaskGeneration = 0;
 	m_coiCount = 0;
 #ifdef PM_CACHE_TERRAIN_HEIGHT
 	m_loTerrainZ = HUGE_DIST;		// huge positive
@@ -1600,6 +1602,7 @@ void PartitionCell::friend_addToCellList(CellAndObjectIntersection *coi)
 {
 	if (coi)
 	{
+		invalidatePlayerMask();
 		if (m_firstCoiInCell == NULL && m_occupancyWord)
 			*m_occupancyWord |= 1u << (m_cellX & 31);
 		coi->friend_addToCellList(&m_firstCoiInCell);
@@ -1612,6 +1615,7 @@ void PartitionCell::friend_removeFromCellList(CellAndObjectIntersection *coi)
 {
 	if (coi)
 	{
+		invalidatePlayerMask();
 		coi->friend_removeFromCellList(&m_firstCoiInCell);
 		--m_coiCount;
 		if (m_firstCoiInCell == NULL && m_occupancyWord)
@@ -1620,6 +1624,23 @@ void PartitionCell::friend_removeFromCellList(CellAndObjectIntersection *coi)
 }
 
 //-----------------------------------------------------------------------------
+UnsignedInt PartitionCell::getPlayerMask(UnsignedInt generation)
+{
+	if (m_playerMaskGeneration != generation)
+	{
+		m_playerMask = 0;
+		for (CellAndObjectIntersection *coi = m_firstCoiInCell; coi; coi = coi->getNextCoi())
+		{
+			const Object *object = coi->getModule()->getObject();
+			const Player *player = object ? object->getControllingPlayer() : NULL;
+			const Int index = player ? player->getPlayerIndex() : -1;
+			m_playerMask |= index >= 0 && index < MAX_PLAYER_COUNT ? 1u << index : 0x80000000u;
+		}
+		m_playerMaskGeneration = generation;
+	}
+	return m_playerMask;
+}
+
 void PartitionCell::getCellCenterPos(Real& x, Real& y)
 {
 	ThePartitionManager->getCellCenterPos(m_cellX, m_cellY, x, y);
@@ -2708,12 +2729,23 @@ PartitionManager::PartitionManager()
 	m_worldExtents.hi.zero();
 	m_dirtyModules = NULL;
 	m_updatedSinceLastReset = false;
+	m_playerMaskGeneration = 1;
 #ifdef FASTER_GCO
 	m_maxGcoRadius = 0;
 #endif
 } 
 
 //-----------------------------------------------------------------------------
+void PartitionManager::invalidatePlayerMaskCache()
+{
+	if (++m_playerMaskGeneration == 0)
+	{
+		for (Int index = 0; index < m_totalCellCount; ++index)
+			m_cells[index].invalidatePlayerMask();
+		m_playerMaskGeneration = 1;
+	}
+}
+
 PartitionManager::~PartitionManager()
 {
 
@@ -3402,6 +3434,9 @@ Object *PartitionManager::getClosestObjects(
 	DEBUG_ASSERTCRASH((obj==NULL) != (pos == NULL), ("either obj or pos must be null"));
 
 	DistCalcProc distProc = closestVecArg ? theDistCalcProcs[dc] : NULL;
+	PartitionFilter *earlyFilter = filters && filters[0]
+		&& filters[0]->canEvaluateBeforeDistance() ? filters[0] : NULL;
+	PartitionFilter **remainingFilters = earlyFilter ? filters + 1 : filters;
 
 	const Coord3D *objPos;
 	const Object *objToUse;
@@ -3446,10 +3481,13 @@ Object *PartitionManager::getClosestObjects(
 	static Int theIterFlag = 1;	// nonzero, thanks
 	++theIterFlag;
 
-	// Start with cheap local rings. If a nearest search finds nothing nearby,
-	// bucket occupied cells in progressively wider bands, retaining ring order.
-	// Range searches need every band and can build the remainder in one pass.
-	Int indexedThrough = 8;
+	// Nearest searches start with cheap local rings, then widen the index.
+	// Range searches must visit every band anyway: build once, including the
+	// local rings, so sparse areas don't repeatedly scan their empty cells.
+	const Int localRadius = iterArg ? -1 : 8;
+	Int indexedThrough = localRadius;
+	UnsignedInt potentialPlayers = ~0u;
+	Bool playerMaskKnown = false;
 
 	/*
 		m_radiusVec[curRadius] contains a list of the cells (foo) that could
@@ -3457,7 +3495,12 @@ Object *PartitionManager::getClosestObjects(
 	*/
   for (Int curRadius = 0; curRadius <= maxRadiusLimit; ++curRadius)
   {
-		const Bool indexedRange = curRadius > 8;
+		const Bool indexedRange = curRadius > localRadius;
+		if (indexedRange && maxRadiusLimit >= 8 && earlyFilter && !playerMaskKnown)
+		{
+			potentialPlayers = earlyFilter->getPotentialPlayerMask();
+			playerMaskKnown = true;
+		}
 		if (indexedRange && curRadius > indexedThrough)
 		{
 			indexedThrough = iterArg ? maxRadiusLimit : minInt(maxRadiusLimit, indexedThrough * 2);
@@ -3483,6 +3526,9 @@ Object *PartitionManager::getClosestObjects(
 			}
 			if (thisCell == NULL)
 				continue;
+			if (potentialPlayers != ~0u &&
+				(thisCell->getPlayerMask(m_playerMaskGeneration) & potentialPlayers) == 0)
+				continue;
 
 			for (CellAndObjectIntersection *thisCoi = thisCell->getFirstCoiInCell(); thisCoi; thisCoi = thisCoi->getNextCoi())
 			{
@@ -3498,6 +3544,8 @@ Object *PartitionManager::getClosestObjects(
 				if (thisMod->friend_getDoneFlag() == theIterFlag)
 					continue;
 				thisMod->friend_setDoneFlag(theIterFlag);
+				if (earlyFilter && !earlyFilter->allow(thisObj))
+					continue;
 			
 				Real thisDistSqr;
 				Coord3D distVec;
@@ -3509,7 +3557,7 @@ Object *PartitionManager::getClosestObjects(
 				if (!withinRange)
 					continue;
 
-				if (!filtersAllow(filters, thisObj))
+				if (!filtersAllow(remainingFilters, thisObj))
 					continue;
 
 				// ok, this is within the range, and the filters allow it.
@@ -3578,6 +3626,8 @@ Object *PartitionManager::getClosestObjects(
 				continue;
 
 			thisMod->friend_setDoneFlag(theIterFlag);
+			if (earlyFilter && !earlyFilter->allow(thisObj))
+				continue;
 		
 			// hmm, ok, calc the distance.
 			Real thisDistSqr;
@@ -3591,7 +3641,7 @@ Object *PartitionManager::getClosestObjects(
 				continue;
 
 			// check the filters now
-			if (!filtersAllow(filters, thisObj))
+			if (!filtersAllow(remainingFilters, thisObj))
 				continue;
 
 			// ok, guess this is a winner!

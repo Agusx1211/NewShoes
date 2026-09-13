@@ -868,6 +868,9 @@ void Object::setOrRestoreTeam( Team* team, Bool restoring )
 		
 	// Switch //////////////////////////
 	m_team = team;
+	// New/unregistered objects have no cached cell membership yet.
+	if (ThePartitionManager && m_partitionData)
+		ThePartitionManager->invalidatePlayerMaskCache();
 
 	// After Switch //////////////////////////
 	if (m_team)

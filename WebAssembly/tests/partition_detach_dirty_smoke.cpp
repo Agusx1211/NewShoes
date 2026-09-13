@@ -22,6 +22,7 @@ int main()
 	Bool pendingBeforeDetach = FALSE;
 	Bool detachedIsClean = FALSE;
 	Bool occupancyCorrect = TRUE;
+	Bool playerMaskCorrect = TRUE;
 	{
 		PartitionManager manager;
 		ThePartitionManager = &manager;
@@ -37,14 +38,20 @@ int main()
 				cell.setOccupancyWord(word);
 				const unsigned int before = *word, mask = 1u << (x & 31);
 				CellAndObjectIntersection first, second;
+				playerMaskCorrect &= cell.getPlayerMask(1) == 0;
 				first.addCoverage(&cell, &data);
 				first.addCoverage(&cell, &data); // Repeated coverage must not duplicate it.
 				second.addCoverage(&cell, &data);
 				occupancyCorrect &= *word == (before | mask) && cell.getCoiCount() == 2;
+				// A ghost/no-object intersection must conservatively retain the
+				// cell. Membership edits invalidate a previously cached mask.
+				playerMaskCorrect &= cell.getPlayerMask(1) == 0x80000000u;
 				first.removeAllCoverage();
 				occupancyCorrect &= *word == (before | mask) && cell.getCoiCount() == 1;
+				playerMaskCorrect &= cell.getPlayerMask(1) == 0x80000000u;
 				second.removeAllCoverage();
 				occupancyCorrect &= *word == before && cell.getFirstCoiInCell() == NULL;
+				playerMaskCorrect &= cell.getPlayerMask(1) == 0;
 			}
 			data.makeDirty(TRUE);
 			pendingBeforeDetach = manager.isInListDirtyModules(&data);
@@ -55,8 +62,9 @@ int main()
 	}
 
 	std::printf(
-		"{\"pendingBeforeDetach\":%s,\"detachedIsClean\":%s,\"occupancyCorrect\":%s}\n",
+		"{\"pendingBeforeDetach\":%s,\"detachedIsClean\":%s,\"occupancyCorrect\":%s,\"playerMaskCorrect\":%s}\n",
 		pendingBeforeDetach ? "true" : "false",
-		detachedIsClean ? "true" : "false", occupancyCorrect ? "true" : "false");
-	return pendingBeforeDetach && detachedIsClean && occupancyCorrect ? 0 : 1;
+		detachedIsClean ? "true" : "false", occupancyCorrect ? "true" : "false",
+		playerMaskCorrect ? "true" : "false");
+	return pendingBeforeDetach && detachedIsClean && occupancyCorrect && playerMaskCorrect ? 0 : 1;
 }
