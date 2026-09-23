@@ -85,7 +85,30 @@ Existing overlap/discard flushes, bounds checks, draw order, and geometry remain
 unchanged. The browser regression checks both growing and contained ranges,
 upload byte counts, and red/green pixels from earlier and later draws. The
 original implementation fails its 110-byte upload assertion with 222 bytes;
-the changed implementation passes on the RTX 4080.
+the changed implementation passes on the RTX 4080 and headless renderer.
+
+The final clean Stronghold comparison uses 5120×2880 and camera position
+(2770.8227, 1494.1335, 0), looking at the large beam and explosion effects.
+The control covers frames 5,168–6,519; the final candidate covers 5,189–6,509.
+Both retain matching replay CRCs throughout their measured windows. The final
+candidate includes the guard change and prefix reuse, with the normal shipping
+build flags and all diagnostic profilers/counters/timers disabled.
+
+| Build | Mean FPS | Median interval | p95 | p99 | Maximum | Intervals >100 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.8.3 control | 21.9 | 30.15 ms | 156.40 ms | 250.19 ms | 317.78 ms | 91 |
+| 0.8.4 candidate | 35.9 | 25.83 ms | 52.56 ms | 70.45 ms | 104.92 ms | 2 |
+
+The ending screenshots retain the battle, beam, explosions, units, terrain,
+and interface. Frame rate is still below 60 FPS, and these individual runs do
+not establish an M1 Pro speedup. Full-replay acceptance is a separate release
+gate tracked in [PR #380](https://github.com/Agusx1211/NewShoes/pull/380).
+
+Earlier diagnostic runs that switched to eight catch-up updates and changed
+resolution lost replay CRC agreement after frame 6,500 in both the original
+and changed builds. They are excluded from acceptance. Final acceptance uses
+constant resolution, rendering enabled, one catch-up update, and no extra
+target queries or manual frame advances.
 
 ## Rejected buffer-storage experiment
 
