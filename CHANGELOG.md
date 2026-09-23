@@ -6,6 +6,10 @@ repository `release` skill describes the promotion workflow from `dev` to
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-09-23
+
+- Reuse overlapping particle vertex uploads and reduce guard-search overhead in large Contra battles ([PR #380](https://github.com/Agusx1211/NewShoes/pull/380)).
+
 ## [0.8.3] - 2026-09-13
 
 - Restore complete launcher browser verification for current video tooltips, analytics consent, and desktop shortcuts ([PR #374](https://github.com/Agusx1211/NewShoes/pull/374)).
