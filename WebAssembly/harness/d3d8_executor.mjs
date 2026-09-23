@@ -15068,9 +15068,9 @@ function d3d8FrameDerivedSnapshot(payload) {
   return snapshot;
 }
 
-function d3d8FrameSnapshotCacheKey(resource, byteOffset, byteSize) {
+function d3d8FrameSnapshotCacheKey(resource, byteOffset) {
   return `${Number(resource?.id ?? 0) >>> 0}:${Number(resource?.uploads ?? 0) >>> 0}` +
-    `:${byteOffset}:${byteSize}`;
+    `:${byteOffset}`;
 }
 
 function d3d8FrameSourceUpdateRequiresFlush(resource, updateStart, updateEnd, discard) {
@@ -15112,9 +15112,12 @@ function d3d8FrameSnapshotDynamicRange(resource, byteOffset, byteSize, kind) {
   }
   const vertex = kind === 1;
   const cache = vertex ? d3d8FrameVertexSnapshotCache : d3d8FrameIndexSnapshotCache;
-  const cacheKey = d3d8FrameSnapshotCacheKey(resource, byteOffset, byteSize);
+  const cacheKey = d3d8FrameSnapshotCacheKey(resource, byteOffset);
   const cached = cache.get(cacheKey);
-  if (cached) {
+  // Sorted draws share a vertex-buffer prefix but declare different upper
+  // bounds. Reuse a captured prefix that already covers this draw instead of
+  // copying the same vertices into the arena for every distinct bound.
+  if (cached && cached.byteLength >= byteSize) {
     return cached;
   }
   const currentBytes = vertex ? d3d8FrameVertexArenaBytes : d3d8FrameIndexArenaBytes;

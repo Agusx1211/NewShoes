@@ -3486,8 +3486,9 @@ Object *PartitionManager::getClosestObjects(
 	// local rings, so sparse areas don't repeatedly scan their empty cells.
 	const Int localRadius = iterArg ? -1 : 8;
 	Int indexedThrough = localRadius;
-	UnsignedInt potentialPlayers = ~0u;
-	Bool playerMaskKnown = false;
+	// Apply the same conservative owner mask to local and indexed rings.
+	const UnsignedInt potentialPlayers = maxRadiusLimit >= 8 && earlyFilter
+		? earlyFilter->getPotentialPlayerMask() : ~0u;
 
 	/*
 		m_radiusVec[curRadius] contains a list of the cells (foo) that could
@@ -3496,11 +3497,6 @@ Object *PartitionManager::getClosestObjects(
   for (Int curRadius = 0; curRadius <= maxRadiusLimit; ++curRadius)
   {
 		const Bool indexedRange = curRadius > localRadius;
-		if (indexedRange && maxRadiusLimit >= 8 && earlyFilter && !playerMaskKnown)
-		{
-			potentialPlayers = earlyFilter->getPotentialPlayerMask();
-			playerMaskKnown = true;
-		}
 		if (indexedRange && curRadius > indexedThrough)
 		{
 			indexedThrough = iterArg ? maxRadiusLimit : minInt(maxRadiusLimit, indexedThrough * 2);
