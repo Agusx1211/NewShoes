@@ -952,15 +952,17 @@ try {
       hash,
       spatialUi = false,
       vertexByteOffset = 0,
+      vertexBytes = 48,
+      indexByteOffset = 0,
     ) => hooks.cncPortD3D8DrawIndexed({
       vertexBufferId: frameVertexBufferId,
       vertexByteOffset,
-      vertexBytes: 48,
-      vertexCount: 3,
+      vertexBytes,
+      vertexCount: vertexBytes / 16,
       vertexStride: 16,
       vertexShaderFvf: 0x42,
       indexBufferId: frameIndexBufferId,
-      indexByteOffset: 0,
+      indexByteOffset,
       indexBytes: indexBytes.byteLength,
       indexCount: 3,
       indexSize: 2,
@@ -989,6 +991,55 @@ try {
       derivedStateHash: hash,
       spatialUi,
     });
+
+    // Sorted particle draws reference overlapping prefixes of one vertex
+    // buffer. Reuse a larger captured prefix, including after replacing a
+    // smaller cached prefix; both earlier and later draws must stay correct.
+    expect(hooks.cncPortD3D8BufferCreate({
+      kind: 2, id: frameIndexBufferId, byteSize: 12, usage: dynamicUsage,
+    }) === 1, "prefix index buffer creation failed");
+    expect(hooks.cncPortD3D8BufferUpdate({
+      kind: 2, id: frameIndexBufferId, byteOffset: 0,
+      bytes: new Uint8Array(new Uint16Array([0, 1, 2, 3, 4, 5]).buffer),
+      lockFlags: discardLock,
+    }) === 1, "prefix index upload failed");
+    expect(hooks.cncPortD3D8BufferUpdate({
+      kind: 1, id: frameVertexBufferId, byteOffset: 0,
+      bytes: new Uint8Array([
+        ...makeTriangle([255, 0, 0, 255]),
+        ...makeTriangle([0, 255, 0, 255]),
+      ]),
+      lockFlags: discardLock,
+    }) === 1, "prefix vertex upload failed");
+    for (const ranges of [[96, 48, 64], [48, 96, 64]]) {
+      hooks.cncPortD3D8Clear(3, 0, 0, 0, 255, 1, 0);
+      globalThis.__cncSetD3D8FrameCommandQueue?.(true);
+      const before = diag.d3d8PerfSummary();
+      for (const bytes of ranges) {
+        const green = bytes === 96;
+        hooks.cncPortD3D8SetViewport({
+          x: green ? 32 : 0, y: 0, width: 32, height: 64,
+          minZ: 0, maxZ: 1, targetWidth: 64, targetHeight: 64,
+        });
+        expect(drawFrameCommand(799, false, 0, bytes, green ? 6 : 0) === 1,
+          "prefix draw queue failed", { ranges, bytes });
+      }
+      diag.flushD3D8FrameCommandQueue("frame-command-prefix-smoke");
+      const after = diag.d3d8PerfSummary();
+      // Two 6-byte index ranges occupy 14 bytes with four-byte alignment.
+      const expectedBytes = (ranges[0] === 96 ? 96 : 144) + 14;
+      expect(after.frameCommandArenaUploadBytes - before.frameCommandArenaUploadBytes
+          === expectedBytes,
+        "contained vertex prefixes were uploaded repeatedly", {
+          ranges, expectedBytes,
+          uploadedBytes: after.frameCommandArenaUploadBytes - before.frameCommandArenaUploadBytes,
+        });
+      const left = readPixel(16, 32), right = readPixel(48, 32);
+      expect(left[0] > 220 && left[1] < 32 && left[2] < 32 &&
+          right[0] < 32 && right[1] > 220 && right[2] < 32,
+        "shared vertex prefixes changed earlier or later geometry", { ranges, left, right });
+      globalThis.__cncSetD3D8FrameCommandQueue?.(false);
+    }
 
     // NOOVERWRITE appends outside every referenced range can stay deferred in
     // one segment; materialization reads both ranges before the ring is reused.

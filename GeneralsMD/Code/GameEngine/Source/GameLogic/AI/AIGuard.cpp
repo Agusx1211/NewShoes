@@ -55,6 +55,25 @@
 
 const Real CLOSE_ENOUGH = (25.0f);
 
+// The pure relationship predicate can reject allied cells before distance
+// and attack checks, using current diplomacy.
+class PartitionFilterGuardEnemies : public PartitionFilterRelationship
+{
+private:
+	const Object *m_owner;
+public:
+	PartitionFilterGuardEnemies(const Object *owner)
+		: PartitionFilterRelationship(owner, ALLOW_ENEMIES), m_owner(owner) { }
+	virtual Bool canEvaluateBeforeDistance() const { return true; }
+	virtual UnsignedInt getPotentialPlayerMask() const
+	{
+		if (m_owner->getIsUndetectedDefector())
+			return 0;
+		const Team *team = m_owner->getTeam();
+		return team ? team->getPotentialEnemyPlayerMask() : 0;
+	}
+};
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -231,7 +250,7 @@ Bool AIGuardMachine::lookForInnerTarget(void)
 	Coord3D pos = targetToGuard ? *targetToGuard->getPosition() : *getPositionToGuard();
 
 	const PolygonTrigger*								area = getAreaToGuard();
-	PartitionFilterRelationship					f1(owner, PartitionFilterRelationship::ALLOW_ENEMIES);
+	PartitionFilterGuardEnemies					f1(owner);
 	PartitionFilterPossibleToAttack			f2(ATTACK_NEW_TARGET, owner, CMD_FROM_AI);
 	PartitionFilterSameMapStatus				filterMapStatus(owner);
 	PartitionFilterPolygonTrigger				f3(area);
